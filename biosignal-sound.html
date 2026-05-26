@@ -672,8 +672,9 @@ const cvSource = {
     this.video.srcObject = stream;
     await new Promise(r => this.video.onloadedmetadata = r);
 
-    this.canvas.width  = this.video.videoWidth;
-    this.canvas.height = this.video.videoHeight;
+    const wrap = this.video.parentElement;
+    this.canvas.width  = wrap.offsetWidth;
+    this.canvas.height = wrap.offsetHeight;
 
     document.getElementById('cam-placeholder').style.display = 'none';
     this.video.classList.add('ready');
@@ -703,8 +704,8 @@ const cvSource = {
     const found = { L: null, R: null };
     if (r.handednesses && r.landmarks) {
       r.handednesses.forEach((h, i) => {
-        // MediaPipe reports from camera's POV; mirror for user perspective
-        const side = h[0].categoryName === 'Left' ? 'R' : 'L';
+        // MediaPipe Tasks API reports handedness from the subject's perspective
+        const side = h[0].categoryName === 'Left' ? 'L' : 'R';
         found[side] = r.landmarks[i];
       });
     }
@@ -764,6 +765,15 @@ const cvSource = {
     const { ctx, canvas: c } = this;
     ctx.clearRect(0, 0, c.width, c.height);
 
+    // Replicate the object-fit:cover scale/offset so skeleton aligns with the
+    // displayed video regardless of camera resolution vs. container aspect ratio.
+    const vw = this.video.videoWidth, vh = this.video.videoHeight;
+    const scale = Math.max(c.width / vw, c.height / vh);
+    const ox = (c.width  - vw * scale) / 2;
+    const oy = (c.height - vh * scale) / 2;
+    const lx = x => ox + x * vw * scale;
+    const ly = y => oy + y * vh * scale;
+
     // Hands
     if (hr.landmarks) {
       const CONNS = [
@@ -775,19 +785,19 @@ const cvSource = {
         [5,9],[9,13],[13,17]
       ];
       hr.landmarks.forEach((lm, hi) => {
-        const isRight = hr.handednesses[hi]?.[0]?.categoryName === 'Left'; // mirrored
+        const isRight = hr.handednesses[hi]?.[0]?.categoryName === 'Right';
         const col = isRight ? '#00e5cc' : '#9d5cff';
         ctx.strokeStyle = col + 'aa'; ctx.lineWidth = 1.5;
         CONNS.forEach(([a,b]) => {
           ctx.beginPath();
-          ctx.moveTo(lm[a].x*c.width, lm[a].y*c.height);
-          ctx.lineTo(lm[b].x*c.width, lm[b].y*c.height);
+          ctx.moveTo(lx(lm[a].x), ly(lm[a].y));
+          ctx.lineTo(lx(lm[b].x), ly(lm[b].y));
           ctx.stroke();
         });
         lm.forEach((pt, i) => {
           ctx.fillStyle = i === 0 ? '#fff' : col;
           ctx.beginPath();
-          ctx.arc(pt.x*c.width, pt.y*c.height, i===0?3:2, 0, Math.PI*2);
+          ctx.arc(lx(pt.x), ly(pt.y), i===0?3:2, 0, Math.PI*2);
           ctx.fill();
         });
       });
@@ -801,15 +811,15 @@ const cvSource = {
       PC.forEach(([a,b]) => {
         if (!lm[a]||!lm[b]) return;
         ctx.beginPath();
-        ctx.moveTo(lm[a].x*c.width, lm[a].y*c.height);
-        ctx.lineTo(lm[b].x*c.width, lm[b].y*c.height);
+        ctx.moveTo(lx(lm[a].x), ly(lm[a].y));
+        ctx.lineTo(lx(lm[b].x), ly(lm[b].y));
         ctx.stroke();
       });
       [11,12,13,14,15,16].forEach(i => {
         if (!lm[i]) return;
         ctx.fillStyle = '#f0a500';
         ctx.beginPath();
-        ctx.arc(lm[i].x*c.width, lm[i].y*c.height, 3, 0, Math.PI*2);
+        ctx.arc(lx(lm[i].x), ly(lm[i].y), 3, 0, Math.PI*2);
         ctx.fill();
       });
     }
