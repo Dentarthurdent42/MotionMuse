@@ -189,8 +189,7 @@ async function evaluate(client, captures) {
 async function main() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    console.error('Error: ANTHROPIC_API_KEY environment variable is not set.');
-    process.exit(1);
+    console.warn('Warning: ANTHROPIC_API_KEY not set — LLM evaluation skipped. Add it as a repo secret to enable.');
   }
 
   const server = await startServer();
@@ -200,9 +199,18 @@ async function main() {
   try {
     console.log('\nCapturing screenshots…');
     const captures = await captureAll(port);
-    console.log(`\nEvaluating ${captures.length} screenshots with Claude…`);
-    const client = new Anthropic({ apiKey });
-    const results = await evaluate(client, captures);
+
+    let results;
+    if (apiKey) {
+      console.log(`\nEvaluating ${captures.length} screenshots with Claude…`);
+      const client = new Anthropic({ apiKey });
+      results = await evaluate(client, captures);
+    } else {
+      results = captures.map(cap => ({
+        ...cap,
+        evaluation: { score: null, summary: 'LLM evaluation skipped (ANTHROPIC_API_KEY not set).', issues: [] },
+      }));
+    }
 
     mkdirSync(OUT, { recursive: true });
     const reportPath = join(OUT, 'ui-ux-report.html');

@@ -2,8 +2,9 @@ export function generateReport(results) {
   const allIssues = results.flatMap(r => r.evaluation.issues ?? []);
   const errorCount   = allIssues.filter(i => i.severity === 'error').length;
   const warningCount = allIssues.filter(i => i.severity === 'warning').length;
-  const avgScore = results.length
-    ? (results.reduce((s, r) => s + (r.evaluation.score ?? 0), 0) / results.length).toFixed(1)
+  const scored = results.filter(r => r.evaluation.score != null);
+  const avgScore = scored.length
+    ? (scored.reduce((s, r) => s + r.evaluation.score, 0) / scored.length).toFixed(1)
     : 'N/A';
 
   function scoreColor(s) {
@@ -33,7 +34,7 @@ export function generateReport(results) {
   <section class="card">
     <div class="card-head">
       <h2>${esc(r.label)}</h2>
-      <span class="score" style="color:${scoreColor(ev.score)}">${ev.score ?? '?'}<span class="score-denom">/10</span></span>
+      <span class="score" style="color:${ev.score != null ? scoreColor(ev.score) : '#64748b'}">${ev.score ?? '—'}<span class="score-denom">${ev.score != null ? '/10' : ''}</span></span>
     </div>
     <p class="card-summary">${esc(ev.summary ?? '')}</p>
     <div class="card-body">
