@@ -606,6 +606,7 @@ const cvSource = {
       bus.register(`hand_${s}_y`,    { label:`${lbl} Wrist Y`,    group:g, min:0, max:1, source:'cv' });
       bus.register(`hand_${s}_open`, { label:`${lbl} Openness`,   group:g, min:0, max:1, source:'cv' });
       bus.register(`hand_${s}_spread`,{ label:`${lbl} Spread`,    group:g, min:0, max:1, source:'cv' });
+      bus.register(`pinch_${s}`,      { label:`${lbl} Pinch`,     group:g, min:0, max:1, source:'cv' });
       const fnames = ['Thumb','Index','Middle','Ring','Pinky'];
       fnames.forEach((fn, fi) =>
         bus.register(`finger_${s}_${fn.toLowerCase()}`, {
@@ -702,13 +703,18 @@ const cvSource = {
   // ── Signal extraction: hands ──────────────────────────────────────
   processHands(r) {
     const found = { L: null, R: null };
+    const foundWorld = { L: null, R: null };
     if (r.handednesses && r.landmarks) {
       r.handednesses.forEach((h, i) => {
         // MediaPipe Tasks API reports handedness from the subject's perspective
         const side = h[0].categoryName === 'Left' ? 'L' : 'R';
         found[side] = r.landmarks[i];
+        foundWorld[side] = r.worldLandmarks?.[i] ?? null;
       });
     }
+
+    // Pinch distance is normalized against this max (metres); beyond it reads 1.0
+    const PINCH_MAX = 0.10;
 
     ['L','R'].forEach(s => {
       const lm = found[s];
@@ -720,9 +726,15 @@ const cvSource = {
         ['thumb','index','middle','ring','pinky'].forEach((n,fi) =>
           bus.update(`finger_${s}_${n}`, fingerExt(lm, fi))
         );
+        // World-space thumb-tip (4) to index-tip (8) distance
+        const wlm = foundWorld[s];
+        if (wlm) {
+          bus.update(`pinch_${s}`, Math.min(1, dist3(wlm[4], wlm[8]) / PINCH_MAX));
+        }
       } else {
         // Smooth decay to zero when hand leaves frame
-        [`hand_${s}_x`,`hand_${s}_y`,`hand_${s}_open`,`hand_${s}_spread`].forEach(k => bus.decay(k));
+        [`hand_${s}_x`,`hand_${s}_y`,`hand_${s}_open`,`hand_${s}_spread`,`pinch_${s}`]
+          .forEach(k => bus.decay(k));
         ['thumb','index','middle','ring','pinky'].forEach(n => bus.decay(`finger_${s}_${n}`));
       }
     });
@@ -999,7 +1011,7 @@ const mapper = (() => {
       this.add('filter_freq', 'hand_L_open', 300, 8000, 'quad');
       this.add('osc_mix',     'hand_R_open',  0,     1, 'linear');
       this.add('lfo_depth',   'elbow_L',      0,     1, 'linear');
-      this.add('volume',      'shoulder_y_L', 0,   0.9, 'linear');
+      this.add('volume',      'pinch_R',       0,   0.9, 'linear');
     }
   };
 })();
