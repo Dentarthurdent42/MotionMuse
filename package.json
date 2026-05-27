@@ -1,0 +1,12 @@
+{
+  "name": "music-maker",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test:ui": "node tests/ui-ux/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.54.0",
+    "playwright": "^1.52.0"
+  }
+}
