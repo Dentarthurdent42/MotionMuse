@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BioSignal → Sound</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Space+Grotesk:wght@300;400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<div id="app">
+  <!-- ── Header ──────────────────────────────────────────── -->
+  <header id="header">
+    <div class="logo">BIO<span>SIGNAL</span> → SOUND</div>
+    <div class="hstatus">
+      <div class="dot" id="cv-dot"></div>
+      <span id="status-lbl">READY</span>
+    </div>
+    <div class="hsep"></div>
+    <button class="btn" id="cv-btn">START CAMERA</button>
+    <button class="btn purple" id="audio-btn">AUDIO OFF</button>
+  </header>
+
+  <!-- ── Main ───────────────────────────────────────────── -->
+  <div id="main">
+
+    <!-- LEFT: Input source + Signals -->
+    <div class="panel" style="display:grid;grid-template-rows:auto auto 1fr;">
+      <div class="src-tabs">
+        <div class="src-tab active">CV</div>
+        <div class="src-tab future" data-soon="Coming: EEG via Web Serial">EEG</div>
+        <div class="src-tab future" data-soon="Coming: EMG sensor input">EMG</div>
+        <div class="src-tab future" data-soon="Coming: EKG / heart rate">EKG</div>
+      </div>
+
+      <div id="video-wrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div id="latency-bar">
+          <span>FPS <b id="lat-fps">—</b></span>
+          <span>HAND <b id="lat-hand">—</b></span>
+          <span>POSE <b id="lat-pose">—</b></span>
+          <span>TOTAL <b id="lat-total">—</b></span>
+        </div>
+        <div id="cam-placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+          </svg>
+          <span>START CAMERA</span>
+        </div>
+      </div>
+
+      <div class="panel" style="border-top:1px solid var(--border);">
+        <div class="ph">
+          SIGNALS
+          <span style="margin-left:auto;font-size:8px;color:var(--border2);">CLICK TO COPY KEY</span>
+        </div>
+        <div class="pb" id="sig-list">
+          <div style="padding:20px 10px;color:var(--border2);font-size:10px;text-align:center;">
+            Start camera to see signals
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIDDLE: Mapper -->
+    <div class="panel" style="display:grid;grid-template-rows:auto auto 1fr auto;">
+      <div class="ph">SIGNAL → AUDIO MAPPER</div>
+      <div class="mapper-thead">
+        <span>AUDIO PARAM</span>
+        <span>SIGNAL</span>
+        <span>OUT MIN</span>
+        <span>OUT MAX</span>
+        <span>CURVE</span>
+        <span></span>
+      </div>
+      <div id="mapper-rows"></div>
+      <div class="mapper-footer">
+        <button class="btn" id="add-map-btn" style="flex:1">+ ADD MAPPING</button>
+        <button class="btn" id="preset-btn">PRESET</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Audio engine -->
+    <div class="panel">
+      <div class="ph">AUDIO ENGINE</div>
+      <canvas id="viz-canvas"></canvas>
+      <div class="pb" id="audio-panel">
+        <div style="padding:16px 10px;color:var(--border2);font-size:10px;text-align:center;">
+          Enable audio to begin
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
