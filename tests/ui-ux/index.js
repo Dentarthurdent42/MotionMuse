@@ -16,7 +16,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 function startServer() {
   return new Promise((resolve) => {
     const server = createServer((req, res) => {
-      const filePath = join(ROOT, req.url === '/' ? 'biosignal-sound.html' : req.url);
+      const filePath = join(ROOT, req.url === '/' ? 'index.html' : req.url);
       try {
         const body = readFileSync(filePath);
         res.writeHead(200, { 'Content-Type': MIME[extname(filePath)] || 'application/octet-stream' });
@@ -124,7 +124,7 @@ Return ONLY valid JSON matching this exact schema — no markdown, no prose outs
 
 Evaluate these criteria on mobile viewports; be lenient on desktop (1280+):
 • Touch targets — interactive elements must be ≥44 px tall/wide; flag anything smaller
-• Text legibility — body text <11 px or low contrast deserves at least a warning
+• Text legibility — body text <11 px is an error; low contrast text (contrast ratio <4.5:1 for normal text, <3:1 for large text) is an error
 • Horizontal overflow — flag any content clipped or requiring horizontal scroll
 • Information density — flag if content is too cramped for fingers to use accurately
 • Layout integrity — does the grid/flex layout break at this viewport?
