@@ -52,6 +52,7 @@ export const mapper = (() => {
       this.add('filter_freq', 'hand_L_open', 300,  8000, 'quad');
       this.add('osc_mix',     'hand_R_open',   0,     1, 'linear');
       this.add('lfo_depth',   'elbow_L',       0,     1, 'linear');
+      this.add('reverb_mix',  'hand_R_z',      0,   0.6, 'linear');
       this.add('volume',      'pinch_R',        0,   0.9, 'linear');
     },
   };

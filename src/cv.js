@@ -1,6 +1,7 @@
 import { bus }                                             from './bus.js';
 import { push30, dist3, angleBetween, handOpenness, fingerExt } from './math.js';
 import { setStatus }                                        from './ui/status.js';
+import { depthSource }                                      from './depth.js';
 
 // Pinch distance normalised against this max (metres); beyond → 1.0
 const PINCH_MAX = 0.10;
@@ -194,11 +195,14 @@ export const cvSource = {
         ['thumb','index','middle','ring','pinky'].forEach(n => bus.decay(`finger_${s}_${n}`));
       }
     });
+
+    // Distance-from-camera (LiDAR if active, else monocular size estimate).
+    depthSource.feedHands(found);
   },
 
   // ── Signal extraction: pose ──────────────────────────────────────────
   processPose(r) {
-    if (!r.landmarks?.length) return;
+    if (!r.landmarks?.length) { depthSource.feedPose(null); return; }
     const lm = r.landmarks[0];
     // Indices: 0=nose, 11=Lshoulder, 12=Rshoulder, 13=Lelbow,
     //          14=Relbow, 15=Lwrist, 16=Rwrist, 23=Lhip, 24=Rhip
@@ -226,6 +230,9 @@ export const cvSource = {
       bus.update('head_y', 1 - nose.y);
       bus.update('nose_y', nose.y); // raw: high = head down
     }
+
+    // Torso distance-from-camera (LiDAR if active, else shoulder-span estimate).
+    depthSource.feedPose(lm);
   },
 
   // ── Canvas skeleton overlay ──────────────────────────────────────────

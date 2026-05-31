@@ -1,4 +1,5 @@
 import { cvSource }                        from './cv.js';
+import { depthSource }                      from './depth.js';
 import { engine }                           from './engine.js';
 import { mapper }                           from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
@@ -46,6 +47,22 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
   }
 });
 
+// ── LiDAR / optical depth toggle ─────────────────────────────────────────
+const depthBtn = document.getElementById('depth-btn');
+depthSource.lidarSupported().then(ok => {
+  if (!ok) {
+    depthBtn.classList.add('unsupported');
+    depthBtn.title = 'WebXR optical depth sensing not available on this browser/device';
+  }
+});
+depthBtn.addEventListener('click', async () => {
+  depthBtn.disabled = true;
+  await depthSource.toggleLidar();
+  depthBtn.classList.toggle('on', depthSource.lidarActive);
+  depthBtn.textContent = depthSource.lidarActive ? '◈ LiDAR ON' : '◈ LiDAR';
+  depthBtn.disabled = false;
+});
+
 // ── Audio button ─────────────────────────────────────────────────────────
 document.getElementById('audio-btn').addEventListener('click', async () => {
   const btn = document.getElementById('audio-btn');
@@ -78,5 +95,6 @@ document.getElementById('preset-btn').addEventListener('click', () => {
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────
+depthSource.init();   // register depth signals so they appear in the panel
 renderMapper();
 loop();
