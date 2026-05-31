@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "test:contrast": "node tests/contrast/index.js",
     "test:ui": "node tests/ui-ux/index.js"
   },
   "dependencies": {

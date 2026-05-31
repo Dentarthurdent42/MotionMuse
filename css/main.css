@@ -7,7 +7,7 @@
   --border:   #1c1c2e;
   --border2:  #252540;
   --text:     #b8c0d8;
-  --dim:      #454870;
+  --dim:      #8890c0;
   --faint:    #1e2035;
   --cyan:     #00e5cc;
   --cyan-dim: #00e5cc33;
@@ -205,7 +205,7 @@ html, body {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 8px; color: var(--border2);
+  gap: 8px; color: var(--dim);
   font-size: 10px; letter-spacing: 1px;
 }
 #cam-placeholder svg { width: 32px; height: 32px; opacity: 0.3; }
@@ -213,7 +213,7 @@ html, body {
 /* ── Signal list ─────────────────────────────────────────── */
 .sig-group {
   font-size: 8px; letter-spacing: 2px;
-  color: var(--border2);
+  color: var(--dim);
   padding: 8px 10px 3px;
   text-transform: uppercase;
   border-top: 1px solid var(--border);
@@ -267,7 +267,7 @@ html, body {
   border-bottom: 1px solid var(--border);
   font-size: 8px;
   letter-spacing: 1.5px;
-  color: var(--border2);
+  color: var(--dim);
   text-transform: uppercase;
   flex-shrink: 0;
 }
@@ -317,7 +317,7 @@ option { background: var(--panel); }
 .rm-btn {
   background: none;
   border: 1px solid transparent;
-  color: var(--border2);
+  color: var(--dim);
   cursor: pointer;
   font-size: 12px;
   line-height: 1;
@@ -351,7 +351,7 @@ option { background: var(--panel); }
 .audio-section-label {
   font-size: 8px;
   letter-spacing: 2px;
-  color: var(--border2);
+  color: var(--dim);
   text-transform: uppercase;
   margin-bottom: 6px;
 }
