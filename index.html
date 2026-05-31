@@ -37,11 +37,14 @@
       <div id="video-wrap">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay"></canvas>
+        <button id="depth-btn" class="depth-toggle"
+                title="Use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth">◈ LiDAR</button>
         <div id="latency-bar">
           <span>FPS <b id="lat-fps">—</b></span>
           <span>HAND <b id="lat-hand">—</b></span>
           <span>POSE <b id="lat-pose">—</b></span>
           <span>TOTAL <b id="lat-total">—</b></span>
+          <span id="lat-depth-wrap" style="display:none">DEPTH <b id="lat-depth">—</b></span>
         </div>
         <div id="cam-placeholder">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">

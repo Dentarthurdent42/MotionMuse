@@ -39,6 +39,33 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 | `torso_tilt` | Lateral torso lean (−1 = left, +1 = right) |
 | `head_x` / `head_y` | Nose position |
 | `nose_y` | Raw nose Y (high = head dipped) |
+| `hand_L_z` / `hand_R_z` | Hand **distance from camera** (0 = far, 1 = near) |
+| `hand_dz` | Depth difference between hands (push one hand forward) |
+| `body_z` | Torso distance from camera |
+| `depth_near` | Nearest surface in the scene, in metres (LiDAR only) |
+| `depth_center` | Depth at frame centre, in metres (LiDAR only) |
+
+## Optical depth inputs (LiDAR / ToF)
+
+Out of the box, depth-from-camera is estimated monocularly from MediaPipe
+landmarks — apparent hand size and shoulder span. It needs no extra hardware
+and works with any webcam, but it is relative and scale-ambiguous.
+
+For **true metric depth**, the `◈ LiDAR` toggle (top-right of the camera view)
+opts into the [WebXR Depth Sensing API](https://immersive-web.github.io/depth-sensing/),
+which exposes the per-pixel depth map produced by an optical depth sensor —
+Apple's **LiDAR** on iOS AR-capable devices, or **ToF** cameras on ARCore
+Android. When active, per-landmark depth is sampled directly from the depth map
+and transparently replaces the monocular estimate behind the same `*_z` signal
+keys, so existing mappings keep working — just more accurately, including in
+low-texture and low-light scenes. Two extra metric signals (`depth_near`,
+`depth_center`, in metres) are also published.
+
+The toggle is feature-detected: it dims when `immersive-ar` + `depth-sensing`
+is unavailable (e.g. desktop browsers, iOS Safari without WebXR), and the app
+silently falls back to the monocular estimate. The pluggable backend lives in
+`src/depth.js` — additional optical sources (stereo, depth webcams via a
+`getUserMedia` depth track) can be added there behind the same signal keys.
 
 ## Adding a new signal source
 
@@ -58,6 +85,7 @@ src/
   engine.js         Web Audio API synthesiser
   mapper.js         Signal → audio parameter routing and curves
   cv.js             MediaPipe Hand + Pose source (includes latency HUD)
+  depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
   main.js           Event handlers and RAF entry point
   ui/
     status.js       Status dot and toast notifications
