@@ -21,6 +21,26 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` and `PoseLandmarker` on every video frame, extracts ~30 signals per frame, and writes them into the bus.
 - **Mapper** (`src/mapper.js`): each mapping row takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick.
 - **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter and a convolution reverb, all driven by the Web Audio API with 25 ms parameter smoothing.
+- **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
+
+## Pitch quantisation (scales & tuning)
+
+By default the oscillators glide continuously. The **Pitch Quantize** panel
+(top of the Audio Engine column) snaps both oscillator frequencies onto the
+nearest note of a chosen **root**, **scale** and **tuning system**, so gestures
+play *in key* instead of sliding microtonally.
+
+- **Scales:** chromatic, major, natural/harmonic minor, dorian, phrygian,
+  mixolydian, major/minor pentatonic, blues, whole-tone.
+- **Tunings:** equal temperament (12-TET), just intonation (5-limit),
+  Pythagorean. Tunings are defined as the 12 interval ratios from the root, and
+  scales pick which degrees are playable — so any scale renders in any tuning
+  (e.g. *C minor, just intonation* or *major pentatonic, Pythagorean*).
+
+A live readout shows which notes the oscillators are currently snapped to. The
+toggle defaults to **OFF** (continuous), so existing behaviour is unchanged
+until you opt in. Quantisation is applied centrally in `engine.set()`, so it
+affects both signal-driven mappings and manual slider moves.
 
 ## Available signals
 
@@ -83,6 +103,7 @@ src/
   bus.js            Signal registry
   math.js           Geometry helpers (dist3, angleBetween, handOpenness, fingerExt)
   engine.js         Web Audio API synthesiser
+  scale.js          Scale + tuning pitch quantiser
   mapper.js         Signal → audio parameter routing and curves
   cv.js             MediaPipe Hand + Pose source (includes latency HUD)
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
@@ -93,6 +114,8 @@ src/
     mapper-ui.js    Mapper rows (render + live bars)
     audio-ui.js     Audio panel (waveform buttons, sliders)
     viz.js          Waveform oscilloscope canvas
+scripts/
+  mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
 tests/
   ui-ux/
     index.js        Playwright + Claude Vision UI/UX regression harness
@@ -111,6 +134,35 @@ python3 -m http.server 8080
 ```
 
 Then open `http://localhost:8080`.
+
+## Testing on mobile
+
+The camera and the WebXR LiDAR depth path both require a **secure context**, so
+a phone can't load the app over `http://<lan-ip>` — it needs HTTPS. Rather than
+cutting a Netlify deploy preview for every change, serve the repo straight to
+your phone over the local network:
+
+```bash
+npm run serve:mobile            # HTTPS on https://<your-lan-ip>:8443
+npm run serve:mobile -- 9000    # …or a custom port
+```
+
+The script generates a self-signed certificate once (into `.cert/`, gitignored)
+covering `localhost` and every LAN address, prints the URLs, and — if
+`qrcode-terminal` is installed (`npm i -D qrcode-terminal`) — a scannable QR
+code. Connect the phone to the **same Wi-Fi**, open the URL, and accept the
+certificate warning once (Android Chrome: *Advanced → proceed*; iOS: install +
+trust the profile under *Settings → General → VPN & Device Management*).
+
+Notes:
+- **WebXR LiDAR depth** needs **Android Chrome + ARCore**. iOS Safari has no
+  WebXR, so on iPhone the `◈ LiDAR` toggle stays dimmed and the app falls back
+  to the monocular depth estimate — the camera, hand/pose tracking and all
+  other signals still work for on-device testing.
+- For a **zero-warning trusted URL** (handy for iOS), tunnel the local server
+  instead — e.g. `npx localtunnel --port 8443` or `cloudflared tunnel --url
+  https://localhost:8443` — or host the static site on **GitHub Pages** for a
+  stable HTTPS URL that scales without per-deploy limits.
 
 ## UI/UX tests
 

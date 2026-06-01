@@ -375,6 +375,20 @@ option { background: var(--panel); }
 .wave-btns {
   display: flex; gap: 3px;
 }
+.scale-grid {
+  display: grid;
+  grid-template-columns: 0.7fr 1.3fr 1.3fr;
+  gap: 4px;
+}
+.quant-notes {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+  min-height: 11px;
+}
 .wave-btn {
   flex: 1;
   padding: 3px 0;

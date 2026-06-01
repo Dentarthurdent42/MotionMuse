@@ -1,6 +1,13 @@
+import { makeQuantizer } from './scale.js';
+
 export const engine = (() => {
   let ctx, analyser, osc1, osc2, osc1g, osc2g, filt, lfo, lfog, revb, revgain, drygain, mastg;
   let started = false;
+
+  // Pitch quantisation: snap oscillator frequencies onto a scale + tuning.
+  const FREQ_KEYS = new Set(['osc1_freq', 'osc2_freq']);
+  let tuning = { enabled: false, root: 'C', scale: 'chromatic', system: 'equal (12-TET)' };
+  let quant  = makeQuantizer({ root: tuning.root, scale: tuning.scale, tuning: tuning.system });
 
   // Audio parameter definitions — name, display label, min, max, default value
   const PARAMS = {
@@ -71,6 +78,7 @@ export const engine = (() => {
   function set(key, raw) {
     const p = PARAMS[key];
     if (!p) return;
+    if (tuning.enabled && FREQ_KEYS.has(key)) raw = quant.quantize(raw);
     p.val = Math.max(p.min, Math.min(p.max, raw));
     if (!started) return;
     const t = ctx.currentTime, sm = 0.025; // 25 ms smoothing
@@ -95,6 +103,19 @@ export const engine = (() => {
     }
   }
 
+  function setTuning(partial) {
+    tuning = { ...tuning, ...partial };
+    quant  = makeQuantizer({ root: tuning.root, scale: tuning.scale, tuning: tuning.system });
+    // Re-apply current oscillator pitches so a scale/root change is audible at once.
+    set('osc1_freq', PARAMS.osc1_freq.val);
+    set('osc2_freq', PARAMS.osc2_freq.val);
+  }
+  function getTuning() { return { ...tuning }; }
+  // Snapped note name for a frequency param, or null when quantisation is off.
+  function noteFor(key) {
+    return (tuning.enabled && FREQ_KEYS.has(key)) ? quant.noteName(PARAMS[key].val) : null;
+  }
+
   function setOsc1Type(t)   { if (osc1) osc1.type = t; }
   function setOsc2Type(t)   { if (osc2) osc2.type = t; }
   function setFilterType(t) { if (filt) filt.type = t; }
@@ -111,6 +132,7 @@ export const engine = (() => {
   return {
     PARAMS,
     start, set, stop,
+    setTuning, getTuning, noteFor,
     setOsc1Type, setOsc2Type, setFilterType,
     getWaveform,
     get started() { return started; },
