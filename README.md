@@ -124,6 +124,29 @@ ANTHROPIC_API_KEY=sk-ant-… npm run test:ui
 
 Without `ANTHROPIC_API_KEY` the screenshots are still saved but LLM evaluation is skipped (CI exits 0).
 
+## Hosting
+
+No build step — serve the repo root as static files over HTTPS.
+
+### Cloudflare Pages (recommended)
+
+1. Go to [pages.cloudflare.com](https://pages.cloudflare.com), connect GitHub, select this repo
+2. Build command: *(leave blank)*
+3. Publish directory: `.`
+4. Deploy — you'll get a free `*.pages.dev` URL
+
+`_redirects` and `_headers` at the repo root are picked up automatically.
+
+### GitHub Pages
+
+Enable GitHub Pages in the repo settings (**Settings → Pages → GitHub Actions**). The included `.github/workflows/deploy.yml` deploys on every push to `main`. The site will be at `https://<user>.github.io/<repo>/`.
+
+Note: GitHub Pages doesn't honour `_headers`, so the service worker is served without `Cache-Control: no-cache`. Chrome re-validates SW files by default regardless, so this is not a practical problem.
+
+### Other static hosts (Render, Surge, etc.)
+
+Serve the repo root. If the host supports Netlify-style redirect files, `_redirects` handles the SPA fallback and the legacy URL redirect automatically.
+
 ## Browser requirements
 
 - Chromium 90+, Firefox 90+, Safari 15.4+ (WebGL required for MediaPipe GPU delegate)

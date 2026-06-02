@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BioSignal → Sound</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#00e5cc">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BioSignal">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Space+Grotesk:wght@300;400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/main.css">
@@ -26,7 +33,7 @@
   <div id="main">
 
     <!-- LEFT: Input source + Signals -->
-    <div class="panel" style="display:grid;grid-template-rows:auto auto 1fr;">
+    <div class="panel panel-src">
       <div class="src-tabs">
         <div class="src-tab active">CV</div>
         <div class="src-tab future" data-soon="Coming: EEG via Web Serial">EEG</div>
@@ -68,7 +75,7 @@
     </div>
 
     <!-- MIDDLE: Mapper -->
-    <div class="panel" style="display:grid;grid-template-rows:auto auto 1fr auto;">
+    <div class="panel panel-map">
       <div class="ph">SIGNAL → AUDIO MAPPER</div>
       <div class="mapper-thead">
         <span>AUDIO PARAM</span>
@@ -102,5 +109,10 @@
 <div id="toast"></div>
 
 <script type="module" src="src/main.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js');
+  }
+</script>
 </body>
 </html>

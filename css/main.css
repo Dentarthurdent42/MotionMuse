@@ -446,6 +446,78 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   transform: translateX(-50%) translateY(0);
 }
 
+/* ── Panel grid layouts (desktop) ───────────────────────── */
+.panel-src {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+}
+
+.panel-map {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+}
+
+/* ── Mobile ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Allow vertical scroll */
+  html, body { height: auto; overflow-x: hidden; overflow-y: auto; }
+
+  #app {
+    height: auto;
+    min-height: 100dvh;
+    grid-template-rows: 48px auto;
+  }
+
+  /* Header: compact */
+  #header { padding: 0 10px; gap: 8px; }
+  .logo   { font-size: 11px; }
+  .hsep   { display: none; }
+  #status-lbl { display: none; }
+  .btn    { padding: 6px 10px; font-size: 9px; min-height: 36px; }
+
+  /* Main: single column */
+  #main {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    overflow: visible;
+  }
+
+  /* All panels: natural height */
+  .panel, .panel-src, .panel-map {
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+    height: auto;
+  }
+
+  .pb { overflow: visible; height: auto; }
+
+  /* Cap the signal list so it doesn't eat the page */
+  #sig-list { max-height: 260px; overflow-y: auto; }
+
+  /* Mapper rows: keep a scroll cap */
+  #mapper-rows { max-height: 240px; }
+
+  /* Simplified mapper table: param | signal | × */
+  .mapper-thead,
+  .map-row { grid-template-columns: 1fr 1fr 28px; }
+
+  .mapper-thead span:nth-child(3),
+  .mapper-thead span:nth-child(4),
+  .mapper-thead span:nth-child(5),
+  .m-min, .m-max, .m-curve { display: none; }
+
+  /* Touch-friendly targets (≥44 px) */
+  .src-tab  { padding: 10px 0; }
+  .sig-row  { padding: 8px 10px; }
+  .map-row  { padding: 8px 10px; }
+  .wave-btn { padding: 8px 0; }
+  .ctrl-row { padding: 5px 0; }
+
+  /* Slightly larger range thumbs */
+  input[type="range"]::-webkit-slider-thumb { width: 14px; height: 14px; }
+}
+
 /* ── Misc ────────────────────────────────────────────────── */
 .note-badge {
   font-size: 8px; color: var(--amber); margin-left: auto;

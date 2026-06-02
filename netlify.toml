@@ -1,9 +1,0 @@
-[[redirects]]
-  from   = "/biosignal-sound.html"
-  to     = "/"
-  status = 301
-
-[[redirects]]
-  from   = "/*"
-  to     = "/index.html"
-  status = 200
