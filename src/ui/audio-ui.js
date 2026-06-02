@@ -1,5 +1,9 @@
-import { engine } from '../engine.js';
-import { mapper } from '../mapper.js';
+import { engine }                    from '../engine.js';
+import { mapper }                    from '../mapper.js';
+import { SCALES, TUNINGS, NOTE_NAMES } from '../scale.js';
+
+const opts = (arr, sel) =>
+  arr.map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`).join('');
 
 export function renderAudioPanel() {
   const panel = document.getElementById('audio-panel');
@@ -16,7 +20,22 @@ export function renderAudioPanel() {
   const waveBtn = (type, label, osc) =>
     `<div class="wave-btn" data-type="${type}" data-osc="${osc}">${label}</div>`;
 
+  const t = engine.getTuning();
+
   panel.innerHTML = `
+    <div class="audio-section">
+      <div class="audio-section-label" style="display:flex;align-items:center;">
+        Pitch Quantize
+        <div class="wave-btn${t.enabled ? ' on' : ''}" id="quant-toggle"
+             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${t.enabled ? 'ON' : 'OFF'}</div>
+      </div>
+      <div class="scale-grid">
+        <select id="scale-root"   title="Root note">${opts(NOTE_NAMES, t.root)}</select>
+        <select id="scale-name"   title="Scale">${opts(Object.keys(SCALES), t.scale)}</select>
+        <select id="scale-tuning" title="Tuning system">${opts(Object.keys(TUNINGS), t.system)}</select>
+      </div>
+      <div id="quant-notes" class="quant-notes">${t.enabled ? '' : '—'}</div>
+    </div>
     <div class="audio-section">
       <div class="audio-section-label">Osc 1 Waveform</div>
       <div class="wave-btns" id="osc1-waves">
@@ -77,6 +96,22 @@ export function renderAudioPanel() {
     });
   });
 
+  // Pitch quantisation controls
+  const quantToggle = document.getElementById('quant-toggle');
+  quantToggle.addEventListener('click', () => {
+    const on = !engine.getTuning().enabled;
+    engine.setTuning({ enabled: on });
+    quantToggle.classList.toggle('on', on);
+    quantToggle.textContent = on ? 'ON' : 'OFF';
+    if (!on) document.getElementById('quant-notes').textContent = '—';
+  });
+  document.getElementById('scale-root')
+    .addEventListener('change', e => engine.setTuning({ root: e.target.value }));
+  document.getElementById('scale-name')
+    .addEventListener('change', e => engine.setTuning({ scale: e.target.value }));
+  document.getElementById('scale-tuning')
+    .addEventListener('change', e => engine.setTuning({ system: e.target.value }));
+
   document.getElementById('osc1-waves').querySelector('[data-type="sine"]').classList.add('on');
   document.getElementById('osc2-waves').querySelector('[data-type="triangle"]').classList.add('on');
   document.getElementById('filt-types').querySelector('[data-ftype="lowpass"]').classList.add('on');
@@ -92,4 +127,11 @@ export function updateAudioSliders() {
     if (slider) slider.value = p.val;
     if (valEl)  valEl.textContent = p.val.toFixed(p.unit === 'Hz' ? 0 : 2);
   });
+
+  // Live readout of the notes the oscillators are currently snapped to.
+  const notesEl = document.getElementById('quant-notes');
+  if (notesEl && engine.getTuning().enabled) {
+    const txt = `OSC1 ${engine.noteFor('osc1_freq')}  ·  OSC2 ${engine.noteFor('osc2_freq')}`;
+    if (notesEl.textContent !== txt) notesEl.textContent = txt;
+  }
 }
