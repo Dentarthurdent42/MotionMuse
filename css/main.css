@@ -30,7 +30,8 @@ html, body {
 #app {
   display: grid;
   grid-template-rows: 40px 1fr;
-  height: 100vh;
+  height: 100vh;       /* fallback for browsers without dvh */
+  height: 100dvh;      /* visible viewport, excludes mobile browser UI */
 }
 
 #header {
@@ -344,6 +345,8 @@ option { background: var(--panel); }
 
 .mapper-footer {
   padding: 8px 10px;
+  /* Keep the action buttons clear of the iOS/iPadOS home indicator */
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
   display: flex;
   gap: 6px;
