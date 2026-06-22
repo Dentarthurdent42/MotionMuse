@@ -343,11 +343,9 @@ option { background: var(--panel); }
 }
 .rm-btn:hover { color: var(--red); border-color: var(--red); }
 
-.mapper-footer {
+.mapper-toolbar {
   padding: 8px 10px;
-  /* Keep the action buttons clear of the iOS/iPadOS home indicator */
-  padding-bottom: calc(8px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   display: flex;
   gap: 6px;
   flex-shrink: 0;
@@ -471,7 +469,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
 .panel-map {
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto auto 1fr;
 }
 
 /* ── Mobile ──────────────────────────────────────────────── */
