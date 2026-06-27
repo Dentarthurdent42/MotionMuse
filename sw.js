@@ -1,4 +1,4 @@
-const CACHE = 'biosignal-v2';
+const CACHE = 'biosignal-v3';
 
 // Derive base from the SW's own scope so paths work whether the app is
 // served from / (Cloudflare Pages, GitHub Pages custom domain) or a
@@ -45,7 +45,10 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Cache-first for local assets; network-only for CDN (MediaPipe models, fonts)
+// Stale-while-revalidate for local assets; network-only for CDN (MediaPipe
+// models, fonts). Serving from cache keeps loads instant and offline-capable,
+// while the background fetch refreshes the cache so a new deploy propagates on
+// the next load — no manual cache-version bump required for every change.
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
@@ -55,16 +58,20 @@ self.addEventListener('fetch', e => {
     return;
   }
 
+  // Only GET requests are cacheable
+  if (e.request.method !== 'GET') return;
+
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(res => {
-        if (res.ok && e.request.method === 'GET') {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return res;
-      });
+    caches.open(CACHE).then(async cache => {
+      const cached = await cache.match(e.request);
+      const network = fetch(e.request)
+        .then(res => {
+          if (res.ok) cache.put(e.request, res.clone());
+          return res;
+        })
+        .catch(() => cached);
+      // Serve cache immediately when present; always revalidate in the background.
+      return cached || network;
     })
   );
 });
