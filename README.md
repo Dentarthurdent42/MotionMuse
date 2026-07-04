@@ -19,6 +19,7 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` and `PoseLandmarker` on every video frame, extracts ~30 signals per frame, and writes them into the bus.
+- **Landmark conditioning** (`src/filter.js`): every skeleton passes through a median-of-3 spike filter, a One Euro filter (heavy smoothing at rest, low lag during fast gestures) and plausibility gates — low-visibility joints hold their last position, and bones that suddenly change length reject the misdetected joint. All CPU-side scalar math (microseconds per frame); the GPU detection models are untouched.
 - **Mapper** (`src/mapper.js`): each mapping row takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick.
 - **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter and a convolution reverb, all driven by the Web Audio API with 25 ms parameter smoothing.
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
@@ -52,7 +53,7 @@ affects both signal-driven mappings and manual slider moves.
 | `hand_L_spread` / `hand_R_spread` | Thumb-to-pinky spread |
 | `pinch_L` / `pinch_R` | Thumb-to-index world-space distance (camera-independent) |
 | `finger_L_thumb` … `finger_R_pinky` | Individual finger extension (0–1) |
-| `elbow_L` / `elbow_R` | Elbow joint angle in degrees (0–180) |
+| `elbow_L` / `elbow_R` | Elbow joint angle in degrees — **self-calibrating**: the observed per-user range (nobody's elbow reaches 0° or 180°) maps to the full control range once ≥25° of motion has been seen |
 | `shoulder_y_L` / `shoulder_y_R` | Shoulder height |
 | `shoulder_width` | Distance between shoulders |
 | `arm_raise_L` / `arm_raise_R` | Arm raise (0 = down, 1 = fully raised) |
@@ -100,7 +101,8 @@ index.html          HTML skeleton
 css/
   main.css          All styles (CSS variables, layout, components)
 src/
-  bus.js            Signal registry
+  bus.js            Signal registry (incl. adaptive per-user range calibration)
+  filter.js         Landmark conditioning (median-of-3, One Euro, plausibility gates)
   math.js           Geometry helpers (dist3, angleBetween, handOpenness, fingerExt)
   engine.js         Web Audio API synthesiser
   scale.js          Scale + tuning pitch quantiser
