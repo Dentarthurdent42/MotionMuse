@@ -36,6 +36,18 @@ export const mapper = (() => {
       if (i >= 0) mappings.splice(i, 1);
     },
 
+    // Plain-object mapping list for save/load (drops the volatile numeric id).
+    serialize() {
+      return mappings.map(({ audioParam, signal, outMin, outMax, curve }) =>
+        ({ audioParam, signal, outMin, outMax, curve }));
+    },
+
+    load(arr) {
+      mappings.length = 0;   // keep the exported array reference intact
+      nextId = 0;
+      (arr || []).forEach(m => this.add(m.audioParam, m.signal, m.outMin, m.outMax, m.curve));
+    },
+
     tick() {
       mappings.forEach(m => {
         if (!m.signal) return;

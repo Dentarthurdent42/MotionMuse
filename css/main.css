@@ -381,6 +381,14 @@ option { background: var(--panel); }
   grid-template-columns: 0.7fr 1.3fr 1.3fr;
   gap: 4px;
 }
+.quant-kbd {
+  display: block;
+  width: 100%;
+  height: 46px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
 .quant-notes {
   margin-top: 6px;
   text-align: center;

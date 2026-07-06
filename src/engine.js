@@ -9,6 +9,10 @@ export const engine = (() => {
   let tuning = { enabled: false, root: 'C', scale: 'chromatic', system: 'equal (12-TET)' };
   let quant  = makeQuantizer({ root: tuning.root, scale: tuning.scale, tuning: tuning.system });
 
+  // Waveform / filter selections. Kept as state (not only on the live nodes)
+  // so they survive save/load and a stop→start cycle.
+  let osc1Type = 'sine', osc2Type = 'triangle', filterType = 'lowpass';
+
   // Audio parameter definitions — name, display label, min, max, default value
   const PARAMS = {
     osc1_freq:   { label: 'Osc1 Freq',     min: 40,   max: 2000,  val: 220,  unit: 'Hz' },
@@ -39,11 +43,11 @@ export const engine = (() => {
     ctx      = new AudioContext();
     analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
 
-    osc1 = ctx.createOscillator(); osc1.type = 'sine';
-    osc2 = ctx.createOscillator(); osc2.type = 'triangle';
-    osc1g = ctx.createGain(); osc1g.gain.value = 1;
-    osc2g = ctx.createGain(); osc2g.gain.value = 0;
-    filt  = ctx.createBiquadFilter(); filt.type = 'lowpass';
+    osc1 = ctx.createOscillator(); osc1.type = osc1Type;
+    osc2 = ctx.createOscillator(); osc2.type = osc2Type;
+    osc1g = ctx.createGain(); osc1g.gain.value = 1 - PARAMS.osc_mix.val;
+    osc2g = ctx.createGain(); osc2g.gain.value = PARAMS.osc_mix.val;
+    filt  = ctx.createBiquadFilter(); filt.type = filterType;
     lfo   = ctx.createOscillator(); lfo.type = 'sine';
     lfog  = ctx.createGain(); lfog.gain.value = 0;
     revb  = ctx.createConvolver(); revb.buffer = makeImpulse(ctx);
@@ -116,9 +120,27 @@ export const engine = (() => {
     return (tuning.enabled && FREQ_KEYS.has(key)) ? quant.noteName(PARAMS[key].val) : null;
   }
 
-  function setOsc1Type(t)   { if (osc1) osc1.type = t; }
-  function setOsc2Type(t)   { if (osc2) osc2.type = t; }
-  function setFilterType(t) { if (filt) filt.type = t; }
+  function setOsc1Type(t)   { osc1Type = t; if (osc1) osc1.type = t; }
+  function setOsc2Type(t)   { osc2Type = t; if (osc2) osc2.type = t; }
+  function setFilterType(t) { filterType = t; if (filt) filt.type = t; }
+  function getOsc1Type()    { return osc1Type; }
+  function getOsc2Type()    { return osc2Type; }
+  function getFilterType()  { return filterType; }
+
+  // ── Full audio-engine state for save/load ────────────────────────────
+  function snapshot() {
+    const params = {};
+    for (const k in PARAMS) params[k] = PARAMS[k].val;
+    return { params, tuning: { ...tuning }, osc1Type, osc2Type, filterType };
+  }
+  function restore(s) {
+    if (!s) return;
+    if (s.osc1Type) setOsc1Type(s.osc1Type);
+    if (s.osc2Type) setOsc2Type(s.osc2Type);
+    if (s.filterType) setFilterType(s.filterType);
+    if (s.tuning) setTuning(s.tuning);
+    if (s.params) for (const k in s.params) if (PARAMS[k]) set(k, s.params[k]);
+  }
 
   function getWaveform() {
     if (!analyser) return null;
@@ -134,6 +156,8 @@ export const engine = (() => {
     start, set, stop,
     setTuning, getTuning, noteFor,
     setOsc1Type, setOsc2Type, setFilterType,
+    getOsc1Type, getOsc2Type, getFilterType,
+    snapshot, restore,
     getWaveform,
     get started() { return started; },
   };

@@ -38,10 +38,23 @@ play *in key* instead of sliding microtonally.
   scales pick which degrees are playable — so any scale renders in any tuning
   (e.g. *C minor, just intonation* or *major pentatonic, Pythagorean*).
 
-A live readout shows which notes the oscillators are currently snapped to. The
-toggle defaults to **OFF** (continuous), so existing behaviour is unchanged
-until you opt in. Quantisation is applied centrally in `engine.set()`, so it
-affects both signal-driven mappings and manual slider moves.
+While quantisation is on, a **piano keyboard** under the selectors shows the
+scale at a glance: in-scale notes are tinted (the root most strongly) and two
+coloured dots mark where **osc 1** (purple) and **osc 2** (cyan) are currently
+snapped, moving live as you play. The note readout beneath it is colour-matched
+to the two dots. The toggle defaults to **OFF** (continuous), so existing
+behaviour is unchanged until you opt in. Quantisation is applied centrally in
+`engine.set()`, so it affects both signal-driven mappings and manual slider moves.
+
+## Saving & loading
+
+**SAVE** (in the mapper toolbar) downloads the entire instrument — every
+mapping plus all audio parameters, waveform/filter choices and the pitch-quantise
+tuning — as a single `.json` file you can keep or share. **LOAD** restores one.
+The current session is also stored in `localStorage`, so your setup returns
+automatically after a reload or PWA relaunch. Serialisation lives in
+`src/preset.js`; `engine.snapshot()`/`restore()` and `mapper.serialize()`/`load()`
+own their respective slices of state.
 
 ## Available signals
 
@@ -107,6 +120,7 @@ src/
   engine.js         Web Audio API synthesiser
   scale.js          Scale + tuning pitch quantiser
   mapper.js         Signal → audio parameter routing and curves
+  preset.js         Save/load of mappings + settings (file + localStorage)
   cv.js             MediaPipe Hand + Pose source (includes latency HUD)
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
   main.js           Event handlers and RAF entry point
