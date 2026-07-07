@@ -38,7 +38,6 @@
         <div class="src-tab active">CV</div>
         <div class="src-tab future" data-soon="Coming: EEG via Web Serial">EEG</div>
         <div class="src-tab future" data-soon="Coming: EMG sensor input">EMG</div>
-        <div class="src-tab future" data-soon="Coming: EKG / heart rate">EKG</div>
       </div>
 
       <div id="video-wrap">
@@ -80,6 +79,9 @@
       <div class="mapper-toolbar">
         <button class="btn" id="add-map-btn" style="flex:1">+ ADD MAPPING</button>
         <button class="btn" id="preset-btn">PRESET</button>
+        <button class="btn" id="save-btn" title="Download all mappings, audio settings and tuning as a file">SAVE</button>
+        <button class="btn" id="load-btn" title="Load mappings and settings from a saved file">LOAD</button>
+        <input type="file" id="load-file" accept="application/json,.json" hidden>
       </div>
       <div class="mapper-thead">
         <span>AUDIO PARAM</span>

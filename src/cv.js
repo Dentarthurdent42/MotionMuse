@@ -2,6 +2,7 @@ import { bus }                                             from './bus.js';
 import { push30, dist3, angleBetween, handOpenness, fingerExt } from './math.js';
 import { setStatus }                                        from './ui/status.js';
 import { depthSource }                                      from './depth.js';
+import { makeSkeletonFilter }                               from './filter.js';
 
 // Pinch distance normalised against this max (metres); beyond → 1.0
 const PINCH_MAX = 0.10;
@@ -29,6 +30,28 @@ export const cvSource = {
   lastTime: -1,
   _lat:     null,
 
+  // Temporal conditioning (median-of-3 + One Euro + plausibility gates),
+  // applied to every skeleton before signal extraction and overlay drawing.
+  // Pose gets bone-length checks on the arm chain (shoulder→elbow→wrist).
+  _filters: {
+    handL:  makeSkeletonFilter(),
+    handR:  makeSkeletonFilter(),
+    handWL: makeSkeletonFilter(),
+    handWR: makeSkeletonFilter(),
+    pose:   makeSkeletonFilter({ bones: [[11, 13], [13, 15], [12, 14], [14, 16]] }),
+  },
+
+  _condition(hr, pr, tSec) {
+    if (hr?.landmarks && hr.handednesses) {
+      hr.handednesses.forEach((h, i) => {
+        const side = h[0].categoryName === 'Left' ? 'L' : 'R';
+        this._filters['hand' + side].apply(hr.landmarks[i], tSec);
+        if (hr.worldLandmarks?.[i]) this._filters['handW' + side].apply(hr.worldLandmarks[i], tSec);
+      });
+    }
+    if (pr?.landmarks?.length) this._filters.pose.apply(pr.landmarks[0], tSec);
+  },
+
   // ── Register all CV signals into the bus ────────────────────────────
   registerSignals() {
     ['L', 'R'].forEach(s => {
@@ -47,8 +70,11 @@ export const cvSource = {
     });
 
     const g2 = 'pose';
-    bus.register('elbow_L',        { label: 'L Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv' });
-    bus.register('elbow_R',        { label: 'R Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv' });
+    // Elbows self-calibrate: nobody's elbow closes to 0° or opens to a flat
+    // 180°, and the usable range differs per user. `adapt` maps the observed
+    // range onto the full control range once ≥25° of motion has been seen.
+    bus.register('elbow_L',        { label: 'L Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', adapt: true, adaptSpan: 25 });
+    bus.register('elbow_R',        { label: 'R Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', adapt: true, adaptSpan: 25 });
     bus.register('shoulder_y_L',   { label: 'L Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv' });
     bus.register('shoulder_y_R',   { label: 'R Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv' });
     bus.register('shoulder_width', { label: 'Shoulder Width',    group: g2, min: 0,  max: 1,   source: 'cv' });
@@ -135,6 +161,7 @@ export const cvSource = {
         const t1 = performance.now();
         const pr = this.pose.detectForVideo(this.video, now);
         const t2 = performance.now();
+        this._condition(hr, pr, now / 1000);
         this.processHands(hr);
         this.processPose(pr);
         this.drawOverlay(hr, pr);

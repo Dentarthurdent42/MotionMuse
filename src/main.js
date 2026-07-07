@@ -7,6 +7,7 @@ import { buildSigPanel, updateSigPanel }    from './ui/signals.js';
 import { renderMapper, updateMapperBars }   from './ui/mapper-ui.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
+import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
 function loop() {
@@ -94,7 +95,43 @@ document.getElementById('preset-btn').addEventListener('click', () => {
   toast('Preset loaded — start camera + audio to play!');
 });
 
+// ── Save / load settings + mappings ──────────────────────────────────────
+// Reflect a freshly loaded state everywhere: mapper rows always, and the audio
+// panel (waveforms, sliders, tuning + keyboard) only while it exists.
+function refreshFromState() {
+  renderMapper();
+  if (engine.started) renderAudioPanel();
+}
+
+document.getElementById('save-btn').addEventListener('click', () => {
+  preset.downloadFile();
+  preset.saveLocal();
+  toast('Settings saved');
+});
+
+const loadFile = document.getElementById('load-file');
+document.getElementById('load-btn').addEventListener('click', () => loadFile.click());
+loadFile.addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    await preset.loadFromFile(file);
+    refreshFromState();
+    preset.saveLocal();
+    toast('Settings loaded');
+  } catch (err) {
+    toast('Could not load: ' + err.message);
+  }
+  loadFile.value = '';   // allow re-loading the same file
+});
+
+// Persist the session so it survives a reload / PWA relaunch.
+const persist = () => preset.saveLocal();
+window.addEventListener('beforeunload', persist);
+window.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
+
 // ── Init ─────────────────────────────────────────────────────────────────
-depthSource.init();   // register depth signals so they appear in the panel
+depthSource.init();       // register depth signals so they appear in the panel
+preset.restoreLocal();    // bring back the last session's mappings + settings
 renderMapper();
 loop();
