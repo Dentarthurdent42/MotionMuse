@@ -48,6 +48,17 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
   }
 });
 
+// ── Tracking model toggle (classic ↔ experimental v2) ───────────────────
+const trackBtn = document.getElementById('track-btn');
+trackBtn.classList.toggle('on', cvSource.conditioning);
+trackBtn.addEventListener('click', () => {
+  const on = !cvSource.conditioning;
+  cvSource.setConditioning(on);
+  trackBtn.classList.toggle('on', on);
+  toast(on ? 'Experimental tracking v2 ON (smoothing + plausibility gates)'
+           : 'Classic tracking (v2 off)');
+});
+
 // ── LiDAR / optical depth toggle ─────────────────────────────────────────
 const depthBtn = document.getElementById('depth-btn');
 depthSource.lidarSupported().then(ok => {
