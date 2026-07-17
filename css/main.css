@@ -206,9 +206,6 @@ html, body {
 .depth-toggle.on { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
 .depth-toggle.unsupported { opacity: .4; }
 .depth-toggle:disabled { opacity: .3; cursor: default; }
-.track-toggle { right: auto; left: 6px; }
-.track-toggle:hover { color: var(--amber); border-color: var(--amber); }
-.track-toggle.on { color: var(--amber); border-color: var(--amber); background: rgba(240,165,0,0.12); }
 #latency-bar {
   position: absolute; bottom: 0; left: 0; right: 0;
   background: rgba(0,0,0,0.55);
