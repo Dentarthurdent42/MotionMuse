@@ -11,6 +11,20 @@ import { bus } from './bus.js';
 const EAR_R = 234, EAR_L = 454;   // subject's right / left
 // Iris centres (indices 468..477 are the 10 iris points).
 const IRIS_R = 468, IRIS_L = 473;
+// Cheek centres (drive cheek_puff / cheek_squint signals).
+const CHEEK_R = 205, CHEEK_L = 425;
+
+// Canonical MediaPipe FaceMesh contours (ordered so each traces its feature).
+const CONTOURS = {
+  oval:   [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109],
+  browR:  [70,63,105,66,107],
+  browL:  [300,293,334,296,336],
+  eyeR:   [33,246,161,160,159,158,157,173,133,155,154,153,145,144,163,7],
+  eyeL:   [263,466,388,387,386,385,384,398,362,382,381,380,374,373,390,249],
+  lipsO:  [61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146],
+  lipsI:  [78,191,80,81,82,13,312,311,310,415,308,324,318,402,317,14,87,178,88,95],
+  nose:   [168,6,197,195,5,4,1],
+};
 
 export const faceSource = {
   faceOn: false,
@@ -170,14 +184,38 @@ export const faceSource = {
     const lx = x => ox + x * vw * scale, ly = y => oy + y * vh * scale;
 
     if (this.faceOn) {
-      ctx.fillStyle = '#f0a50055';
-      for (let i = 0; i < 468; i += 3) {          // sparse mesh dots
-        ctx.fillRect(lx(lm[i].x) - 0.5, ly(lm[i].y) - 0.5, 1.5, 1.5);
-      }
-      ctx.fillStyle = '#f0a500';
-      [EAR_L, EAR_R].forEach(i => {
-        ctx.beginPath(); ctx.arc(lx(lm[i].x), ly(lm[i].y), 3, 0, Math.PI * 2); ctx.fill();
-      });
+      // Faint full-mesh dots for density, then bright feature contours on top.
+      ctx.fillStyle = 'rgba(240,165,0,0.22)';
+      for (let i = 0; i < 468; i++) ctx.fillRect(lx(lm[i].x) - 0.5, ly(lm[i].y) - 0.5, 1, 1);
+
+      const stroke = (idxs, col, w, closed) => {
+        ctx.strokeStyle = col; ctx.lineWidth = w;
+        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        ctx.beginPath();
+        idxs.forEach((id, i) => {
+          const X = lx(lm[id].x), Y = ly(lm[id].y);
+          i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
+        });
+        if (closed) ctx.closePath();
+        ctx.stroke();
+      };
+      const dot = (id, col, r) => {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(lx(lm[id].x), ly(lm[id].y), r, 0, Math.PI * 2); ctx.fill();
+      };
+
+      stroke(CONTOURS.oval,  'rgba(240,165,0,0.55)', 1.5, true);
+      stroke(CONTOURS.nose,  'rgba(255,255,255,0.4)', 1,  false);
+      stroke(CONTOURS.browR, '#f0a500', 2, false);
+      stroke(CONTOURS.browL, '#f0a500', 2, false);
+      stroke(CONTOURS.eyeR,  '#00e5cc', 1.5, true);
+      stroke(CONTOURS.eyeL,  '#00e5cc', 1.5, true);
+      stroke(CONTOURS.lipsO, '#ff6ea9', 1.5, true);
+      stroke(CONTOURS.lipsI, '#ff6ea9', 1,   true);
+
+      // Feature markers that map to signals: cheeks and ear anchors.
+      dot(CHEEK_R, 'rgba(0,229,204,0.8)', 3); dot(CHEEK_L, 'rgba(0,229,204,0.8)', 3);
+      dot(EAR_R, '#f0a500', 3.5); dot(EAR_L, '#f0a500', 3.5);
     }
 
     if (this.gazeOn && lm[IRIS_L] && lm[IRIS_R]) {
