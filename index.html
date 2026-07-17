@@ -44,12 +44,14 @@
         <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay"></canvas>
         <canvas id="face-overlay"></canvas>
-        <button id="depth-btn" class="depth-toggle"
-                title="Use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth">◈ LiDAR</button>
-        <button id="face-btn" class="depth-toggle face-toggle" disabled
-                title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears (start the camera first)">☺ FACE</button>
-        <button id="gaze-btn" class="depth-toggle gaze-toggle" disabled
-                title="Track pupil orientation as gaze_x / gaze_y signals (start the camera first)">◉ GAZE</button>
+        <div class="cam-toggles">
+          <button id="depth-btn" class="depth-toggle"
+                  title="Use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth">◈ LiDAR</button>
+          <button id="face-btn" class="depth-toggle" disabled
+                  title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears (start the camera first)">☺ FACE</button>
+          <button id="gaze-btn" class="depth-toggle" disabled
+                  title="Track pupil orientation as gaze_x / gaze_y signals (start the camera first)">◉ GAZE</button>
+        </div>
         <div id="latency-bar">
           <span>FPS <b id="lat-fps">—</b></span>
           <span>HAND <b id="lat-hand">—</b></span>

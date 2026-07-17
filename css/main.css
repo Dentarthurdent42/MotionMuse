@@ -200,8 +200,11 @@ body.resizing { cursor: col-resize; user-select: none; }
   position: absolute; inset: 0;
   transform: scaleX(-1);
 }
-.depth-toggle {
+.cam-toggles {
   position: absolute; top: 6px; right: 6px; z-index: 3;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+}
+.depth-toggle {
   background: rgba(0,0,0,0.55);
   border: 1px solid var(--border2);
   color: var(--dim);
@@ -216,8 +219,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .depth-toggle.on { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
 .depth-toggle.unsupported { opacity: .4; }
 .depth-toggle:disabled { opacity: .3; cursor: default; }
-.face-toggle { top: 32px; }
-.gaze-toggle { top: 58px; }
 #face-overlay {
   position: absolute; inset: 0;
   transform: scaleX(-1);
