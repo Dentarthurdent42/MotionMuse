@@ -77,6 +77,33 @@ own their respective slices of state.
 | `body_z` | Torso distance from camera |
 | `depth_near` | Nearest surface in the scene, in metres (LiDAR only) |
 | `depth_center` | Depth at frame centre, in metres (LiDAR only) |
+| `brow_raise` / `brow_furrow` / `brow_L` / `brow_R` | Eyebrow raise / furrow, per-side outer raise (FACE) |
+| `mouth_open` / `smile` / `pucker` / `lips_funnel` | Lip & jaw shapes (FACE) |
+| `tongue_out` | Tongue sticking out (FACE) |
+| `cheek_puff` / `cheek_squint_L` / `cheek_squint_R` | Cheek shapes (FACE) |
+| `ear_L_x/y` / `ear_R_x/y` | Tracked ear positions (FACE) |
+| `head_yaw` / `head_roll` | Head orientation derived from the ears, −1..1 (FACE) |
+| `gaze_x` / `gaze_y` | Pupil orientation, −1..1, subject's frame (GAZE) |
+
+## Face & gaze tracking (opt-in)
+
+Once the camera is running, two toggles appear under the LiDAR button:
+
+- **☺ FACE** loads MediaPipe `FaceLandmarker` (with blendshapes) and publishes
+  eyebrow, lip, tongue, cheek and ear signals. Ears don't articulate, so their
+  tracked positions are exposed directly plus derived `head_yaw` / `head_roll`.
+- **◉ GAZE** publishes pupil orientation as `gaze_x` / `gaze_y` (−1..1, in the
+  subject's frame), drawn live as vectors on the iris.
+
+Both are **off by default** and independent; either loads the shared face model
+on first use (`src/face.js`, own detection loop and overlay — the hand/pose
+pipeline is untouched). All face/gaze signals are registered up front, so they
+can be mapped (and saved in presets) before tracking is enabled.
+
+## Resizable panels
+
+On desktop, drag the dividers between the three columns to resize them
+(double-click a divider to reset). Widths persist across sessions.
 
 ## Optical depth inputs (LiDAR / ToF)
 
@@ -121,9 +148,11 @@ src/
   preset.js         Save/load of mappings + settings (file + localStorage)
   cv.js             MediaPipe Hand + Pose source (includes latency HUD)
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
+  face.js           Opt-in face landmark + gaze tracking (blendshape signals)
   main.js           Event handlers and RAF entry point
   ui/
     status.js       Status dot and toast notifications
+    resize.js       Draggable panel splitters (desktop)
     signals.js      Signal panel (build + live update)
     mapper-ui.js    Mapper rows (render + live bars)
     audio-ui.js     Audio panel (waveform buttons, sliders)

@@ -43,8 +43,13 @@
       <div id="video-wrap">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay"></canvas>
+        <canvas id="face-overlay"></canvas>
         <button id="depth-btn" class="depth-toggle"
                 title="Use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth">◈ LiDAR</button>
+        <button id="face-btn" class="depth-toggle face-toggle" disabled
+                title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears (start the camera first)">☺ FACE</button>
+        <button id="gaze-btn" class="depth-toggle gaze-toggle" disabled
+                title="Track pupil orientation as gaze_x / gaze_y signals (start the camera first)">◉ GAZE</button>
         <div id="latency-bar">
           <span>FPS <b id="lat-fps">—</b></span>
           <span>HAND <b id="lat-hand">—</b></span>
@@ -73,6 +78,8 @@
       </div>
     </div>
 
+    <div class="splitter" id="split-l" title="Drag to resize — double-click to reset"></div>
+
     <!-- MIDDLE: Mapper -->
     <div class="panel panel-map">
       <div class="ph">SIGNAL → AUDIO MAPPER</div>
@@ -93,6 +100,8 @@
       </div>
       <div id="mapper-rows"></div>
     </div>
+
+    <div class="splitter" id="split-r" title="Drag to resize — double-click to reset"></div>
 
     <!-- RIGHT: Audio engine -->
     <div class="panel">
