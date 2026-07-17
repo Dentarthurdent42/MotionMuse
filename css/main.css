@@ -46,11 +46,21 @@ html, body {
 
 #main {
   display: grid;
-  grid-template-columns: 320px 1fr 280px;
-  gap: 1px;
-  background: var(--border);
+  /* side columns are drag-resizable; the splitters carry the divider lines */
+  grid-template-columns: var(--col-l, 320px) 6px 1fr 6px var(--col-r, 280px);
+  background: var(--bg);
   overflow: hidden;
 }
+
+.splitter {
+  cursor: col-resize;
+  background: var(--border);
+  background-clip: content-box;   /* 1px visible line, 6px grab area */
+  padding: 0 2.5px;
+  touch-action: none;
+}
+.splitter:hover, body.resizing .splitter { background-color: var(--cyan); }
+body.resizing { cursor: col-resize; user-select: none; }
 
 .panel {
   background: var(--panel);
@@ -206,6 +216,13 @@ html, body {
 .depth-toggle.on { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
 .depth-toggle.unsupported { opacity: .4; }
 .depth-toggle:disabled { opacity: .3; cursor: default; }
+.face-toggle { top: 32px; }
+.gaze-toggle { top: 58px; }
+#face-overlay {
+  position: absolute; inset: 0;
+  transform: scaleX(-1);
+  pointer-events: none;
+}
 #latency-bar {
   position: absolute; bottom: 0; left: 0; right: 0;
   background: rgba(0,0,0,0.55);
@@ -503,7 +520,11 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
     grid-template-columns: 1fr;
     grid-template-rows: auto;
     overflow: visible;
+    gap: 1px;
+    background: var(--border);
   }
+
+  .splitter { display: none; }
 
   /* All panels: natural height */
   .panel, .panel-src, .panel-map {

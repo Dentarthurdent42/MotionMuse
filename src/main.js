@@ -1,5 +1,6 @@
 import { cvSource }                        from './cv.js';
 import { depthSource }                      from './depth.js';
+import { faceSource }                       from './face.js';
 import { engine }                           from './engine.js';
 import { mapper }                           from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
@@ -7,6 +8,7 @@ import { buildSigPanel, updateSigPanel }    from './ui/signals.js';
 import { renderMapper, updateMapperBars }   from './ui/mapper-ui.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
+import { initResize }                       from './ui/resize.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
@@ -40,6 +42,9 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
     btn.classList.add('on');
     buildSigPanel();
     renderMapper();
+    // Face & gaze tracking are opt-in once the camera is running.
+    document.getElementById('face-btn').disabled = false;
+    document.getElementById('gaze-btn').disabled = false;
   } catch (err) {
     setStatus('error', 'ERROR: ' + err.message.slice(0, 30));
     btn.textContent = 'RETRY';
@@ -47,6 +52,25 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
     console.error(err);
   }
 });
+
+// ── Face / gaze tracking toggles (opt-in, camera must be running) ────────
+const faceToggle = (btnId, key, setter, label) => {
+  const btn = document.getElementById(btnId);
+  btn.addEventListener('click', async () => {
+    const on = !faceSource[key];
+    btn.disabled = true;
+    try {
+      await setter(on);
+      btn.classList.toggle('on', on);
+      toast(on ? `${label} tracking ON` : `${label} tracking off`);
+    } catch (err) {
+      toast(`Could not start ${label.toLowerCase()} tracking: ` + err.message);
+    }
+    btn.disabled = false;
+  });
+};
+faceToggle('face-btn', 'faceOn', on => faceSource.setFace(on), 'Face');
+faceToggle('gaze-btn', 'gazeOn', on => faceSource.setGaze(on), 'Gaze');
 
 // ── LiDAR / optical depth toggle ─────────────────────────────────────────
 const depthBtn = document.getElementById('depth-btn');
@@ -132,6 +156,8 @@ window.addEventListener('visibilitychange', () => { if (document.hidden) persist
 
 // ── Init ─────────────────────────────────────────────────────────────────
 depthSource.init();       // register depth signals so they appear in the panel
+faceSource.registerSignals();  // face/gaze signals are mappable up front
+initResize();             // draggable panel splitters (desktop)
 preset.restoreLocal();    // bring back the last session's mappings + settings
 renderMapper();
 loop();
