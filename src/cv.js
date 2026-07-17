@@ -1,6 +1,6 @@
 import { bus }                                             from './bus.js';
 import { push30, dist3, angleBetween, handOpenness, fingerExt } from './math.js';
-import { setStatus }                                        from './ui/status.js';
+import { setStatus, toast }                                 from './ui/status.js';
 import { depthSource }                                      from './depth.js';
 import { makeSkeletonFilter }                               from './filter.js';
 
@@ -20,6 +20,12 @@ const HAND_CONNS = [
 // Pose skeleton connections (subset of 33-landmark BlazePose)
 const POSE_CONNS = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24]];
 
+// Tracking pipeline choice, persisted across sessions. false = classic
+// (raw landmarks, the long-standing behaviour); true = experimental v2
+// (temporal conditioning: One Euro smoothing + plausibility gates).
+const TRACK_KEY = 'biosignal-tracking-v2';
+const readTrackPref = () => { try { return localStorage.getItem(TRACK_KEY) === '1'; } catch { return false; } };
+
 export const cvSource = {
   hand:     null,
   pose:     null,
@@ -30,7 +36,14 @@ export const cvSource = {
   lastTime: -1,
   _lat:     null,
 
-  // Temporal conditioning (median-of-3 + One Euro + plausibility gates),
+  // Experimental "v2" tracking — OFF by default (classic pipeline).
+  conditioning: readTrackPref(),
+  setConditioning(on) {
+    this.conditioning = on;
+    try { localStorage.setItem(TRACK_KEY, on ? '1' : '0'); } catch { /* private mode */ }
+  },
+
+  // Temporal conditioning (accel gate + One Euro + plausibility gates),
   // applied to every skeleton before signal extraction and overlay drawing.
   // Pose gets bone-length checks on the arm chain (shoulder→elbow→wrist).
   _filters: {
@@ -42,6 +55,7 @@ export const cvSource = {
   },
 
   _condition(hr, pr, tSec) {
+    if (!this.conditioning) return;   // classic pipeline: raw landmarks
     if (hr?.landmarks && hr.handednesses) {
       hr.handednesses.forEach((h, i) => {
         const side = h[0].categoryName === 'Left' ? 'L' : 'R';
@@ -94,28 +108,37 @@ export const cvSource = {
     const { FilesetResolver, HandLandmarker, PoseLandmarker } = await import(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs'
     );
-
-    const vision = await FilesetResolver.forVisionTasks(
+    this._HandLandmarker = HandLandmarker;
+    this._PoseLandmarker = PoseLandmarker;
+    this._vision = await FilesetResolver.forVisionTasks(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
     );
 
-    this.hand = await HandLandmarker.createFromOptions(vision, {
+    await this._buildLandmarkers('GPU');
+  },
+
+  // (Re)create both landmarkers with the given delegate. The CPU delegate is
+  // the compatibility path: iOS Safari's WebGL can deadlock on the GPU
+  // delegate's first pose inference, freezing both detection and the video.
+  async _buildLandmarkers(delegate) {
+    this.hand?.close?.(); this.pose?.close?.();
+    this.hand = await this._HandLandmarker.createFromOptions(this._vision, {
       baseOptions: {
         modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-        delegate: 'GPU',
+        delegate,
       },
       numHands: 2,
       runningMode: 'VIDEO',
     });
-
-    this.pose = await PoseLandmarker.createFromOptions(vision, {
+    this.pose = await this._PoseLandmarker.createFromOptions(this._vision, {
       baseOptions: {
         modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-        delegate: 'GPU',
+        delegate,
       },
       runningMode: 'VIDEO',
       numPoses: 1,
     });
+    this.delegate = delegate;
   },
 
   // ── Camera startup ───────────────────────────────────────────────────
@@ -140,8 +163,38 @@ export const cvSource = {
     this._lat = { hand: [], pose: [], total: [], interval: [], lastT: 0, frame: 0 };
     document.getElementById('latency-bar').style.display = 'flex';
 
+    // Stall watchdog state: notices when video frames stop advancing or
+    // detection keeps throwing, and switches to the CPU compatibility path.
+    this._watch = { stallMark: performance.now(), errors: 0, errorLogged: false, recovering: false, recovered: false };
+
     this.running = true;
     this.loop();
+  },
+
+  // One-shot recovery: rebuild the landmarkers on the CPU delegate and nudge
+  // the (possibly frozen) video element back into playback.
+  async _recover(reason) {
+    const w = this._watch;
+    if (w.recovering) return;
+    if (w.recovered) { setStatus('error', 'CV STALLED — RELOAD PAGE'); return; }
+    w.recovering = true;
+    console.warn('CV stalled (' + reason + ') — switching to CPU compatibility mode');
+    setStatus('loading', 'CV STALLED — RECOVERING…');
+    try {
+      await this._buildLandmarkers('CPU');
+      this.video.play().catch(() => {});
+      this.lastTime = -1;                       // let the loop re-enter detection
+      w.errors = 0;
+      w.stallMark = performance.now();
+      w.recovered = true;
+      setStatus('active', 'CV ACTIVE (COMPAT)');
+      toast('Tracking recovered in compatibility mode (CPU)');
+    } catch (e) {
+      console.error('CV recovery failed:', e);
+      setStatus('error', 'CV STALLED — RELOAD PAGE');
+    } finally {
+      w.recovering = false;
+    }
   },
 
   // ── Detection loop ───────────────────────────────────────────────────
@@ -153,9 +206,11 @@ export const cvSource = {
     if (lat.lastT) push30(lat.interval, now - lat.lastT);
     lat.lastT = now;
 
+    const w = this._watch;
     if (this.video.currentTime !== this.lastTime) {
       this.lastTime = this.video.currentTime;
-      try {
+      w.stallMark = now;                        // video frames are advancing
+      if (!w.recovering) try {
         const t0 = performance.now();
         const hr = this.hand.detectForVideo(this.video, now);
         const t1 = performance.now();
@@ -171,8 +226,18 @@ export const cvSource = {
         push30(lat.pose,  t2 - t1);
         push30(lat.total, t3 - t0);
 
+        w.errors = 0;
         if (++lat.frame % 15 === 0) this._updateLatency();
-      } catch (e) {}
+      } catch (e) {
+        // Never fail silently: log the first error, and if detection keeps
+        // throwing, fall back to the CPU compatibility path.
+        if (!w.errorLogged) { console.error('CV frame error:', e); w.errorLogged = true; }
+        if (++w.errors > 30) this._recover('repeated detection errors');
+      }
+    } else if (now - w.stallMark > 2500 && !document.hidden && !w.recovering) {
+      // Video frames stopped for >2.5 s while running — the iOS Safari
+      // GPU-delegate deadlock freezes the camera exactly like this.
+      this._recover('video frames stopped');
     }
     requestAnimationFrame(() => this.loop());
   },
