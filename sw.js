@@ -1,4 +1,4 @@
-const CACHE = 'biosignal-v5';
+const CACHE = 'biosignal-v6';
 
 // Derive base from the SW's own scope so paths work whether the app is
 // served from / (Cloudflare Pages, GitHub Pages custom domain) or a
@@ -18,7 +18,6 @@ const STATIC = [
   '/src/preset.js',
   '/src/cv.js',
   '/src/depth.js',
-  '/src/filter.js',
   '/src/ui/status.js',
   '/src/ui/signals.js',
   '/src/ui/mapper-ui.js',

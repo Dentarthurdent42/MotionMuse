@@ -19,8 +19,6 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` and `PoseLandmarker` on every video frame, extracts ~30 signals per frame, and writes them into the bus.
-- **Landmark conditioning** (`src/filter.js`) — *experimental, off by default*: the **⚗ TRACK v2** toggle (top-left of the camera view) routes every skeleton through an acceleration gate, a One Euro filter (heavy smoothing at rest, low lag during fast gestures) and plausibility gates — low-visibility joints hold their last position, and bones that suddenly change length reject the misdetected joint. All CPU-side scalar math (microseconds per frame); the GPU detection models are untouched. Off = classic tracking (raw landmarks). The choice persists across sessions.
-- **Stall recovery**: if camera frames stop advancing or detection keeps erroring (seen on iOS Safari, where the GPU delegate can deadlock on the first pose inference), the app automatically rebuilds the detectors on the CPU delegate and resumes — the status line shows `CV ACTIVE (COMPAT)`.
 - **Mapper** (`src/mapper.js`): each mapping row takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick.
 - **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter and a convolution reverb, all driven by the Web Audio API with 25 ms parameter smoothing.
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
@@ -116,7 +114,6 @@ css/
   main.css          All styles (CSS variables, layout, components)
 src/
   bus.js            Signal registry (incl. adaptive per-user range calibration)
-  filter.js         Landmark conditioning (median-of-3, One Euro, plausibility gates)
   math.js           Geometry helpers (dist3, angleBetween, handOpenness, fingerExt)
   engine.js         Web Audio API synthesiser
   scale.js          Scale + tuning pitch quantiser
