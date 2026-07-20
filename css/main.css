@@ -221,13 +221,19 @@ body.resizing { cursor: col-resize; user-select: none; }
 .depth-toggle:disabled { opacity: .3; cursor: default; }
 
 /* ── Fullscreen camera view ──────────────────────────────── */
-/* Fallback for iPhone Safari (no Element.requestFullscreen): CSS takeover. */
+/* Fallback for iPhone Safari (no Element.requestFullscreen): CSS takeover.
+   aspect-ratio must be released or it caps the height at ¾ of the viewport
+   width, leaving the page visible below. */
 #video-wrap.fake-fullscreen {
   position: fixed; inset: 0; z-index: 1000;
   width: auto; height: auto;
+  aspect-ratio: auto;
   background: #000;
 }
-#video-wrap:fullscreen { background: #000; }
+#video-wrap:fullscreen { aspect-ratio: auto; background: #000; }
+
+/* A clean, video-player-like view: no latency HUD while fullscreen. */
+#video-wrap.fs-active #latency-bar { display: none; }
 body.no-scroll { overflow: hidden; }
 
 /* The KEYS toggle only makes sense in fullscreen. */

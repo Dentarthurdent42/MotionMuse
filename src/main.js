@@ -31,7 +31,13 @@ function loop() {
 document.getElementById('cv-btn').addEventListener('click', async () => {
   const btn = document.getElementById('cv-btn');
   if (cvSource.running) {
-    cvSource.running = false;
+    cvSource.stopCamera();               // releases the camera hardware
+    faceSource.setFace(false);           // face/gaze read the same stream
+    faceSource.setGaze(false);
+    ['face-btn', 'gaze-btn'].forEach(id => {
+      const b = document.getElementById(id);
+      b.disabled = true; b.classList.remove('on');
+    });
     setStatus('', 'STOPPED');
     btn.textContent = 'START CAMERA';
     btn.classList.remove('on');

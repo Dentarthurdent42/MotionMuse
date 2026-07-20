@@ -65,6 +65,7 @@ export const cvSource = {
 
   // ── Load MediaPipe models ────────────────────────────────────────────
   async init() {
+    if (this.hand && this.pose) return;   // already loaded (camera restart)
     this.registerSignals();
     setStatus('loading', 'LOADING MODELS…');
 
@@ -119,6 +120,23 @@ export const cvSource = {
 
     this.running = true;
     this.loop();
+  },
+
+  // ── Camera shutdown ──────────────────────────────────────────────────
+  // Actually releases the camera: stops every MediaStream track (turning the
+  // hardware indicator off), detaches the stream, and resets the view.
+  stopCamera() {
+    this.running = false;
+    const stream = this.video?.srcObject;
+    stream?.getTracks?.().forEach(t => t.stop());
+    if (this.video) {
+      this.video.srcObject = null;
+      this.video.classList.remove('ready');
+    }
+    this.ctx?.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    document.getElementById('cam-placeholder').style.display = '';
+    document.getElementById('latency-bar').style.display = 'none';
+    this.lastTime = -1;
   },
 
   // ── Detection loop ───────────────────────────────────────────────────
