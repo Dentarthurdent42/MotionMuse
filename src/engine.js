@@ -13,6 +13,28 @@ export const engine = (() => {
   // so they survive save/load and a stop→start cycle.
   let osc1Type = 'sine', osc2Type = 'triangle', filterType = 'lowpass';
 
+  // Custom waveforms ('custom:<name>') for the sound kit — harmonic tables
+  // registered up front, resolved to PeriodicWaves lazily per AudioContext.
+  const waveSpecs = new Map();       // name → { real, imag } Float32Arrays
+  let periodicCache = new Map();     // name → PeriodicWave (this ctx only)
+  function defineWave(name, { real, imag }) {
+    waveSpecs.set(name, {
+      real: Float32Array.from(real ?? new Array(imag.length).fill(0)),
+      imag: Float32Array.from(imag),
+    });
+  }
+  function applyType(osc, type) {
+    if (typeof type === 'string' && type.startsWith('custom:')) {
+      const spec = waveSpecs.get(type.slice(7));
+      if (!spec) { osc.type = 'sine'; return; }   // unknown name degrades safely
+      let pw = periodicCache.get(type);
+      if (!pw) { pw = ctx.createPeriodicWave(spec.real, spec.imag); periodicCache.set(type, pw); }
+      osc.setPeriodicWave(pw);
+    } else {
+      osc.type = type;
+    }
+  }
+
   // Audio parameter definitions — name, display label, min, max, default value
   const PARAMS = {
     osc1_freq:   { label: 'Osc1 Freq',     min: 40,   max: 2000,  val: 220,  unit: 'Hz' },
@@ -43,8 +65,9 @@ export const engine = (() => {
     ctx      = new AudioContext();
     analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
 
-    osc1 = ctx.createOscillator(); osc1.type = osc1Type;
-    osc2 = ctx.createOscillator(); osc2.type = osc2Type;
+    periodicCache = new Map();               // PeriodicWaves are per-context
+    osc1 = ctx.createOscillator(); applyType(osc1, osc1Type);
+    osc2 = ctx.createOscillator(); applyType(osc2, osc2Type);
     osc1g = ctx.createGain(); osc1g.gain.value = 1 - PARAMS.osc_mix.val;
     osc2g = ctx.createGain(); osc2g.gain.value = PARAMS.osc_mix.val;
     filt  = ctx.createBiquadFilter(); filt.type = filterType;
@@ -120,8 +143,8 @@ export const engine = (() => {
     return (tuning.enabled && FREQ_KEYS.has(key)) ? quant.noteName(PARAMS[key].val) : null;
   }
 
-  function setOsc1Type(t)   { osc1Type = t; if (osc1) osc1.type = t; }
-  function setOsc2Type(t)   { osc2Type = t; if (osc2) osc2.type = t; }
+  function setOsc1Type(t)   { osc1Type = t; if (osc1) applyType(osc1, t); }
+  function setOsc2Type(t)   { osc2Type = t; if (osc2) applyType(osc2, t); }
   function setFilterType(t) { filterType = t; if (filt) filt.type = t; }
   function getOsc1Type()    { return osc1Type; }
   function getOsc2Type()    { return osc2Type; }
@@ -142,6 +165,27 @@ export const engine = (() => {
     if (s.params) for (const k in s.params) if (PARAMS[k]) set(k, s.params[k]);
   }
 
+  // One-shot tone voice — used by play-along for the guide melody and
+  // hit/miss feedback. Own gain straight to the destination, so it never
+  // interferes with the player's synth chain or its parameter smoothing.
+  function playTone({ freq, when = 0, dur = 0.25, type = 'triangle', gain = 0.12 } = {}) {
+    if (!started || !(freq > 0)) return;
+    const t0 = ctx.currentTime + Math.max(0, when);
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    applyType(o, type);
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(gain, t0 + 0.012);
+    g.gain.setValueAtTime(gain, t0 + Math.max(0.012, dur - 0.08));
+    g.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
+
+  // Audio-clock now (seconds) — the play-along scheduler's timeline anchor.
+  function now() { return started ? ctx.currentTime : 0; }
+
   function getWaveform() {
     if (!analyser) return null;
     const buf = new Float32Array(analyser.frequencyBinCount);
@@ -158,6 +202,7 @@ export const engine = (() => {
     setOsc1Type, setOsc2Type, setFilterType,
     getOsc1Type, getOsc2Type, getFilterType,
     snapshot, restore,
+    defineWave, playTone, now,
     getWaveform,
     get started() { return started; },
   };

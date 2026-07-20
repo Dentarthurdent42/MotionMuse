@@ -6,7 +6,8 @@
     "serve:mobile": "node scripts/mobile-serve.mjs",
     "generate:icons": "node scripts/generate-icons.js",
     "test:contrast": "node tests/contrast/index.js",
-    "test:ui": "node tests/ui-ux/index.js"
+    "test:ui": "node tests/ui-ux/index.js",
+    "test:unit": "node --test tests/unit/*.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.54.0",

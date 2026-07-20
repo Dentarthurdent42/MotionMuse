@@ -51,6 +51,10 @@
                   title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears (start the camera first)">☺ FACE</button>
           <button id="gaze-btn" class="depth-toggle" disabled
                   title="Track pupil orientation as gaze_x / gaze_y signals (start the camera first)">◉ GAZE</button>
+          <button id="fs-btn" class="depth-toggle"
+                  title="Fullscreen camera view">⛶ FULL</button>
+          <button id="fskbd-btn" class="depth-toggle fs-only"
+                  title="Show the piano keyboard overlay">🎹 KEYS</button>
         </div>
         <div id="latency-bar">
           <span>FPS <b id="lat-fps">—</b></span>
@@ -65,6 +69,7 @@
           </svg>
           <span>START CAMERA</span>
         </div>
+        <canvas id="fs-kbd"></canvas>
       </div>
 
       <div class="panel" style="border-top:1px solid var(--border);">

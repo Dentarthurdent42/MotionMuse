@@ -219,6 +219,30 @@ body.resizing { cursor: col-resize; user-select: none; }
 .depth-toggle.on { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
 .depth-toggle.unsupported { opacity: .4; }
 .depth-toggle:disabled { opacity: .3; cursor: default; }
+
+/* ── Fullscreen camera view ──────────────────────────────── */
+/* Fallback for iPhone Safari (no Element.requestFullscreen): CSS takeover. */
+#video-wrap.fake-fullscreen {
+  position: fixed; inset: 0; z-index: 1000;
+  width: auto; height: auto;
+  background: #000;
+}
+#video-wrap:fullscreen { background: #000; }
+body.no-scroll { overflow: hidden; }
+
+/* The KEYS toggle only makes sense in fullscreen. */
+.cam-toggles .fs-only { display: none; }
+#video-wrap.fs-active .fs-only { display: block; }
+
+/* Keyboard / play-along overlay strip, docked at the bottom. */
+#fs-kbd {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: none;
+  width: 100%;
+  opacity: 0.88;
+  pointer-events: none;
+}
+#video-wrap.fs-active #fs-kbd.shown { display: block; }
 #face-overlay {
   position: absolute; inset: 0;
   transform: scaleX(-1);
@@ -403,6 +427,14 @@ option { background: var(--panel); }
   display: block;
   width: 100%;
   height: 46px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+.game-canvas {
+  display: block;
+  width: 100%;
+  height: 170px;
   margin-top: 6px;
   border: 1px solid var(--border);
   border-radius: 2px;
