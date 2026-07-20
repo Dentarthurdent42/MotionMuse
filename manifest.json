@@ -1,6 +1,6 @@
 {
-  "name": "BioSignal → Sound",
-  "short_name": "BioSignal",
+  "name": "MotionMuse",
+  "short_name": "MotionMuse",
   "description": "Map hand tracking and body pose to audio synthesis in real time.",
   "start_url": ".",
   "display": "standalone",

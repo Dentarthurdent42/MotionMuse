@@ -40,7 +40,7 @@ export function restoreLocal() {
   } catch { return false; }
 }
 
-export function downloadFile(name = 'biosignal-preset.json') {
+export function downloadFile(name = 'motionmuse-preset.json') {
   const blob = new Blob([JSON.stringify(snapshot(), null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
   const a    = Object.assign(document.createElement('a'), { href: url, download: name });
@@ -52,6 +52,6 @@ export function downloadFile(name = 'biosignal-preset.json') {
 // caller can surface a clear message.
 export async function loadFromFile(file) {
   const data = JSON.parse(await file.text());
-  if (!apply(data)) throw new Error('Not a BioSignal preset');
+  if (!apply(data)) throw new Error('Not a MotionMuse preset');
   return true;
 }

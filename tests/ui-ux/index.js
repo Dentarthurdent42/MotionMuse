@@ -104,7 +104,7 @@ async function captureAll(port) {
 
 // ── Claude evaluation ──────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are a mobile UX auditor specialising in creative tool interfaces. \
-You are evaluating a biosignal-to-audio web app (BioSignal → Sound) that musicians use live: \
+You are evaluating a motion-to-audio web app (MotionMuse) that musicians use live: \
 it reads hand tracking and body pose via webcam and maps them to audio synthesis parameters. \
 The audience is technically literate musicians who use it hands-free during performance.
 

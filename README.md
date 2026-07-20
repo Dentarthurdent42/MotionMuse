@@ -1,10 +1,10 @@
-# BioSignal → Sound
+# MotionMuse
 
 A browser-based instrument that maps live webcam data — hand position, gesture, and body pose — to audio synthesis parameters in real time. No plugins, no install: pure Web APIs served as static files.
 
 ## Demo
 
-![BioSignal → Sound screenshot](docs/screenshot.png)
+![MotionMuse screenshot](docs/screenshot.png)
 
 Open `index.html` (or the Netlify deploy) and:
 1. Click **START CAMERA** — MediaPipe loads and begins detecting hands and pose
