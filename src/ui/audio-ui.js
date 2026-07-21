@@ -5,6 +5,7 @@ import { makeKbdView, midiOf, OSC1_COL, OSC2_COL } from './keyboard.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
+import { gestureSectionsHTML, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
 
 const opts = (arr, sel) =>
   arr.map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`).join('');
@@ -68,6 +69,7 @@ export function renderAudioPanel() {
       <canvas id="game-canvas" class="game-canvas" style="display:${gv.state !== 'idle' ? 'block' : 'none'}"></canvas>
       <div id="game-score" class="quant-notes">—</div>
     </div>
+    ${gestureSectionsHTML()}
     <div class="audio-section">
       <div class="audio-section-label" style="display:flex;align-items:center;">
         Pitch Quantize
@@ -205,6 +207,8 @@ export function renderAudioPanel() {
   document.getElementById('filt-types').querySelector(`[data-ftype="${engine.getFilterType()}"]`)?.classList.add('on');
 
   if (t.enabled) redrawKbd();
+
+  wireGestureSections(renderAudioPanel);
 }
 
 export function updateAudioSliders() {
@@ -229,4 +233,6 @@ export function updateAudioSliders() {
     }
     panelKbd.draw(kbdOpts());
   }
+
+  updateGesturePanel();
 }

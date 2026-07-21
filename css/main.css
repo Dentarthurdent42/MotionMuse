@@ -454,6 +454,28 @@ option { background: var(--panel); }
   font-variant-numeric: tabular-nums;
   min-height: 11px;
 }
+
+/* ── Gestures & chord mode ───────────────────────────────── */
+.gesture-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 3px 0; font-size: 10px; color: var(--text);
+}
+.gesture-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--border2); flex-shrink: 0;
+  transition: background 0.1s, box-shadow 0.1s;
+}
+.gesture-dot.on { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+.gesture-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gesture-tag  { font-size: 8px; color: var(--dim); letter-spacing: 1px; }
+.gesture-del  { flex-shrink: 0; }
+.chord-assign {
+  display: grid;
+  grid-template-columns: 1fr 0.9fr 0.6fr 1.2fr;
+  gap: 4px; align-items: center;
+  margin-top: 4px;
+}
+.chord-assign .gesture-name { font-size: 9px; color: var(--dim); }
 .wave-btn {
   flex: 1;
   padding: 3px 0;

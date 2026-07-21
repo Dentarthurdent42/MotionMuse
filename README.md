@@ -56,6 +56,26 @@ on top. Tweaking any waveform, filter or timbre slider flips the selector to
 "Custom". The chosen kit is saved with presets. Kits live in `src/soundkit.js`;
 custom waveforms are registered through `engine.defineWave()`.
 
+## Gestures & chord mode
+
+The **Gestures** section recognizes hand poses and turns them into discrete
+triggers. Six built-in gestures ship ready to use — **fist, open palm, peace,
+point, thumbs-up, rock horns** — and **● REC** records your own: name it, hold
+the pose during the 3-2-1 countdown, and it's captured (camera must be running).
+Recognition is nearest-template matching over the seven normalized hand features
+the CV source already publishes (five finger extensions + openness + spread).
+Every gesture is also exposed as a mappable bus signal `gesture_<id>`, so a
+gesture can drive *any* audio parameter, not just chords.
+
+**Chord Mode** maps gestures to chords: toggle it on, and each gesture gets a
+**root + octave + quality** assignment (major, minor, maj7, dom7, sus4, dim, …).
+Holding an assigned gesture sustains its chord; releasing it lets the chord go
+(hold-to-sound). Chords play through a dedicated 4-voice bank that rides the same
+filter, reverb and sound-kit timbre as the main oscillators. Custom gestures and
+chord assignments are saved with presets. Logic: `src/gesture.js` (recognizer),
+`src/chords.js` (chord construction), `src/chordmode.js` (gesture→chord glue),
+with the voice bank in `engine.playChord()` / `releaseChord()`.
+
 ## Fullscreen camera view
 
 **⛶ FULL** (below the camera toggles) makes the camera view fullscreen — via
@@ -188,6 +208,9 @@ src/
   soundkit.js       Instrument timbre presets (synthesized)
   songs.js          Bundled play-along note charts
   playalong.js      Play-along game logic (scheduler, judging, difficulties)
+  chords.js         Chord construction (root + quality → frequencies)
+  gesture.js        Hand-gesture recognizer + custom-gesture store
+  chordmode.js      Gesture → chord mapping (hold-to-sound)
   cv.js             MediaPipe Hand + Pose source (includes latency HUD)
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
   face.js           Opt-in face landmark + gaze tracking (blendshape signals)
@@ -198,6 +221,7 @@ src/
     fullscreen.js   Fullscreen camera view + keyboard overlay
     keyboard.js     Shared piano-keyboard renderer
     playalong-ui.js Falling-note highway renderer + game panel
+    gesture-ui.js   Gestures + Chord Mode panel sections
     signals.js      Signal panel (build + live update)
     mapper-ui.js    Mapper rows (render + live bars)
     audio-ui.js     Audio panel (waveform buttons, sliders)

@@ -12,11 +12,15 @@ import { initResize }                       from './ui/resize.js';
 import { initFullscreen, updateFsOverlay }  from './ui/fullscreen.js';
 import { playalong }                        from './playalong.js';
 import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
+import { gesture }                          from './gesture.js';
+import { chordmode }                        from './chordmode.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
 function loop() {
   mapper.tick();
+  gesture.tick();        // recognize hand gestures → gesture_<id> bus signals
+  chordmode.tick();      // cheap no-op unless chord mode is enabled
   playalong.tick();      // cheap no-op unless a song is running
   updateSigPanel();
   updateMapperBars();
@@ -137,6 +141,7 @@ document.getElementById('preset-btn').addEventListener('click', () => {
 // panel (waveforms, sliders, tuning + keyboard) only while it exists.
 function refreshFromState() {
   renderMapper();
+  if (cvSource.running) buildSigPanel();   // restored gesture signals appear
   if (engine.started) renderAudioPanel();
 }
 
@@ -170,6 +175,7 @@ window.addEventListener('visibilitychange', () => { if (document.hidden) persist
 // ── Init ─────────────────────────────────────────────────────────────────
 depthSource.init();       // register depth signals so they appear in the panel
 faceSource.registerSignals();  // face/gaze signals are mappable up front
+gesture.registerSignals();     // gesture_<id> signals are mappable up front
 initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer

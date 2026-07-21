@@ -4,6 +4,11 @@ export const engine = (() => {
   let ctx, analyser, osc1, osc2, osc1g, osc2g, filt, lfo, lfog, revb, revgain, drygain, mastg;
   let started = false;
 
+  // Chord voice bank (chord mode): 4 oscillators with per-voice gains into a
+  // shared gain, feeding the same filter/reverb chain as the main oscillators.
+  const CHORD_VOICES = 4;
+  let chordOscs = [], chordVGains = [], chordGain = null, chordOn = false;
+
   // Pitch quantisation: snap oscillator frequencies onto a scale + tuning.
   const FREQ_KEYS = new Set(['osc1_freq', 'osc2_freq']);
   let tuning = { enabled: false, root: 'C', scale: 'chromatic', system: 'equal (12-TET)' };
@@ -98,7 +103,21 @@ export const engine = (() => {
     // LFO → filter cutoff (default target)
     lfo.connect(lfog); lfog.connect(filt.frequency);
 
+    // Chord voice bank → shared gain (silent until playChord) → filter.
+    chordGain = ctx.createGain(); chordGain.gain.value = 0;
+    chordGain.connect(filt);
+    chordOscs = []; chordVGains = []; chordOn = false;
+    for (let i = 0; i < CHORD_VOICES; i++) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      applyType(o, osc1Type);
+      o.frequency.value = 220;
+      g.gain.value = 0;
+      o.connect(g); g.connect(chordGain);
+      chordOscs.push(o); chordVGains.push(g);
+    }
+
     osc1.start(); osc2.start(); lfo.start();
+    chordOscs.forEach(o => o.start());
     started = true;
   }
 
@@ -186,6 +205,35 @@ export const engine = (() => {
   // Audio-clock now (seconds) — the play-along scheduler's timeline anchor.
   function now() { return started ? ctx.currentTime : 0; }
 
+  // ── Chord voice bank (chord mode) ────────────────────────────────────
+  // Sustains a chord while a gesture is held. Voices ride the same timbre
+  // as osc1 and run through the filter/reverb/master chain, so the sound
+  // kit and gesture-driven filter sweeps shape chords too.
+  function playChord(freqs, { gain = 0.18 } = {}) {
+    if (!started || !freqs?.length) return;
+    const t = ctx.currentTime, sm = 0.02;
+    chordOscs.forEach((o, i) => {
+      const audible = i < freqs.length;
+      if (audible) o.frequency.linearRampToValueAtTime(freqs[i], t + sm);
+      chordVGains[i].gain.linearRampToValueAtTime(audible ? 1 / Math.max(3, freqs.length) : 0, t + sm);
+    });
+    chordGain.gain.cancelScheduledValues(t);
+    chordGain.gain.setValueAtTime(chordGain.gain.value, t);
+    chordGain.gain.linearRampToValueAtTime(gain, t + 0.015);
+    chordOn = true;
+  }
+
+  function releaseChord() {
+    if (!started || !chordOn) return;
+    const t = ctx.currentTime;
+    chordGain.gain.cancelScheduledValues(t);
+    chordGain.gain.setValueAtTime(chordGain.gain.value, t);
+    chordGain.gain.linearRampToValueAtTime(0, t + 0.12);
+    chordOn = false;
+  }
+
+  function chordActive() { return chordOn; }
+
   function getWaveform() {
     if (!analyser) return null;
     const buf = new Float32Array(analyser.frequencyBinCount);
@@ -203,6 +251,7 @@ export const engine = (() => {
     getOsc1Type, getOsc2Type, getFilterType,
     snapshot, restore,
     defineWave, playTone, now,
+    playChord, releaseChord, chordActive,
     getWaveform,
     get started() { return started; },
   };
