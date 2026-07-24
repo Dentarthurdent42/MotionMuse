@@ -179,6 +179,8 @@ body.resizing { cursor: col-resize; user-select: none; }
   transition: opacity 0.15s;
 }
 .src-tab.future:hover::after { opacity: 1; }
+/* Persistent "under construction" marker — visible at a glance, not just on hover. */
+.src-tab-wip { margin-left: 3px; font-size: 8px; opacity: 0.85; font-style: normal; }
 
 /* ── Camera ──────────────────────────────────────────────── */
 #video-wrap {
