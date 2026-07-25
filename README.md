@@ -56,12 +56,45 @@ on top. Tweaking any waveform, filter or timbre slider flips the selector to
 "Custom". The chosen kit is saved with presets. Kits live in `src/soundkit.js`;
 custom waveforms are registered through `engine.defineWave()`.
 
+## Developer mode
+
+Most features are visible by default, but experimental / in-progress ones are
+tucked behind the **DEV** toggle in the header (persisted). With dev mode off,
+the **EEG/EMG** source tabs and **Chord Mode** are hidden and chord playback is
+disabled — a deliberate *progressive-disclosure* choice so newcomers meet a
+simpler surface. Turn DEV on to reveal and use them. Lives in `src/devmode.js`;
+under-construction elements carry a `.uc-feature` class hidden by CSS unless
+`<body class="dev">`.
+
+## Shader — visual output
+
+The **Shader** panel renders a WebGL fragment shader (plasma / warp / bars)
+that reacts to the live audio level and two signals you pick (default
+`hand_R_x` / `hand_R_y`). It honors `prefers-reduced-motion` (freezes the time
+term). `src/shader.js` is the renderer (one program, `u_mode` branch);
+`src/ui/shader-ui.js` is the panel. The choice + driving signals save with
+presets.
+
+## Accessibility & colour (OKLab)
+
+The palette is defined in **OKLab** (`oklch()` tokens in `css/main.css`).
+OKLab's perceptually-uniform lightness makes contrast predictable, so every
+text/accent token clears **WCAG AA (≥4.5:1)** on the panel ground — checked in
+CI by `tests/contrast/index.js` (which parses `oklch()` and computes real sRGB
+luminance). Accessibility is treated as both *perceptual* (contrast, visible
+`:focus-visible` rings, `prefers-reduced-motion`) and *conceptual* (a clear
+input→output mental model, progressive disclosure via dev mode, plain-language
+labels, and icon **plus** text — never icon-only). Toggle controls expose
+`aria-pressed`; canvases carry `aria-label`.
+
 ## Gestures & chord mode
 
 The **Gestures** section recognizes hand poses and turns them into discrete
 triggers. Six built-in gestures ship ready to use — **fist, open palm, peace,
 point, thumbs-up, rock horns** — and **● REC** records your own: name it, hold
 the pose during the 3-2-1 countdown, and it's captured (camera must be running).
+Any gesture, built-in included, can be removed with its × (removals persist;
+**RESTORE BUILT-IN GESTURES** brings the defaults back).
 Recognition is nearest-template matching over the seven normalized hand features
 the CV source already publishes (five finger extensions + openness + spread).
 Every gesture is also exposed as a mappable bus signal `gesture_<id>`, so a
@@ -211,6 +244,8 @@ src/
   chords.js         Chord construction (root + quality → frequencies)
   gesture.js        Hand-gesture recognizer + custom-gesture store
   chordmode.js      Gesture → chord mapping (hold-to-sound)
+  devmode.js        Developer-mode toggle (gates under-construction features)
+  shader.js         WebGL visual-output shader (reacts to audio + signals)
   cv.js             MediaPipe Hand + Pose source (includes latency HUD)
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
   face.js           Opt-in face landmark + gaze tracking (blendshape signals)
@@ -222,6 +257,7 @@ src/
     keyboard.js     Shared piano-keyboard renderer
     playalong-ui.js Falling-note highway renderer + game panel
     gesture-ui.js   Gestures + Chord Mode panel sections
+    shader-ui.js    Shader visual-output panel section
     signals.js      Signal panel (build + live update)
     mapper-ui.js    Mapper rows (render + live bars)
     audio-ui.js     Audio panel (waveform buttons, sliders)

@@ -14,6 +14,8 @@ import { playalong }                        from './playalong.js';
 import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
 import { gesture }                          from './gesture.js';
 import { chordmode }                        from './chordmode.js';
+import { devmode }                          from './devmode.js';
+import { shader }                           from './shader.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
@@ -26,6 +28,7 @@ function loop() {
   updateMapperBars();
   if (engine.started) updateAudioSliders();
   drawViz();
+  shader.render();       // cheap no-op unless the shader panel is active
   updateFsOverlay();     // cheap no-op unless fullscreen is active
   updateGamePanel();     // cheap no-op unless a song is running
   requestAnimationFrame(loop);
@@ -88,6 +91,14 @@ const faceToggle = (btnId, key, setter, label) => {
 faceToggle('face-btn', 'faceOn', on => faceSource.setFace(on), 'Face');
 faceToggle('gaze-btn', 'gazeOn', on => faceSource.setGaze(on), 'Gaze');
 
+// ── Developer mode toggle (reveals under-construction features) ──────────
+const devBtn = document.getElementById('dev-btn');
+devmode.onChange(on => {
+  devBtn.classList.toggle('on', on);
+  devBtn.setAttribute('aria-pressed', String(on));
+});
+devBtn.addEventListener('click', () => devmode.toggle());
+
 // ── LiDAR / optical depth toggle ─────────────────────────────────────────
 const depthBtn = document.getElementById('depth-btn');
 depthSource.lidarSupported().then(ok => {
@@ -109,6 +120,7 @@ document.getElementById('audio-btn').addEventListener('click', async () => {
   const btn = document.getElementById('audio-btn');
   if (engine.started) {
     playalong.stop();          // a running game can't outlive its audio clock
+    shader.setActive(false);   // panel (and its canvas) is about to be torn down
     engine.stop();
     btn.textContent = 'AUDIO OFF';
     btn.classList.remove('on');
@@ -173,6 +185,7 @@ window.addEventListener('beforeunload', persist);
 window.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
 
 // ── Init ─────────────────────────────────────────────────────────────────
+devmode.init();           // apply persisted dev-mode state to <body>
 depthSource.init();       // register depth signals so they appear in the panel
 faceSource.registerSignals();  // face/gaze signals are mappable up front
 gesture.registerSignals();     // gesture_<id> signals are mappable up front

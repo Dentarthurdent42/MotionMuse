@@ -6,6 +6,7 @@ import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../sound
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
 import { gestureSectionsHTML, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
+import { shaderSectionHTML, wireShaderSection } from './shader-ui.js';
 
 const opts = (arr, sel) =>
   arr.map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`).join('');
@@ -70,6 +71,7 @@ export function renderAudioPanel() {
       <div id="game-score" class="quant-notes">—</div>
     </div>
     ${gestureSectionsHTML()}
+    ${shaderSectionHTML()}
     <div class="audio-section">
       <div class="audio-section-label" style="display:flex;align-items:center;">
         Pitch Quantize
@@ -209,6 +211,7 @@ export function renderAudioPanel() {
   if (t.enabled) redrawKbd();
 
   wireGestureSections(renderAudioPanel);
+  wireShaderSection();
 }
 
 export function updateAudioSliders() {

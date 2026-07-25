@@ -13,14 +13,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 function parseCssVars(cssPath) {
   const src  = readFileSync(cssPath, 'utf8');
   const vars = {};
-  // Match lines like:  --name: #rrggbb;  (ignores alpha hex and other values)
-  for (const [, name, hex] of src.matchAll(/--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6})\b/g)) {
-    vars[`--${name}`] = hex;
+  // Capture the full colour value — hex (#rrggbb) or oklch(...) — for each var.
+  for (const [, name, val] of src.matchAll(/--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6}|oklch\([^)]*\))\s*;/g)) {
+    vars[`--${name}`] = val.trim();
   }
   return vars;
 }
 
-// ── WCAG contrast math ────────────────────────────────────────────────────────
+// ── Colour → linear-light sRGB ────────────────────────────────────────────────
 function hexToLinear(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [n >> 16, (n >> 8) & 0xff, n & 0xff].map(c => {
@@ -29,13 +29,32 @@ function hexToLinear(hex) {
   });
 }
 
+// OKLCH → linear sRGB (Björn Ottosson). Alpha (/ A) is ignored — the contrast
+// pairs use only opaque tokens. Returns linear-light rgb, clamped to gamut.
+function oklchToLinear(str) {
+  const [L, C, h] = str.slice(6, -1).split('/')[0].trim().split(/\s+/).map(Number);
+  const hr = (h || 0) * Math.PI / 180;
+  const a = (C || 0) * Math.cos(hr), b = (C || 0) * Math.sin(hr);
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+  const l = l_ ** 3, m = m_ ** 3, s = s_ ** 3;
+  return [
+     4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+  ].map(v => Math.max(0, Math.min(1, v)));
+}
+
+const toLinear = c => c.startsWith('#') ? hexToLinear(c) : oklchToLinear(c);
+
 function luminance([r, g, b]) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-function contrastRatio(hex1, hex2) {
-  const l1 = luminance(hexToLinear(hex1));
-  const l2 = luminance(hexToLinear(hex2));
+function contrastRatio(c1, c2) {
+  const l1 = luminance(toLinear(c1));
+  const l2 = luminance(toLinear(c2));
   const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
   return (hi + 0.05) / (lo + 0.05);
 }
