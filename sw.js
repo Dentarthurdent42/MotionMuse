@@ -1,4 +1,4 @@
-const CACHE = 'biosignal-v14';
+const CACHE = 'biosignal-v15';
 
 // Derive base from the SW's own scope so paths work whether the app is
 // served from / (Cloudflare Pages, GitHub Pages custom domain) or a

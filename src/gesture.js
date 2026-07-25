@@ -27,9 +27,9 @@ const BUILTINS = [
   { id: 'horns',  name: 'Rock Horns',f: [0.38, 0.80, 0.22, 0.16, 0.80, 0.55, 0.50] },
 ].map(g => ({ ...g, builtin: true, hand: 'any' }));
 
-export const MATCH_THRESHOLD = 0.45;   // max Euclidean distance to count as a match
-const HYSTERESIS  = 0.12;              // extra slack to *keep* the current match
-const HOLD_FRAMES = 3;                 // consecutive frames before a match engages
+export const MATCH_THRESHOLD = 0.6;    // max Euclidean distance to count as a match
+const HYSTERESIS  = 0.15;              // extra slack to *keep* the current match
+const HOLD_FRAMES = 2;                 // frames of continuous match before engaging
 
 // Pure nearest-template match — unit-tested.
 // features: number[7]; templates: [{id, f}]; returns {id, dist} or null.
@@ -115,13 +115,18 @@ export const gesture = (() => {
       for (const side of ['L', 'R']) {
         const st = state[side];
         const f = featuresFor(side);
+        // Match each frame (hysteresis in matchGesture biases toward the
+        // currently-held gesture). Latch to the nearest under-threshold match
+        // after a couple of frames of *any* match — don't require the same
+        // nearest id every frame, or normal hand jitter (templates sit close
+        // together) keeps resetting the candidate and nothing ever engages.
         const m = f ? matchGesture(f, all(), MATCH_THRESHOLD, st.active) : null;
-        if (m && m.id === st.candidate) {
-          if (++st.frames >= HOLD_FRAMES) st.active = m.id;
+        if (m) {
+          st.frames = Math.min(st.frames + 1, 9);
+          if (st.frames >= HOLD_FRAMES || st.active) st.active = m.id;
         } else {
-          st.candidate = m?.id ?? null;
-          st.frames = m ? 1 : 0;
-          if (!m) st.active = null;
+          st.frames = 0;
+          st.active = null;
         }
         if (st.active) matched.add(st.active);
       }

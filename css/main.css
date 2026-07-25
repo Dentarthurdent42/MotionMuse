@@ -397,6 +397,19 @@ body.no-scroll { overflow: hidden; }
 .ng-node.ng-out { text-align: right; border-left: 3px solid transparent; }
 .ng-node.ng-out.wired { border-left-color: var(--wire); }
 .ng-node-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ng-node.ng-in  .ng-node-title { padding-right: 14px; }
+.ng-node.ng-out .ng-node-title { padding-left: 14px; }
+/* Small delete affordance so any node (even the last one) can be removed. */
+.ng-node-del {
+  position: absolute; top: 3px;
+  width: 14px; height: 14px; line-height: 12px; padding: 0;
+  border: none; border-radius: 3px; background: transparent;
+  color: var(--dim); font-size: 12px; cursor: pointer; z-index: 3;
+}
+.ng-node.ng-in  .ng-node-del { right: 3px; }
+.ng-node.ng-out .ng-node-del { left: 3px; }
+.ng-node-del:hover { background: var(--faint); color: var(--text); }
+.ng-node-del:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
 .ng-socket {
   position: absolute; top: 50%; transform: translateY(-50%);
   width: 15px; height: 15px; border-radius: 50%;

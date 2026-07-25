@@ -20,6 +20,36 @@ const CURVE_OPTS = [
 
 const sigLabel = k => bus.signals.get(k)?.label ?? k;
 
+// Output parameters grouped into meaningful categories for the picker.
+const PARAM_CATS = [
+  ['Oscillators', ['osc1_freq', 'osc1_detune', 'osc2_freq', 'osc2_detune', 'osc_mix']],
+  ['Filter',      ['filter_freq', 'filter_q']],
+  ['LFO',         ['lfo_rate', 'lfo_depth']],
+  ['Output',      ['reverb_mix', 'volume']],
+];
+
+// Grouped <optgroup> option lists so the pickers stay categorized, not flat.
+function groupedSignalOptions(exclude) {
+  const groups = new Map();
+  bus.signals.forEach((s, k) => {
+    if (exclude.includes(k)) return;
+    const g = s.group || 'misc';
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(`<option value="${k}">${s.label}</option>`);
+  });
+  let o = '';
+  groups.forEach((opts, g) => { o += `<optgroup label="${g}">${opts.join('')}</optgroup>`; });
+  return o;
+}
+function groupedParamOptions(exclude) {
+  let o = '';
+  for (const [cat, keys] of PARAM_CATS) {
+    const av = keys.filter(k => !exclude.includes(k));
+    if (av.length) o += `<optgroup label="${cat}">${av.map(k => `<option value="${k}">${engine.PARAMS[k].label}</option>`).join('')}</optgroup>`;
+  }
+  return o;
+}
+
 // Stable, legible cable/socket colour per signal (OKLab hue from a hash).
 function sigHue(key) {
   let h = 0;
@@ -52,12 +82,11 @@ export function renderMapper() {
 
   const inputs = inputKeys();
   const outputs = outputKeys();
-  const addableIn  = [...bus.signals.keys()].filter(k => !inputs.includes(k));
-  const addableOut = PARAM_KEYS.filter(k => !outputs.includes(k));
 
   const inNodes = inputs.map(k => `
     <div class="ng-node ng-in" data-key="${k}" style="--wire:${sigColor(k)}">
       <span class="ng-node-title" title="${sigLabel(k)}">${sigLabel(k)}</span>
+      <button class="ng-node-del" data-kind="in" data-key="${k}" aria-label="Remove ${sigLabel(k)}">×</button>
       <button class="ng-socket ng-out" data-side="out" data-key="${k}"
               aria-label="Output of ${sigLabel(k)} — connect to a parameter"></button>
     </div>`).join('');
@@ -69,6 +98,7 @@ export function renderMapper() {
          style="${wired ? `--wire:${sigColor(wired.signal)}` : ''}">
       <button class="ng-socket ng-in" data-side="in" data-key="${k}"
               aria-label="Input of ${engine.PARAMS[k].label}"></button>
+      <button class="ng-node-del" data-kind="out" data-key="${k}" aria-label="Remove ${engine.PARAMS[k].label}">×</button>
       <span class="ng-node-title">${engine.PARAMS[k].label}</span>
     </div>`;
   }).join('');
@@ -92,11 +122,11 @@ export function renderMapper() {
     <div class="ng-addbar">
       <select id="ng-add-input" aria-label="Add an input signal">
         <option value="">+ add input…</option>
-        ${addableIn.map(k => `<option value="${k}">${sigLabel(k)}</option>`).join('')}
+        ${groupedSignalOptions(inputs)}
       </select>
       <select id="ng-add-output" aria-label="Add an output parameter">
         <option value="">+ add output…</option>
-        ${addableOut.map(k => `<option value="${k}">${engine.PARAMS[k].label}</option>`).join('')}
+        ${groupedParamOptions(outputs)}
       </select>
     </div>
     ${editor}`;
@@ -113,6 +143,13 @@ function wireHandlers(rows) {
   rows.querySelector('#ng-add-output')?.addEventListener('change', e => {
     if (e.target.value) { addedOutputs.add(e.target.value); renderMapper(); }
   });
+
+  // Remove a node entirely (and any cable attached to it). Works even in the
+  // minimal one-in/one-out case.
+  rows.querySelectorAll('.ng-node-del').forEach(btn => btn.addEventListener('click', e => {
+    e.stopPropagation();
+    removeNode(btn.dataset.kind, btn.dataset.key);
+  }));
 
   // Connect by dragging one socket onto another, or tap-to-arm then tap the
   // target (touch- and keyboard-friendly). On touch the pointer is implicitly
@@ -158,17 +195,49 @@ function wireHandlers(rows) {
     if (sel()) sel().curve = e.target.value;
   }));
   rows.querySelector('#ng-del')?.addEventListener('click', () => {
-    if (selectedId != null) { mapper.remove(selectedId); selectedId = null; renderMapper(); }
+    if (selectedId != null) disconnect(selectedId);
   });
 
   function sel() { return mapper.mappings.find(m => m.id === selectedId); }
 }
 
+// Remove just the cable, but keep both endpoint nodes on the canvas so they
+// can be re-wired — disconnecting shouldn't make the nodes vanish.
+function disconnect(id) {
+  const m = mapper.mappings.find(x => x.id === id);
+  if (m) {
+    if (m.signal)     addedInputs.add(m.signal);
+    if (m.audioParam) addedOutputs.add(m.audioParam);
+    mapper.remove(id);
+  }
+  selectedId = null;
+  renderMapper();
+}
+
+// Remove a node and any cable attached to it.
+function removeNode(kind, key) {
+  if (kind === 'in') {
+    addedInputs.delete(key);
+    mapper.mappings.filter(m => m.signal === key).forEach(m => {
+      addedOutputs.add(m.audioParam);   // keep the far end's node
+      mapper.remove(m.id);
+    });
+  } else {
+    addedOutputs.delete(key);
+    mapper.mappings.filter(m => m.audioParam === key).forEach(m => mapper.remove(m.id));
+  }
+  selectedId = null;
+  renderMapper();
+}
+
 // ── Connection logic ──
 function connect(sigKey, paramKey) {
-  // One incoming cable per output: replace whatever was driving this param.
-  mapper.mappings.filter(m => m.audioParam === paramKey).map(m => m.id)
-    .forEach(id => mapper.remove(id));
+  // One incoming cable per output: replace whatever was driving this param,
+  // but keep the displaced signal's node on the canvas (it just loses a cable).
+  mapper.mappings.filter(m => m.audioParam === paramKey).forEach(m => {
+    if (m.signal && m.signal !== sigKey) addedInputs.add(m.signal);
+    mapper.remove(m.id);
+  });
   const [lo, hi] = DEFAULT_RANGE[paramKey] ?? [engine.PARAMS[paramKey].min, engine.PARAMS[paramKey].max];
   const id = mapper.add(paramKey, sigKey, lo, hi);
   addedInputs.delete(sigKey);
