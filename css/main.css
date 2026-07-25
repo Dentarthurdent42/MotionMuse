@@ -373,6 +373,35 @@ body.no-scroll { overflow: hidden; }
 #mapper-rows::-webkit-scrollbar { width: 3px; }
 #mapper-rows::-webkit-scrollbar-thumb { background: var(--border2); }
 
+/* ── Patchbay (signal → output wiring) ───────────────────── */
+#patchbay { position: relative; padding: 8px 10px; }
+#pb-wires { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: visible; }
+.pb-empty { padding: 22px 14px; color: var(--dim); font-size: 10px; text-align: center; line-height: 1.6; }
+.pb-lane {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 52px minmax(0,1fr) 20px;
+  align-items: center;
+  padding: 4px 0;
+  border-radius: 4px;
+}
+.pb-lane:hover { background: rgba(255,255,255,0.03); }
+.pb-lane.sel   { background: var(--faint); }
+.pb-jack select { width: 100%; }
+.pb-jack.pb-out { text-align: right; }
+.pb-gutter { min-width: 0; }               /* cable runs across this column */
+.pb-del { background: none; border: none; }
+.pb-editor {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-top: 6px; padding-top: 6px;
+  border-top: 1px dashed var(--border2);
+  font-size: 9px; color: var(--dim);
+}
+.pb-editor label { display: inline-flex; align-items: center; gap: 4px; }
+.pb-editor input { width: 62px; }
+.pb-editor select { width: 84px; }
+
 .map-row-wrap { border-bottom: 1px solid var(--border); }
 .map-row {
   display: grid;

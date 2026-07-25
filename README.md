@@ -19,7 +19,7 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` and `PoseLandmarker` on every video frame, extracts ~30 signals per frame, and writes them into the bus.
-- **Mapper** (`src/mapper.js`): each mapping row takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick.
+- **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **patchbay** (`src/ui/mapper-ui.js`): every mapping is a colour-coded **cable** from an input jack (signal) to an output jack (parameter), the cable's width/opacity pulsing with its live value. Range and curve stay hidden until you click a cable — keeping the resting view uncluttered — and hovering a cable highlights it while dimming the rest so wires stay easy to follow. `+ ADD MAPPING` drops a new cable.
 - **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter and a convolution reverb, all driven by the Web Audio API with 25 ms parameter smoothing.
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
 
@@ -60,11 +60,11 @@ custom waveforms are registered through `engine.defineWave()`.
 
 Most features are visible by default, but experimental / in-progress ones are
 tucked behind the **DEV** toggle in the header (persisted). With dev mode off,
-the **EEG/EMG** source tabs and **Chord Mode** are hidden and chord playback is
-disabled — a deliberate *progressive-disclosure* choice so newcomers meet a
-simpler surface. Turn DEV on to reveal and use them. Lives in `src/devmode.js`;
-under-construction elements carry a `.uc-feature` class hidden by CSS unless
-`<body class="dev">`.
+the **EEG/EMG** source tabs, the **Gestures** and **Chord Mode** sections, and
+the **Shader** panel are hidden (and chord playback is disabled) — a deliberate
+*progressive-disclosure* choice so newcomers meet a simpler surface. Turn DEV
+on to reveal and use them. Lives in `src/devmode.js`; under-construction
+elements carry a `.uc-feature` class hidden by CSS unless `<body class="dev">`.
 
 ## Shader — visual output
 

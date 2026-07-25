@@ -41,9 +41,9 @@ export function gestureSectionsHTML() {
   }).join('') : '';
 
   return `
-    <div class="audio-section">
+    <div class="audio-section uc-feature">
       <div class="audio-section-label" style="display:flex;align-items:center;">
-        Gestures
+        Gestures <span class="uc-badge">under construction</span>
         <div class="wave-btn" id="record-gesture-btn"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">● REC</div>
       </div>
