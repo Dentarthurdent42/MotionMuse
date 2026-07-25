@@ -4,6 +4,11 @@ export const engine = (() => {
   let ctx, analyser, osc1, osc2, osc1g, osc2g, filt, lfo, lfog, revb, revgain, drygain, mastg;
   let started = false;
 
+  // Chord voice bank (chord mode): 4 oscillators with per-voice gains into a
+  // shared gain, feeding the same filter/reverb chain as the main oscillators.
+  const CHORD_VOICES = 4;
+  let chordOscs = [], chordVGains = [], chordGain = null, chordOn = false;
+
   // Pitch quantisation: snap oscillator frequencies onto a scale + tuning.
   const FREQ_KEYS = new Set(['osc1_freq', 'osc2_freq']);
   let tuning = { enabled: false, root: 'C', scale: 'chromatic', system: 'equal (12-TET)' };
@@ -12,6 +17,28 @@ export const engine = (() => {
   // Waveform / filter selections. Kept as state (not only on the live nodes)
   // so they survive save/load and a stop→start cycle.
   let osc1Type = 'sine', osc2Type = 'triangle', filterType = 'lowpass';
+
+  // Custom waveforms ('custom:<name>') for the sound kit — harmonic tables
+  // registered up front, resolved to PeriodicWaves lazily per AudioContext.
+  const waveSpecs = new Map();       // name → { real, imag } Float32Arrays
+  let periodicCache = new Map();     // name → PeriodicWave (this ctx only)
+  function defineWave(name, { real, imag }) {
+    waveSpecs.set(name, {
+      real: Float32Array.from(real ?? new Array(imag.length).fill(0)),
+      imag: Float32Array.from(imag),
+    });
+  }
+  function applyType(osc, type) {
+    if (typeof type === 'string' && type.startsWith('custom:')) {
+      const spec = waveSpecs.get(type.slice(7));
+      if (!spec) { osc.type = 'sine'; return; }   // unknown name degrades safely
+      let pw = periodicCache.get(type);
+      if (!pw) { pw = ctx.createPeriodicWave(spec.real, spec.imag); periodicCache.set(type, pw); }
+      osc.setPeriodicWave(pw);
+    } else {
+      osc.type = type;
+    }
+  }
 
   // Audio parameter definitions — name, display label, min, max, default value
   const PARAMS = {
@@ -43,8 +70,9 @@ export const engine = (() => {
     ctx      = new AudioContext();
     analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
 
-    osc1 = ctx.createOscillator(); osc1.type = osc1Type;
-    osc2 = ctx.createOscillator(); osc2.type = osc2Type;
+    periodicCache = new Map();               // PeriodicWaves are per-context
+    osc1 = ctx.createOscillator(); applyType(osc1, osc1Type);
+    osc2 = ctx.createOscillator(); applyType(osc2, osc2Type);
     osc1g = ctx.createGain(); osc1g.gain.value = 1 - PARAMS.osc_mix.val;
     osc2g = ctx.createGain(); osc2g.gain.value = PARAMS.osc_mix.val;
     filt  = ctx.createBiquadFilter(); filt.type = filterType;
@@ -75,7 +103,21 @@ export const engine = (() => {
     // LFO → filter cutoff (default target)
     lfo.connect(lfog); lfog.connect(filt.frequency);
 
+    // Chord voice bank → shared gain (silent until playChord) → filter.
+    chordGain = ctx.createGain(); chordGain.gain.value = 0;
+    chordGain.connect(filt);
+    chordOscs = []; chordVGains = []; chordOn = false;
+    for (let i = 0; i < CHORD_VOICES; i++) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      applyType(o, osc1Type);
+      o.frequency.value = 220;
+      g.gain.value = 0;
+      o.connect(g); g.connect(chordGain);
+      chordOscs.push(o); chordVGains.push(g);
+    }
+
     osc1.start(); osc2.start(); lfo.start();
+    chordOscs.forEach(o => o.start());
     started = true;
   }
 
@@ -120,8 +162,8 @@ export const engine = (() => {
     return (tuning.enabled && FREQ_KEYS.has(key)) ? quant.noteName(PARAMS[key].val) : null;
   }
 
-  function setOsc1Type(t)   { osc1Type = t; if (osc1) osc1.type = t; }
-  function setOsc2Type(t)   { osc2Type = t; if (osc2) osc2.type = t; }
+  function setOsc1Type(t)   { osc1Type = t; if (osc1) applyType(osc1, t); }
+  function setOsc2Type(t)   { osc2Type = t; if (osc2) applyType(osc2, t); }
   function setFilterType(t) { filterType = t; if (filt) filt.type = t; }
   function getOsc1Type()    { return osc1Type; }
   function getOsc2Type()    { return osc2Type; }
@@ -142,6 +184,56 @@ export const engine = (() => {
     if (s.params) for (const k in s.params) if (PARAMS[k]) set(k, s.params[k]);
   }
 
+  // One-shot tone voice — used by play-along for the guide melody and
+  // hit/miss feedback. Own gain straight to the destination, so it never
+  // interferes with the player's synth chain or its parameter smoothing.
+  function playTone({ freq, when = 0, dur = 0.25, type = 'triangle', gain = 0.12 } = {}) {
+    if (!started || !(freq > 0)) return;
+    const t0 = ctx.currentTime + Math.max(0, when);
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    applyType(o, type);
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(gain, t0 + 0.012);
+    g.gain.setValueAtTime(gain, t0 + Math.max(0.012, dur - 0.08));
+    g.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
+
+  // Audio-clock now (seconds) — the play-along scheduler's timeline anchor.
+  function now() { return started ? ctx.currentTime : 0; }
+
+  // ── Chord voice bank (chord mode) ────────────────────────────────────
+  // Sustains a chord while a gesture is held. Voices ride the same timbre
+  // as osc1 and run through the filter/reverb/master chain, so the sound
+  // kit and gesture-driven filter sweeps shape chords too.
+  function playChord(freqs, { gain = 0.18 } = {}) {
+    if (!started || !freqs?.length) return;
+    const t = ctx.currentTime, sm = 0.02;
+    chordOscs.forEach((o, i) => {
+      const audible = i < freqs.length;
+      if (audible) o.frequency.linearRampToValueAtTime(freqs[i], t + sm);
+      chordVGains[i].gain.linearRampToValueAtTime(audible ? 1 / Math.max(3, freqs.length) : 0, t + sm);
+    });
+    chordGain.gain.cancelScheduledValues(t);
+    chordGain.gain.setValueAtTime(chordGain.gain.value, t);
+    chordGain.gain.linearRampToValueAtTime(gain, t + 0.015);
+    chordOn = true;
+  }
+
+  function releaseChord() {
+    if (!started || !chordOn) return;
+    const t = ctx.currentTime;
+    chordGain.gain.cancelScheduledValues(t);
+    chordGain.gain.setValueAtTime(chordGain.gain.value, t);
+    chordGain.gain.linearRampToValueAtTime(0, t + 0.12);
+    chordOn = false;
+  }
+
+  function chordActive() { return chordOn; }
+
   function getWaveform() {
     if (!analyser) return null;
     const buf = new Float32Array(analyser.frequencyBinCount);
@@ -158,6 +250,8 @@ export const engine = (() => {
     setOsc1Type, setOsc2Type, setFilterType,
     getOsc1Type, getOsc2Type, getFilterType,
     snapshot, restore,
+    defineWave, playTone, now,
+    playChord, releaseChord, chordActive,
     getWaveform,
     get started() { return started; },
   };

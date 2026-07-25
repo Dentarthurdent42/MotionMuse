@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>BioSignal → Sound</title>
+<title>MotionMuse</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#00e5cc">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="BioSignal">
+<meta name="apple-mobile-web-app-title" content="MotionMuse">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Space+Grotesk:wght@300;400;600&display=swap" rel="stylesheet">
@@ -19,7 +19,7 @@
 <div id="app">
   <!-- ── Header ──────────────────────────────────────────── -->
   <header id="header">
-    <div class="logo">BIO<span>SIGNAL</span> → SOUND</div>
+    <div class="logo">MOTION<span>MUSE</span></div>
     <div class="hstatus">
       <div class="dot" id="cv-dot"></div>
       <span id="status-lbl">READY</span>
@@ -36,8 +36,8 @@
     <div class="panel panel-src">
       <div class="src-tabs">
         <div class="src-tab active">CV</div>
-        <div class="src-tab future" data-soon="Coming: EEG via Web Serial">EEG</div>
-        <div class="src-tab future" data-soon="Coming: EMG sensor input">EMG</div>
+        <div class="src-tab future" data-soon="EEG input — under construction">EEG<span class="src-tab-wip">🚧</span></div>
+        <div class="src-tab future" data-soon="EMG input — under construction">EMG<span class="src-tab-wip">🚧</span></div>
       </div>
 
       <div id="video-wrap">
@@ -51,6 +51,10 @@
                   title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears (start the camera first)">☺ FACE</button>
           <button id="gaze-btn" class="depth-toggle" disabled
                   title="Track pupil orientation as gaze_x / gaze_y signals (start the camera first)">◉ GAZE</button>
+          <button id="fs-btn" class="depth-toggle"
+                  title="Fullscreen camera view">⛶ FULL</button>
+          <button id="fskbd-btn" class="depth-toggle fs-only"
+                  title="Show the piano keyboard overlay">🎹 KEYS</button>
         </div>
         <div id="latency-bar">
           <span>FPS <b id="lat-fps">—</b></span>
@@ -65,6 +69,7 @@
           </svg>
           <span>START CAMERA</span>
         </div>
+        <canvas id="fs-kbd"></canvas>
       </div>
 
       <div class="panel" style="border-top:1px solid var(--border);">

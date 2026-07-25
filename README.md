@@ -1,10 +1,10 @@
-# BioSignal → Sound
+# MotionMuse
 
 A browser-based instrument that maps live webcam data — hand position, gesture, and body pose — to audio synthesis parameters in real time. No plugins, no install: pure Web APIs served as static files.
 
 ## Demo
 
-![BioSignal → Sound screenshot](docs/screenshot.png)
+![MotionMuse screenshot](docs/screenshot.png)
 
 Open `index.html` (or the Netlify deploy) and:
 1. Click **START CAMERA** — MediaPipe loads and begins detecting hands and pose
@@ -44,6 +44,65 @@ snapped, moving live as you play. The note readout beneath it is colour-matched
 to the two dots. The toggle defaults to **OFF** (continuous), so existing
 behaviour is unchanged until you opt in. Quantisation is applied centrally in
 `engine.set()`, so it affects both signal-driven mappings and manual slider moves.
+
+## Sound kits
+
+The **Sound Kit** selector (top of the Audio Engine column) applies instrument
+timbre presets — **Synth, Piano, Organ, Trumpet, Strings, Flute, Bass** — built
+from custom harmonic waveforms, filter and effect settings on the synth engine
+(synthesized approximations, not samples; zero downloads, works offline).
+A kit sets where the timbre parameters *rest*; gesture mappings keep modulating
+on top. Tweaking any waveform, filter or timbre slider flips the selector to
+"Custom". The chosen kit is saved with presets. Kits live in `src/soundkit.js`;
+custom waveforms are registered through `engine.defineWave()`.
+
+## Gestures & chord mode
+
+The **Gestures** section recognizes hand poses and turns them into discrete
+triggers. Six built-in gestures ship ready to use — **fist, open palm, peace,
+point, thumbs-up, rock horns** — and **● REC** records your own: name it, hold
+the pose during the 3-2-1 countdown, and it's captured (camera must be running).
+Recognition is nearest-template matching over the seven normalized hand features
+the CV source already publishes (five finger extensions + openness + spread).
+Every gesture is also exposed as a mappable bus signal `gesture_<id>`, so a
+gesture can drive *any* audio parameter, not just chords.
+
+**Chord Mode** maps gestures to chords: toggle it on, and each gesture gets a
+**root + octave + quality** assignment (major, minor, maj7, dom7, sus4, dim, …).
+Holding an assigned gesture sustains its chord; releasing it lets the chord go
+(hold-to-sound). Chords play through a dedicated 4-voice bank that rides the same
+filter, reverb and sound-kit timbre as the main oscillators. Custom gestures and
+chord assignments are saved with presets. Logic: `src/gesture.js` (recognizer),
+`src/chords.js` (chord construction), `src/chordmode.js` (gesture→chord glue),
+with the voice bank in `engine.playChord()` / `releaseChord()`.
+
+## Fullscreen camera view
+
+**⛶ FULL** (below the camera toggles) makes the camera view fullscreen — via
+the native Fullscreen API where available, or a CSS takeover on iPhone Safari
+(which has no element fullscreen). In fullscreen, **🎹 KEYS** overlays the live
+pitch-quantise keyboard along the bottom of the view. Gesture overlays keep
+their alignment at any screen shape.
+
+## Play along (Guitar Hero mode)
+
+The **Play Along** section starts a falling-note game: notes descend toward a
+hit line above the piano keys, and you *hit* a note by steering osc 1's
+quantised pitch onto the target as it crosses the line — using whatever gesture
+drives `osc1_freq` (a Left-Wrist-Y mapping is added automatically if none
+exists). Starting a song turns pitch quantise on in the song's key and restores
+your tuning afterwards. A quiet **guide** melody can be toggled; hits and
+misses get audio feedback, and scoring tracks streaks and accuracy.
+
+- **Songs** (public domain, bundled in `src/songs.js`): Ode to Joy, Twinkle
+  Twinkle, When the Saints, Scarborough Fair. Chart format:
+  `{ bpm, beatsPerBar, root, scale, notes: [{ b, m, d }] }` — beat, MIDI note,
+  duration in beats.
+- **Difficulties:** *easy* (downbeats & long notes only, ±250 ms window,
+  slow fall, octave-agnostic matching), *medium* (on-the-beat notes, ±180 ms),
+  *hard* (every note, ±120 ms, fast fall).
+- The game renders in the panel and — best experience — on the fullscreen
+  overlay. Game logic: `src/playalong.js`; renderer: `src/ui/playalong-ui.js`.
 
 ## Saving & loading
 
@@ -146,6 +205,12 @@ src/
   scale.js          Scale + tuning pitch quantiser
   mapper.js         Signal → audio parameter routing and curves
   preset.js         Save/load of mappings + settings (file + localStorage)
+  soundkit.js       Instrument timbre presets (synthesized)
+  songs.js          Bundled play-along note charts
+  playalong.js      Play-along game logic (scheduler, judging, difficulties)
+  chords.js         Chord construction (root + quality → frequencies)
+  gesture.js        Hand-gesture recognizer + custom-gesture store
+  chordmode.js      Gesture → chord mapping (hold-to-sound)
   cv.js             MediaPipe Hand + Pose source (includes latency HUD)
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
   face.js           Opt-in face landmark + gaze tracking (blendshape signals)
@@ -153,6 +218,10 @@ src/
   ui/
     status.js       Status dot and toast notifications
     resize.js       Draggable panel splitters (desktop)
+    fullscreen.js   Fullscreen camera view + keyboard overlay
+    keyboard.js     Shared piano-keyboard renderer
+    playalong-ui.js Falling-note highway renderer + game panel
+    gesture-ui.js   Gestures + Chord Mode panel sections
     signals.js      Signal panel (build + live update)
     mapper-ui.js    Mapper rows (render + live bars)
     audio-ui.js     Audio panel (waveform buttons, sliders)

@@ -10,18 +10,33 @@
 
 import { engine } from './engine.js';
 import { mapper } from './mapper.js';
+import { currentKit, setCurrentLabel } from './soundkit.js';
+import { gesture } from './gesture.js';
+import { chordmode } from './chordmode.js';
 
 const LS_KEY = 'biosignal-session-v1';
 const TAG    = 'biosignal-sound';
 
 export function snapshot() {
-  return { app: TAG, v: 1, mappings: mapper.serialize(), audio: engine.snapshot() };
+  return {
+    app: TAG, v: 1,
+    kit: currentKit(),
+    mappings: mapper.serialize(),
+    audio: engine.snapshot(),
+    gestures: gesture.serialize(),   // custom gestures only (built-ins are code)
+    chord: chordmode.serialize(),
+  };
 }
 
 export function apply(data) {
   if (!data || data.app !== TAG) return false;
   if (data.audio) engine.restore(data.audio);
   if (Array.isArray(data.mappings)) mapper.load(data.mappings);
+  if (data.gestures) gesture.load(data.gestures);
+  if (data.chord) chordmode.load(data.chord);
+  // Restore the kit *selection label* only — the exact parameter values came
+  // from the snapshot above, so re-applying the kit would stomp them.
+  setCurrentLabel(data.kit ?? 'custom');
   return true;
 }
 
@@ -36,7 +51,7 @@ export function restoreLocal() {
   } catch { return false; }
 }
 
-export function downloadFile(name = 'biosignal-preset.json') {
+export function downloadFile(name = 'motionmuse-preset.json') {
   const blob = new Blob([JSON.stringify(snapshot(), null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
   const a    = Object.assign(document.createElement('a'), { href: url, download: name });
@@ -48,6 +63,6 @@ export function downloadFile(name = 'biosignal-preset.json') {
 // caller can surface a clear message.
 export async function loadFromFile(file) {
   const data = JSON.parse(await file.text());
-  if (!apply(data)) throw new Error('Not a BioSignal preset');
+  if (!apply(data)) throw new Error('Not a MotionMuse preset');
   return true;
 }

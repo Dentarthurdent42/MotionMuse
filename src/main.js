@@ -9,15 +9,25 @@ import { renderMapper, updateMapperBars }   from './ui/mapper-ui.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
 import { initResize }                       from './ui/resize.js';
+import { initFullscreen, updateFsOverlay }  from './ui/fullscreen.js';
+import { playalong }                        from './playalong.js';
+import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
+import { gesture }                          from './gesture.js';
+import { chordmode }                        from './chordmode.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
 function loop() {
   mapper.tick();
+  gesture.tick();        // recognize hand gestures → gesture_<id> bus signals
+  chordmode.tick();      // cheap no-op unless chord mode is enabled
+  playalong.tick();      // cheap no-op unless a song is running
   updateSigPanel();
   updateMapperBars();
   if (engine.started) updateAudioSliders();
   drawViz();
+  updateFsOverlay();     // cheap no-op unless fullscreen is active
+  updateGamePanel();     // cheap no-op unless a song is running
   requestAnimationFrame(loop);
 }
 
@@ -25,7 +35,13 @@ function loop() {
 document.getElementById('cv-btn').addEventListener('click', async () => {
   const btn = document.getElementById('cv-btn');
   if (cvSource.running) {
-    cvSource.running = false;
+    cvSource.stopCamera();               // releases the camera hardware
+    faceSource.setFace(false);           // face/gaze read the same stream
+    faceSource.setGaze(false);
+    ['face-btn', 'gaze-btn'].forEach(id => {
+      const b = document.getElementById(id);
+      b.disabled = true; b.classList.remove('on');
+    });
     setStatus('', 'STOPPED');
     btn.textContent = 'START CAMERA';
     btn.classList.remove('on');
@@ -92,6 +108,7 @@ depthBtn.addEventListener('click', async () => {
 document.getElementById('audio-btn').addEventListener('click', async () => {
   const btn = document.getElementById('audio-btn');
   if (engine.started) {
+    playalong.stop();          // a running game can't outlive its audio clock
     engine.stop();
     btn.textContent = 'AUDIO OFF';
     btn.classList.remove('on');
@@ -124,6 +141,7 @@ document.getElementById('preset-btn').addEventListener('click', () => {
 // panel (waveforms, sliders, tuning + keyboard) only while it exists.
 function refreshFromState() {
   renderMapper();
+  if (cvSource.running) buildSigPanel();   // restored gesture signals appear
   if (engine.started) renderAudioPanel();
 }
 
@@ -157,7 +175,10 @@ window.addEventListener('visibilitychange', () => { if (document.hidden) persist
 // ── Init ─────────────────────────────────────────────────────────────────
 depthSource.init();       // register depth signals so they appear in the panel
 faceSource.registerSignals();  // face/gaze signals are mappable up front
+gesture.registerSignals();     // gesture_<id> signals are mappable up front
 initResize();             // draggable panel splitters (desktop)
+initFullscreen();         // fullscreen camera view + keyboard overlay
+initPlayalongUI();        // registers the fullscreen game renderer
 preset.restoreLocal();    // bring back the last session's mappings + settings
 renderMapper();
 loop();

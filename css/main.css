@@ -179,6 +179,8 @@ body.resizing { cursor: col-resize; user-select: none; }
   transition: opacity 0.15s;
 }
 .src-tab.future:hover::after { opacity: 1; }
+/* Persistent "under construction" marker — visible at a glance, not just on hover. */
+.src-tab-wip { margin-left: 3px; font-size: 8px; opacity: 0.85; font-style: normal; }
 
 /* ── Camera ──────────────────────────────────────────────── */
 #video-wrap {
@@ -219,6 +221,36 @@ body.resizing { cursor: col-resize; user-select: none; }
 .depth-toggle.on { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
 .depth-toggle.unsupported { opacity: .4; }
 .depth-toggle:disabled { opacity: .3; cursor: default; }
+
+/* ── Fullscreen camera view ──────────────────────────────── */
+/* Fallback for iPhone Safari (no Element.requestFullscreen): CSS takeover.
+   aspect-ratio must be released or it caps the height at ¾ of the viewport
+   width, leaving the page visible below. */
+#video-wrap.fake-fullscreen {
+  position: fixed; inset: 0; z-index: 1000;
+  width: auto; height: auto;
+  aspect-ratio: auto;
+  background: #000;
+}
+#video-wrap:fullscreen { aspect-ratio: auto; background: #000; }
+
+/* A clean, video-player-like view: no latency HUD while fullscreen. */
+#video-wrap.fs-active #latency-bar { display: none; }
+body.no-scroll { overflow: hidden; }
+
+/* The KEYS toggle only makes sense in fullscreen. */
+.cam-toggles .fs-only { display: none; }
+#video-wrap.fs-active .fs-only { display: block; }
+
+/* Keyboard / play-along overlay strip, docked at the bottom. */
+#fs-kbd {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: none;
+  width: 100%;
+  opacity: 0.88;
+  pointer-events: none;
+}
+#video-wrap.fs-active #fs-kbd.shown { display: block; }
 #face-overlay {
   position: absolute; inset: 0;
   transform: scaleX(-1);
@@ -407,6 +439,14 @@ option { background: var(--panel); }
   border: 1px solid var(--border);
   border-radius: 2px;
 }
+.game-canvas {
+  display: block;
+  width: 100%;
+  height: 170px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
 .quant-notes {
   margin-top: 6px;
   text-align: center;
@@ -416,6 +456,28 @@ option { background: var(--panel); }
   font-variant-numeric: tabular-nums;
   min-height: 11px;
 }
+
+/* ── Gestures & chord mode ───────────────────────────────── */
+.gesture-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 3px 0; font-size: 10px; color: var(--text);
+}
+.gesture-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--border2); flex-shrink: 0;
+  transition: background 0.1s, box-shadow 0.1s;
+}
+.gesture-dot.on { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+.gesture-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gesture-tag  { font-size: 8px; color: var(--dim); letter-spacing: 1px; }
+.gesture-del  { flex-shrink: 0; }
+.chord-assign {
+  display: grid;
+  grid-template-columns: 1fr 0.9fr 0.6fr 1.2fr;
+  gap: 4px; align-items: center;
+  margin-top: 4px;
+}
+.chord-assign .gesture-name { font-size: 9px; color: var(--dim); }
 .wave-btn {
   flex: 1;
   padding: 3px 0;
