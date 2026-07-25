@@ -5,6 +5,7 @@
 import { engine }              from './engine.js';
 import { gesture }             from './gesture.js';
 import { chordFreqs, chordName } from './chords.js';
+import { devmode }             from './devmode.js';
 
 export const chordmode = (() => {
   let enabled = false;
@@ -51,7 +52,11 @@ export const chordmode = (() => {
     },
 
     tick() {
-      if (!enabled || !engine.started) return;
+      // Chord mode is an under-construction feature — only active in dev mode.
+      if (!enabled || !engine.started || !devmode.enabled) {
+        if (playing) { engine.releaseChord(); playing = null; }
+        return;
+      }
       // First currently-held gesture that has a chord assigned wins.
       const id = gesture.current().find(g => assignments[g]) ?? null;
       if (id === playing) return;

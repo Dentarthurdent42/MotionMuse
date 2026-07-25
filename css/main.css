@@ -1,21 +1,26 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Palette in OKLab (oklch: Lightness Chroma Hue). Lightness is perceptually
+   uniform, so contrast against the dark grounds is predictable — every
+   text/accent token is chosen to clear WCAG AA (≥4.5:1) on --panel, verified
+   by tests/contrast/index.js. Grounds share a ~275° blue-violet hue; accents
+   keep their identity hues at a lightness high enough to stay legible. */
 :root {
-  --bg:       #060609;
-  --surface:  #0b0b13;
-  --panel:    #0f0f1a;
-  --border:   #1c1c2e;
-  --border2:  #252540;
-  --text:     #b8c0d8;
-  --dim:      #8890c0;
-  --faint:    #1e2035;
-  --cyan:     #00e5cc;
-  --cyan-dim: #00e5cc33;
-  --purple:   #9d5cff;
-  --purple-dim:#9d5cff33;
-  --amber:    #f0a500;
-  --red:      #ff3d6e;
-  --green:    #00d97e;
+  --bg:        oklch(0.13 0.015 275);
+  --surface:   oklch(0.17 0.020 275);
+  --panel:     oklch(0.20 0.025 275);
+  --border:    oklch(0.30 0.030 275);
+  --border2:   oklch(0.36 0.045 275);
+  --faint:     oklch(0.26 0.030 275);
+  --text:      oklch(0.87 0.020 275);
+  --dim:       oklch(0.72 0.055 280);
+  --cyan:      oklch(0.83 0.130 195);
+  --cyan-dim:  oklch(0.83 0.130 195 / 0.2);
+  --purple:    oklch(0.74 0.150 300);
+  --purple-dim:oklch(0.74 0.150 300 / 0.2);
+  --amber:     oklch(0.81 0.150 80);
+  --red:       oklch(0.68 0.200 20);
+  --green:     oklch(0.83 0.160 155);
 }
 
 html, body {
@@ -138,6 +143,31 @@ body.resizing { cursor: col-resize; user-select: none; }
 .btn.on { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim); }
 .btn.purple.on { border-color: var(--purple); color: var(--purple); background: var(--purple-dim); }
 .btn:disabled { opacity: 0.3; cursor: default; }
+#dev-btn.on { border-color: var(--amber); color: var(--amber); background: rgba(240,165,0,0.12); }
+
+/* ── Developer mode / under-construction gating ──────────── */
+/* Experimental features are hidden until dev mode is on. Using
+   `display:none` only in the non-dev state means the element keeps its
+   natural display value when revealed — no need to hard-code it here. */
+body:not(.dev) .uc-feature { display: none !important; }
+.uc-badge {
+  font-size: 7px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--amber); border: 1px solid var(--amber);
+  border-radius: 2px; padding: 1px 4px; margin-left: 6px; opacity: 0.85;
+}
+
+/* ── Accessibility foundations ───────────────────────────── */
+/* Visible keyboard focus for every interactive element. */
+a:focus-visible, button:focus-visible, select:focus-visible,
+input:focus-visible, [tabindex]:focus-visible, .wave-btn:focus-visible,
+.src-tab:focus-visible, .sig-row:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
 
 /* ── Source tabs ─────────────────────────────────────────── */
 .src-tabs {
@@ -444,6 +474,14 @@ option { background: var(--panel); }
   width: 100%;
   height: 170px;
   margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+.shader-canvas {
+  display: block;
+  width: 100%;
+  height: 120px;
+  background: #000;
   border: 1px solid var(--border);
   border-radius: 2px;
 }

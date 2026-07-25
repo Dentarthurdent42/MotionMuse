@@ -22,8 +22,11 @@ export function gestureSectionsHTML() {
       <span class="gesture-dot" id="gdot-${g.id}"></span>
       <span class="gesture-name">${g.name}</span>
       <span class="gesture-tag">${g.builtin ? 'built-in' : 'custom'}</span>
-      ${g.builtin ? '' : `<button class="rm-btn gesture-del" data-gid="${g.id}" title="Delete">×</button>`}
+      <button class="rm-btn gesture-del" data-gid="${g.id}"
+              title="Remove ${g.name}" aria-label="Remove ${g.name}">×</button>
     </div>`).join('');
+  const restore = gesture.hiddenCount()
+    ? `<button class="btn gesture-restore" style="margin-top:4px;width:100%;">RESTORE BUILT-IN GESTURES</button>` : '';
 
   const octaves = [2, 3, 4, 5];
   const assignRows = on ? gestures.map(g => {
@@ -45,12 +48,13 @@ export function gestureSectionsHTML() {
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">● REC</div>
       </div>
       <div id="gesture-list">${gestureRows}</div>
+      ${restore}
     </div>
-    <div class="audio-section">
+    <div class="audio-section uc-feature">
       <div class="audio-section-label" style="display:flex;align-items:center;">
-        Chord Mode
-        <div class="wave-btn${on ? ' on' : ''}" id="chord-toggle"
-             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</div>
+        Chord Mode <span class="uc-badge">under construction</span>
+        <button class="wave-btn${on ? ' on' : ''}" id="chord-toggle" aria-pressed="${on}"
+             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</button>
       </div>
       <div id="chord-assigns">${assignRows}</div>
       <div id="chord-readout" class="quant-notes">${on ? '—' : 'hold a gesture to play its chord'}</div>
@@ -88,6 +92,12 @@ export function wireGestureSections(rerender) {
       buildSigPanel();
       rerender();
     }));
+
+  document.querySelector('.gesture-restore')?.addEventListener('click', () => {
+    gesture.restoreBuiltins();
+    buildSigPanel();
+    rerender();
+  });
 
   document.getElementById('chord-toggle')?.addEventListener('click', () => {
     chordmode.setEnabled(!chordmode.enabled);

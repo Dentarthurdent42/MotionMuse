@@ -13,6 +13,7 @@ import { mapper } from './mapper.js';
 import { currentKit, setCurrentLabel } from './soundkit.js';
 import { gesture } from './gesture.js';
 import { chordmode } from './chordmode.js';
+import { shader } from './shader.js';
 
 const LS_KEY = 'biosignal-session-v1';
 const TAG    = 'biosignal-sound';
@@ -23,8 +24,9 @@ export function snapshot() {
     kit: currentKit(),
     mappings: mapper.serialize(),
     audio: engine.snapshot(),
-    gestures: gesture.serialize(),   // custom gestures only (built-ins are code)
+    gestures: gesture.serialize(),   // custom gestures + hidden built-ins
     chord: chordmode.serialize(),
+    shader: shader.serialize(),
   };
 }
 
@@ -34,6 +36,7 @@ export function apply(data) {
   if (Array.isArray(data.mappings)) mapper.load(data.mappings);
   if (data.gestures) gesture.load(data.gestures);
   if (data.chord) chordmode.load(data.chord);
+  if (data.shader) shader.load(data.shader);
   // Restore the kit *selection label* only — the exact parameter values came
   // from the snapshot above, so re-applying the kit would stomp them.
   setCurrentLabel(data.kit ?? 'custom');

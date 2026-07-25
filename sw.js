@@ -1,4 +1,4 @@
-const CACHE = 'biosignal-v12';
+const CACHE = 'biosignal-v13';
 
 // Derive base from the SW's own scope so paths work whether the app is
 // served from / (Cloudflare Pages, GitHub Pages custom domain) or a
@@ -19,6 +19,8 @@ const STATIC = [
   '/src/chords.js',
   '/src/gesture.js',
   '/src/chordmode.js',
+  '/src/devmode.js',
+  '/src/shader.js',
   '/src/soundkit.js',
   '/src/songs.js',
   '/src/playalong.js',
@@ -31,6 +33,7 @@ const STATIC = [
   '/src/ui/keyboard.js',
   '/src/ui/playalong-ui.js',
   '/src/ui/gesture-ui.js',
+  '/src/ui/shader-ui.js',
   '/src/ui/signals.js',
   '/src/ui/mapper-ui.js',
   '/src/ui/audio-ui.js',

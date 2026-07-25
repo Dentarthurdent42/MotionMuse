@@ -47,6 +47,7 @@ export function matchGesture(features, templates, threshold = MATCH_THRESHOLD, s
 export const gesture = (() => {
   let custom = [];               // user-recorded templates
   let nextCustom = 1;
+  const hiddenBuiltins = new Set();   // built-in ids the user removed
   // Per-hand recognition state.
   const state = {
     L: { candidate: null, frames: 0, active: null },
@@ -54,7 +55,7 @@ export const gesture = (() => {
   };
   let recording = null;          // { name, hand, frames: [], onDone }
 
-  const all = () => [...BUILTINS, ...custom];
+  const all = () => [...BUILTINS.filter(g => !hiddenBuiltins.has(g.id)), ...custom];
 
   const featuresFor = side => {
     const v = k => bus.signals.get(k)?.value ?? 0;
@@ -145,13 +146,29 @@ export const gesture = (() => {
     cancelRecord() { recording = null; },
 
     remove(id) {
-      const i = custom.findIndex(g => g.id === id);
-      if (i >= 0) custom.splice(i, 1);
+      if (BUILTINS.some(g => g.id === id)) {
+        hiddenBuiltins.add(id);          // built-ins are code — hide, don't delete
+      } else {
+        const i = custom.findIndex(g => g.id === id);
+        if (i >= 0) custom.splice(i, 1);
+      }
+      bus.update(`gesture_${id}`, 0);     // clear any lingering match signal
     },
 
-    serialize() { return custom.map(({ id, name, f, hand }) => ({ id, name, f, hand })); },
-    load(arr) {
-      custom = (arr ?? []).map(g => ({ ...g, builtin: false, hand: g.hand ?? 'any' }));
+    // Restore all removed built-ins (custom gestures are untouched).
+    restoreBuiltins() { hiddenBuiltins.clear(); },
+    hiddenCount: () => hiddenBuiltins.size,
+
+    serialize() {
+      return { custom: custom.map(({ id, name, f, hand }) => ({ id, name, f, hand })),
+               hidden: [...hiddenBuiltins] };
+    },
+    load(data) {
+      // Back-compat: older presets stored just an array of custom gestures.
+      const arr = Array.isArray(data) ? data : (data?.custom ?? []);
+      custom = arr.map(g => ({ ...g, builtin: false, hand: g.hand ?? 'any' }));
+      hiddenBuiltins.clear();
+      (Array.isArray(data) ? [] : (data?.hidden ?? [])).forEach(id => hiddenBuiltins.add(id));
       // Keep ids unique for future recordings.
       nextCustom = 1 + custom.reduce((mx, g) => {
         const n = /^custom(\d+)$/.exec(g.id)?.[1];
