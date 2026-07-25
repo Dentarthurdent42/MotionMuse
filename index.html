@@ -93,19 +93,11 @@
     <div class="panel panel-map">
       <div class="ph">PATCHBAY · INPUTS → OUTPUTS</div>
       <div class="mapper-toolbar">
-        <button class="btn" id="add-map-btn" style="flex:1">+ ADD MAPPING</button>
+        <span class="mapper-hint" style="flex:1">Drag a socket ● → ● to wire an input to an output</span>
         <button class="btn" id="preset-btn">PRESET</button>
         <button class="btn" id="save-btn" title="Download all mappings, audio settings and tuning as a file">SAVE</button>
         <button class="btn" id="load-btn" title="Load mappings and settings from a saved file">LOAD</button>
         <input type="file" id="load-file" accept="application/json,.json" hidden>
-      </div>
-      <div class="mapper-thead">
-        <span>AUDIO PARAM</span>
-        <span>SIGNAL</span>
-        <span>OUT MIN</span>
-        <span>OUT MAX</span>
-        <span>CURVE</span>
-        <span></span>
       </div>
       <div id="mapper-rows"></div>
     </div>

@@ -373,34 +373,52 @@ body.no-scroll { overflow: hidden; }
 #mapper-rows::-webkit-scrollbar { width: 3px; }
 #mapper-rows::-webkit-scrollbar-thumb { background: var(--border2); }
 
-/* ── Patchbay (signal → output wiring) ───────────────────── */
-#patchbay { position: relative; padding: 8px 10px; }
-#pb-wires { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: visible; }
-.pb-empty { padding: 22px 14px; color: var(--dim); font-size: 10px; text-align: center; line-height: 1.6; }
-.pb-lane {
-  position: relative; z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(0,1fr) 52px minmax(0,1fr) 20px;
-  align-items: center;
-  padding: 4px 0;
-  border-radius: 4px;
+/* ── Node-graph mapper (inputs → outputs, reusable wires) ── */
+#nodegraph {
+  position: relative;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 48px;
+  align-items: start;
+  padding: 10px 10px 4px;
 }
-.pb-lane:hover { background: rgba(255,255,255,0.03); }
-.pb-lane.sel   { background: var(--faint); }
-.pb-jack select { width: 100%; }
-.pb-jack.pb-out { text-align: right; }
-.pb-gutter { min-width: 0; }               /* cable runs across this column */
-.pb-del { background: none; border: none; }
-.pb-editor {
-  grid-column: 1 / -1;
+#ng-wires { position: absolute; inset: 0; z-index: 0; overflow: visible; pointer-events: none; }
+.ng-wire { transition: opacity 0.1s; }
+.ng-col { display: flex; flex-direction: column; gap: 8px; z-index: 1; min-width: 0; }
+.ng-hint { color: var(--dim); font-size: 9px; padding: 6px 0; }
+.ng-node {
+  position: relative;
+  background: var(--faint);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 10px; color: var(--text);
+  min-width: 0;
+}
+.ng-node.ng-in  { border-right: 3px solid var(--wire); }
+.ng-node.ng-out { text-align: right; border-left: 3px solid transparent; }
+.ng-node.ng-out.wired { border-left-color: var(--wire); }
+.ng-node-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ng-socket {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid var(--wire, var(--dim)); background: var(--panel);
+  padding: 0; cursor: crosshair; z-index: 2;
+}
+.ng-node.ng-in  .ng-socket.ng-out { right: -7px; }
+.ng-node.ng-out .ng-socket.ng-in  { left: -7px; }
+.ng-socket:hover { background: var(--wire, var(--cyan)); }
+.ng-socket.armed { box-shadow: 0 0 0 3px var(--cyan); background: var(--cyan); }
+.ng-addbar { padding: 6px 10px; }
+.ng-addbar select { width: 100%; }
+#ng-editor {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-  margin-top: 6px; padding-top: 6px;
+  padding: 8px 10px; margin-top: 4px;
   border-top: 1px dashed var(--border2);
   font-size: 9px; color: var(--dim);
 }
-.pb-editor label { display: inline-flex; align-items: center; gap: 4px; }
-.pb-editor input { width: 62px; }
-.pb-editor select { width: 84px; }
+#ng-editor .ng-edit-label { color: var(--text); font-size: 10px; width: 100%; }
+#ng-editor label { display: inline-flex; align-items: center; gap: 4px; }
+#ng-editor input { width: 62px; }
+#ng-editor select { width: 88px; }
 
 .map-row-wrap { border-bottom: 1px solid var(--border); }
 .map-row {
@@ -458,7 +476,9 @@ option { background: var(--panel); }
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+  align-items: center;
 }
+.mapper-hint { font-size: 9px; color: var(--dim); letter-spacing: 0.5px; }
 
 /* ── Audio panel ─────────────────────────────────────────── */
 #viz-canvas {

@@ -137,11 +137,6 @@ document.getElementById('audio-btn').addEventListener('click', async () => {
 });
 
 // ── Mapper buttons ───────────────────────────────────────────────────────
-document.getElementById('add-map-btn').addEventListener('click', () => {
-  mapper.add(Object.keys(engine.PARAMS)[0]);
-  renderMapper();
-});
-
 document.getElementById('preset-btn').addEventListener('click', () => {
   mapper.applyPreset();
   renderMapper();
