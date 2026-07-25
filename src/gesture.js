@@ -13,16 +13,21 @@ import { bus } from './bus.js';
 
 export const FEATURES = ['thumb', 'index', 'middle', 'ring', 'pinky', 'open', 'spread'];
 
+// Feature order: [thumb, index, middle, ring, pinky, openness, spread].
+// Templates are calibrated to real MediaPipe HandLandmarker output (measured
+// from reference gesture photos via fingerExt/handOpenness) — the raw values
+// cluster in a compressed range, not clean 0/1, so idealized templates never
+// matched. Users can still record their own for a personal fit.
 const BUILTINS = [
-  { id: 'fist',   name: 'Fist',      f: [0, 0, 0, 0, 0, 0, 0] },
-  { id: 'palm',   name: 'Open Palm', f: [1, 1, 1, 1, 1, 1, 0.6] },
-  { id: 'peace',  name: 'Peace',     f: [0, 1, 1, 0, 0, 0.5, 0.4] },
-  { id: 'point',  name: 'Point',     f: [0, 1, 0, 0, 0, 0.3, 0] },
-  { id: 'thumbs', name: 'Thumbs Up', f: [1, 0, 0, 0, 0, 0.3, 0] },
-  { id: 'horns',  name: 'Rock Horns',f: [0, 1, 0, 0, 1, 0.4, 0.3] },
+  { id: 'fist',   name: 'Fist',      f: [0.35, 0.20, 0.20, 0.15, 0.15, 0.40, 0.20] },
+  { id: 'palm',   name: 'Open Palm', f: [0.50, 0.90, 0.95, 0.90, 0.85, 0.90, 0.60] },
+  { id: 'peace',  name: 'Peace',     f: [0.45, 0.90, 0.92, 0.46, 0.40, 0.70, 0.30] },
+  { id: 'point',  name: 'Point',     f: [0.35, 0.76, 0.25, 0.16, 0.15, 0.50, 0.25] },
+  { id: 'thumbs', name: 'Thumbs Up', f: [0.42, 0.24, 0.25, 0.24, 0.20, 0.36, 0.56] },
+  { id: 'horns',  name: 'Rock Horns',f: [0.38, 0.80, 0.22, 0.16, 0.80, 0.55, 0.50] },
 ].map(g => ({ ...g, builtin: true, hand: 'any' }));
 
-export const MATCH_THRESHOLD = 0.55;   // max Euclidean distance to count as a match
+export const MATCH_THRESHOLD = 0.45;   // max Euclidean distance to count as a match
 const HYSTERESIS  = 0.12;              // extra slack to *keep* the current match
 const HOLD_FRAMES = 3;                 // consecutive frames before a match engages
 

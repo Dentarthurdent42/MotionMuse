@@ -96,7 +96,12 @@ the pose during the 3-2-1 countdown, and it's captured (camera must be running).
 Any gesture, built-in included, can be removed with its × (removals persist;
 **RESTORE BUILT-IN GESTURES** brings the defaults back).
 Recognition is nearest-template matching over the seven normalized hand features
-the CV source already publishes (five finger extensions + openness + spread).
+the CV source already publishes (five finger extensions + openness + spread);
+the built-in templates are calibrated to real MediaPipe output (see
+`tests/gesture-img/`, which runs the hand pipeline over reference gesture
+photos and asserts each maps to the right gesture + chord — `npm run
+test:gesture-img`, needs `@mediapipe/tasks-vision`, a Chromium, and
+`hand_landmarker.task` placed in that folder).
 Every gesture is also exposed as a mappable bus signal `gesture_<id>`, so a
 gesture can drive *any* audio parameter, not just chords.
 

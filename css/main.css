@@ -399,16 +399,17 @@ body.no-scroll { overflow: hidden; }
 .ng-node-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ng-socket {
   position: absolute; top: 50%; transform: translateY(-50%);
-  width: 13px; height: 13px; border-radius: 50%;
+  width: 15px; height: 15px; border-radius: 50%;
   border: 2px solid var(--wire, var(--dim)); background: var(--panel);
   padding: 0; cursor: crosshair; z-index: 2;
+  touch-action: none;   /* let us drag cables without the page panning */
 }
 .ng-node.ng-in  .ng-socket.ng-out { right: -7px; }
 .ng-node.ng-out .ng-socket.ng-in  { left: -7px; }
 .ng-socket:hover { background: var(--wire, var(--cyan)); }
 .ng-socket.armed { box-shadow: 0 0 0 3px var(--cyan); background: var(--cyan); }
-.ng-addbar { padding: 6px 10px; }
-.ng-addbar select { width: 100%; }
+.ng-addbar { padding: 6px 10px; display: flex; gap: 6px; }
+.ng-addbar select { flex: 1; min-width: 0; }
 #ng-editor {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
   padding: 8px 10px; margin-top: 4px;

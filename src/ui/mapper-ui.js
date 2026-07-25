@@ -30,19 +30,30 @@ const sigColor = key => key ? `oklch(0.78 0.14 ${sigHue(key)})` : 'oklch(0.6 0 0
 
 let selectedId = null;          // selected cable (mapping id)
 let addedInputs = new Set();    // input nodes with no cable yet (user-added)
-let wiring = null;              // in-progress connection { side, key }
+let addedOutputs = new Set();   // output nodes with no cable yet (user-added)
+let wiring = null;              // in-progress connection { side, key, moved }
 
-// Input nodes shown = signals used by a mapping ∪ user-added, in a stable order.
+// Musical default ranges for freshly-wired outputs (else the param's full range).
+const DEFAULT_RANGE = { osc1_freq: [220, 880], osc2_freq: [220, 880] };
+
+// Nodes shown = endpoints used by a mapping ∪ user-added — so the canvas
+// isn't cluttered with every possible output up front.
 function inputKeys() {
   const used = mapper.mappings.filter(m => m.signal).map(m => m.signal);
   return [...new Set([...used, ...addedInputs])];
+}
+function outputKeys() {
+  const used = mapper.mappings.filter(m => m.signal).map(m => m.audioParam);
+  return PARAM_KEYS.filter(k => used.includes(k) || addedOutputs.has(k));
 }
 
 export function renderMapper() {
   const rows = document.getElementById('mapper-rows');
 
   const inputs = inputKeys();
-  const addable = [...bus.signals.keys()].filter(k => !inputs.includes(k));
+  const outputs = outputKeys();
+  const addableIn  = [...bus.signals.keys()].filter(k => !inputs.includes(k));
+  const addableOut = PARAM_KEYS.filter(k => !outputs.includes(k));
 
   const inNodes = inputs.map(k => `
     <div class="ng-node ng-in" data-key="${k}" style="--wire:${sigColor(k)}">
@@ -51,7 +62,7 @@ export function renderMapper() {
               aria-label="Output of ${sigLabel(k)} — connect to a parameter"></button>
     </div>`).join('');
 
-  const outNodes = PARAM_KEYS.map(k => {
+  const outNodes = outputs.map(k => {
     const wired = mapper.mappings.find(m => m.audioParam === k && m.signal);
     return `
     <div class="ng-node ng-out${wired ? ' wired' : ''}" data-key="${k}"
@@ -76,12 +87,16 @@ export function renderMapper() {
     <div id="nodegraph">
       <svg id="ng-wires" aria-hidden="true"></svg>
       <div class="ng-col ng-col-in">${inNodes || '<div class="ng-hint">add an input ↓</div>'}</div>
-      <div class="ng-col ng-col-out">${outNodes}</div>
+      <div class="ng-col ng-col-out">${outNodes || '<div class="ng-hint">add an output ↓</div>'}</div>
     </div>
     <div class="ng-addbar">
       <select id="ng-add-input" aria-label="Add an input signal">
         <option value="">+ add input…</option>
-        ${addable.map(k => `<option value="${k}">${sigLabel(k)}</option>`).join('')}
+        ${addableIn.map(k => `<option value="${k}">${sigLabel(k)}</option>`).join('')}
+      </select>
+      <select id="ng-add-output" aria-label="Add an output parameter">
+        <option value="">+ add output…</option>
+        ${addableOut.map(k => `<option value="${k}">${engine.PARAMS[k].label}</option>`).join('')}
       </select>
     </div>
     ${editor}`;
@@ -95,11 +110,42 @@ function wireHandlers(rows) {
   rows.querySelector('#ng-add-input')?.addEventListener('change', e => {
     if (e.target.value) { addedInputs.add(e.target.value); renderMapper(); }
   });
+  rows.querySelector('#ng-add-output')?.addEventListener('change', e => {
+    if (e.target.value) { addedOutputs.add(e.target.value); renderMapper(); }
+  });
 
+  // Connect by dragging one socket onto another, or tap-to-arm then tap the
+  // target (touch- and keyboard-friendly). On touch the pointer is implicitly
+  // captured by the origin, so the drop target is found with elementFromPoint
+  // rather than relying on the target's own pointerup.
   rows.querySelectorAll('.ng-socket').forEach(sock => {
-    sock.addEventListener('pointerdown', e => { e.preventDefault(); beginWire(sock); });
-    sock.addEventListener('pointerup',   e => { e.preventDefault(); endWireOn(sock); });
-    sock.addEventListener('click',        () => clickSocket(sock));   // click-to-connect / a11y
+    sock.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      if (wiring && wiring.key !== sock.dataset.key && wiring.side !== sock.dataset.side) {
+        finishWire(sock); return;                 // second tap of tap-to-connect
+      }
+      if (wiring && wiring.key === sock.dataset.key && wiring.side === sock.dataset.side) {
+        cancelWire(); return;                      // tap same socket again → cancel
+      }
+      wiring = { side: sock.dataset.side, key: sock.dataset.key, moved: false, id: e.pointerId };
+      sock.classList.add('armed');
+      try { sock.setPointerCapture(e.pointerId); } catch { /* ok */ }
+    });
+    sock.addEventListener('pointermove', e => {
+      if (!wiring || wiring.id !== e.pointerId) return;
+      wiring.moved = true;
+      drawPreview(e.clientX, e.clientY);
+    });
+    sock.addEventListener('pointerup', e => {
+      if (!wiring || wiring.id !== e.pointerId) return;
+      const tgt = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.ng-socket');
+      if (tgt && tgt.dataset.side !== wiring.side) finishWire(tgt);
+      else if (wiring.moved) cancelWire();          // dragged to nowhere → cancel
+      // else: a stationary tap — stay armed for tap-to-connect
+    });
+    sock.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sock.dispatchEvent(new PointerEvent('pointerdown', { pointerId: -1, bubbles: true })); }
+    });
   });
 
   rows.querySelectorAll('.m-min').forEach(el => el.addEventListener('change', e => {
@@ -123,43 +169,43 @@ function connect(sigKey, paramKey) {
   // One incoming cable per output: replace whatever was driving this param.
   mapper.mappings.filter(m => m.audioParam === paramKey).map(m => m.id)
     .forEach(id => mapper.remove(id));
-  const id = mapper.add(paramKey, sigKey);   // defaults to the param's full range
-  addedInputs.delete(sigKey);                // it's a real wired input now
+  const [lo, hi] = DEFAULT_RANGE[paramKey] ?? [engine.PARAMS[paramKey].min, engine.PARAMS[paramKey].max];
+  const id = mapper.add(paramKey, sigKey, lo, hi);
+  addedInputs.delete(sigKey);
+  addedOutputs.delete(paramKey);
   selectedId = id;
   renderMapper();
 }
 
-function beginWire(sock) { wiring = { side: sock.dataset.side, key: sock.dataset.key }; highlightArmed(sock); }
-function endWireOn(sock) {
-  if (!wiring) return;
-  if (sock.dataset.side !== wiring.side) {
-    const sig   = wiring.side === 'out' ? wiring.key : sock.dataset.key;
-    const param = wiring.side === 'out' ? sock.dataset.key : wiring.key;
-    connect(sig, param);
+function finishWire(sock) {
+  const sig   = wiring.side === 'out' ? wiring.key : sock.dataset.key;
+  const param = wiring.side === 'out' ? sock.dataset.key : wiring.key;
+  cancelWire();
+  connect(sig, param);
+}
+function cancelWire() {
+  wiring = null;
+  document.querySelectorAll('.ng-socket.armed').forEach(s => s.classList.remove('armed'));
+  document.getElementById('ng-preview')?.remove();
+}
+function drawPreview(clientX, clientY) {
+  const g = document.getElementById('nodegraph'), svg = document.getElementById('ng-wires');
+  if (!g || !svg || !wiring) return;
+  const box = g.getBoundingClientRect();
+  const from = g.querySelector(`.ng-socket.ng-${wiring.side}[data-key="${wiring.key}"]`)?.getBoundingClientRect();
+  if (!from) return;
+  const x1 = from.left + from.width / 2 - box.left, y1 = from.top + from.height / 2 - box.top;
+  const x2 = clientX - box.left, y2 = clientY - box.top;
+  let path = document.getElementById('ng-preview');
+  if (!path) {
+    path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.id = 'ng-preview'; path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', sigColor(wiring.side === 'out' ? wiring.key : ''));
+    path.setAttribute('stroke-width', '2.5'); path.setAttribute('stroke-dasharray', '5 4');
+    svg.appendChild(path);
   }
-  wiring = null; clearPreview();
-}
-function clickSocket(sock) {
-  // Click one socket to arm, another (opposite side) to connect.
-  if (!wiring) { beginWire(sock); return; }
-  if (sock.dataset.side === wiring.side && sock.dataset.key === wiring.key) { wiring = null; clearPreview(); return; }
-  endWireOn(sock);
-}
-
-function highlightArmed(sock) {
-  document.querySelectorAll('.ng-socket.armed').forEach(s => s.classList.remove('armed'));
-  sock.classList.add('armed');
-}
-function clearPreview() {
-  document.querySelectorAll('.ng-socket.armed').forEach(s => s.classList.remove('armed'));
-  const prev = document.getElementById('ng-preview'); if (prev) prev.remove();
-}
-
-// Cancel an armed/dragging wire when releasing on empty space.
-if (typeof window !== 'undefined') {
-  window.addEventListener('pointerup', e => {
-    if (wiring && !e.target?.classList?.contains('ng-socket')) { /* keep armed for click-to-connect */ }
-  });
+  const dx = Math.max(20, Math.abs(x2 - x1) * 0.5) * (wiring.side === 'out' ? 1 : -1);
+  path.setAttribute('d', `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
 }
 
 // ── Draw cables ──
