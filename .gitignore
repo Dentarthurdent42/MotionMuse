@@ -2,3 +2,7 @@ node_modules/
 test-results/
 .cert/
 .env
+
+# large model for the optional gesture-image test (fetch locally)
+tests/gesture-img/hand_landmarker.task
+node_modules/

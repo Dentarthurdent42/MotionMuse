@@ -13,18 +13,23 @@ import { bus } from './bus.js';
 
 export const FEATURES = ['thumb', 'index', 'middle', 'ring', 'pinky', 'open', 'spread'];
 
+// Feature order: [thumb, index, middle, ring, pinky, openness, spread].
+// Templates are calibrated to real MediaPipe HandLandmarker output (measured
+// from reference gesture photos via fingerExt/handOpenness) — the raw values
+// cluster in a compressed range, not clean 0/1, so idealized templates never
+// matched. Users can still record their own for a personal fit.
 const BUILTINS = [
-  { id: 'fist',   name: 'Fist',      f: [0, 0, 0, 0, 0, 0, 0] },
-  { id: 'palm',   name: 'Open Palm', f: [1, 1, 1, 1, 1, 1, 0.6] },
-  { id: 'peace',  name: 'Peace',     f: [0, 1, 1, 0, 0, 0.5, 0.4] },
-  { id: 'point',  name: 'Point',     f: [0, 1, 0, 0, 0, 0.3, 0] },
-  { id: 'thumbs', name: 'Thumbs Up', f: [1, 0, 0, 0, 0, 0.3, 0] },
-  { id: 'horns',  name: 'Rock Horns',f: [0, 1, 0, 0, 1, 0.4, 0.3] },
+  { id: 'fist',   name: 'Fist',      f: [0.35, 0.20, 0.20, 0.15, 0.15, 0.40, 0.20] },
+  { id: 'palm',   name: 'Open Palm', f: [0.50, 0.90, 0.95, 0.90, 0.85, 0.90, 0.60] },
+  { id: 'peace',  name: 'Peace',     f: [0.45, 0.90, 0.92, 0.46, 0.40, 0.70, 0.30] },
+  { id: 'point',  name: 'Point',     f: [0.35, 0.76, 0.25, 0.16, 0.15, 0.50, 0.25] },
+  { id: 'thumbs', name: 'Thumbs Up', f: [0.42, 0.24, 0.25, 0.24, 0.20, 0.36, 0.56] },
+  { id: 'horns',  name: 'Rock Horns',f: [0.38, 0.80, 0.22, 0.16, 0.80, 0.55, 0.50] },
 ].map(g => ({ ...g, builtin: true, hand: 'any' }));
 
-export const MATCH_THRESHOLD = 0.55;   // max Euclidean distance to count as a match
-const HYSTERESIS  = 0.12;              // extra slack to *keep* the current match
-const HOLD_FRAMES = 3;                 // consecutive frames before a match engages
+export const MATCH_THRESHOLD = 0.6;    // max Euclidean distance to count as a match
+const HYSTERESIS  = 0.15;              // extra slack to *keep* the current match
+const HOLD_FRAMES = 2;                 // frames of continuous match before engaging
 
 // Pure nearest-template match — unit-tested.
 // features: number[7]; templates: [{id, f}]; returns {id, dist} or null.
@@ -110,13 +115,18 @@ export const gesture = (() => {
       for (const side of ['L', 'R']) {
         const st = state[side];
         const f = featuresFor(side);
+        // Match each frame (hysteresis in matchGesture biases toward the
+        // currently-held gesture). Latch to the nearest under-threshold match
+        // after a couple of frames of *any* match — don't require the same
+        // nearest id every frame, or normal hand jitter (templates sit close
+        // together) keeps resetting the candidate and nothing ever engages.
         const m = f ? matchGesture(f, all(), MATCH_THRESHOLD, st.active) : null;
-        if (m && m.id === st.candidate) {
-          if (++st.frames >= HOLD_FRAMES) st.active = m.id;
+        if (m) {
+          st.frames = Math.min(st.frames + 1, 9);
+          if (st.frames >= HOLD_FRAMES || st.active) st.active = m.id;
         } else {
-          st.candidate = m?.id ?? null;
-          st.frames = m ? 1 : 0;
-          if (!m) st.active = null;
+          st.frames = 0;
+          st.active = null;
         }
         if (st.active) matched.add(st.active);
       }

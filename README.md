@@ -19,7 +19,7 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` and `PoseLandmarker` on every video frame, extracts ~30 signals per frame, and writes them into the bus.
-- **Mapper** (`src/mapper.js`): each mapping row takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick.
+- **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag from one socket to another to connect (or click a socket, then a target). A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired, and each node has its own × to remove it outright — so even a lone input/output pair can be disconnected or cleared.
 - **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter and a convolution reverb, all driven by the Web Audio API with 25 ms parameter smoothing.
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
 
@@ -60,11 +60,11 @@ custom waveforms are registered through `engine.defineWave()`.
 
 Most features are visible by default, but experimental / in-progress ones are
 tucked behind the **DEV** toggle in the header (persisted). With dev mode off,
-the **EEG/EMG** source tabs and **Chord Mode** are hidden and chord playback is
-disabled — a deliberate *progressive-disclosure* choice so newcomers meet a
-simpler surface. Turn DEV on to reveal and use them. Lives in `src/devmode.js`;
-under-construction elements carry a `.uc-feature` class hidden by CSS unless
-`<body class="dev">`.
+the **EEG/EMG** source tabs, the **Gestures** and **Chord Mode** sections, and
+the **Shader** panel are hidden (and chord playback is disabled) — a deliberate
+*progressive-disclosure* choice so newcomers meet a simpler surface. Turn DEV
+on to reveal and use them. Lives in `src/devmode.js`; under-construction
+elements carry a `.uc-feature` class hidden by CSS unless `<body class="dev">`.
 
 ## Shader — visual output
 
@@ -96,7 +96,16 @@ the pose during the 3-2-1 countdown, and it's captured (camera must be running).
 Any gesture, built-in included, can be removed with its × (removals persist;
 **RESTORE BUILT-IN GESTURES** brings the defaults back).
 Recognition is nearest-template matching over the seven normalized hand features
-the CV source already publishes (five finger extensions + openness + spread).
+the CV source already publishes (five finger extensions + openness + spread),
+latching to a pose after a couple of frames of any under-threshold match (with
+hysteresis to hold it steady) — real MediaPipe features cluster close together,
+so the match tolerance and debounce are tuned for that rather than for idealized
+0/1 templates. The built-in templates are likewise calibrated to real MediaPipe
+output (see
+`tests/gesture-img/`, which runs the hand pipeline over reference gesture
+photos and asserts each maps to the right gesture + chord — `npm run
+test:gesture-img`, needs `@mediapipe/tasks-vision`, a Chromium, and
+`hand_landmarker.task` placed in that folder).
 Every gesture is also exposed as a mappable bus signal `gesture_<id>`, so a
 gesture can drive *any* audio parameter, not just chords.
 

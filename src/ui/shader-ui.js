@@ -25,8 +25,8 @@ export function shaderSectionHTML() {
   const shaderOpts = SHADERS
     .map(s => `<option value="${s.id}"${s.id === shader.shaderId ? ' selected' : ''}>${s.name}</option>`).join('');
   return `
-    <div class="audio-section">
-      <div class="audio-section-label">Shader — Visual Output</div>
+    <div class="audio-section uc-feature">
+      <div class="audio-section-label">Shader — Visual Output <span class="uc-badge">under construction</span></div>
       <canvas id="shader-canvas" class="shader-canvas" aria-label="Reactive shader visualisation"></canvas>
       <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr;margin-top:4px;">
         <select id="shader-select" title="Shader pattern" aria-label="Shader pattern">${shaderOpts}</select>
