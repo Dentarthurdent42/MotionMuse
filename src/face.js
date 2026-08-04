@@ -52,16 +52,16 @@ export const faceSource = {
     bus.register('cheek_squint_L', { label: 'L Cheek Squint',  group: gf, min: 0,  max: 1, source: 'face' });
     bus.register('cheek_squint_R', { label: 'R Cheek Squint',  group: gf, min: 0,  max: 1, source: 'face' });
     // Ears don't articulate — their tracked positions give head orientation.
-    bus.register('ear_L_x',        { label: 'L Ear X',         group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('ear_L_y',        { label: 'L Ear Y',         group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('ear_R_x',        { label: 'R Ear X',         group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('ear_R_y',        { label: 'R Ear Y',         group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('head_yaw',       { label: 'Head Yaw (ears)', group: gf, min: -1, max: 1, source: 'face' });
-    bus.register('head_roll',      { label: 'Head Roll (ears)',group: gf, min: -1, max: 1, source: 'face' });
+    bus.register('ear_L_x',        { label: 'L Ear X',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
+    bus.register('ear_L_y',        { label: 'L Ear Y',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
+    bus.register('ear_R_x',        { label: 'R Ear X',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
+    bus.register('ear_R_y',        { label: 'R Ear Y',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
+    bus.register('head_yaw',       { label: 'Head Yaw (ears)', group: gf, min: -1, max: 1, source: 'face', smooth: true });
+    bus.register('head_roll',      { label: 'Head Roll (ears)',group: gf, min: -1, max: 1, source: 'face', smooth: true });
 
     const gg = 'gaze';
-    bus.register('gaze_x',         { label: 'Gaze X',          group: gg, min: -1, max: 1, source: 'face' });
-    bus.register('gaze_y',         { label: 'Gaze Y',          group: gg, min: -1, max: 1, source: 'face' });
+    bus.register('gaze_x',         { label: 'Gaze X',          group: gg, min: -1, max: 1, source: 'face', smooth: true });
+    bus.register('gaze_y',         { label: 'Gaze Y',          group: gg, min: -1, max: 1, source: 'face', smooth: true });
   },
 
   async _load() {

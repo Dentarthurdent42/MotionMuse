@@ -1,4 +1,10 @@
-const CACHE = 'biosignal-v15';
+const CACHE = 'biosignal-v16';
+
+// MediaPipe wasm + .task model files live at versioned/immutable URLs, so
+// cache-first is safe and saves ~10-25MB of re-download on every cold load
+// (the single biggest startup cost). Other cross-origin stays pass-through.
+const CDN_CACHE = 'biosignal-cdn-v1';
+const CDN_RE = /(cdn\.jsdelivr\.net\/npm\/@mediapipe\/tasks-vision@|storage\.googleapis\.com\/mediapipe-models\/)/;
 
 // Derive base from the SW's own scope so paths work whether the app is
 // served from / (Cloudflare Pages, GitHub Pages custom domain) or a
@@ -11,6 +17,7 @@ const STATIC = [
   '/css/main.css',
   '/src/main.js',
   '/src/bus.js',
+  '/src/filter.js',
   '/src/math.js',
   '/src/engine.js',
   '/src/scale.js',
@@ -38,6 +45,7 @@ const STATIC = [
   '/src/ui/mapper-ui.js',
   '/src/ui/audio-ui.js',
   '/src/ui/viz.js',
+  '/src/ui/donate.js',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/manifest.json',
@@ -52,11 +60,12 @@ self.addEventListener('install', e => {
   );
 });
 
-// Remove stale caches on activation
+// Remove stale caches on activation (the CDN model cache survives app bumps)
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(
+        keys.filter(k => k !== CACHE && k !== CDN_CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -68,9 +77,22 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
-  // Pass CDN requests straight through — they're large model files we don't cache
+  // MediaPipe wasm/models: cache-first (immutable versioned URLs). Everything
+  // else cross-origin passes straight through.
   if (url.origin !== self.location.origin) {
-    e.respondWith(fetch(e.request));
+    if (CDN_RE.test(url.href) && e.request.method === 'GET') {
+      e.respondWith(
+        caches.open(CDN_CACHE).then(async cache =>
+          (await cache.match(e.request)) ??
+          fetch(e.request).then(res => {
+            if (res.ok) cache.put(e.request, res.clone());
+            return res;
+          })
+        )
+      );
+    } else {
+      e.respondWith(fetch(e.request));
+    }
     return;
   }
 

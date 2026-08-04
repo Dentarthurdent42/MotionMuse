@@ -2,6 +2,9 @@ import { bus }   from '../bus.js';
 import { toast } from './status.js';
 
 let built = false;
+// Element refs cached at build time — updateSigPanel runs every frame and
+// two getElementById calls per signal (~120+/frame) add up.
+const refs = new Map();   // key → { valEl, barEl, lastW }
 
 export function buildSigPanel() {
   const list   = document.getElementById('sig-list');
@@ -33,19 +36,24 @@ export function buildSigPanel() {
     });
   });
 
+  refs.clear();
+  bus.signals.forEach((s, k) => {
+    const valEl = document.getElementById(`sv-${k}`);
+    const barEl = document.getElementById(`sb-${k}`);
+    if (valEl && barEl) refs.set(k, { valEl, barEl, lastW: '' });
+  });
+
   built = true;
 }
 
 export function updateSigPanel() {
   if (!built) return;
-  bus.signals.forEach((s, k) => {
-    const n     = bus.norm(k);
-    const valEl = document.getElementById(`sv-${k}`);
-    const barEl = document.getElementById(`sb-${k}`);
-    if (valEl) {
-      const disp = s.max > 10 ? s.value.toFixed(0) : s.value.toFixed(2);
-      if (valEl.textContent !== disp) valEl.textContent = disp;
-    }
-    if (barEl) barEl.style.width = (n * 100).toFixed(1) + '%';
+  refs.forEach((r, k) => {
+    const s = bus.signals.get(k);
+    if (!s) return;
+    const disp = s.max > 10 ? s.value.toFixed(0) : s.value.toFixed(2);
+    if (r.valEl.textContent !== disp) r.valEl.textContent = disp;
+    const w = (bus.norm(k) * 100).toFixed(1) + '%';
+    if (w !== r.lastW) { r.barEl.style.width = w; r.lastW = w; }
   });
 }

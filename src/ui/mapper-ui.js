@@ -59,6 +59,7 @@ function sigHue(key) {
 const sigColor = key => key ? `oklch(0.78 0.14 ${sigHue(key)})` : 'oklch(0.6 0 0)';
 
 let selectedId = null;          // selected cable (mapping id)
+const wireRefs = new Map();     // mapping id → <path>, cached per drawWires (per-frame lookups)
 let addedInputs = new Set();    // input nodes with no cable yet (user-added)
 let addedOutputs = new Set();   // output nodes with no cable yet (user-added)
 let wiring = null;              // in-progress connection { side, key, moved }
@@ -306,7 +307,9 @@ function drawWires() {
   });
   svg.innerHTML = paths;
 
+  wireRefs.clear();
   svg.querySelectorAll('.ng-wire').forEach(w => {
+    wireRefs.set(parseInt(w.dataset.mid), w);
     w.style.pointerEvents = 'stroke';
     w.addEventListener('click', () => {
       const id = parseInt(w.dataset.mid);
@@ -335,10 +338,9 @@ function ensureRedrawObserver() {
 }
 
 export function updateMapperBars() {
-  const svg = document.getElementById('ng-wires');
-  if (!svg) return;
+  if (!wireRefs.size) return;
   mapper.mappings.forEach(m => {
-    const w = svg.querySelector(`.ng-wire[data-mid="${m.id}"]`);
+    const w = wireRefs.get(m.id);
     if (!w || !m.signal) return;
     const p = engine.PARAMS[m.audioParam];
     const norm = p ? Math.max(0, Math.min(1, (p.val - p.min) / (p.max - p.min))) : 0;

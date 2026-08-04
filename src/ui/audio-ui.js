@@ -14,6 +14,7 @@ const opts = (arr, sel) =>
 // The panel's pitch-quantise keyboard (canvas #quant-kbd, recreated with the
 // panel; the view looks it up by id on every draw).
 const panelKbd = makeKbdView('quant-kbd', { height: 46 });
+const sliderRefs = new Map();   // param key → {slider, valEl}, rebuilt per render
 const kbdOpts = () => {
   const t = engine.getTuning();
   return {
@@ -229,17 +230,22 @@ export function renderAudioPanel() {
 
   wireGestureSections(renderAudioPanel);
   wireShaderSection();
+
+  // Cache slider/readout refs — updateAudioSliders runs every frame and
+  // shouldn't pay for per-mapping querySelector calls.
+  sliderRefs.clear();
+  panel.querySelectorAll('.apr').forEach(el =>
+    sliderRefs.set(el.dataset.key, { slider: el, valEl: document.getElementById(`av-${el.dataset.key}`) }));
 }
 
 export function updateAudioSliders() {
   mapper.mappings.forEach(m => {
     if (!m.signal) return;
     const p = engine.PARAMS[m.audioParam];
-    if (!p) return;
-    const slider = document.querySelector(`.apr[data-key="${m.audioParam}"]`);
-    const valEl  = document.getElementById(`av-${m.audioParam}`);
-    if (slider) slider.value = p.val;
-    if (valEl)  valEl.textContent = p.val.toFixed(p.unit === 'Hz' ? 0 : 2);
+    const r = sliderRefs.get(m.audioParam);
+    if (!p || !r) return;
+    r.slider.value = p.val;
+    if (r.valEl) r.valEl.textContent = p.val.toFixed(p.unit === 'Hz' ? 0 : 2);
   });
 
   // Live readout of the notes the oscillators are currently snapped to, plus
