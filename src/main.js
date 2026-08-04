@@ -111,9 +111,13 @@ depthBtn.addEventListener('click', async () => {
   depthBtn.disabled = true;
   await depthSource.toggleLidar();
   depthBtn.classList.toggle('on', depthSource.lidarActive);
-  depthBtn.textContent = depthSource.lidarActive ? '◈ LiDAR ON' : '◈ LiDAR';
+  document.getElementById('depth-btn-lbl').textContent =
+    depthSource.lidarActive ? '◈ LiDAR ON' : '◈ LiDAR';
   depthBtn.disabled = false;
 });
+// LiDAR is under construction: turning dev mode off ends a live depth session
+// (a hidden, running XR session with no visible control would be confusing).
+devmode.onChange(on => { if (!on && depthSource.lidarActive) depthSource.stopLidar(); });
 
 // ── Audio button ─────────────────────────────────────────────────────────
 document.getElementById('audio-btn').addEventListener('click', async () => {

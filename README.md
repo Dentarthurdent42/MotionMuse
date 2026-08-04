@@ -60,8 +60,9 @@ custom waveforms are registered through `engine.defineWave()`.
 
 Most features are visible by default, but experimental / in-progress ones are
 tucked behind the **DEV** toggle in the header (persisted). With dev mode off,
-the **EEG/EMG** source tabs, the **Gestures** and **Chord Mode** sections, and
-the **Shader** panel are hidden (and chord playback is disabled) — a deliberate
+the **EEG/EMG** source tabs, the **◈ LiDAR** depth toggle, the **Gestures** and
+**Chord Mode** sections, and the **Shader** panel are hidden (and chord playback
+is disabled) — a deliberate
 *progressive-disclosure* choice so newcomers meet a simpler surface. Turn DEV
 on to reveal and use them. Lives in `src/devmode.js`; under-construction
 elements carry a `.uc-feature` class hidden by CSS unless `<body class="dev">`.
@@ -213,8 +214,11 @@ landmarks — apparent hand size and shoulder span. It needs no extra hardware
 and works with any webcam, but it is relative and scale-ambiguous.
 
 For **true metric depth**, the `◈ LiDAR` toggle (top-right of the camera view)
-opts into the [WebXR Depth Sensing API](https://immersive-web.github.io/depth-sensing/),
-which exposes the per-pixel depth map produced by an optical depth sensor —
+opts into the [WebXR Depth Sensing API](https://immersive-web.github.io/depth-sensing/).
+**Under construction:** the toggle is hidden unless **DEV** mode is on, and
+turning DEV off ends a live depth session; the monocular estimate is always
+available regardless. The API exposes the per-pixel depth map produced by an
+optical depth sensor —
 Apple's **LiDAR** on iOS AR-capable devices, or **ToF** cameras on ARCore
 Android. When active, per-landmark depth is sampled directly from the depth map
 and transparently replaces the monocular estimate behind the same `*_z` signal
