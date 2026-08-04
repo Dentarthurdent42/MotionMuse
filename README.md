@@ -36,9 +36,9 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 ```
 
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1.
-- **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` and `PoseLandmarker` on every video frame, extracts ~30 signals per frame, and writes them into the bus.
-- **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag from one socket to another to connect (or click a socket, then a target). A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired, and each node has its own × to remove it outright — so even a lone input/output pair can be disconnected or cleared.
-- **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter and a convolution reverb, all driven by the Web Audio API with 25 ms parameter smoothing.
+- **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` plus a swappable **pose backend** (`src/posebackends.js` — MediaPipe lite/full/heavy or TF.js MoveNet), extracts ~30 signals per frame, and writes them into the bus. Hand and pose inference **alternate frames** (each still ≥15 Hz at a 30 fps camera) so per-frame cost stays half of running both, and every positional signal passes through a per-signal **One-Euro filter** (`src/filter.js`, applied in `bus.update`) — the standard low-latency jitter filter: heavy smoothing on a held pose, light smoothing on fast moves.
+- **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag from one socket to another to connect (or click a socket, then a target). A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired, and each node has its own × to remove it outright — so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard (click a key to set the armed MIN/MAX endpoint), QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice.
+- **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter and a convolution reverb, all driven by the Web Audio API with 25 ms parameter smoothing. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
 
 ## Pitch quantisation (scales & tuning)
@@ -153,7 +153,18 @@ quantised pitch onto the target as it crosses the line — using whatever gestur
 drives `osc1_freq` (a Left-Wrist-Y mapping is added automatically if none
 exists). Starting a song turns pitch quantise on in the song's key and restores
 your tuning afterwards. A quiet **guide** melody can be toggled; hits and
-misses get audio feedback, and scoring tracks streaks and accuracy.
+misses get audio feedback.
+
+**Scoring:** hits are timing-graded — **PERFECT** inside the central 40% of
+the difficulty's window (150 pts, higher chirp, amber flash) vs **GOOD**
+(100 pts), both plus a streak bonus of `10 × min(streak, 10)`; floating
+PERFECT/GOOD/MISS text rises off the hit line. Songs end on a results screen:
+a big **letter grade** from accuracy (S ≥ 95%, A ≥ 90%, B ≥ 75%, C ≥ 60%,
+else D), score with a **★ NEW BEST** star when you beat your record, tier
+counts and best streak. Best scores persist per song per difficulty in
+`localStorage` (`motionmuse-scores` — kept out of shareable preset files);
+the panel shows the saved best for the selected song while idle. Quitting
+mid-song discards the run.
 
 - **Songs** (public domain, bundled in `src/songs.js`): Ode to Joy, Twinkle
   Twinkle, When the Saints, Scarborough Fair. Chart format:
@@ -263,7 +274,8 @@ index.html          HTML skeleton
 css/
   main.css          All styles (CSS variables, layout, components)
 src/
-  bus.js            Signal registry (incl. adaptive per-user range calibration)
+  bus.js            Signal registry (adaptive calibration + One-Euro smoothing)
+  filter.js         One-Euro low-latency jitter filter
   math.js           Geometry helpers (dist3, angleBetween, handOpenness, fingerExt)
   engine.js         Web Audio API synthesiser
   scale.js          Scale + tuning pitch quantiser
@@ -277,7 +289,8 @@ src/
   chordmode.js      Gesture → chord mapping (hold-to-sound)
   devmode.js        Developer-mode toggle (gates under-construction features)
   shader.js         WebGL visual-output shader (reacts to audio + signals)
-  cv.js             MediaPipe Hand + Pose source (includes latency HUD)
+  cv.js             MediaPipe Hand + swappable pose source (latency HUD)
+  posebackends.js   Pose backends: MediaPipe lite/full/heavy + TF.js MoveNet
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
   face.js           Opt-in face landmark + gaze tracking (blendshape signals)
   main.js           Event handlers and RAF entry point
@@ -292,14 +305,20 @@ src/
     signals.js      Signal panel (build + live update)
     mapper-ui.js    Mapper rows (render + live bars)
     audio-ui.js     Audio panel (waveform buttons, sliders)
+    model-ui.js     Dev-mode pose model comparison panel
+    donate.js       Support/donations popover
     viz.js          Waveform oscilloscope canvas
 scripts/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
+sw.js               Service worker (offline cache + MediaPipe model cache)
 tests/
+  unit/             node --test suites (chords, gestures, judging, notes, filter)
+  contrast/         WCAG contrast checks over the OKLab palette
+  gesture-img/      Gesture recognition over reference photos (MediaPipe)
+  pose-bench/       Synthetic 3D-mannequin pose-model benchmark
   ui-ux/
     index.js        Playwright + Claude Vision UI/UX regression harness
     report.js       HTML report generator
-netlify.toml        Deploy config (301 redirect from old URL, SPA fallback)
 ```
 
 ## Running locally
@@ -354,6 +373,60 @@ ANTHROPIC_API_KEY=sk-ant-… npm run test:ui
 ```
 
 Without `ANTHROPIC_API_KEY` the screenshots are still saved but LLM evaluation is skipped (CI exits 0).
+
+## Pose model comparison (dev mode)
+
+With **DEV** on, a **MODELS** panel appears under the camera: pick the pose
+backend — **MediaPipe Lite / Full / Heavy** (plus a GPU/CPU delegate switch)
+or **TF.js MoveNet Lightning / Thunder** — and watch live detection FPS and
+per-model mean/p95 inference times while the camera runs, so variants can be
+A/B'd on the actual device. Switches happen live and persist in
+`localStorage`. MoveNet loads TensorFlow.js lazily (only when selected) and
+adapts its 17 COCO keypoints onto the BlazePose indices the pose signals
+read — all 12 pose signals survive; hands always stay MediaPipe. Backend
+abstraction: `src/posebackends.js`; panel: `src/ui/model-ui.js`.
+
+## Pose model benchmark
+
+`npm run test:pose-bench` renders a procedural articulated 3D mannequin
+(three.js) through a scripted 300-frame pose timeline — arms up/down, waves,
+elbow bends, leans, ending in a 60-frame held T-pose — where every frame's
+joint **world transforms are known** and projected to normalized image
+coordinates as ground truth. Each backend then runs over the same frames and
+is scored on:
+
+- **latency** (mean / p95 wall-clock per frame),
+- **accuracy** (per-joint error vs the known transform of each body part —
+  mean / median / p95 over nose, shoulders, elbows, wrists, hips),
+- **detection rate** (synthetic figures are harder than real people — this is
+  a metric, not an assumption), and
+- **jitter** (mean frame-to-frame drift of predicted joints while the figure
+  holds perfectly still — the ground truth doesn't move at all).
+
+Example run (headless CI container — "GPU" there is SwiftShader software
+emulation, so real-GPU latencies will be far lower; error/jitter in
+normalized image units ×1000, lower is better):
+
+| backend       | detect % | lat mean | err median | jitter |
+|---------------|---------:|---------:|-----------:|-------:|
+| mp-lite (CPU) |      100 |    53 ms |        129 |    2.1 |
+| mp-lite       |      100 |   315 ms |        129 |    1.8 |
+| mp-full       |       86 |   538 ms |         57 |   74.4 |
+| mp-heavy      |       92 |  1955 ms |        126 |    3.8 |
+
+Reading it: **full** tracks the figure most tightly (half of lite's median
+error) but was the least stable on the synthetic figure (dropouts + drift on
+the held pose); **lite** detected every frame with the least jitter at a
+fraction of heavy's cost — supporting lite as the shipping default.
+MoveNet rows skipped in the sandboxed run (TF.js CDN unreachable there).
+
+Results print as a table and land in `test-results/pose-bench.json`. Guidance:
+**lite** for mobile / low-power (lowest latency), **full** when a desktop GPU
+can afford ~2× lite's cost for tighter tracking, **heavy** only when accuracy
+is critical and latency isn't, MoveNet **Lightning** as the low-latency
+alternative if its jitter score wins on your device. Missing `.task` models
+are fetched automatically; MoveNet rows skip when the TF.js CDN is
+unreachable. Harness: `tests/pose-bench/`.
 
 ## Hosting
 

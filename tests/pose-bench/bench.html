@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>pose-bench</title>
+  <script type="importmap">
+    { "imports": { "three": "/node_modules/three/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="stage" width="640" height="480"></canvas>
+  <script type="module">
+    import * as bench from '/tests/pose-bench/scene.js';
+    window.bench = bench;
+    bench.initScene(document.getElementById('stage'));
+    window.benchReady = true;
+  </script>
+</body>
+</html>
