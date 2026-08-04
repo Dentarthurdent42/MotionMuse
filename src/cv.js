@@ -1,11 +1,9 @@
 import { bus }                                             from './bus.js';
-import { push30, dist3, angleBetween, handOpenness, fingerExt } from './math.js';
+import { push30, dist3, angleBetween, handOpenness, fingerExt, pinchStrength } from './math.js';
 import { setStatus }                                        from './ui/status.js';
 import { depthSource }                                      from './depth.js';
 import { createPoseBackend }                                from './posebackends.js';
 
-// Pinch distance normalised against this max (metres); beyond → 1.0
-const PINCH_MAX = 0.10;
 
 // Hand skeleton connections (MediaPipe 21-landmark topology)
 const HAND_CONNS = [
@@ -47,6 +45,10 @@ export const cvSource = {
       // than the default (2.5 Hz base, and beta high enough that the cutoff
       // actually opens on a fast pinch). Anti-jitter is handled downstream by
       // the volume ladder's hysteresis, so this doesn't need heavy smoothing.
+      // 1 = tips together, 0 = hand open. Drives volume articulation, where lag
+      // is the enemy: a note has to start when the fingers move, not 100 ms
+      // later. Snappier One-Euro than the default; anti-jitter is handled
+      // downstream by the volume ladder's hysteresis.
       bus.register(`pinch_${s}`,       { label: `${lbl} Pinch`,    group: g, min: 0, max: 1,   source: 'cv', smooth: { minCutoff: 2.5, beta: 0.4 } });
       ['Thumb','Index','Middle','Ring','Pinky'].forEach((fn, fi) =>
         bus.register(`finger_${s}_${fn.toLowerCase()}`, {
@@ -253,11 +255,15 @@ export const cvSource = {
         );
         const wlm = foundWorld[s];
         if (wlm) {
-          bus.update(`pinch_${s}`, Math.min(1, dist3(wlm[4], wlm[8]) / PINCH_MAX));
+          bus.update(`pinch_${s}`, pinchStrength(wlm[4], wlm[8]));
         }
       } else {
-        [`hand_${s}_x`, `hand_${s}_y`, `hand_${s}_open`, `hand_${s}_spread`, `pinch_${s}`]
+        [`hand_${s}_x`, `hand_${s}_y`, `hand_${s}_open`, `hand_${s}_spread`]
           .forEach(k => bus.decay(k));
+        // Pinch does NOT decay toward 0: 0 now means "hand open", which a
+        // volume mapping reads as full blast. Losing tracking must fail quiet,
+        // so treat it as fully pinched.
+        bus.update(`pinch_${s}`, 1);
         ['thumb','index','middle','ring','pinky'].forEach(n => bus.decay(`finger_${s}_${n}`));
       }
     });

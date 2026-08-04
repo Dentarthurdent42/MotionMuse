@@ -177,7 +177,9 @@ console.log(`  settles while held (cv)     ${report.settling.cv}        ${settle
 console.log(`  level changes while held    ${report.settling.levelChangesWhileHeld}`);
 console.log(`  level changes on jitter     ${report.chatter.levelChangesWhileDithering}`);
 console.log(`  silence reached after       ${silenceMs == null ? 'NEVER' : silenceMs + ' ms'}   (floor rms ${report.silence.floorRms})`);
-console.log(`  clean gaps (>=60ms silent)  ${report.gaps.count} of 4`);
+// 4 loud/quiet cycles produce at least 4 gaps (a trailing one is possible,
+// since the phase ends quiet) — so report the count, not a ratio.
+console.log(`  clean gaps (>=60ms silent)  ${report.gaps.count}   (want >=4)`);
 console.log(`  median attack time          ${report.gaps.attackMsMedian == null ? 'n/a' : report.gaps.attackMsMedian + ' ms'}`);
 
 mkdirSync(join(ROOT, 'test-results'), { recursive: true });

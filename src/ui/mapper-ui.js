@@ -20,6 +20,7 @@ const PARAM_KEYS = Object.keys(engine.PARAMS);
 const CURVE_OPTS = [
   ['linear', 'Linear'], ['quad', 'Quadratic'], ['cubic', 'Cubic'],
   ['log', 'Logarithmic'], ['sqrt', 'Square Root'], ['inv', 'Invert'],
+  ['invquad', 'Invert + Ease'],
 ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
 
 const sigLabel = k => bus.signals.get(k)?.label ?? k;
@@ -75,6 +76,18 @@ let wiring = null;              // in-progress connection { side, key, moved }
 
 // Musical default ranges for freshly-wired outputs (else the param's full range).
 const DEFAULT_RANGE = { osc1_freq: [220, 880], osc2_freq: [220, 880] };
+
+// Outputs remember how they were configured. Re-wiring a different input into
+// a parameter (or unplugging and re-plugging it) used to rebuild the mapping
+// from defaults, silently throwing away the range/curve/steps you'd set up.
+// The range and curve describe how that *parameter* is driven, so they should
+// outlive a change of source.
+const lastSettings = new Map();   // param key → { outMin, outMax, curve, steps }
+const rememberSettings = m => {
+  if (!m?.audioParam) return;
+  lastSettings.set(m.audioParam,
+    { outMin: m.outMin, outMax: m.outMax, curve: m.curve, steps: m.steps });
+};
 
 // ── Frequency-range picker state (oscillator-frequency cables only) ──────
 // Pick the min/max of the range as *tones*: click the labeled piano, play
@@ -383,6 +396,7 @@ function disconnect(id) {
   if (m) {
     if (m.signal)     addedInputs.add(m.signal);
     if (m.audioParam) addedOutputs.add(m.audioParam);
+    rememberSettings(m);              // re-plugging restores these
     mapper.remove(id);
   }
   selectedId = null;
@@ -395,11 +409,12 @@ function removeNode(kind, key) {
     addedInputs.delete(key);
     mapper.mappings.filter(m => m.signal === key).forEach(m => {
       addedOutputs.add(m.audioParam);   // keep the far end's node
+      rememberSettings(m);
       mapper.remove(m.id);
     });
   } else {
     addedOutputs.delete(key);
-    mapper.mappings.filter(m => m.audioParam === key).forEach(m => mapper.remove(m.id));
+    mapper.mappings.filter(m => m.audioParam === key).forEach(m => { rememberSettings(m); mapper.remove(m.id); });
   }
   selectedId = null;
   renderMapper();
@@ -439,10 +454,13 @@ function connect(sigKey, paramKey) {
   // but keep the displaced signal's node on the canvas (it just loses a cable).
   mapper.mappings.filter(m => m.audioParam === paramKey).forEach(m => {
     if (m.signal && m.signal !== sigKey) addedInputs.add(m.signal);
+    rememberSettings(m);              // keep this output's range/curve/steps
     mapper.remove(m.id);
   });
-  const [lo, hi] = DEFAULT_RANGE[paramKey] ?? [engine.PARAMS[paramKey].min, engine.PARAMS[paramKey].max];
-  const id = mapper.add(paramKey, sigKey, lo, hi);
+  const prev = lastSettings.get(paramKey);
+  const [lo, hi] = prev ? [prev.outMin, prev.outMax]
+    : (DEFAULT_RANGE[paramKey] ?? [engine.PARAMS[paramKey].min, engine.PARAMS[paramKey].max]);
+  const id = mapper.add(paramKey, sigKey, lo, hi, prev?.curve ?? 'linear', prev?.steps ?? 0);
   addedInputs.delete(sigKey);
   addedOutputs.delete(paramKey);
   selectedId = id;

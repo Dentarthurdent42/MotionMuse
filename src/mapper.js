@@ -13,6 +13,10 @@ export const mapper = (() => {
     log:    t => Math.log(1 + t * 9) / Math.log(10),
     sqrt:   t => Math.sqrt(t),
     inv:    t => 1 - t,
+    // Inverted *and* eased, for controls that fall to zero as the signal rises
+    // (e.g. pinch → volume). Plain `inv` is linear, which leaves the quiet end
+    // a knife edge; squaring the inverse widens it to ~20% of travel.
+    invquad: t => (1 - t) * (1 - t),
   };
 
   return {
@@ -79,11 +83,11 @@ export const mapper = (() => {
       this.add('osc_mix',     'hand_R_open',   0,     1, 'linear');
       this.add('lfo_depth',   'elbow_L',       0,     1, 'linear');
       this.add('reverb_mix',  'hand_R_z',      0,   0.6, 'linear');
-      // `quad` matters here: with a linear pinch→volume map the stepped
-      // silence rung occupies only the bottom ~4% of finger travel — an
-      // unhittable knife edge. Squaring widens it to ~20% and spreads the
-      // loud rungs sensibly, which is what makes the gate playable.
-      this.add('volume',      'pinch_R',        0,     1, 'quad');
+      // pinch_R is 1 when the fingers are together, so volume has to fall as
+      // it rises: open hand = loud, pinch = muted. `invquad` (not plain `inv`)
+      // because the stepped silence rung otherwise occupies a mere ~4% of
+      // finger travel — an unhittable knife edge; squaring widens it to ~20%.
+      this.add('volume',      'pinch_R',        0,     1, 'invquad');
     },
   };
 })();

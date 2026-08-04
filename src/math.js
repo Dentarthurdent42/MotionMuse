@@ -23,6 +23,24 @@ export const handOpenness = (lm) => {
   return Math.min(1, avg / (handSize * 2.2));
 };
 
+// Pinch STRENGTH, 0..1 — 1 when the thumb and index tips are together, 0 when
+// they're comfortably apart. Takes *world* landmarks (metres), so it's
+// independent of how far the hand is from the camera.
+//
+// The window matters: landmarks sit at fingertip centres, so a firm pinch
+// still measures ~3 cm apart rather than 0. Mapping raw distance straight to
+// 0..1 (as this used to) both inverted the meaning — an open palm read as
+// maximum "pinch" — and threw away the bottom third of the range, so a real
+// pinch could never reach the ends of a mapping.
+export const PINCH_CLOSED = 0.03;   // m between tips at a firm pinch
+export const PINCH_OPEN   = 0.09;   // m between tips with the hand open
+export const pinchStrength = (thumbTip, indexTip,
+                              closed = PINCH_CLOSED, open = PINCH_OPEN) => {
+  const d = dist3(thumbTip, indexTip);
+  if (!(open > closed)) return 0;
+  return Math.max(0, Math.min(1, (open - d) / (open - closed)));
+};
+
 export const fingerExt = (lm, f) => {
   const bases = [2, 5, 9, 13, 17];
   const tips  = [4, 8, 12, 16, 20];
