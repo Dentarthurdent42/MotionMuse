@@ -3,9 +3,10 @@
 // is a single node with one output socket that fans out to as many parameter
 // nodes as you like (à la Blender geometry nodes / UE Blueprints). Each output
 // parameter takes a single incoming cable (it can only be driven by one thing
-// at a time). Connect by dragging from one socket to another (or click a
-// socket, then click a target). Click a cable to edit its range/curve; that
-// stays hidden otherwise to keep the graph uncluttered.
+// at a time). Drag between two nodes to connect, or tap one socket then the
+// other. Tapping a pill's *body* (or clicking its cable) selects it and shows
+// its range/curve/steps; the editor stays hidden otherwise to keep the graph
+// uncluttered.
 
 import { bus }    from '../bus.js';
 import { engine } from '../engine.js';
@@ -187,6 +188,12 @@ export function renderMapper() {
     ${editor}`;
 
   wireHandlers(rows);
+  // A re-render mid-gesture (selecting a node while armed for tap-to-connect)
+  // rebuilds the sockets, so re-apply the armed highlight to the new DOM.
+  if (wiring) {
+    rows.querySelector(`.ng-socket.ng-${wiring.side}[data-key="${wiring.key}"]`)
+      ?.classList.add('armed');
+  }
   ensureRedrawObserver();
   requestAnimationFrame(() => { drawWires(); drawFreqKbd(); });
 }
@@ -301,7 +308,13 @@ function wireHandlers(rows) {
       e.preventDefault();
       if (wiring && wiring.side !== side) { finishWire(sock); return; }  // 2nd tap
       if (wiring && wiring.key === key)   { cancelWire();   return; }    // same node → cancel
-      wiring = { side, key, moved: false, id: e.pointerId };
+      // Where the press landed decides what a *tap* means (a drag always
+      // wires, from anywhere on the pill): on the socket it arms a
+      // tap-to-connect, on the pill body it just inspects the node. Without
+      // that split, tapping two nodes to read their settings would silently
+      // rewire them.
+      wiring = { side, key, moved: false, id: e.pointerId,
+                 fromBody: !e.target.closest('.ng-socket') };
       sock.classList.add('armed');
       try { node.setPointerCapture(e.pointerId); } catch { /* ok */ }
     });
@@ -313,10 +326,21 @@ function wireHandlers(rows) {
     });
     node.addEventListener('pointerup', e => {
       if (!wiring || wiring.id !== e.pointerId) return;
-      const tgt = socketAt(e.clientX, e.clientY, wiring.side === 'out' ? 'in' : 'out');
-      if (tgt) finishWire(tgt);
-      else if (wiring.moved) cancelWire();          // dragged to nowhere → cancel
-      // else: a stationary tap — stay armed for tap-to-connect
+      // Fuzzy drop resolution belongs to *drags* only. A stationary tap must
+      // not consume it: the columns can sit closer together than the tolerance
+      // (34px gap vs 48px radius on mobile), so a tap would otherwise wire
+      // itself to whatever happened to be nearest across the gap.
+      const tgt = wiring.moved
+        ? socketAt(e.clientX, e.clientY, wiring.side === 'out' ? 'in' : 'out')
+        : null;
+      if (tgt) { finishWire(tgt); return; }
+      if (wiring.moved) { cancelWire(); return; }    // dragged to nowhere → cancel
+      // A stationary tap. Either way it points the editor at this node's cable
+      // — otherwise the fields keep showing whichever cable was last clicked.
+      // A body tap is *only* an inspect, so drop the arm; a socket tap stays
+      // armed so the next socket completes the connection.
+      if (wiring.fromBody) cancelWire();
+      if (selectCableAt(side, key)) renderMapper();
     });
     sock.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); node.dispatchEvent(new PointerEvent('pointerdown', { pointerId: -1, bubbles: true })); }
@@ -418,6 +442,21 @@ function removeNode(kind, key) {
   }
   selectedId = null;
   renderMapper();
+}
+
+// Point the editor at the cable belonging to a node. An input node can fan out
+// to several outputs, so its first cable wins; an output has at most one. A
+// node with no cable clears the editor rather than leaving someone else's
+// settings on screen. Returns whether the selection actually moved.
+function selectCableAt(side, key) {
+  const m = side === 'out'
+    ? mapper.mappings.find(x => x.signal === key)        // input node's socket is an output
+    : mapper.mappings.find(x => x.audioParam === key);   // output node
+  const next = m?.id ?? null;
+  if (next === selectedId) return false;
+  selectedId = next;
+  fpArm = 'min';                 // a different cable starts at its min endpoint
+  return true;
 }
 
 // ── Drop-target resolution ──
