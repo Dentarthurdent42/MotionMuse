@@ -37,9 +37,10 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` plus a swappable **pose backend** (`src/posebackends.js` — MediaPipe lite/full/heavy or TF.js MoveNet), extracts ~30 signals per frame, and writes them into the bus. Hand and pose inference **alternate frames** (each still ≥15 Hz at a 30 fps camera) so per-frame cost stays half of running both, and every positional signal passes through a per-signal **One-Euro filter** (`src/filter.js`, applied in `bus.update`) — the standard low-latency jitter filter: heavy smoothing on a held pose, light smoothing on fast moves.
-- **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired, and each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
-- **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter and a convolution reverb, all driven by the Web Audio API with 25 ms parameter smoothing. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
+- **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired, and each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
+- **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter and a convolution reverb, all driven by the Web Audio API with 25 ms parameter smoothing. **Volume is the exception**: it snaps onto a perceptual step ladder and fires *one* envelope per level change instead of re-smoothing every frame — see Volume quantisation below. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
+- **Dynamics** (`src/dynamics.js`): the volume step ladder — equal-loudness (dB) levels, an exact-silence bottom rung, and the sticky rounding that keeps a jittery hand from chattering between levels.
 
 ## Pitch quantisation (scales & tuning)
 
@@ -62,6 +63,54 @@ snapped, moving live as you play. The note readout beneath it is colour-matched
 to the two dots. The toggle defaults to **OFF** (continuous), so existing
 behaviour is unchanged until you opt in. Quantisation is applied centrally in
 `engine.set()`, so it affects both signal-driven mappings and manual slider moves.
+
+## Volume quantisation (steps, gate & articulation)
+
+A continuous gesture → volume mapping is almost unplayable, and not for the
+reason it looks like. Two things go wrong: the engine re-schedules a 25 ms gain
+ramp *every frame*, so loudness never settles — it just glides toward a moving
+target — and a hand never lands on exactly zero, so "quiet" is a persistent
+low-level tone rather than silence. Together they mean notes can't be separated
+or re-attacked.
+
+The **Volume Quantize** panel (under Pitch Quantize) snaps the master gain onto
+discrete levels, which is what fixes it *indirectly*: once the value is
+quantised, changes become rare events, so the engine can fire **one envelope per
+level change** and let it complete. The stepping is the enabler; the completed
+envelope is the crisp attack you hear.
+
+- **Levels** are spaced equally in **decibels**, not linear gain — hearing is
+  logarithmic, so linear rungs would bunch every audible difference into the top
+  of the range. The default 6 steps over −30 dB gives silence, −24, −18, −12,
+  −6, 0 dB: exactly 6 dB apart.
+- **GATE** makes the bottom level *true* silence (gain exactly 0), which is what
+  makes a gap between notes possible at all.
+- **PLUCK / KEY / BOW** set the attack and release at a level change. Dropping to
+  silence gets its own, slower time so it reads as a damped release rather than a
+  chop.
+- Levels are **sticky** (hysteresis of ~⅓ of a step), so a shaky hand holding a
+  level doesn't chatter between two rungs.
+- The volume slider's tick notches show the actual levels, and the panel readout
+  shows the live rung (`▁████▁ 5/6 · −6 dB`, or `SILENT`).
+
+The **mapping curve matters** as much as the ladder: under a linear pinch→volume
+map the silence level occupies only the bottom ~4 % of finger travel, which is
+unhittable. The default preset therefore uses `quad`, widening it to ~20 %.
+The gate sits *after* the reverb send, so closing it cuts the tail too — that's
+deliberate: a 1.8 s tail spilling across the gap is the very smear the feature
+exists to remove. Quantisation is applied centrally in `engine.set()`, so it
+covers both gesture-driven writes and manual slider moves.
+
+Measured with `npm run test:audio` (a noisy control signal that hovers near
+closed, like a real hand), before → after:
+
+| | before | after |
+|---|---|---|
+| gain changes while holding still | 29 | **0** |
+| gain changes on a jittery hold | 61 | **0** |
+| silence reached | **never** (−41 dB floor) | **233 ms** (true zero) |
+| separable notes out of 4 | **0** | **4** |
+| attack time | n/a | **33 ms** |
 
 ## Sound kits
 
@@ -180,7 +229,7 @@ mid-song discards the run.
 
 **SAVE** (in the mapper toolbar) downloads the entire instrument — every
 mapping plus all audio parameters, waveform/filter choices and the pitch-quantise
-tuning — as a single `.json` file you can keep or share. **LOAD** restores one.
+tuning and the volume-step configuration — as a single `.json` file you can keep or share. **LOAD** restores one.
 The current session is also stored in `localStorage`, so your setup returns
 automatically after a reload or PWA relaunch. Serialisation lives in
 `src/preset.js`; `engine.snapshot()`/`restore()` and `mapper.serialize()`/`load()`
@@ -291,6 +340,7 @@ src/
   math.js           Geometry helpers (dist3, angleBetween, handOpenness, fingerExt)
   engine.js         Web Audio API synthesiser
   scale.js          Scale + tuning pitch quantiser
+  dynamics.js       Volume step ladder (dB levels, silence gate, hysteresis)
   mapper.js         Signal → audio parameter routing and curves
   preset.js         Save/load of mappings + settings (file + localStorage)
   soundkit.js       Instrument timbre presets (synthesized)
@@ -325,10 +375,12 @@ scripts/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
 sw.js               Service worker (offline cache + MediaPipe model cache)
 tests/
-  unit/             node --test suites (chords, gestures, judging, notes, filter)
+  unit/             node --test suites (chords, gestures, judging, notes, filter,
+                    dynamics, stepped volume, mapper steps)
   contrast/         WCAG contrast checks over the OKLab palette
   gesture-img/      Gesture recognition over reference photos (MediaPipe)
   pose-bench/       Synthetic 3D-mannequin pose-model benchmark
+  audio-articulation/  Before/after articulation measurement (settling, gaps, attack)
   ui-ux/
     index.js        Playwright + Claude Vision UI/UX regression harness
     report.js       HTML report generator

@@ -1,5 +1,6 @@
-import { bus }    from './bus.js';
-import { engine } from './engine.js';
+import { bus }         from './bus.js';
+import { engine }      from './engine.js';
+import { stickyStep }  from './dynamics.js';
 
 export const mapper = (() => {
   let mappings = [];
@@ -17,7 +18,7 @@ export const mapper = (() => {
   return {
     mappings,
 
-    add(audioParam, signal = '', outMin = null, outMax = null, curve = 'linear') {
+    add(audioParam, signal = '', outMin = null, outMax = null, curve = 'linear', steps = 0) {
       const p = engine.PARAMS[audioParam];
       const id = nextId++;
       mappings.push({
@@ -27,6 +28,8 @@ export const mapper = (() => {
         outMin: outMin ?? (p?.min ?? 0),
         outMax: outMax ?? (p?.max ?? 1),
         curve: curve || 'linear',
+        // 0 = continuous. >=2 quantises the cable into N discrete levels.
+        steps: Math.max(0, Math.min(32, Math.round(Number(steps)) || 0)),
       });
       return id;
     },
@@ -38,20 +41,31 @@ export const mapper = (() => {
 
     // Plain-object mapping list for save/load (drops the volatile numeric id).
     serialize() {
-      return mappings.map(({ audioParam, signal, outMin, outMax, curve }) =>
-        ({ audioParam, signal, outMin, outMax, curve }));
+      return mappings.map(({ audioParam, signal, outMin, outMax, curve, steps }) =>
+        ({ audioParam, signal, outMin, outMax, curve, steps }));
     },
 
     load(arr) {
       mappings.length = 0;   // keep the exported array reference intact
       nextId = 0;
-      (arr || []).forEach(m => this.add(m.audioParam, m.signal, m.outMin, m.outMax, m.curve));
+      (arr || []).forEach(m => this.add(m.audioParam, m.signal, m.outMin, m.outMax, m.curve, m.steps));
     },
 
     tick() {
       mappings.forEach(m => {
         if (!m.signal) return;
-        const t = curves[m.curve]?.(bus.norm(m.signal)) ?? bus.norm(m.signal);
+        let t = curves[m.curve]?.(bus.norm(m.signal)) ?? bus.norm(m.signal);
+        // Optional step quantisation, applied AFTER the curve so the levels are
+        // evenly spaced in the *output* range (pair it with log/quad for
+        // perceptual spacing). Sticky so a jittery signal doesn't chatter on a
+        // boundary; _stepIdx is per-run state and never serialized.
+        if (m.steps >= 2) {
+          const n = m.steps;
+          const prev = Number.isInteger(m._stepIdx) ? Math.min(n - 1, Math.max(0, m._stepIdx)) : null;
+          const idx = Math.min(n - 1, Math.max(0, stickyStep(t * (n - 1), prev, 0.3)));
+          m._stepIdx = idx;
+          t = idx / (n - 1);
+        }
         engine.set(m.audioParam, m.outMin + t * (m.outMax - m.outMin));
       });
     },
@@ -65,7 +79,11 @@ export const mapper = (() => {
       this.add('osc_mix',     'hand_R_open',   0,     1, 'linear');
       this.add('lfo_depth',   'elbow_L',       0,     1, 'linear');
       this.add('reverb_mix',  'hand_R_z',      0,   0.6, 'linear');
-      this.add('volume',      'pinch_R',        0,   0.9, 'linear');
+      // `quad` matters here: with a linear pinch→volume map the stepped
+      // silence rung occupies only the bottom ~4% of finger travel — an
+      // unhittable knife edge. Squaring widens it to ~20% and spreads the
+      // loud rungs sensibly, which is what makes the gate playable.
+      this.add('volume',      'pinch_R',        0,     1, 'quad');
     },
   };
 })();

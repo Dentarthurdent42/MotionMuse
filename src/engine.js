@@ -1,4 +1,5 @@
 import { makeQuantizer } from './scale.js';
+import { makeDynamics, EDGES } from './dynamics.js';
 
 export const engine = (() => {
   let ctx, analyser, osc1, osc2, osc1g, osc2g, filt, lfo, lfog, revb, revgain, drygain, mastg;
@@ -56,6 +57,27 @@ export const engine = (() => {
     reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12,  snaps: [0.25, 0.5] },
     volume:      { label: 'Master Vol',    min: 0,    max: 1,     val: 0.55,  snaps: [0.25, 0.5, 0.75] },
   };
+
+  // Volume articulation. Every other param re-schedules a 25 ms ramp on every
+  // frame, which never settles — a permanent glide. That's fine for a filter
+  // sweep and fatal for volume: it's why gesture-driven loudness smeared and
+  // notes couldn't be re-attacked. Quantising the gain onto a dB ladder makes
+  // changes rare, so here we fire ONE anchored envelope per level change and
+  // let it complete. See src/dynamics.js.
+  const VOL_SNAPS = PARAMS.volume.snaps;   // restored when stepping is off
+  let volStep = { enabled: true, steps: 6, floorDb: -30, gate: true,
+                  hysteresis: 0.3, edge: 'key' };
+  let dyn = makeDynamics(volStep);
+  let volIdx = null;    // rung currently scheduled on mastg (null = unknown)
+  let volEdges = 0;     // envelopes fired — observability, and what the tests assert on
+
+  // Tick/detent positions for the volume slider: drop rungs closer together
+  // than snapTo's 1.5%-of-range tolerance, or at -48 dB / 12 steps the bottom
+  // rungs collapse into each other and the notches turn to mush.
+  const tickLevels = levels => levels.filter((v, i, a) => v > 0 && (i === 0 || v - a[i - 1] >= 0.02));
+  // Reflect the ladder on the slider from the very first paint — otherwise the
+  // notches show the old hand-picked detents until something calls setVolStep.
+  if (volStep.enabled) PARAMS.volume.snaps = tickLevels(dyn.levels);
 
   const makeImpulse = (ctx) => {
     const len = ctx.sampleRate * 1.8;
@@ -127,6 +149,7 @@ export const engine = (() => {
     const p = PARAMS[key];
     if (!p) return;
     if (tuning.enabled && FREQ_KEYS.has(key)) raw = quant.quantize(raw);
+    if (volStep.enabled && key === 'volume') return setVolume(raw);
     p.val = Math.max(p.min, Math.min(p.max, raw));
     if (!started) return;
     const t = ctx.currentTime, sm = 0.025; // 25 ms smoothing
@@ -151,6 +174,32 @@ export const engine = (() => {
     }
   }
 
+  // Stepped master gain. The early-out is the whole point: while a rung is
+  // held the AudioParam is not touched at all, so the envelope scheduled on
+  // entry actually completes — that's the crisp attack and the real silence.
+  // Safe to cancelScheduledValues here only because nothing else automates
+  // mastg.gain (sole writers: start() and set()); keep that invariant.
+  function setVolume(raw) {
+    const p = PARAMS.volume;
+    const q = dyn.quantize(Math.max(p.min, Math.min(p.max, raw)), volIdx);
+    if (q.idx === volIdx) return;                  // rung held → leave the ramp alone
+    const prev = volIdx;
+    volIdx = q.idx;
+    p.val = Math.max(p.min, Math.min(p.max, q.gain));
+    volEdges++;
+    if (!started) return;
+    const e = EDGES[volStep.edge] ?? EDGES.key;
+    // Fixed duration regardless of how many rungs are crossed, so a fast
+    // crescendo doesn't take longer than a small step.
+    const ms = (prev === null || q.idx > prev) ? e.attackMs
+             : (q.gain === 0 ? e.gateMs : e.releaseMs);
+    const t = ctx.currentTime;
+    const cur = mastg.gain.value;                  // read before cancelling
+    mastg.gain.cancelScheduledValues(t);
+    mastg.gain.setValueAtTime(cur, t);              // anchor where we actually are
+    mastg.gain.linearRampToValueAtTime(p.val, t + Math.max(0.005, ms / 1000));
+  }
+
   function setTuning(partial) {
     tuning = { ...tuning, ...partial };
     quant  = makeQuantizer({ root: tuning.root, scale: tuning.scale, tuning: tuning.system });
@@ -164,6 +213,25 @@ export const engine = (() => {
     return (tuning.enabled && FREQ_KEYS.has(key)) ? quant.noteName(PARAMS[key].val) : null;
   }
 
+  // Same shape as setTuning: merge, rebuild, re-apply so the change is
+  // immediately audible. The slider's detent notches follow the ladder.
+  function setVolStep(partial) {
+    volStep = { ...volStep, ...partial };
+    dyn = makeDynamics(volStep);
+    volIdx = null;                       // force the next write to re-ramp
+    PARAMS.volume.snaps = volStep.enabled ? tickLevels(dyn.levels) : VOL_SNAPS;
+    set('volume', PARAMS.volume.val);
+  }
+  function getVolStep() { return { ...volStep }; }
+
+  // Live rung, for the panel readout and the articulation tests.
+  function volLevel() {
+    if (!volStep.enabled) return null;
+    const idx = volIdx ?? dyn.indexOf(PARAMS.volume.val);
+    return { idx, count: dyn.levels.length, gain: dyn.levels[idx],
+             db: dyn.dbAt(idx), stepDb: dyn.stepDb, edges: volEdges };
+  }
+
   function setOsc1Type(t)   { osc1Type = t; if (osc1) applyType(osc1, t); }
   function setOsc2Type(t)   { osc2Type = t; if (osc2) applyType(osc2, t); }
   function setFilterType(t) { filterType = t; if (filt) filt.type = t; }
@@ -175,7 +243,7 @@ export const engine = (() => {
   function snapshot() {
     const params = {};
     for (const k in PARAMS) params[k] = PARAMS[k].val;
-    return { params, tuning: { ...tuning }, osc1Type, osc2Type, filterType };
+    return { params, tuning: { ...tuning }, volStep: { ...volStep }, osc1Type, osc2Type, filterType };
   }
   function restore(s) {
     if (!s) return;
@@ -183,6 +251,7 @@ export const engine = (() => {
     if (s.osc2Type) setOsc2Type(s.osc2Type);
     if (s.filterType) setFilterType(s.filterType);
     if (s.tuning) setTuning(s.tuning);
+    if (s.volStep) setVolStep(s.volStep);   // before params, so volume quantises on the way in
     if (s.params) for (const k in s.params) if (PARAMS[k]) set(k, s.params[k]);
   }
 
@@ -243,12 +312,13 @@ export const engine = (() => {
     return buf;
   }
 
-  function stop() { ctx?.close(); started = false; }
+  function stop() { ctx?.close(); started = false; volIdx = null; }
 
   return {
     PARAMS,
     start, set, stop,
     setTuning, getTuning, noteFor,
+    setVolStep, getVolStep, volLevel,
     setOsc1Type, setOsc2Type, setFilterType,
     getOsc1Type, getOsc2Type, getFilterType,
     snapshot, restore,

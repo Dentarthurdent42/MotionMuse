@@ -488,6 +488,7 @@ body.no-scroll { overflow: hidden; }
 #ng-editor label { display: inline-flex; align-items: center; gap: 4px; }
 #ng-editor input { width: 62px; }
 #ng-editor select { width: 88px; }
+#ng-editor select.m-steps { width: 56px; }   /* narrow — the row is already crowded */
 
 /* Frequency-range piano picker (oscillator-frequency cables) */
 .ng-freq-picker { width: 100%; min-width: 0; }
@@ -917,6 +918,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   #ng-editor .ng-edit-label { font-size: 12px; }
   #ng-editor input { width: 74px; }
   #ng-editor select { width: 104px; }
+  #ng-editor select.m-steps { width: 66px; }
   .ng-freq-bar .wave-btn { padding: 4px 12px; }
   .ng-freq-oct { font-size: 11px; }
   .ng-freq-hint { font-size: 10px; }

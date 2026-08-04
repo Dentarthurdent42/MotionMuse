@@ -42,7 +42,12 @@ export const cvSource = {
       bus.register(`hand_${s}_y`,      { label: `${lbl} Wrist Y`,  group: g, min: 0, max: 1,   source: 'cv', smooth: true });
       bus.register(`hand_${s}_open`,   { label: `${lbl} Openness`, group: g, min: 0, max: 1,   source: 'cv', smooth: true });
       bus.register(`hand_${s}_spread`, { label: `${lbl} Spread`,   group: g, min: 0, max: 1,   source: 'cv', smooth: true });
-      bus.register(`pinch_${s}`,       { label: `${lbl} Pinch`,    group: g, min: 0, max: 1,   source: 'cv', smooth: true });
+      // Pinch drives volume articulation, where lag is the enemy: a note has
+      // to start when the fingers open, not 100 ms later. Snappier One-Euro
+      // than the default (2.5 Hz base, and beta high enough that the cutoff
+      // actually opens on a fast pinch). Anti-jitter is handled downstream by
+      // the volume ladder's hysteresis, so this doesn't need heavy smoothing.
+      bus.register(`pinch_${s}`,       { label: `${lbl} Pinch`,    group: g, min: 0, max: 1,   source: 'cv', smooth: { minCutoff: 2.5, beta: 0.4 } });
       ['Thumb','Index','Middle','Ring','Pinky'].forEach((fn, fi) =>
         bus.register(`finger_${s}_${fn.toLowerCase()}`, {
           label: `${lbl} ${fn}`, group: g, min: 0, max: 1, source: 'cv', smooth: true,

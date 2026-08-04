@@ -29,6 +29,35 @@ test('bus: clamping happens before smoothing', () => {
   assert.ok(v <= 1 && v > 0.99, `expected convergence to clamp bound 1, got ${v}`);
 });
 
+test('bus: a snappier per-signal config tracks a step within the rhythmic budget', () => {
+  // pinch_R's config — volume articulation needs the note to start when the
+  // fingers open, so a 0→1 step must arrive in ~3 frames, while a jittery
+  // hold must still settle.
+  bus.register('t_snappy', { min: 0, max: 1, smooth: { minCutoff: 2.5, beta: 0.4 } });
+  bus.register('t_default', { min: 0, max: 1, smooth: true });
+  const stepTo = (key, frames) => {
+    let t = 0;
+    bus.update(key, 0, t);
+    for (let i = 0; i < frames; i++) { t += 33.3; bus.update(key, 1, t); }
+    return bus.signals.get(key).value;
+  };
+  const snappy = stepTo('t_snappy', 3);        // 3 frames ≈ 100 ms
+  const dflt   = stepTo('t_default', 3);
+  assert.ok(snappy > 0.85, `step reached only ${snappy.toFixed(3)} in 3 frames`);
+  // Residual lag is the meaningful comparison: the default leaves ~37% of the
+  // step untravelled after 100 ms, the snappy config well under half that.
+  assert.ok((1 - snappy) < (1 - dflt) / 2,
+    `snappy residual ${(1 - snappy).toFixed(3)} vs default ${(1 - dflt).toFixed(3)}`);
+
+  let t = 0;
+
+  const held = [];
+  for (let i = 0; i < 60; i++) { t += 33.3; bus.update('t_snappy', 0.5 + (i % 2 ? 0.05 : -0.05), t); held.push(bus.signals.get('t_snappy').value); }
+  const tail = held.slice(30);
+  assert.ok(Math.max(...tail) - Math.min(...tail) < 0.06,
+    `jittery hold spread ${Math.max(...tail) - Math.min(...tail)}`);
+});
+
 test('bus: decay resets the filter so re-acquire snaps cleanly', () => {
   bus.register('t_reset', { min: 0, max: 1, smooth: true });
   for (let i = 0; i < 60; i++) bus.update('t_reset', 0.9, i * 33.3);

@@ -11,6 +11,7 @@ import { bus }    from '../bus.js';
 import { engine } from '../engine.js';
 import { mapper } from '../mapper.js';
 import { mtof, parseNote, midiName }        from '../scale.js';
+import { STEP_OPTS }                       from '../dynamics.js';
 import { drawKeyboard, midiAtPoint, midiOf } from './keyboard.js';
 import { isDesktop } from './viewport.js';
 
@@ -22,6 +23,11 @@ const CURVE_OPTS = [
 ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
 
 const sigLabel = k => bus.signals.get(k)?.label ?? k;
+
+// Optional per-cable quantisation: turn a continuous signal into N discrete
+// levels (applied after the curve, so pair with log/quad for perceptual steps).
+const STEP_SEL_OPTS = ['<option value="0">off</option>',
+  ...STEP_OPTS.map(s => `<option value="${s}">${s}</option>`)].join('');
 
 // Output parameters grouped into meaningful categories for the picker.
 const PARAM_CATS = [
@@ -130,6 +136,7 @@ export function renderMapper() {
       <label>max <input type="${isFreq ? 'text' : 'number'}" class="m-max" value="${sel.outMax}"
         ${isFreq ? `title="${midiName(midiOf(sel.outMax))} — Hz or a note name like A4"` : 'step="any"'}></label>
       <label>curve <select class="m-curve">${CURVE_OPTS.replace(`value="${sel.curve}"`, `value="${sel.curve}" selected`)}</select></label>
+      <label>steps <select class="m-steps">${STEP_SEL_OPTS.replace(`value="${sel.steps ?? 0}"`, `value="${sel.steps ?? 0}" selected`)}</select></label>
       <button class="rm-btn" id="ng-del" aria-label="Delete cable">×</button>
       ${isFreq ? `
       <div class="ng-freq-picker">
@@ -331,6 +338,12 @@ function wireHandlers(rows) {
   rows.querySelectorAll('.m-max').forEach(el => el.addEventListener('change', fieldHandler('max')));
   rows.querySelectorAll('.m-curve').forEach(el => el.addEventListener('change', e => {
     if (sel()) sel().curve = e.target.value;
+  }));
+  rows.querySelectorAll('.m-steps').forEach(el => el.addEventListener('change', e => {
+    const s = sel();
+    if (!s) return;
+    s.steps = Math.max(0, parseInt(e.target.value, 10) || 0);
+    delete s._stepIdx;      // stale sticky index belongs to the old level count
   }));
   rows.querySelector('#ng-del')?.addEventListener('click', () => {
     if (selectedId != null) disconnect(selectedId);
