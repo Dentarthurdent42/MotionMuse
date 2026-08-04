@@ -145,6 +145,34 @@ body.resizing { cursor: col-resize; user-select: none; }
 .btn:disabled { opacity: 0.3; cursor: default; }
 #dev-btn.on { border-color: var(--amber); color: var(--amber); background: rgba(240,165,0,0.12); }
 
+/* ── Support / donations popover ─────────────────────────── */
+#header { position: relative; }   /* containing block for #donate-pop */
+#donate-btn { padding: 4px 8px; }
+#donate-pop {
+  position: absolute;
+  top: calc(100% + 4px); right: 10px;
+  z-index: 60;
+  min-width: 170px;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  padding: 6px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+#donate-pop .donate-title {
+  font-size: 8px; letter-spacing: 2px; color: var(--dim);
+  padding: 3px 6px 6px;
+}
+#donate-pop a {
+  display: block;
+  padding: 5px 6px;
+  font-size: 10px;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 3px;
+}
+#donate-pop a:hover, #donate-pop a:focus-visible { background: var(--faint); color: var(--cyan); }
+
 /* ── Developer mode / under-construction gating ──────────── */
 /* Experimental features are hidden until dev mode is on. Using
    `display:none` only in the non-dev state means the element keeps its

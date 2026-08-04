@@ -11,6 +11,24 @@ Open `index.html` (or the Netlify deploy) and:
 2. Click **AUDIO ON** — the Web Audio synthesiser starts
 3. Click **PRESET** — a default mapping is applied; move your hands to play
 
+## Support
+
+If MotionMuse is useful to you, you can support its development — the **♥**
+button in the app header links to:
+
+- [GitHub Sponsors](https://github.com/sponsors/Dentarthurdent42)
+- [Ko-fi](https://ko-fi.com/YOUR_KOFI_HANDLE)
+- [Buy Me a Coffee](https://buymeacoffee.com/YOUR_BMAC_HANDLE)
+- [PayPal](https://paypal.me/YOUR_PAYPAL_HANDLE)
+
+> **Maintainer setup** — the `YOUR_*_HANDLE` placeholders live in
+> `.github/FUNDING.yml` and `src/ui/donate.js`. To activate each platform:
+> enroll at [github.com/sponsors](https://github.com/sponsors) (GitHub renders
+> the repo's Sponsor button from `FUNDING.yml`); create a page at
+> [ko-fi.com](https://ko-fi.com) and [buymeacoffee.com](https://buymeacoffee.com);
+> claim a [paypal.me](https://paypal.me) link. Then replace the placeholders
+> with your handles.
+
 ## How it works
 
 ```

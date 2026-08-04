@@ -16,6 +16,7 @@ import { gesture }                          from './gesture.js';
 import { chordmode }                        from './chordmode.js';
 import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
+import { initDonate }                       from './ui/donate.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
@@ -191,6 +192,7 @@ gesture.registerSignals();     // gesture_<id> signals are mappable up front
 initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer
+initDonate();             // ♥ support popover in the header
 preset.restoreLocal();    // bring back the last session's mappings + settings
 renderMapper();
 loop();
