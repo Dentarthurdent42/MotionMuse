@@ -24,7 +24,14 @@ const CURVE_OPTS = [
   ['invquad', 'Invert + Ease'],
 ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
 
-const sigLabel = k => bus.signals.get(k)?.label ?? k;
+// Signals are all registered at startup, so a label is normally there. The
+// fallback humanises the key rather than leaking `hand_R_open` into the UI —
+// a bus key is an internal name and should never be shown as prose.
+const humanizeKey = k => String(k)
+  .split('_')
+  .map(w => w.length === 1 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1))
+  .join(' ');
+const sigLabel = k => bus.signals.get(k)?.label ?? humanizeKey(k);
 
 // Optional per-cable quantisation: turn a continuous signal into N discrete
 // levels (applied after the curve, so pair with log/quad for perceptual steps).

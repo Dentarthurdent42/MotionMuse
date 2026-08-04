@@ -188,6 +188,12 @@ window.addEventListener('visibilitychange', () => { if (document.hidden) persist
 // ── Init ─────────────────────────────────────────────────────────────────
 devmode.init();           // apply persisted dev-mode state to <body>
 depthSource.init();       // register depth signals so they appear in the panel
+// Register every source's signals up front, before any of them are running.
+// Besides making CV signals mappable before the camera starts (as face/gaze
+// and gestures already were), this is what gives a restored preset real
+// labels — otherwise a saved `hand_R_open` mapping had no registered signal
+// to look up and the patchbay displayed the raw key.
+cvSource.registerSignals();    // hand/pose signals are mappable up front
 faceSource.registerSignals();  // face/gaze signals are mappable up front
 gesture.registerSignals();     // gesture_<id> signals are mappable up front
 initResize();             // draggable panel splitters (desktop)
