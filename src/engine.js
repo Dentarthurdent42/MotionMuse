@@ -40,19 +40,21 @@ export const engine = (() => {
     }
   }
 
-  // Audio parameter definitions — name, display label, min, max, default value
+  // Audio parameter definitions — name, display label, min, max, default value.
+  // `snaps` marks musically meaningful values the slider magnetically detents
+  // to when dragged near them (center detune, half volume, unity Q, …).
   const PARAMS = {
     osc1_freq:   { label: 'Osc1 Freq',     min: 40,   max: 2000,  val: 220,  unit: 'Hz' },
-    osc1_detune: { label: 'Osc1 Detune',   min: -100, max: 100,   val: 0,    unit: '¢'  },
+    osc1_detune: { label: 'Osc1 Detune',   min: -100, max: 100,   val: 0,    unit: '¢',  snaps: [-50, 0, 50] },
     osc2_freq:   { label: 'Osc2 Freq',     min: 40,   max: 2000,  val: 330,  unit: 'Hz' },
-    osc2_detune: { label: 'Osc2 Detune',   min: -100, max: 100,   val: 0,    unit: '¢'  },
-    osc_mix:     { label: 'Osc Mix 1↔2',  min: 0,    max: 1,     val: 0.0              },
+    osc2_detune: { label: 'Osc2 Detune',   min: -100, max: 100,   val: 0,    unit: '¢',  snaps: [-50, 0, 50] },
+    osc_mix:     { label: 'Osc Mix 1↔2',  min: 0,    max: 1,     val: 0.0,   snaps: [0.5] },
     filter_freq: { label: 'Filter Cutoff', min: 80,   max: 16000, val: 3000, unit: 'Hz' },
-    filter_q:    { label: 'Filter Q',      min: 0.1,  max: 18,    val: 1                },
+    filter_q:    { label: 'Filter Q',      min: 0.1,  max: 18,    val: 1,     snaps: [1] },
     lfo_rate:    { label: 'LFO Rate',      min: 0.05, max: 20,    val: 1,    unit: 'Hz' },
-    lfo_depth:   { label: 'LFO Depth',     min: 0,    max: 1,     val: 0                },
-    reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12             },
-    volume:      { label: 'Master Vol',    min: 0,    max: 1,     val: 0.55             },
+    lfo_depth:   { label: 'LFO Depth',     min: 0,    max: 1,     val: 0,     snaps: [0.5] },
+    reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12,  snaps: [0.25, 0.5] },
+    volume:      { label: 'Master Vol',    min: 0,    max: 1,     val: 0.55,  snaps: [0.25, 0.5, 0.75] },
   };
 
   const makeImpulse = (ctx) => {

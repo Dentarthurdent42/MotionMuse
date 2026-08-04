@@ -26,12 +26,19 @@ const kbdOpts = () => {
 export function renderAudioPanel() {
   const panel = document.getElementById('audio-panel');
 
+  // Tick marks at the snap values, drawn on the track as background gradients
+  // (native <datalist> ticks are suppressed by our -webkit-appearance:none).
+  const tickBg = p => !p.snaps ? '' : ` style="background-image:${p.snaps.map(s => {
+    const f = ((s - p.min) / (p.max - p.min) * 100).toFixed(2);
+    return `linear-gradient(90deg,transparent calc(${f}% - 1.5px),var(--dim) calc(${f}% - 1.5px),var(--dim) calc(${f}% + 1.5px),transparent calc(${f}% + 1.5px))`;
+  }).join(',')}"`;
+
   const rangeRow = (key, p) => `
     <div class="ctrl-row">
       <span class="ctrl-lbl">${p.label}</span>
       <input type="range" class="apr" data-key="${key}"
         min="${p.min}" max="${p.max}" value="${p.val}"
-        step="${((p.max - p.min) / 300).toPrecision(3)}">
+        step="${((p.max - p.min) / 300).toPrecision(3)}"${tickBg(p)}>
       <span class="ctrl-val" id="av-${key}">${p.val.toFixed(p.unit === 'Hz' ? 0 : 2)}</span>
     </div>`;
 
@@ -170,12 +177,22 @@ export function renderAudioPanel() {
     });
   });
 
+  // Magnetic detent: dragging within ~1.5% of the range of a snap value locks
+  // onto it. Applies only to user drags — mapped writeback never snaps.
+  const snapTo = (p, v) => {
+    if (!p.snaps) return v;
+    const tol = 0.015 * (p.max - p.min);
+    for (const s of p.snaps) if (Math.abs(v - s) <= tol) return s;
+    return v;
+  };
   panel.querySelectorAll('.apr').forEach(el => {
     el.addEventListener('input', e => {
       const key = e.target.dataset.key;
-      const val = parseFloat(e.target.value);
+      const p   = engine.PARAMS[key];
+      let val = parseFloat(e.target.value);
+      const s = snapTo(p, val);
+      if (s !== val) { val = s; e.target.value = s; }   // detent the thumb too
       engine.set(key, val);
-      const p     = engine.PARAMS[key];
       const dispEl = document.getElementById(`av-${key}`);
       if (dispEl) dispEl.textContent = val.toFixed(p.unit === 'Hz' ? 0 : 2);
       if (KIT_PARAM_KEYS.has(key)) syncKitToCustom();
