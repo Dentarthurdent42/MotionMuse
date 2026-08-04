@@ -33,6 +33,23 @@ export const TUNINGS = {
 
 const A4 = 440;
 
+// ── Pure note/frequency helpers (12-TET) ─────────────────────────────────
+export const mtof = m => A4 * 2 ** ((m - 69) / 12);
+
+// MIDI → display name, e.g. 60 → "C4", 61 → "C#4".
+export const midiName = m =>
+  NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
+
+// "A4", "C#3", "Db4", "g#2" → MIDI, or null when unparseable.
+// Flats resolve to the semitone below (Db4 === C#4).
+export function parseNote(str) {
+  const m = /^([A-Ga-g])([#♯b♭]?)(-?\d)$/.exec(String(str).trim());
+  if (!m) return null;
+  const pc = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1].toUpperCase()]
+           + (m[2] === '#' || m[2] === '♯' ? 1 : m[2] ? -1 : 0);
+  return 12 * (parseInt(m[3], 10) + 1) + pc;
+}
+
 // Frequency of a root pitch class at octave 0 (C0 ≈ 16.35 Hz), 12-TET anchored.
 // The tuning system defines intervals *relative to* this root, so the root
 // itself keeps a fixed pitch regardless of the chosen temperament.
@@ -70,8 +87,7 @@ export function makeQuantizer({ root = 'C', scale = 'chromatic', tuning = 'equal
   // Nearest 12-TET note name for display (e.g. "C3", "G#4").
   const noteName = f => {
     if (!(f > 0)) return '–';
-    const midi = Math.round(69 + 12 * Math.log2(f / A4));
-    return NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
+    return midiName(Math.round(69 + 12 * Math.log2(f / A4)));
   };
 
   return { quantize, noteName, freqs };

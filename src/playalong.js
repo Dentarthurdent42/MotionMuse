@@ -5,6 +5,7 @@
 // the engine's one-shot voice so it never disturbs the player's synth chain.
 
 import { engine }       from './engine.js';
+import { mtof }         from './scale.js';
 import { mapper }       from './mapper.js';
 import { SONGS }        from './songs.js';
 import { midiOf }       from './ui/keyboard.js';
@@ -37,7 +38,7 @@ export function judge(playerMidi, noteMidi, nowMs, noteMs, cfg) {
   return dt > cfg.window ? 'miss' : 'pending';
 }
 
-export const mtof = m => 440 * 2 ** ((m - 69) / 12);
+export { mtof };                     // single source of truth lives in scale.js
 
 // Game state ----------------------------------------------------------------
 

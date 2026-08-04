@@ -10,6 +10,8 @@
 import { bus }    from '../bus.js';
 import { engine } from '../engine.js';
 import { mapper } from '../mapper.js';
+import { mtof, parseNote, midiName }        from '../scale.js';
+import { drawKeyboard, midiAtPoint, midiOf } from './keyboard.js';
 
 const PARAM_KEYS = Object.keys(engine.PARAMS);
 
@@ -67,6 +69,15 @@ let wiring = null;              // in-progress connection { side, key, moved }
 // Musical default ranges for freshly-wired outputs (else the param's full range).
 const DEFAULT_RANGE = { osc1_freq: [220, 880], osc2_freq: [220, 880] };
 
+// ── Frequency-range picker state (oscillator-frequency cables only) ──────
+// Pick the min/max of the range as *tones*: click the labeled piano, play
+// QWERTY keys (A W S E D F T G Y H U J, Z/X octave), or type "A4" in the
+// fields. `fpArm` is which endpoint the next pick sets.
+const FREQ_PARAMS = new Set(['osc1_freq', 'osc2_freq']);
+const clampFreq = f => Math.round(Math.max(40, Math.min(2000, f)) * 10) / 10;
+let fpArm = 'min';
+let fpOct = 4;
+
 // Nodes shown = endpoints used by a mapping ∪ user-added — so the canvas
 // isn't cluttered with every possible output up front.
 function inputKeys() {
@@ -105,13 +116,29 @@ export function renderMapper() {
   }).join('');
 
   const sel = selectedId != null ? mapper.mappings.find(m => m.id === selectedId) : null;
+  const isFreq = sel && FREQ_PARAMS.has(sel.audioParam);
+  // Frequency cables use text inputs (they accept note names like "A4") plus
+  // a click/QWERTY-playable labeled piano; everything else keeps number inputs.
   const editor = sel ? `
-    <div id="ng-editor">
+    <div id="ng-editor"${isFreq ? ' data-freq="1"' : ''}>
       <span class="ng-edit-label">${sigLabel(sel.signal)} → ${engine.PARAMS[sel.audioParam].label}</span>
-      <label>min <input type="number" class="m-min" value="${sel.outMin}" step="any"></label>
-      <label>max <input type="number" class="m-max" value="${sel.outMax}" step="any"></label>
+      <label>min <input type="${isFreq ? 'text' : 'number'}" class="m-min" value="${sel.outMin}"
+        ${isFreq ? `title="${midiName(midiOf(sel.outMin))} — Hz or a note name like A4"` : 'step="any"'}></label>
+      <label>max <input type="${isFreq ? 'text' : 'number'}" class="m-max" value="${sel.outMax}"
+        ${isFreq ? `title="${midiName(midiOf(sel.outMax))} — Hz or a note name like A4"` : 'step="any"'}></label>
       <label>curve <select class="m-curve">${CURVE_OPTS.replace(`value="${sel.curve}"`, `value="${sel.curve}" selected`)}</select></label>
       <button class="rm-btn" id="ng-del" aria-label="Delete cable">×</button>
+      ${isFreq ? `
+      <div class="ng-freq-picker">
+        <div class="ng-freq-bar">
+          <button class="wave-btn${fpArm === 'min' ? ' on' : ''}" id="fp-min" aria-pressed="${fpArm === 'min'}">SET MIN</button>
+          <button class="wave-btn${fpArm === 'max' ? ' on' : ''}" id="fp-max" aria-pressed="${fpArm === 'max'}">SET MAX</button>
+          <span class="ng-freq-oct" id="fp-oct">oct ${fpOct} · Z/X</span>
+        </div>
+        <canvas id="fp-kbd" class="ng-freq-kbd"
+                aria-label="Piano keyboard — click a key to set the armed endpoint"></canvas>
+        <div class="ng-freq-hint">click a key or play A W S E D F T G Y H U J · type "C#4" or Hz above · ● min ● max</div>
+      </div>` : ''}
     </div>` : '';
 
   rows.innerHTML = `
@@ -134,8 +161,65 @@ export function renderMapper() {
 
   wireHandlers(rows);
   ensureRedrawObserver();
-  requestAnimationFrame(drawWires);
+  requestAnimationFrame(() => { drawWires(); drawFreqKbd(); });
 }
+
+// ── Frequency picker internals ────────────────────────────────────────────
+const selMapping = () => mapper.mappings.find(m => m.id === selectedId);
+
+function drawFreqKbd() {
+  const s = selMapping(), c = document.getElementById('fp-kbd');
+  if (!s || !c || !FREQ_PARAMS.has(s.audioParam)) return;
+  // m1 (purple) marks the range MIN, m2 (cyan) the range MAX.
+  drawKeyboard(c, { height: 56, labels: true, scale: null,
+                    m1: midiOf(s.outMin), m2: midiOf(s.outMax) });
+}
+
+function armEndpoint(which) {
+  fpArm = which;
+  document.getElementById('fp-min')?.classList.toggle('on', fpArm === 'min');
+  document.getElementById('fp-max')?.classList.toggle('on', fpArm === 'max');
+  document.getElementById('fp-min')?.setAttribute('aria-pressed', String(fpArm === 'min'));
+  document.getElementById('fp-max')?.setAttribute('aria-pressed', String(fpArm === 'max'));
+}
+
+// Apply a picked tone to the armed endpoint. Mutates the mapping + field in
+// place (no renderMapper — a full innerHTML rebuild would kill the
+// interaction mid-gesture) and auditions the tone.
+function pickMidi(m) {
+  const s = selMapping();
+  if (!s || !FREQ_PARAMS.has(s.audioParam)) return;
+  const f = clampFreq(mtof(m));
+  const field = document.querySelector(fpArm === 'min' ? '#ng-editor .m-min' : '#ng-editor .m-max');
+  if (fpArm === 'min') s.outMin = f; else s.outMax = f;
+  if (field) { field.value = f; field.title = `${midiName(m)} — Hz or a note name like A4`; }
+  if (fpArm === 'min') armEndpoint('max');   // natural flow: pick min, then max
+  engine.playTone({ freq: f, dur: 0.3, type: 'triangle', gain: 0.1 });
+  drawFreqKbd();
+}
+
+// QWERTY note entry — one document-level listener (module scope survives
+// renderMapper rebuilds; it re-queries the DOM per event). Active only while
+// a frequency cable's editor is open and focus isn't in a form field.
+const FP_KEYMAP = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11 };
+// Guarded so the module stays importable in node (unit tests).
+if (typeof document !== 'undefined') document.addEventListener('keydown', e => {
+  if (!document.querySelector('#ng-editor[data-freq]')) return;
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' || k === 'x') {
+    fpOct = Math.max(1, Math.min(7, fpOct + (k === 'x' ? 1 : -1)));
+    const o = document.getElementById('fp-oct');
+    if (o) o.textContent = `oct ${fpOct} · Z/X`;
+    e.preventDefault();
+    return;
+  }
+  if (k in FP_KEYMAP) {
+    e.preventDefault();
+    pickMidi(12 * (fpOct + 1) + FP_KEYMAP[k]);
+  }
+});
 
 function wireHandlers(rows) {
   rows.querySelector('#ng-add-input')?.addEventListener('change', e => {
@@ -186,17 +270,46 @@ function wireHandlers(rows) {
     });
   });
 
-  rows.querySelectorAll('.m-min').forEach(el => el.addEventListener('change', e => {
-    if (sel()) sel().outMin = parseFloat(e.target.value);
-  }));
-  rows.querySelectorAll('.m-max').forEach(el => el.addEventListener('change', e => {
-    if (sel()) sel().outMax = parseFloat(e.target.value);
-  }));
+  // Range fields. Frequency cables also accept note names ("A4", "C#3") —
+  // parsed to Hz on commit; garbage restores the previous value.
+  const parseField = (raw, isFreq) => {
+    if (isFreq) {
+      const m = parseNote(raw);
+      if (m != null) return clampFreq(mtof(m));
+    }
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+  const fieldHandler = which => e => {
+    const s = sel();
+    if (!s) return;
+    const isFreq = FREQ_PARAMS.has(s.audioParam);
+    const v = parseField(e.target.value, isFreq);
+    if (v == null) { e.target.value = which === 'min' ? s.outMin : s.outMax; return; }
+    if (which === 'min') s.outMin = v; else s.outMax = v;
+    e.target.value = v;   // note names echo back as the resolved Hz
+    if (isFreq) {
+      e.target.title = `${midiName(midiOf(v))} — Hz or a note name like A4`;
+      engine.playTone({ freq: v, dur: 0.3, type: 'triangle', gain: 0.1 });
+      drawFreqKbd();
+    }
+  };
+  rows.querySelectorAll('.m-min').forEach(el => el.addEventListener('change', fieldHandler('min')));
+  rows.querySelectorAll('.m-max').forEach(el => el.addEventListener('change', fieldHandler('max')));
   rows.querySelectorAll('.m-curve').forEach(el => el.addEventListener('change', e => {
     if (sel()) sel().curve = e.target.value;
   }));
   rows.querySelector('#ng-del')?.addEventListener('click', () => {
     if (selectedId != null) disconnect(selectedId);
+  });
+
+  // Frequency picker: arm buttons + clickable piano.
+  rows.querySelector('#fp-min')?.addEventListener('click', () => armEndpoint('min'));
+  rows.querySelector('#fp-max')?.addEventListener('click', () => armEndpoint('max'));
+  rows.querySelector('#fp-kbd')?.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const r = e.target.getBoundingClientRect();
+    pickMidi(midiAtPoint(r.width, r.height, e.clientX - r.left, e.clientY - r.top));
   });
 
   function sel() { return mapper.mappings.find(m => m.id === selectedId); }
@@ -244,6 +357,7 @@ function connect(sigKey, paramKey) {
   addedInputs.delete(sigKey);
   addedOutputs.delete(paramKey);
   selectedId = id;
+  fpArm = 'min';   // a fresh cable's picker starts at the min endpoint
   renderMapper();
 }
 
@@ -314,6 +428,7 @@ function drawWires() {
     w.addEventListener('click', () => {
       const id = parseInt(w.dataset.mid);
       selectedId = selectedId === id ? null : id;
+      fpArm = 'min';   // fresh selection → picker starts at the min endpoint
       renderMapper();
     });
     w.addEventListener('mouseenter', () => highlightWire(parseInt(w.dataset.mid)));
