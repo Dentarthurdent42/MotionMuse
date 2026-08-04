@@ -12,6 +12,7 @@ import { engine } from '../engine.js';
 import { mapper } from '../mapper.js';
 import { mtof, parseNote, midiName }        from '../scale.js';
 import { drawKeyboard, midiAtPoint, midiOf } from './keyboard.js';
+import { isDesktop } from './viewport.js';
 
 const PARAM_KEYS = Object.keys(engine.PARAMS);
 
@@ -171,7 +172,7 @@ function drawFreqKbd() {
   const s = selMapping(), c = document.getElementById('fp-kbd');
   if (!s || !c || !FREQ_PARAMS.has(s.audioParam)) return;
   // m1 (purple) marks the range MIN, m2 (cyan) the range MAX.
-  drawKeyboard(c, { height: 56, labels: true, scale: null,
+  drawKeyboard(c, { height: isDesktop() ? 72 : 56, labels: true, scale: null,
                     m1: midiOf(s.outMin), m2: midiOf(s.outMax) });
 }
 

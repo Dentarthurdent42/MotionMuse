@@ -1,4 +1,4 @@
-const CACHE = 'biosignal-v16';
+const CACHE = 'biosignal-v17';
 
 // MediaPipe wasm + .task model files live at versioned/immutable URLs, so
 // cache-first is safe and saves ~10-25MB of re-download on every cold load
@@ -37,6 +37,7 @@ const STATIC = [
   '/src/face.js',
   '/src/ui/status.js',
   '/src/ui/resize.js',
+  '/src/ui/viewport.js',
   '/src/ui/fullscreen.js',
   '/src/ui/keyboard.js',
   '/src/ui/playalong-ui.js',

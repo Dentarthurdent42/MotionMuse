@@ -2,6 +2,7 @@ import { engine }                    from '../engine.js';
 import { mapper }                    from '../mapper.js';
 import { SCALES, TUNINGS, NOTE_NAMES } from '../scale.js';
 import { makeKbdView, midiOf, OSC1_COL, OSC2_COL } from './keyboard.js';
+import { isDesktop } from './viewport.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
@@ -13,7 +14,7 @@ const opts = (arr, sel) =>
 
 // The panel's pitch-quantise keyboard (canvas #quant-kbd, recreated with the
 // panel; the view looks it up by id on every draw).
-const panelKbd = makeKbdView('quant-kbd', { height: 46 });
+const panelKbd = makeKbdView('quant-kbd', { height: () => isDesktop() ? 60 : 46 });
 const sliderRefs = new Map();   // param key → {slider, valEl}, rebuilt per render
 
 // Saved best score for the currently selected song+difficulty (idle display).

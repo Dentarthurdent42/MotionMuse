@@ -1,14 +1,18 @@
 // Draggable panel splitters (desktop). The two side-column widths live in
 // CSS variables on #main; dragging a splitter updates them, double-click
 // resets, and the result persists in localStorage.
+import { isDesktop } from './viewport.js';
+
 const KEY = 'biosignal-panel-widths';
-const DEF = { l: 320, r: 280 };
+const NARROW_DEF  = { l: 320, r: 280 };
+const DESKTOP_DEF = { l: 380, r: 340 };   // wide windows start with more breathing room
 const MIN = 200;       // narrowest a side column may go
 const MID_MIN = 320;   // the mapper column keeps at least this much
 const HANDLES = 12;    // two 6px splitter columns
 
 export function initResize() {
   const main = document.getElementById('main');
+  const DEF = isDesktop() ? DESKTOP_DEF : NARROW_DEF;
 
   let w;
   try { w = { ...DEF, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }

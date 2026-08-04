@@ -9,6 +9,7 @@ import { keyboardLayout, isWhite, KBD_LO, KBD_HI, OSC1_COL } from './keyboard.js
 import { NOTE_NAMES, SCALES }  from '../scale.js';
 import { setFsGameRenderer }   from './fullscreen.js';
 import { renderAudioPanel }    from './audio-ui.js';
+import { isDesktop }           from './viewport.js';
 
 // Keys strip drawn inside a larger canvas (highway above it). Uses the same
 // keyboardLayout as the falling notes, so bars land exactly on their keys.
@@ -161,7 +162,11 @@ export function updateGamePanel() {
   if (view.state === 'idle') return;
 
   const c = document.getElementById('game-canvas');
-  if (c && c.clientWidth) drawGame(c, view, { height: 170, keysH: 40 });
+  if (c && c.clientWidth) {
+    // Matches .game-canvas's CSS height at each breakpoint.
+    if (isDesktop()) drawGame(c, view, { height: 210, keysH: 48 });
+    else drawGame(c, view, { height: 170, keysH: 40 });
+  }
 
   const scoreEl = document.getElementById('game-score');
   if (scoreEl) {

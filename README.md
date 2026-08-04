@@ -236,6 +236,18 @@ can be mapped (and saved in presets) before tracking is enabled.
 On desktop, drag the dividers between the three columns to resize them
 (double-click a divider to reset). Widths persist across sessions.
 
+## Desktop sizing
+
+This is a dense, small-text control surface by design — great on a laptop,
+cramped on a large monitor. Windows **≥1200px wide** get a deliberately larger
+pass: text, paddings, sliders, node-graph sockets, piano keyboards and the
+default side-panel widths all scale up together, via a single
+`@media (min-width: 1200px)` block in `css/main.css` plus a matching
+`src/ui/viewport.js` `isDesktop()` check for the handful of canvases (piano
+keyboards, the game highway, the oscilloscope) that draw at a JS-specified
+pixel size rather than reading their CSS box. Narrower windows — including the
+`max-width: 768px` mobile layout — are completely unaffected.
+
 ## Optical depth inputs (LiDAR / ToF)
 
 Out of the box, depth-from-camera is estimated monocularly from MediaPipe
@@ -297,6 +309,7 @@ src/
   ui/
     status.js       Status dot and toast notifications
     resize.js       Draggable panel splitters (desktop)
+    viewport.js     isDesktop() breakpoint check, shared with main.css
     fullscreen.js   Fullscreen camera view + keyboard overlay
     keyboard.js     Shared piano-keyboard renderer
     playalong-ui.js Falling-note highway renderer + game panel

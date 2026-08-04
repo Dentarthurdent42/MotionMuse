@@ -1,4 +1,5 @@
 import { engine } from '../engine.js';
+import { isDesktop } from './viewport.js';
 
 let canvas, ctx;
 
@@ -9,7 +10,7 @@ function init() {
 
 export function drawViz() {
   if (!canvas) init();
-  const W = canvas.offsetWidth, H = 72;
+  const W = canvas.offsetWidth, H = isDesktop() ? 96 : 72;   // matches #viz-canvas CSS height
   // Assigning width/height reallocates the backing store — only on change.
   if (canvas.width !== W)  canvas.width  = W;
   if (canvas.height !== H) canvas.height = H;
