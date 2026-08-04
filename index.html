@@ -65,6 +65,7 @@
           <span>HAND <b id="lat-hand">—</b></span>
           <span>POSE <b id="lat-pose">—</b></span>
           <span>TOTAL <b id="lat-total">—</b></span>
+          <span class="uc-feature">MODEL <b id="lat-model">—</b></span>
           <span id="lat-depth-wrap" style="display:none">DEPTH <b id="lat-depth">—</b></span>
         </div>
         <div id="cam-placeholder">
@@ -74,6 +75,21 @@
           <span>START CAMERA</span>
         </div>
         <canvas id="fs-kbd"></canvas>
+      </div>
+
+      <div class="panel uc-feature" id="model-panel" style="border-top:1px solid var(--border);">
+        <div class="ph">MODELS <span class="uc-badge">dev</span></div>
+        <div class="pb" id="model-body">
+          <label class="model-row">POSE
+            <select id="model-pose" aria-label="Pose estimation model"></select>
+          </label>
+          <label class="model-row">DELEGATE
+            <select id="model-delegate" aria-label="Inference delegate (MediaPipe models)">
+              <option>GPU</option><option>CPU</option>
+            </select>
+          </label>
+          <div id="model-stats">start camera for live stats</div>
+        </div>
       </div>
 
       <div class="panel" style="border-top:1px solid var(--border);">

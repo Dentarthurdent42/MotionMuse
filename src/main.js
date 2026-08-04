@@ -17,6 +17,7 @@ import { chordmode }                        from './chordmode.js';
 import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
+import { initModelPanel }                   from './ui/model-ui.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
@@ -193,6 +194,7 @@ initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
+initModelPanel();         // dev-mode pose model comparison panel
 preset.restoreLocal();    // bring back the last session's mappings + settings
 renderMapper();
 loop();

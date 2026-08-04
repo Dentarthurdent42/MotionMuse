@@ -2,6 +2,7 @@ import { bus }                                             from './bus.js';
 import { push30, dist3, angleBetween, handOpenness, fingerExt } from './math.js';
 import { setStatus }                                        from './ui/status.js';
 import { depthSource }                                      from './depth.js';
+import { createPoseBackend }                                from './posebackends.js';
 
 // Pinch distance normalised against this max (metres); beyond → 1.0
 const PINCH_MAX = 0.10;
@@ -24,7 +25,7 @@ const EMPTY_RESULT = { landmarks: [], handednesses: [] };
 
 export const cvSource = {
   hand:     null,
-  pose:     null,
+  poseBackend: null,
   video:    null,
   canvas:   null,
   ctx:      null,
@@ -52,7 +53,7 @@ export const cvSource = {
     const g2 = 'pose';
     // Elbows self-calibrate: nobody's elbow closes to 0° or opens to a flat
     // 180°, and the usable range differs per user. `adapt` maps the observed
-    // range onto the full control range once ≥25° of motion has been seen.
+    // range onto the full control range once ≥40° of motion has been seen.
     bus.register('elbow_L',        { label: 'L Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
     bus.register('elbow_R',        { label: 'R Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
     bus.register('shoulder_y_L',   { label: 'L Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
@@ -66,13 +67,13 @@ export const cvSource = {
     bus.register('nose_y',         { label: 'Nose Dip',          group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
   },
 
-  // ── Load MediaPipe models ────────────────────────────────────────────
+  // ── Load models ──────────────────────────────────────────────────────
   async init() {
-    if (this.hand && this.pose) return;   // already loaded (camera restart)
+    if (this.hand && this.poseBackend) return;   // already loaded (camera restart)
     this.registerSignals();
     setStatus('loading', 'LOADING MODELS…');
 
-    const { FilesetResolver, HandLandmarker, PoseLandmarker } = await import(
+    const { FilesetResolver, HandLandmarker } = await import(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs'
     );
 
@@ -89,14 +90,43 @@ export const cvSource = {
       runningMode: 'VIDEO',
     });
 
-    this.pose = await PoseLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-        delegate: 'GPU',
-      },
-      runningMode: 'VIDEO',
-      numPoses: 1,
-    });
+    // Pose runs behind a swappable backend (dev Models panel).
+    const saved = this._savedModel();
+    this.poseBackend = createPoseBackend(saved.backend, { delegate: saved.delegate });
+    await this.poseBackend.init();
+    this._setLatModel();
+  },
+
+  _savedModel() {
+    try {
+      return { backend: 'mp-lite', delegate: 'GPU',
+               ...JSON.parse(localStorage.getItem('motionmuse-posemodel') || '{}') };
+    } catch { return { backend: 'mp-lite', delegate: 'GPU' }; }
+  },
+
+  _setLatModel() {
+    const el = document.getElementById('lat-model');
+    if (el) el.textContent = this.poseBackend?.id ?? '—';
+  },
+
+  // Swap the pose backend live (camera keeps running; pose frames simply
+  // reuse the previous result until the new model is ready).
+  async setPoseBackend(id, delegate = 'GPU') {
+    if (this._switching) return false;
+    this._switching = true;
+    try {
+      const next = createPoseBackend(id, { delegate });
+      await next.init();
+      const old = this.poseBackend;
+      this.poseBackend = next;
+      old?.dispose?.();
+      this._lat?.pose.splice(0);   // stats restart for the new model
+      try { localStorage.setItem('motionmuse-posemodel', JSON.stringify({ backend: id, delegate })); } catch {}
+      this._setLatModel();
+      return true;
+    } finally {
+      this._switching = false;
+    }
   },
 
   // ── Camera startup ───────────────────────────────────────────────────
@@ -167,7 +197,7 @@ export const cvSource = {
           push30(lat.hand, performance.now() - t0);
           this.processHands(this._hr);
         } else {
-          this._pr = this.pose.detectForVideo(this.video, now);
+          this._pr = this.poseBackend.detect(this.video, now);
           push30(lat.pose, performance.now() - t0);
           this.processPose(this._pr);
         }

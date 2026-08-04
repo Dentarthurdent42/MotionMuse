@@ -145,6 +145,16 @@ body.resizing { cursor: col-resize; user-select: none; }
 .btn:disabled { opacity: 0.3; cursor: default; }
 #dev-btn.on { border-color: var(--amber); color: var(--amber); background: rgba(240,165,0,0.12); }
 
+/* ── Dev Models panel (pose backend comparison) ──────────── */
+#model-panel .pb { padding: 8px 10px; }
+.model-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 9px; letter-spacing: 1px; color: var(--dim);
+  margin-bottom: 6px;
+}
+.model-row select { flex: 1; min-width: 0; }
+#model-stats { font-size: 9px; color: var(--dim); line-height: 1.5; }
+
 /* ── Support / donations popover ─────────────────────────── */
 #header { position: relative; }   /* containing block for #donate-pop */
 #donate-btn { padding: 4px 8px; }
