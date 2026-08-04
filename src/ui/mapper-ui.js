@@ -96,10 +96,12 @@ export function renderMapper() {
   const inputs = inputKeys();
   const outputs = outputKeys();
 
+  // The × sits on the *outer* edge of each pill, opposite its socket, so a
+  // fat finger reaching for one can't hit the other.
   const inNodes = inputs.map(k => `
     <div class="ng-node ng-in" data-key="${k}" style="--wire:${sigColor(k)}">
-      <span class="ng-node-title" title="${sigLabel(k)}">${sigLabel(k)}</span>
       <button class="ng-node-del" data-kind="in" data-key="${k}" aria-label="Remove ${sigLabel(k)}">×</button>
+      <span class="ng-node-title" title="${sigLabel(k)}">${sigLabel(k)}</span>
       <button class="ng-socket ng-out" data-side="out" data-key="${k}"
               aria-label="Output of ${sigLabel(k)} — connect to a parameter"></button>
     </div>`).join('');
@@ -111,8 +113,8 @@ export function renderMapper() {
          style="${wired ? `--wire:${sigColor(wired.signal)}` : ''}">
       <button class="ng-socket ng-in" data-side="in" data-key="${k}"
               aria-label="Input of ${engine.PARAMS[k].label}"></button>
-      <button class="ng-node-del" data-kind="out" data-key="${k}" aria-label="Remove ${engine.PARAMS[k].label}">×</button>
       <span class="ng-node-title">${engine.PARAMS[k].label}</span>
+      <button class="ng-node-del" data-kind="out" data-key="${k}" aria-label="Remove ${engine.PARAMS[k].label}">×</button>
     </div>`;
   }).join('');
 
@@ -134,11 +136,15 @@ export function renderMapper() {
         <div class="ng-freq-bar">
           <button class="wave-btn${fpArm === 'min' ? ' on' : ''}" id="fp-min" aria-pressed="${fpArm === 'min'}">SET MIN</button>
           <button class="wave-btn${fpArm === 'max' ? ' on' : ''}" id="fp-max" aria-pressed="${fpArm === 'max'}">SET MAX</button>
+          <button class="wave-btn ng-freq-nudge" id="fp-down" aria-label="Down a semitone">−</button>
+          <button class="wave-btn ng-freq-nudge" id="fp-up" aria-label="Up a semitone">+</button>
           <span class="ng-freq-oct" id="fp-oct">oct ${fpOct} · Z/X</span>
         </div>
-        <canvas id="fp-kbd" class="ng-freq-kbd"
-                aria-label="Piano keyboard — click a key to set the armed endpoint"></canvas>
-        <div class="ng-freq-hint">click a key or play A W S E D F T G Y H U J · type "C#4" or Hz above · ● min ● max</div>
+        <div class="ng-freq-kbd-wrap">
+          <canvas id="fp-kbd" class="ng-freq-kbd"
+                  aria-label="Piano keyboard — tap a key to set the ${fpArm === 'min' ? 'minimum' : 'maximum'} frequency"></canvas>
+        </div>
+        <div class="ng-freq-hint">tap a key or play A W S E D F T G Y H U J · − / + nudge a semitone · type "C#4" or Hz above · ● min ● max</div>
       </div>` : ''}
     </div>` : '';
 
@@ -168,11 +174,19 @@ export function renderMapper() {
 // ── Frequency picker internals ────────────────────────────────────────────
 const selMapping = () => mapper.mappings.find(m => m.id === selectedId);
 
+// Must mirror .ng-freq-kbd's CSS height at each breakpoint — drawKeyboard
+// sizes the bitmap from this, so a mismatch stretches the drawing. On narrow
+// screens the canvas is also wider than its scroll container (see CSS), which
+// is what makes individual keys big enough to tap.
+const fpKbdHeight = () =>
+  typeof window !== 'undefined' && window.matchMedia?.('(max-width: 768px)').matches ? 88
+    : isDesktop() ? 72 : 56;
+
 function drawFreqKbd() {
   const s = selMapping(), c = document.getElementById('fp-kbd');
   if (!s || !c || !FREQ_PARAMS.has(s.audioParam)) return;
   // m1 (purple) marks the range MIN, m2 (cyan) the range MAX.
-  drawKeyboard(c, { height: isDesktop() ? 72 : 56, labels: true, scale: null,
+  drawKeyboard(c, { height: fpKbdHeight(), labels: true, scale: null,
                     m1: midiOf(s.outMin), m2: midiOf(s.outMax) });
 }
 
@@ -182,11 +196,17 @@ function armEndpoint(which) {
   document.getElementById('fp-max')?.classList.toggle('on', fpArm === 'max');
   document.getElementById('fp-min')?.setAttribute('aria-pressed', String(fpArm === 'min'));
   document.getElementById('fp-max')?.setAttribute('aria-pressed', String(fpArm === 'max'));
+  document.getElementById('fp-kbd')?.setAttribute('aria-label',
+    `Piano keyboard — tap a key to set the ${fpArm === 'min' ? 'minimum' : 'maximum'} frequency`);
 }
 
 // Apply a picked tone to the armed endpoint. Mutates the mapping + field in
 // place (no renderMapper — a full innerHTML rebuild would kill the
 // interaction mid-gesture) and auditions the tone.
+//
+// The armed endpoint deliberately does NOT advance after a pick: staying on
+// MIN lets you audition and correct it (tap a neighbour, nudge a semitone)
+// until you explicitly press SET MAX.
 function pickMidi(m) {
   const s = selMapping();
   if (!s || !FREQ_PARAMS.has(s.audioParam)) return;
@@ -194,9 +214,16 @@ function pickMidi(m) {
   const field = document.querySelector(fpArm === 'min' ? '#ng-editor .m-min' : '#ng-editor .m-max');
   if (fpArm === 'min') s.outMin = f; else s.outMax = f;
   if (field) { field.value = f; field.title = `${midiName(m)} — Hz or a note name like A4`; }
-  if (fpArm === 'min') armEndpoint('max');   // natural flow: pick min, then max
   engine.playTone({ freq: f, dur: 0.3, type: 'triangle', gain: 0.1 });
   drawFreqKbd();
+}
+
+// Shift the armed endpoint by a semitone — precise correction after an
+// approximate tap, which is what fingers land on a 5-octave keyboard.
+function nudgeArmed(delta) {
+  const s = selMapping();
+  if (!s || !FREQ_PARAMS.has(s.audioParam)) return;
+  pickMidi(midiOf(fpArm === 'min' ? s.outMin : s.outMax) + delta);
 }
 
 // QWERTY note entry — one document-level listener (module scope survives
@@ -237,37 +264,42 @@ function wireHandlers(rows) {
     removeNode(btn.dataset.kind, btn.dataset.key);
   }));
 
-  // Connect by dragging one socket onto another, or tap-to-arm then tap the
-  // target (touch- and keyboard-friendly). On touch the pointer is implicitly
-  // captured by the origin, so the drop target is found with elementFromPoint
-  // rather than relying on the target's own pointerup.
-  rows.querySelectorAll('.ng-socket').forEach(sock => {
-    sock.addEventListener('pointerdown', e => {
+  // Connect by dragging between nodes, or tap-to-arm then tap the target
+  // (touch- and keyboard-friendly). Fat-finger friendly in three ways:
+  // the whole pill starts a wire (not just the 15px socket), the socket
+  // carries an invisible oversized tap halo, and the drop point resolves to
+  // the *nearest* eligible socket within a fingertip's radius. On touch the
+  // pointer is implicitly captured by the origin, so the drop target is
+  // resolved from coordinates rather than the target's own pointerup.
+  rows.querySelectorAll('.ng-node').forEach(node => {
+    const sock = node.querySelector('.ng-socket');
+    if (!sock) return;
+    const side = sock.dataset.side, key = sock.dataset.key;
+
+    node.addEventListener('pointerdown', e => {
+      if (e.target.closest('.ng-node-del')) return;   // the × owns its own taps
       e.preventDefault();
-      if (wiring && wiring.key !== sock.dataset.key && wiring.side !== sock.dataset.side) {
-        finishWire(sock); return;                 // second tap of tap-to-connect
-      }
-      if (wiring && wiring.key === sock.dataset.key && wiring.side === sock.dataset.side) {
-        cancelWire(); return;                      // tap same socket again → cancel
-      }
-      wiring = { side: sock.dataset.side, key: sock.dataset.key, moved: false, id: e.pointerId };
+      if (wiring && wiring.side !== side) { finishWire(sock); return; }  // 2nd tap
+      if (wiring && wiring.key === key)   { cancelWire();   return; }    // same node → cancel
+      wiring = { side, key, moved: false, id: e.pointerId };
       sock.classList.add('armed');
-      try { sock.setPointerCapture(e.pointerId); } catch { /* ok */ }
+      try { node.setPointerCapture(e.pointerId); } catch { /* ok */ }
     });
-    sock.addEventListener('pointermove', e => {
+    node.addEventListener('pointermove', e => {
       if (!wiring || wiring.id !== e.pointerId) return;
       wiring.moved = true;
       drawPreview(e.clientX, e.clientY);
+      markDropTarget(socketAt(e.clientX, e.clientY, wiring.side === 'out' ? 'in' : 'out'));
     });
-    sock.addEventListener('pointerup', e => {
+    node.addEventListener('pointerup', e => {
       if (!wiring || wiring.id !== e.pointerId) return;
-      const tgt = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.ng-socket');
-      if (tgt && tgt.dataset.side !== wiring.side) finishWire(tgt);
+      const tgt = socketAt(e.clientX, e.clientY, wiring.side === 'out' ? 'in' : 'out');
+      if (tgt) finishWire(tgt);
       else if (wiring.moved) cancelWire();          // dragged to nowhere → cancel
       // else: a stationary tap — stay armed for tap-to-connect
     });
     sock.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sock.dispatchEvent(new PointerEvent('pointerdown', { pointerId: -1, bubbles: true })); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); node.dispatchEvent(new PointerEvent('pointerdown', { pointerId: -1, bubbles: true })); }
     });
   });
 
@@ -304,14 +336,29 @@ function wireHandlers(rows) {
     if (selectedId != null) disconnect(selectedId);
   });
 
-  // Frequency picker: arm buttons + clickable piano.
+  // Frequency picker: arm buttons, semitone nudges, and a tappable piano.
   rows.querySelector('#fp-min')?.addEventListener('click', () => armEndpoint('min'));
   rows.querySelector('#fp-max')?.addEventListener('click', () => armEndpoint('max'));
-  rows.querySelector('#fp-kbd')?.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    const r = e.target.getBoundingClientRect();
-    pickMidi(midiAtPoint(r.width, r.height, e.clientX - r.left, e.clientY - r.top));
-  });
+  rows.querySelector('#fp-down')?.addEventListener('click', () => nudgeArmed(-1));
+  rows.querySelector('#fp-up')?.addEventListener('click', () => nudgeArmed(+1));
+
+  // Pick on pointer*up*, and only when the pointer barely moved — on narrow
+  // screens the keyboard is wider than its container and scrolls, so a
+  // horizontal drag must pan rather than silently pick whatever it started on.
+  const kbd = rows.querySelector('#fp-kbd');
+  if (kbd) {
+    let down = null;
+    kbd.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
+    kbd.addEventListener('pointercancel', () => { down = null; });
+    kbd.addEventListener('pointerup', e => {
+      if (!down || down.id !== e.pointerId) return;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      down = null;
+      if (moved > 10) return;                       // that was a scroll, not a tap
+      const r = kbd.getBoundingClientRect();
+      pickMidi(midiAtPoint(r.width, r.height, e.clientX - r.left, e.clientY - r.top));
+    });
+  }
 
   function sel() { return mapper.mappings.find(m => m.id === selectedId); }
 }
@@ -345,6 +392,34 @@ function removeNode(kind, key) {
   renderMapper();
 }
 
+// ── Drop-target resolution ──
+// A fingertip is ~40px across; a socket is 15px. Resolve a release point to
+// an eligible socket generously: exact hit → the enclosing pill's socket →
+// nearest socket within a fingertip's radius.
+const DROP_TOL = 48;
+
+function socketAt(x, y, wantSide) {
+  const el = document.elementFromPoint(x, y);
+  const direct = el?.closest?.('.ng-socket');
+  if (direct && direct.dataset.side === wantSide) return direct;
+  const viaNode = el?.closest?.('.ng-node')?.querySelector(`.ng-socket[data-side="${wantSide}"]`);
+  if (viaNode) return viaNode;
+  let best = null, bestD = DROP_TOL;
+  document.querySelectorAll(`.ng-socket[data-side="${wantSide}"]`).forEach(s => {
+    const r = s.getBoundingClientRect();
+    const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
+    if (d < bestD) { best = s; bestD = d; }
+  });
+  return best;
+}
+
+// Highlight where the wire would land, so an imprecise drag shows its intent.
+function markDropTarget(sock) {
+  document.querySelectorAll('.ng-socket.drop-target')
+    .forEach(s => { if (s !== sock) s.classList.remove('drop-target'); });
+  sock?.classList.add('drop-target');
+}
+
 // ── Connection logic ──
 function connect(sigKey, paramKey) {
   // One incoming cable per output: replace whatever was driving this param,
@@ -371,6 +446,7 @@ function finishWire(sock) {
 function cancelWire() {
   wiring = null;
   document.querySelectorAll('.ng-socket.armed').forEach(s => s.classList.remove('armed'));
+  document.querySelectorAll('.ng-socket.drop-target').forEach(s => s.classList.remove('drop-target'));
   document.getElementById('ng-preview')?.remove();
 }
 function drawPreview(clientX, clientY) {
