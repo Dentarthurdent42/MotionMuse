@@ -15,6 +15,14 @@ const opts = (arr, sel) =>
 // panel; the view looks it up by id on every draw).
 const panelKbd = makeKbdView('quant-kbd', { height: 46 });
 const sliderRefs = new Map();   // param key → {slider, valEl}, rebuilt per render
+
+// Saved best score for the currently selected song+difficulty (idle display).
+const bestLine = () => {
+  const song = document.getElementById('song-select')?.value ?? playalong.lastSong;
+  const diff = document.getElementById('diff-select')?.value ?? playalong.lastDiff;
+  const b = playalong.bestFor(song, diff);
+  return b ? `BEST ${b.score} · ${b.grade} · ${Math.round(b.acc * 100)}%` : '—';
+};
 const kbdOpts = () => {
   const t = engine.getTuning();
   return {
@@ -76,7 +84,7 @@ export function renderAudioPanel() {
         <div class="wave-btn${playalong.guide ? ' on' : ''}" id="guide-btn" title="Play a quiet guide melody">GUIDE</div>
       </div>
       <canvas id="game-canvas" class="game-canvas" style="display:${gv.state !== 'idle' ? 'block' : 'none'}"></canvas>
-      <div id="game-score" class="quant-notes">—</div>
+      <div id="game-score" class="quant-notes">${gv.state === 'idle' ? bestLine() : '—'}</div>
     </div>
     ${gestureSectionsHTML()}
     ${shaderSectionHTML()}
@@ -144,6 +152,13 @@ export function renderAudioPanel() {
     playalong.setGuide(!playalong.guide);
     e.target.classList.toggle('on', playalong.guide);
   });
+  // Show the saved best for the selected song+difficulty while idle.
+  ['song-select', 'diff-select'].forEach(id =>
+    document.getElementById(id).addEventListener('change', () => {
+      if (playalong.view.state !== 'idle') return;
+      const el = document.getElementById('game-score');
+      if (el) el.textContent = bestLine();
+    }));
   // Manual timbre tweaks flip the kit selection to "Custom" in place
   // (no full re-render — that would kill a slider mid-drag).
   const syncKitToCustom = () => {

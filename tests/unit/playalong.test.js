@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SONGS } from '../../src/songs.js';
-import { DIFF, filterNotes, judge, mtof } from '../../src/playalong.js';
+import { DIFF, filterNotes, judge, mtof, gradeOf, PERFECT_FRAC, POINTS } from '../../src/playalong.js';
 import { SCALES, NOTE_NAMES } from '../../src/scale.js';
 
 test('charts are valid: sorted, in range, in scale', () => {
@@ -41,21 +41,42 @@ test('difficulty filtering: hard ⊇ medium ⊇ easy, all non-empty', () => {
   }
 });
 
-test('judge: exact-match windows', () => {
-  const cfg = DIFF.medium;                             // window 180ms, no pcMatch
-  assert.equal(judge(64, 64, -181, 0, cfg), 'pending'); // too early to judge
-  assert.equal(judge(64, 64, -179, 0, cfg), 'hit');     // inside early window
-  assert.equal(judge(64, 64, 179, 0, cfg), 'hit');      // inside late window
-  assert.equal(judge(62, 64, 179, 0, cfg), 'pending');  // wrong note, window open
-  assert.equal(judge(62, 64, 181, 0, cfg), 'miss');     // window expired
-  assert.equal(judge(76, 64, 0, 0, cfg), 'pending');    // octave ≠ match on medium
+test('judge: exact-match windows with timing tiers', () => {
+  const cfg = DIFF.medium;                               // window 180ms → perfect band ±72ms
+  assert.equal(judge(64, 64, -181, 0, cfg), 'pending');  // too early to judge
+  assert.equal(judge(64, 64, -179, 0, cfg), 'good');     // inside early window, outside perfect band
+  assert.equal(judge(64, 64, 179, 0, cfg), 'good');      // inside late window
+  assert.equal(judge(64, 64, 0, 0, cfg), 'perfect');     // dead on
+  assert.equal(judge(64, 64, 72, 0, cfg), 'perfect');    // perfect band edge (40% of 180)
+  assert.equal(judge(64, 64, 73, 0, cfg), 'good');       // just past the band
+  assert.equal(judge(64, 64, -72, 0, cfg), 'perfect');   // early side of the band
+  assert.equal(judge(62, 64, 179, 0, cfg), 'pending');   // wrong note, window open
+  assert.equal(judge(62, 64, 181, 0, cfg), 'miss');      // window expired
+  assert.equal(judge(76, 64, 0, 0, cfg), 'pending');     // octave ≠ match on medium
 });
 
 test('judge: easy is octave-agnostic', () => {
   const cfg = DIFF.easy;
-  assert.equal(judge(76, 64, 0, 0, cfg), 'hit');        // +1 octave
-  assert.equal(judge(52, 64, 0, 0, cfg), 'hit');        // -1 octave
-  assert.equal(judge(65, 64, 0, 0, cfg), 'pending');    // semitone off is not a hit
+  assert.equal(judge(76, 64, 0, 0, cfg), 'perfect');     // +1 octave, dead on
+  assert.equal(judge(52, 64, 0, 0, cfg), 'perfect');     // -1 octave
+  assert.equal(judge(76, 64, 200, 0, cfg), 'good');      // in window, outside perfect band
+  assert.equal(judge(65, 64, 0, 0, cfg), 'pending');     // semitone off is not a hit
+});
+
+test('scoring constants: perfect beats good, band is a proper fraction', () => {
+  assert.ok(POINTS.perfect > POINTS.good);
+  assert.ok(PERFECT_FRAC > 0 && PERFECT_FRAC < 1);
+});
+
+test('gradeOf boundaries', () => {
+  assert.equal(gradeOf(1), 'S');
+  assert.equal(gradeOf(0.95), 'S');
+  assert.equal(gradeOf(0.949), 'A');
+  assert.equal(gradeOf(0.9), 'A');
+  assert.equal(gradeOf(0.75), 'B');
+  assert.equal(gradeOf(0.6), 'C');
+  assert.equal(gradeOf(0.59), 'D');
+  assert.equal(gradeOf(0), 'D');
 });
 
 test('difficulty settings are ordered', () => {

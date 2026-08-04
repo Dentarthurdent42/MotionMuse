@@ -76,9 +76,9 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
 
     if (n.status === 'hit') {
       const age = view.nowMs - (n.hitAtMs ?? n.tMs);
-      if (age > 350) continue;                              // quick purple flash
+      if (age > 350) continue;                              // quick flash, tier-colored
       ctx.globalAlpha = Math.max(0, 1 - age / 350);
-      ctx.fillStyle = OSC1_COL;
+      ctx.fillStyle = n.tier === 'perfect' ? '#f0a500' : OSC1_COL;
       ctx.fillRect(x - w / 2, hitY - 10, w, 10);
       ctx.globalAlpha = 1;
       continue;
@@ -104,13 +104,24 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
     ctx.fillText(String(view.countdown), W / 2, H * 0.18);
     ctx.textAlign = 'left';
   } else if (view.state === 'finished') {
+    // Results screen: big grade, score (+ NEW BEST), tier counts, streak/best.
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#f0a500';
-    ctx.font = `${Math.round(fs * 1.6)}px "IBM Plex Mono", monospace`;
-    ctx.fillText(`SCORE ${view.score}`, W / 2, H * 0.16);
+    ctx.fillStyle = view.grade === 'S' || view.grade === 'A' ? '#f0a500'
+                  : view.grade === 'B' ? '#00e5cc' : '#8a93a3';
+    ctx.font = `${Math.round(H * 0.30)}px "IBM Plex Mono", monospace`;
+    ctx.fillText(view.grade ?? '', W / 2, H * 0.04);
+    ctx.fillStyle = view.isNewBest ? '#f0a500' : '#cfd4db';
+    ctx.font = `${Math.round(fs * 1.3)}px "IBM Plex Mono", monospace`;
+    ctx.fillText(`SCORE ${view.score}${view.isNewBest ? '  ★ NEW BEST' : ''}`, W / 2, H * 0.42);
     ctx.fillStyle = '#cfd4db';
     ctx.font = `${fs}px "IBM Plex Mono", monospace`;
-    ctx.fillText(`${Math.round(view.accuracy * 100)}% · BEST STREAK ${view.bestStreak} · ${view.hits}/${view.total}`, W / 2, H * 0.16 + fs * 2);
+    ctx.fillText(
+      `${Math.round(view.accuracy * 100)}% · PERFECT ${view.perfects} · GOOD ${view.goods} · MISS ${view.misses}`,
+      W / 2, H * 0.42 + fs * 1.8);
+    ctx.fillStyle = '#8a93a3';
+    ctx.fillText(
+      `BEST STREAK ×${view.bestStreak}${view.best && !view.isNewBest ? `  ·  BEST ${view.best.score} (${view.best.grade})` : ''}`,
+      W / 2, H * 0.42 + fs * 3.4);
     ctx.textAlign = 'left';
   } else {
     ctx.fillStyle = '#cfd4db';
@@ -119,6 +130,20 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
     ctx.fillStyle = view.streak >= 5 ? '#f0a500' : '#8a93a3';
     ctx.fillText(`×${view.streak}`, W - 8, 6);
     ctx.textAlign = 'left';
+
+    // Floating judgment text above the hit line (fades and rises for 600ms).
+    if (view.lastJudge) {
+      const age = view.nowMs - view.lastJudge.atMs;
+      if (age >= 0 && age < 600) {
+        const col = { perfect: '#f0a500', good: '#00e5cc', miss: '#ff8a94' }[view.lastJudge.tier];
+        ctx.globalAlpha = 1 - age / 600;
+        ctx.fillStyle = col;
+        ctx.textAlign = 'center';
+        ctx.fillText(view.lastJudge.tier.toUpperCase(), W / 2, hitY - 26 - (age / 600) * 12);
+        ctx.globalAlpha = 1;
+        ctx.textAlign = 'left';
+      }
+    }
   }
 }
 
@@ -141,7 +166,7 @@ export function updateGamePanel() {
   const scoreEl = document.getElementById('game-score');
   if (scoreEl) {
     const txt = view.state === 'finished'
-      ? `FINAL ${view.score} · ${Math.round(view.accuracy * 100)}% · BEST ×${view.bestStreak}`
+      ? `FINAL ${view.score} · ${view.grade} · ${Math.round(view.accuracy * 100)}%${view.isNewBest ? ' · ★ NEW BEST' : ''}`
       : `SCORE ${view.score} · ×${view.streak} · ${Math.round(view.accuracy * 100)}%`;
     if (scoreEl.textContent !== txt) scoreEl.textContent = txt;
   }

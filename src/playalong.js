@@ -27,15 +27,25 @@ export function filterNotes(notes, diffId, beatsPerBar) {
   return notes.filter(n => n.b % beatsPerBar === 0 || n.d >= 2);
 }
 
-// 'hit' | 'miss' | 'pending' for one note at one moment.
+// Timing tiers: a hit inside the central PERFECT_FRAC of the window is
+// 'perfect', anywhere else inside the window is 'good'.
+export const PERFECT_FRAC = 0.4;
+export const POINTS = { perfect: 150, good: 100 };   // + streak bonus on both
+
+// 'perfect' | 'good' | 'miss' | 'pending' for one note at one moment.
 export function judge(playerMidi, noteMidi, nowMs, noteMs, cfg) {
   const dt = nowMs - noteMs;
   if (dt < -cfg.window) return 'pending';
   const match = cfg.pcMatch
     ? (((playerMidi - noteMidi) % 12) + 12) % 12 === 0
     : playerMidi === noteMidi;
-  if (match) return 'hit';
+  if (match) return Math.abs(dt) <= cfg.window * PERFECT_FRAC ? 'perfect' : 'good';
   return dt > cfg.window ? 'miss' : 'pending';
+}
+
+// Letter grade from final accuracy.
+export function gradeOf(acc) {
+  return acc >= 0.95 ? 'S' : acc >= 0.9 ? 'A' : acc >= 0.75 ? 'B' : acc >= 0.6 ? 'C' : 'D';
 }
 
 export { mtof };                     // single source of truth lives in scale.js
@@ -50,9 +60,25 @@ let notes = [];                // { m, tMs, durMs, status, hitAtMs? }
 let t0 = 0;                    // engine.now() (s) at which beat 0 sounds
 let schedIdx = 0, guideOn = true;
 let score = 0, streak = 0, bestStreak = 0, hits = 0, judged = 0;
+let perfects = 0, goods = 0;
+let lastJudge = null;          // { tier, atMs } — drives the floating hit text
+let startBest = null;          // previous best for this song+difficulty
+let isNewBest = false;
 let endMs = 0;
 let savedTuning = null;
 let lastSongId = 'ode-to-joy', lastDiffId = 'medium';
+
+// Best scores persist per song per difficulty — own key, NOT the preset
+// snapshot (presets are shareable files; scores are personal).
+const SCORES_KEY = 'motionmuse-scores';
+function loadScores() {
+  try { return JSON.parse(localStorage.getItem(SCORES_KEY)) || {}; } catch { return {}; }
+}
+function saveBest(songId, dId, entry) {
+  const s = loadScores();
+  (s[songId] ??= {})[dId] = entry;
+  try { localStorage.setItem(SCORES_KEY, JSON.stringify(s)); } catch { /* private mode */ }
+}
 
 function nowMs() { return (engine.now() - t0) * 1000; }
 
@@ -94,10 +120,16 @@ export const playalong = {
 
     t0 = engine.now() + COUNTDOWN_S;
     schedIdx = 0;
-    score = streak = bestStreak = hits = judged = 0;
+    score = streak = bestStreak = hits = judged = perfects = goods = 0;
+    lastJudge = null;
+    isNewBest = false;
+    startBest = this.bestFor(song.id, diffId);
     state = 'countdown';
     return true;
   },
+
+  // Previous best { score, grade, acc, date } or null.
+  bestFor(songId, dId) { return loadScores()[songId]?.[dId] ?? null; },
 
   stop() {
     restoreTuning();
@@ -130,14 +162,18 @@ export const playalong = {
       if (n.status !== 'upcoming') continue;
       if (n.tMs - t > cfg.window) break;          // notes sorted; rest are future
       const r = judge(pm, n.m, t, n.tMs, cfg);
-      if (r === 'hit') {
-        n.status = 'hit'; n.hitAtMs = t;
+      if (r === 'perfect' || r === 'good') {
+        n.status = 'hit'; n.tier = r; n.hitAtMs = t;
         hits++; judged++; streak++;
+        if (r === 'perfect') perfects++; else goods++;
         bestStreak = Math.max(bestStreak, streak);
-        score += 100 + 10 * Math.min(streak, 10);
-        engine.playTone({ freq: 1568, dur: 0.06, type: 'square', gain: 0.05 });
+        score += POINTS[r] + 10 * Math.min(streak, 10);
+        lastJudge = { tier: r, atMs: t };
+        // Perfect hits chirp a fifth higher than good ones.
+        engine.playTone({ freq: r === 'perfect' ? 2093 : 1568, dur: 0.06, type: 'square', gain: 0.05 });
       } else if (r === 'miss') {
         n.status = 'miss'; judged++; streak = 0;
+        lastJudge = { tier: 'miss', atMs: t };
         engine.playTone({ freq: 110, dur: 0.12, type: 'sawtooth', gain: 0.05 });
       }
     }
@@ -145,6 +181,9 @@ export const playalong = {
     if (t > endMs) {
       state = 'finished';
       restoreTuning();
+      const acc = judged ? hits / judged : 1;
+      isNewBest = judged > 0 && score > (startBest?.score ?? -1);
+      if (isNewBest) saveBest(song.id, diffId, { score, grade: gradeOf(acc), acc, date: Date.now() });
     }
   },
 
@@ -159,7 +198,13 @@ export const playalong = {
       playerMidi: engine.started ? midiOf(engine.PARAMS.osc1_freq.val) : null,
       root: song?.root, scale: song?.scale,
       score, streak, bestStreak, hits, judged,
+      perfects, goods,
+      misses: judged - hits,
+      lastJudge,
       accuracy: judged ? hits / judged : 1,
+      grade: state === 'finished' ? gradeOf(judged ? hits / judged : 1) : null,
+      best: startBest,       // cached at start() — no localStorage read per frame
+      isNewBest,
       total: notes.length,
     };
   },
