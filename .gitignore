@@ -3,6 +3,6 @@ test-results/
 .cert/
 .env
 
-# large model for the optional gesture-image test (fetch locally)
+# large models for the optional gesture-image + pose-bench tests (auto/manually fetched)
 tests/gesture-img/hand_landmarker.task
-node_modules/
+tests/pose-bench/models/

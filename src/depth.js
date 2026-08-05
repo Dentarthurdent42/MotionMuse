@@ -178,7 +178,11 @@ export const depthSource = {
     ['depth_near', 'depth_center'].forEach(k => bus.update(k, 0));
     this._toggleHud(false);
     const btn = document.getElementById('depth-btn');
-    if (btn) { btn.classList.remove('on'); btn.textContent = '◈ LiDAR'; }
+    if (btn) {
+      btn.classList.remove('on');
+      const lbl = document.getElementById('depth-btn-lbl');
+      if (lbl) lbl.textContent = '◈ LiDAR';
+    }
     setStatus('active', 'CV ACTIVE');
   },
 

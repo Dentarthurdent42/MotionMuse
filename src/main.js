@@ -16,6 +16,8 @@ import { gesture }                          from './gesture.js';
 import { chordmode }                        from './chordmode.js';
 import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
+import { initDonate }                       from './ui/donate.js';
+import { initModelPanel }                   from './ui/model-ui.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
@@ -111,9 +113,13 @@ depthBtn.addEventListener('click', async () => {
   depthBtn.disabled = true;
   await depthSource.toggleLidar();
   depthBtn.classList.toggle('on', depthSource.lidarActive);
-  depthBtn.textContent = depthSource.lidarActive ? '◈ LiDAR ON' : '◈ LiDAR';
+  document.getElementById('depth-btn-lbl').textContent =
+    depthSource.lidarActive ? '◈ LiDAR ON' : '◈ LiDAR';
   depthBtn.disabled = false;
 });
+// LiDAR is under construction: turning dev mode off ends a live depth session
+// (a hidden, running XR session with no visible control would be confusing).
+devmode.onChange(on => { if (!on && depthSource.lidarActive) depthSource.stopLidar(); });
 
 // ── Audio button ─────────────────────────────────────────────────────────
 document.getElementById('audio-btn').addEventListener('click', async () => {
@@ -182,11 +188,19 @@ window.addEventListener('visibilitychange', () => { if (document.hidden) persist
 // ── Init ─────────────────────────────────────────────────────────────────
 devmode.init();           // apply persisted dev-mode state to <body>
 depthSource.init();       // register depth signals so they appear in the panel
+// Register every source's signals up front, before any of them are running.
+// Besides making CV signals mappable before the camera starts (as face/gaze
+// and gestures already were), this is what gives a restored preset real
+// labels — otherwise a saved `hand_R_open` mapping had no registered signal
+// to look up and the patchbay displayed the raw key.
+cvSource.registerSignals();    // hand/pose signals are mappable up front
 faceSource.registerSignals();  // face/gaze signals are mappable up front
 gesture.registerSignals();     // gesture_<id> signals are mappable up front
 initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer
+initDonate();             // ♥ support popover in the header
+initModelPanel();         // dev-mode pose model comparison panel
 preset.restoreLocal();    // bring back the last session's mappings + settings
 renderMapper();
 loop();

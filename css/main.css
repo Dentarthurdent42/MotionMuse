@@ -55,6 +55,7 @@ html, body {
   grid-template-columns: var(--col-l, 320px) 6px 1fr 6px var(--col-r, 280px);
   background: var(--bg);
   overflow: hidden;
+  min-width: 0;
 }
 
 .splitter {
@@ -72,6 +73,9 @@ body.resizing { cursor: col-resize; user-select: none; }
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Grid/flex items default to min-width:auto, which lets an over-wide child
+     (e.g. the scrollable piano picker) stretch the whole column. */
+  min-width: 0;
 }
 
 .ph {
@@ -144,6 +148,44 @@ body.resizing { cursor: col-resize; user-select: none; }
 .btn.purple.on { border-color: var(--purple); color: var(--purple); background: var(--purple-dim); }
 .btn:disabled { opacity: 0.3; cursor: default; }
 #dev-btn.on { border-color: var(--amber); color: var(--amber); background: rgba(240,165,0,0.12); }
+
+/* ── Dev Models panel (pose backend comparison) ──────────── */
+#model-panel .pb { padding: 8px 10px; }
+.model-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 9px; letter-spacing: 1px; color: var(--dim);
+  margin-bottom: 6px;
+}
+.model-row select { flex: 1; min-width: 0; }
+#model-stats { font-size: 9px; color: var(--dim); line-height: 1.5; }
+
+/* ── Support / donations popover ─────────────────────────── */
+#header { position: relative; }   /* containing block for #donate-pop */
+#donate-btn { padding: 4px 8px; }
+#donate-pop {
+  position: absolute;
+  top: calc(100% + 4px); right: 10px;
+  z-index: 60;
+  min-width: 170px;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  padding: 6px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+#donate-pop .donate-title {
+  font-size: 8px; letter-spacing: 2px; color: var(--dim);
+  padding: 3px 6px 6px;
+}
+#donate-pop a {
+  display: block;
+  padding: 5px 6px;
+  font-size: 10px;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 3px;
+}
+#donate-pop a:hover, #donate-pop a:focus-visible { background: var(--faint); color: var(--cyan); }
 
 /* ── Developer mode / under-construction gating ──────────── */
 /* Experimental features are hidden until dev mode is on. Using
@@ -369,7 +411,9 @@ body.no-scroll { overflow: hidden; }
   flex-shrink: 0;
 }
 
-#mapper-rows { flex: 1; overflow-y: auto; }
+/* min-width:0 so an over-wide child (the scrollable piano picker) can't
+   stretch the column — it has to scroll inside its own wrapper instead. */
+#mapper-rows { flex: 1; overflow-y: auto; min-width: 0; }
 #mapper-rows::-webkit-scrollbar { width: 3px; }
 #mapper-rows::-webkit-scrollbar-thumb { background: var(--border2); }
 
@@ -396,18 +440,24 @@ body.no-scroll { overflow: hidden; }
 .ng-node.ng-in  { border-right: 3px solid var(--wire); }
 .ng-node.ng-out { text-align: right; border-left: 3px solid transparent; }
 .ng-node.ng-out.wired { border-left-color: var(--wire); }
+/* The whole pill starts a wire, so claim horizontal drags — but leave
+   vertical ones to the browser so the panel still scrolls on touch. */
+.ng-node { touch-action: pan-y; cursor: grab; }
 .ng-node-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ng-node.ng-in  .ng-node-title { padding-right: 14px; }
-.ng-node.ng-out .ng-node-title { padding-left: 14px; }
-/* Small delete affordance so any node (even the last one) can be removed. */
+/* Room for the × on the pill's outer edge (opposite its socket). */
+.ng-node.ng-in  .ng-node-title { padding-left: 16px; }
+.ng-node.ng-out .ng-node-title { padding-right: 16px; }
+/* Delete affordance, on the outer edge away from the socket so a fat finger
+   can't hit both. */
 .ng-node-del {
-  position: absolute; top: 3px;
-  width: 14px; height: 14px; line-height: 12px; padding: 0;
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 18px; line-height: 16px; padding: 0;
   border: none; border-radius: 3px; background: transparent;
-  color: var(--dim); font-size: 12px; cursor: pointer; z-index: 3;
+  color: var(--dim); font-size: 13px; cursor: pointer; z-index: 3;
+  text-align: center;
 }
-.ng-node.ng-in  .ng-node-del { right: 3px; }
-.ng-node.ng-out .ng-node-del { left: 3px; }
+.ng-node.ng-in  .ng-node-del { left: 2px; }
+.ng-node.ng-out .ng-node-del { right: 2px; }
 .ng-node-del:hover { background: var(--faint); color: var(--text); }
 .ng-node-del:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
 .ng-socket {
@@ -417,10 +467,14 @@ body.no-scroll { overflow: hidden; }
   padding: 0; cursor: crosshair; z-index: 2;
   touch-action: none;   /* let us drag cables without the page panning */
 }
+/* Invisible oversized tap halo — the dot stays small, the target doesn't. */
+.ng-socket::after { content: ''; position: absolute; inset: -13px; border-radius: 50%; }
 .ng-node.ng-in  .ng-socket.ng-out { right: -7px; }
 .ng-node.ng-out .ng-socket.ng-in  { left: -7px; }
 .ng-socket:hover { background: var(--wire, var(--cyan)); }
 .ng-socket.armed { box-shadow: 0 0 0 3px var(--cyan); background: var(--cyan); }
+/* Where an in-progress drag would land. */
+.ng-socket.drop-target { box-shadow: 0 0 0 5px var(--cyan-dim); background: var(--cyan); }
 .ng-addbar { padding: 6px 10px; display: flex; gap: 6px; }
 .ng-addbar select { flex: 1; min-width: 0; }
 #ng-editor {
@@ -428,11 +482,33 @@ body.no-scroll { overflow: hidden; }
   padding: 8px 10px; margin-top: 4px;
   border-top: 1px dashed var(--border2);
   font-size: 9px; color: var(--dim);
+  min-width: 0;
 }
 #ng-editor .ng-edit-label { color: var(--text); font-size: 10px; width: 100%; }
 #ng-editor label { display: inline-flex; align-items: center; gap: 4px; }
 #ng-editor input { width: 62px; }
 #ng-editor select { width: 88px; }
+#ng-editor select.m-steps { width: 56px; }   /* narrow — the row is already crowded */
+
+/* Frequency-range piano picker (oscillator-frequency cables) */
+.ng-freq-picker { width: 100%; min-width: 0; }
+.ng-freq-bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ng-freq-bar .wave-btn { flex: 0 0 auto; padding: 2px 9px; }
+.ng-freq-nudge { min-width: 30px; font-size: 12px; line-height: 1; }
+.ng-freq-oct { margin-left: auto; color: var(--dim); font-size: 9px; letter-spacing: 1px; }
+.ng-freq-hint { margin-top: 3px; color: var(--dim); font-size: 8px; }
+/* The keyboard may be wider than the panel (see the mobile block) so its keys
+   stay tappable; the wrapper scrolls it horizontally. */
+.ng-freq-kbd-wrap {
+  overflow-x: auto; overflow-y: hidden; margin-top: 4px;
+  width: 100%; max-width: 100%; min-width: 0;
+  -webkit-overflow-scrolling: touch;
+}
+.ng-freq-kbd {
+  display: block; width: 100%; height: 56px;
+  border: 1px solid var(--border2); border-radius: 2px;
+  cursor: pointer; touch-action: pan-x;
+}
 
 .map-row-wrap { border-bottom: 1px solid var(--border); }
 .map-row {
@@ -673,11 +749,17 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   }
 
   /* Header: compact */
-  #header { padding: 0 10px; gap: 8px; }
-  .logo   { font-size: 11px; }
+  #header {
+    padding: 0 10px; gap: 8px;
+    /* Four buttons + logo no longer fit some narrow phones; scroll instead
+       of silently clipping past the edge (html/body's overflow-x:hidden
+       would otherwise just cut off whatever doesn't fit). */
+    overflow-x: auto; flex-wrap: nowrap;
+  }
+  .logo   { font-size: 11px; flex-shrink: 0; }
   .hsep   { display: none; }
   #status-lbl { display: none; }
-  .btn    { padding: 6px 10px; font-size: 9px; min-height: 36px; }
+  .btn    { padding: 6px 10px; font-size: 9px; min-height: 36px; flex-shrink: 0; }
 
   /* Main: single column */
   #main {
@@ -696,6 +778,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
     flex-direction: column;
     overflow: visible;
     height: auto;
+    min-width: 0;
   }
 
   .pb { overflow: visible; height: auto; }
@@ -704,7 +787,9 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   #sig-list { max-height: 260px; overflow-y: auto; }
 
   /* Mapper rows: keep a scroll cap */
-  #mapper-rows { max-height: 240px; }
+  /* Roomier than the old 240px so the taller, finger-sized frequency picker
+     (keyboard + arm/nudge buttons + hint) isn't squeezed into a scroll sliver. */
+  #mapper-rows { max-height: 60vh; }
 
   /* Two-line mapper rows: param + signal + × on top; min, max, curve below.
      Keeps every control editable on a phone instead of hiding them. */
@@ -734,10 +819,142 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
   /* Slightly larger range thumbs */
   input[type="range"]::-webkit-slider-thumb { width: 14px; height: 14px; }
+
+  /* Patchbay: fat-finger friendly. Taller pills, bigger sockets with an even
+     more generous invisible tap halo, and a roomier ×. */
+  .ng-node { padding: 11px 12px; }
+  .ng-node-del { width: 26px; height: 26px; line-height: 24px; font-size: 15px; }
+  .ng-node.ng-in  .ng-node-title { padding-left: 24px; }
+  .ng-node.ng-out .ng-node-title { padding-right: 24px; }
+  .ng-socket { width: 22px; height: 22px; }
+  .ng-socket::after { inset: -17px; }
+  .ng-node.ng-in  .ng-socket.ng-out { right: -11px; }
+  .ng-node.ng-out .ng-socket.ng-in  { left: -11px; }
+  #nodegraph { gap: 34px; }
+
+  /* Piano picker: draw the keyboard wider than the screen (≈21px white keys
+     instead of ≈10px) and let the wrapper scroll, so individual notes are
+     actually tappable. Height mirrors fpKbdHeight() in mapper-ui.js. */
+  .ng-freq-kbd { width: 760px; height: 88px; }
+  .ng-freq-nudge { min-width: 44px; padding: 6px 0; }
 }
 
 /* ── Misc ────────────────────────────────────────────────── */
 .note-badge {
   font-size: 8px; color: var(--amber); margin-left: auto;
   font-variant-numeric: tabular-nums;
+}
+
+/* ── Desktop: larger UI ──────────────────────────────────── */
+/* This is a dense, small-text control surface by design (8-11px monospace
+   throughout) — great for a laptop but cramped on a large monitor. Wide
+   windows get a deliberately bigger pass: text, paddings, and interactive
+   targets all scale up together. 1200px keeps this well clear of tablet
+   landscape (~1024px) and matches/exceeds the "Desktop" viewport used by
+   tests/ui-ux (1280px), so that regression test exercises these rules.
+   A few canvases (piano keyboards, the game highway, the oscilloscope) draw
+   at a JS-specified pixel size rather than reading their CSS box — those
+   heights are paired with matching JS changes gated on the same threshold
+   (src/ui/viewport.js's isDesktop()). The mobile block above is untouched. */
+@media (min-width: 1200px) {
+  html, body { font-size: 13px; }
+
+  #app { grid-template-rows: 52px 1fr; }
+  #header { padding: 0 20px; gap: 16px; }
+  .logo { font-size: 16px; }
+  .hstatus { font-size: 11px; gap: 8px; }
+  .dot { width: 9px; height: 9px; }
+  .btn { padding: 7px 16px; font-size: 11px; }
+  #donate-btn { padding: 7px 12px; }
+
+  .ph { padding: 9px 16px; font-size: 11px; }
+
+  #model-panel .pb { padding: 12px 14px; }
+  .model-row { font-size: 11px; gap: 10px; margin-bottom: 8px; }
+  #model-stats { font-size: 11px; }
+
+  #donate-pop { min-width: 210px; padding: 9px; }
+  #donate-pop .donate-title { font-size: 10px; padding: 4px 8px 8px; }
+  #donate-pop a { font-size: 12px; padding: 7px 9px; }
+
+  .uc-badge { font-size: 9px; padding: 2px 5px; }
+
+  /* Source tabs */
+  .src-tab { padding: 8px 0; font-size: 11px; }
+  .src-tab.future::after { font-size: 10px; padding: 3px 8px; }
+  .src-tab-wip { font-size: 10px; }
+
+  /* Camera */
+  .depth-toggle { font-size: 11px; padding: 5px 11px; }
+  #latency-bar { font-size: 10px; padding: 4px 10px; }
+  #cam-placeholder { font-size: 12px; }
+  #cam-placeholder svg { width: 40px; height: 40px; }
+
+  /* Signal list */
+  .sig-group { font-size: 10px; padding: 10px 14px 4px; }
+  .sig-row { grid-template-columns: 1fr 52px 110px; gap: 7px; padding: 5px 14px; }
+  .sig-name, .sig-val { font-size: 12px; }
+  .sig-bar { height: 4px; }
+
+  /* Mapper (legacy table rows, kept for consistency) + node-graph */
+  .mapper-thead, .map-row {
+    grid-template-columns: 150px 1fr 66px 66px 80px 30px;
+    padding: 7px 14px; gap: 5px;
+  }
+  .mapper-thead { font-size: 10px; }
+  .map-bar { height: 3px; }
+
+  #nodegraph { gap: 64px; padding: 14px 14px 6px; }
+  .ng-hint { font-size: 11px; }
+  .ng-node { padding: 9px 14px; font-size: 12px; }
+  .ng-node.ng-in  .ng-node-title { padding-left: 22px; }
+  .ng-node.ng-out .ng-node-title { padding-right: 22px; }
+  .ng-node-del { width: 22px; height: 22px; line-height: 20px; font-size: 15px; }
+  .ng-socket { width: 20px; height: 20px; }
+  .ng-node.ng-in  .ng-socket.ng-out { right: -10px; }
+  .ng-node.ng-out .ng-socket.ng-in  { left: -10px; }
+  .ng-addbar { padding: 9px 14px; gap: 8px; }
+  #ng-editor { padding: 11px 14px; font-size: 11px; }
+  #ng-editor .ng-edit-label { font-size: 12px; }
+  #ng-editor input { width: 74px; }
+  #ng-editor select { width: 104px; }
+  #ng-editor select.m-steps { width: 66px; }
+  .ng-freq-bar .wave-btn { padding: 4px 12px; }
+  .ng-freq-oct { font-size: 11px; }
+  .ng-freq-hint { font-size: 10px; }
+  .ng-freq-kbd { height: 72px; }   /* paired with mapper-ui.js drawFreqKbd() */
+
+  select, input[type="number"] { padding: 5px 6px; font-size: 11px; }
+  .rm-btn { font-size: 15px; padding: 2px 6px; }
+
+  .mapper-toolbar { padding: 11px 14px; gap: 8px; }
+  .mapper-hint { font-size: 11px; }
+
+  /* Audio panel */
+  #viz-canvas { height: 96px; }   /* paired with viz.js drawViz() */
+  .audio-section { padding: 11px 14px; }
+  .audio-section-label { font-size: 10px; margin-bottom: 8px; }
+  .wave-btns { gap: 4px; }
+  .scale-grid { gap: 6px; }
+  .quant-kbd { height: 60px; }    /* paired with audio-ui.js's panelKbd */
+  .game-canvas { height: 210px; } /* paired with playalong-ui.js updateGamePanel() */
+  .shader-canvas { height: 150px; }  /* shader.js reads clientHeight — no JS change needed */
+  .quant-notes { font-size: 11px; }
+
+  /* Gestures & chord mode */
+  .gesture-row { font-size: 12px; gap: 9px; padding: 5px 0; }
+  .gesture-dot { width: 9px; height: 9px; }
+  .gesture-tag { font-size: 10px; }
+  .chord-assign { gap: 6px; margin-top: 6px; }
+  .chord-assign .gesture-name { font-size: 11px; }
+  .wave-btn { padding: 5px 0; font-size: 10px; }
+
+  .ctrl-row { grid-template-columns: 92px 1fr 48px; gap: 8px; padding: 4px 0; }
+  .ctrl-lbl, .ctrl-val { font-size: 11px; }
+
+  input[type="range"] { height: 4px; }
+  input[type="range"]::-webkit-slider-thumb { width: 13px; height: 13px; }
+
+  #toast { font-size: 12px; padding: 7px 18px; }
+  .note-badge { font-size: 10px; }
 }

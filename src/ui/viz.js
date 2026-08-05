@@ -1,4 +1,5 @@
 import { engine } from '../engine.js';
+import { isDesktop } from './viewport.js';
 
 let canvas, ctx;
 
@@ -9,9 +10,10 @@ function init() {
 
 export function drawViz() {
   if (!canvas) init();
-  const W = canvas.offsetWidth, H = 72;
-  if (canvas.width !== W) canvas.width = W;
-  canvas.height = H;
+  const W = canvas.offsetWidth, H = isDesktop() ? 96 : 72;   // matches #viz-canvas CSS height
+  // Assigning width/height reallocates the backing store — only on change.
+  if (canvas.width !== W)  canvas.width  = W;
+  if (canvas.height !== H) canvas.height = H;
 
   ctx.fillStyle = '#020204';
   ctx.fillRect(0, 0, W, H);
@@ -27,10 +29,8 @@ export function drawViz() {
     return;
   }
 
-  ctx.strokeStyle = '#00e5cc';
-  ctx.lineWidth = 1.5;
-  ctx.shadowColor = '#00e5cc';
-  ctx.shadowBlur = 6;
+  // Glow via a second wide low-alpha stroke — shadowBlur costs a full-canvas
+  // blur pass per frame; two strokes are far cheaper and look near-identical.
   ctx.beginPath();
   const step = W / wave.length;
   for (let i = 0; i < wave.length; i++) {
@@ -38,8 +38,12 @@ export function drawViz() {
     const y = (0.5 + wave[i] * 0.45) * H;
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   }
+  ctx.strokeStyle = '#00e5cc33';
+  ctx.lineWidth = 4;
   ctx.stroke();
-  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#00e5cc';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
 
   ctx.fillStyle = '#00e5cc0a';
   ctx.lineTo(W, H / 2);

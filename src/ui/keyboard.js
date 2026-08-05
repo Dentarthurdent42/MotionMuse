@@ -3,7 +3,7 @@
 // A 5-octave piano (C2–C7): in-scale pitch classes tinted (root strongest),
 // plus optional oscillator marker dots.
 
-import { NOTE_NAMES, SCALES } from '../scale.js';
+import { NOTE_NAMES, SCALES, midiName } from '../scale.js';
 
 export const KBD_LO = 36, KBD_HI = 96;                 // MIDI C2 … C7
 export const OSC1_COL = '#9d5cff';                     // osc1 marker (purple)
@@ -24,10 +24,27 @@ export function keyboardLayout(width) {
   return { whites, ww, wIdx, keyCenter };
 }
 
-// Pure draw. opts: { height, root, scale, m1, m2, dpr }
+// Where in the keyboard a canvas-local point lands — inverse of the black-key
+// placement math in drawKeyboard, for click-to-pick-a-note UIs.
+export function midiAtPoint(width, height, x, y) {
+  const L = keyboardLayout(width);
+  const bw = L.ww * 0.62, bh = height * 0.62;
+  if (y <= bh) {
+    for (let m = KBD_LO; m <= KBD_HI; m++) {
+      if (isWhite(m)) continue;
+      const bx = (L.wIdx.get(m - 1) + 1) * L.ww - bw / 2;
+      if (x >= bx && x <= bx + bw) return m;
+    }
+  }
+  const i = Math.max(0, Math.min(L.whites.length - 1, Math.floor(x / L.ww)));
+  return L.whites[i];
+}
+
+// Pure draw. opts: { height, root, scale, m1, m2, labels, dpr }
 //   scale: null → plain keys, no in-scale tint (quantise off)
 //   m1/m2: marker midis or null
-export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, m1 = null, m2 = null, dpr } = {}) {
+//   labels: true → octave anchors (C2…C7) on the C keys
+export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, m1 = null, m2 = null, labels = false, dpr } = {}) {
   dpr = dpr ?? Math.min(window.devicePixelRatio || 1, 2);
   const W = canvas.clientWidth || 260, H = height;
   if (canvas.width !== W * dpr || canvas.height !== H * dpr) { canvas.width = W * dpr; canvas.height = H * dpr; }
@@ -63,6 +80,18 @@ export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, m1
       ? (pc(m) === rootPc ? '#c58a1e' : '#41527f')
       : '#20242b';
     ctx.fillRect(x, 0, bw, bh);
+  }
+
+  // Octave anchors on C keys — per-key names are unreadable at 36 white keys,
+  // but "C3" every octave orients the eye; exact names live in the readouts.
+  if (labels) {
+    ctx.font = '7px "IBM Plex Mono", monospace';
+    ctx.fillStyle = '#20242b';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    for (let i = 0; i < L.whites.length; i++) {
+      if (L.whites[i] % 12 === 0) ctx.fillText(midiName(L.whites[i]), (i + 0.5) * L.ww, H - 1);
+    }
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
 
   // Oscillator markers.

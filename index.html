@@ -29,6 +29,8 @@
     <button class="btn purple" id="audio-btn">AUDIO OFF</button>
     <button class="btn" id="dev-btn" aria-pressed="false"
             title="Developer mode — reveals experimental, under-construction features">DEV</button>
+    <button class="btn" id="donate-btn" aria-haspopup="menu" aria-expanded="false"
+            title="Support this project — donation links">♥</button>
   </header>
 
   <!-- ── Main ───────────────────────────────────────────── -->
@@ -47,8 +49,8 @@
         <canvas id="overlay"></canvas>
         <canvas id="face-overlay"></canvas>
         <div class="cam-toggles">
-          <button id="depth-btn" class="depth-toggle"
-                  title="Use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth">◈ LiDAR</button>
+          <button id="depth-btn" class="depth-toggle uc-feature"
+                  title="Under construction — use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth (DEV mode feature)"><span id="depth-btn-lbl">◈ LiDAR</span><span class="src-tab-wip">🚧</span></button>
           <button id="face-btn" class="depth-toggle" disabled
                   title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears (start the camera first)">☺ FACE</button>
           <button id="gaze-btn" class="depth-toggle" disabled
@@ -63,6 +65,7 @@
           <span>HAND <b id="lat-hand">—</b></span>
           <span>POSE <b id="lat-pose">—</b></span>
           <span>TOTAL <b id="lat-total">—</b></span>
+          <span class="uc-feature">MODEL <b id="lat-model">—</b></span>
           <span id="lat-depth-wrap" style="display:none">DEPTH <b id="lat-depth">—</b></span>
         </div>
         <div id="cam-placeholder">
@@ -72,6 +75,21 @@
           <span>START CAMERA</span>
         </div>
         <canvas id="fs-kbd"></canvas>
+      </div>
+
+      <div class="panel uc-feature" id="model-panel" style="border-top:1px solid var(--border);">
+        <div class="ph">MODELS <span class="uc-badge">dev</span></div>
+        <div class="pb" id="model-body">
+          <label class="model-row">POSE
+            <select id="model-pose" aria-label="Pose estimation model"></select>
+          </label>
+          <label class="model-row">DELEGATE
+            <select id="model-delegate" aria-label="Inference delegate (MediaPipe models)">
+              <option>GPU</option><option>CPU</option>
+            </select>
+          </label>
+          <div id="model-stats">start camera for live stats</div>
+        </div>
       </div>
 
       <div class="panel" style="border-top:1px solid var(--border);">

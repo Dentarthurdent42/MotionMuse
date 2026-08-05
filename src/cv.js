@@ -1,10 +1,10 @@
 import { bus }                                             from './bus.js';
-import { push30, dist3, angleBetween, handOpenness, fingerExt } from './math.js';
+import { push30, dist3, angleBetween, handOpenness, fingerExt, pinchStrength } from './math.js';
 import { setStatus }                                        from './ui/status.js';
 import { depthSource }                                      from './depth.js';
+import { createPoseBackend }                                from './posebackends.js';
+import { lsGet, lsSet }                                     from './storage.js';
 
-// Pinch distance normalised against this max (metres); beyond → 1.0
-const PINCH_MAX = 0.10;
 
 // Hand skeleton connections (MediaPipe 21-landmark topology)
 const HAND_CONNS = [
@@ -19,9 +19,12 @@ const HAND_CONNS = [
 // Pose skeleton connections (subset of 33-landmark BlazePose)
 const POSE_CONNS = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24]];
 
+// Placeholder for overlay drawing before a model has produced its first result.
+const EMPTY_RESULT = { landmarks: [], handednesses: [] };
+
 export const cvSource = {
   hand:     null,
-  pose:     null,
+  poseBackend: null,
   video:    null,
   canvas:   null,
   ctx:      null,
@@ -34,14 +37,23 @@ export const cvSource = {
     ['L', 'R'].forEach(s => {
       const lbl = s === 'L' ? 'Left' : 'Right';
       const g   = `hand ${s.toLowerCase()}`;
-      bus.register(`hand_${s}_x`,      { label: `${lbl} Wrist X`,  group: g, min: 0, max: 1,   source: 'cv' });
-      bus.register(`hand_${s}_y`,      { label: `${lbl} Wrist Y`,  group: g, min: 0, max: 1,   source: 'cv' });
-      bus.register(`hand_${s}_open`,   { label: `${lbl} Openness`, group: g, min: 0, max: 1,   source: 'cv' });
-      bus.register(`hand_${s}_spread`, { label: `${lbl} Spread`,   group: g, min: 0, max: 1,   source: 'cv' });
-      bus.register(`pinch_${s}`,       { label: `${lbl} Pinch`,    group: g, min: 0, max: 1,   source: 'cv' });
+      bus.register(`hand_${s}_x`,      { label: `${lbl} Wrist X`,  group: g, min: 0, max: 1,   source: 'cv', smooth: true });
+      bus.register(`hand_${s}_y`,      { label: `${lbl} Wrist Y`,  group: g, min: 0, max: 1,   source: 'cv', smooth: true });
+      bus.register(`hand_${s}_open`,   { label: `${lbl} Openness`, group: g, min: 0, max: 1,   source: 'cv', smooth: true });
+      bus.register(`hand_${s}_spread`, { label: `${lbl} Spread`,   group: g, min: 0, max: 1,   source: 'cv', smooth: true });
+      // Pinch drives volume articulation, where lag is the enemy: a note has
+      // to start when the fingers open, not 100 ms later. Snappier One-Euro
+      // than the default (2.5 Hz base, and beta high enough that the cutoff
+      // actually opens on a fast pinch). Anti-jitter is handled downstream by
+      // the volume ladder's hysteresis, so this doesn't need heavy smoothing.
+      // 1 = tips together, 0 = hand open. Drives volume articulation, where lag
+      // is the enemy: a note has to start when the fingers move, not 100 ms
+      // later. Snappier One-Euro than the default; anti-jitter is handled
+      // downstream by the volume ladder's hysteresis.
+      bus.register(`pinch_${s}`,       { label: `${lbl} Pinch`,    group: g, min: 0, max: 1,   source: 'cv', smooth: { minCutoff: 2.5, beta: 0.4 } });
       ['Thumb','Index','Middle','Ring','Pinky'].forEach((fn, fi) =>
         bus.register(`finger_${s}_${fn.toLowerCase()}`, {
-          label: `${lbl} ${fn}`, group: g, min: 0, max: 1, source: 'cv',
+          label: `${lbl} ${fn}`, group: g, min: 0, max: 1, source: 'cv', smooth: true,
         })
       );
     });
@@ -49,27 +61,27 @@ export const cvSource = {
     const g2 = 'pose';
     // Elbows self-calibrate: nobody's elbow closes to 0° or opens to a flat
     // 180°, and the usable range differs per user. `adapt` maps the observed
-    // range onto the full control range once ≥25° of motion has been seen.
-    bus.register('elbow_L',        { label: 'L Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', adapt: true, adaptSpan: 25 });
-    bus.register('elbow_R',        { label: 'R Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', adapt: true, adaptSpan: 25 });
-    bus.register('shoulder_y_L',   { label: 'L Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv' });
-    bus.register('shoulder_y_R',   { label: 'R Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv' });
-    bus.register('shoulder_width', { label: 'Shoulder Width',    group: g2, min: 0,  max: 1,   source: 'cv' });
-    bus.register('arm_raise_L',    { label: 'L Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv' });
-    bus.register('arm_raise_R',    { label: 'R Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv' });
-    bus.register('torso_tilt',     { label: 'Torso Tilt',        group: g2, min: -1, max: 1,   source: 'cv' });
-    bus.register('head_x',         { label: 'Head X',            group: g2, min: 0,  max: 1,   source: 'cv' });
-    bus.register('head_y',         { label: 'Head Y',            group: g2, min: 0,  max: 1,   source: 'cv' });
-    bus.register('nose_y',         { label: 'Nose Dip',          group: g2, min: 0,  max: 1,   source: 'cv' });
+    // range onto the full control range once ≥40° of motion has been seen.
+    bus.register('elbow_L',        { label: 'L Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
+    bus.register('elbow_R',        { label: 'R Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
+    bus.register('shoulder_y_L',   { label: 'L Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('shoulder_y_R',   { label: 'R Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('shoulder_width', { label: 'Shoulder Width',    group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('arm_raise_L',    { label: 'L Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('arm_raise_R',    { label: 'R Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('torso_tilt',     { label: 'Torso Tilt',        group: g2, min: -1, max: 1,   source: 'cv', smooth: true });
+    bus.register('head_x',         { label: 'Head X',            group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('head_y',         { label: 'Head Y',            group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('nose_y',         { label: 'Nose Dip',          group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
   },
 
-  // ── Load MediaPipe models ────────────────────────────────────────────
+  // ── Load models ──────────────────────────────────────────────────────
   async init() {
-    if (this.hand && this.pose) return;   // already loaded (camera restart)
+    if (this.hand && this.poseBackend) return;   // already loaded (camera restart)
     this.registerSignals();
     setStatus('loading', 'LOADING MODELS…');
 
-    const { FilesetResolver, HandLandmarker, PoseLandmarker } = await import(
+    const { FilesetResolver, HandLandmarker } = await import(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs'
     );
 
@@ -86,14 +98,43 @@ export const cvSource = {
       runningMode: 'VIDEO',
     });
 
-    this.pose = await PoseLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-        delegate: 'GPU',
-      },
-      runningMode: 'VIDEO',
-      numPoses: 1,
-    });
+    // Pose runs behind a swappable backend (dev Models panel).
+    const saved = this._savedModel();
+    this.poseBackend = createPoseBackend(saved.backend, { delegate: saved.delegate });
+    await this.poseBackend.init();
+    this._setLatModel();
+  },
+
+  _savedModel() {
+    try {
+      return { backend: 'mp-lite', delegate: 'GPU',
+               ...JSON.parse(lsGet('motionmuse-posemodel') || '{}') };
+    } catch { return { backend: 'mp-lite', delegate: 'GPU' }; }
+  },
+
+  _setLatModel() {
+    const el = document.getElementById('lat-model');
+    if (el) el.textContent = this.poseBackend?.id ?? '—';
+  },
+
+  // Swap the pose backend live (camera keeps running; pose frames simply
+  // reuse the previous result until the new model is ready).
+  async setPoseBackend(id, delegate = 'GPU') {
+    if (this._switching) return false;
+    this._switching = true;
+    try {
+      const next = createPoseBackend(id, { delegate });
+      await next.init();
+      const old = this.poseBackend;
+      this.poseBackend = next;
+      old?.dispose?.();
+      this._lat?.pose.splice(0);   // stats restart for the new model
+      lsSet('motionmuse-posemodel', JSON.stringify({ backend: id, delegate }));
+      this._setLatModel();
+      return true;
+    } finally {
+      this._switching = false;
+    }
   },
 
   // ── Camera startup ───────────────────────────────────────────────────
@@ -103,7 +144,9 @@ export const cvSource = {
     this.ctx    = this.canvas.getContext('2d');
 
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, facingMode: 'user' },
+      // 30fps is plenty for musical control; a 60Hz camera would double
+      // the inference load for no audible benefit.
+      video: { width: 640, height: 480, frameRate: { ideal: 30 }, facingMode: 'user' },
     });
     this.video.srcObject = stream;
     await new Promise(r => this.video.onloadedmetadata = r);
@@ -140,33 +183,38 @@ export const cvSource = {
   },
 
   // ── Detection loop ───────────────────────────────────────────────────
+  // Hand and pose alternate frames: at a 30fps camera each model still
+  // updates at ≥15Hz (plenty for musical control, smoothed by the bus
+  // filter), but the per-frame main-thread inference cost is halved —
+  // the single biggest lever against lag. The overlay draws the latest
+  // cached results outside the measured inference path.
   loop() {
     if (!this.running) return;
     const now = performance.now();
-
     const lat = this._lat;
-    if (lat.lastT) push30(lat.interval, now - lat.lastT);
-    lat.lastT = now;
 
     if (this.video.currentTime !== this.lastTime) {
       this.lastTime = this.video.currentTime;
+      // Interval between *processed* frames → real detection rate, not RAF rate.
+      if (lat.lastT) push30(lat.interval, now - lat.lastT);
+      lat.lastT = now;
       try {
         const t0 = performance.now();
-        const hr = this.hand.detectForVideo(this.video, now);
-        const t1 = performance.now();
-        const pr = this.pose.detectForVideo(this.video, now);
-        const t2 = performance.now();
-        this.processHands(hr);
-        this.processPose(pr);
-        this.drawOverlay(hr, pr);
-        const t3 = performance.now();
-
-        push30(lat.hand,  t1 - t0);
-        push30(lat.pose,  t2 - t1);
-        push30(lat.total, t3 - t0);
-
+        if ((lat.frame & 1) === 0) {
+          this._hr = this.hand.detectForVideo(this.video, now);
+          push30(lat.hand, performance.now() - t0);
+          this.processHands(this._hr);
+        } else {
+          this._pr = this.poseBackend.detect(this.video, now);
+          push30(lat.pose, performance.now() - t0);
+          this.processPose(this._pr);
+        }
+        push30(lat.total, performance.now() - t0);
+        this.drawOverlay(this._hr ?? EMPTY_RESULT, this._pr ?? EMPTY_RESULT);
         if (++lat.frame % 15 === 0) this._updateLatency();
-      } catch (e) {}
+      } catch (e) {
+        if (!this._warned) { console.warn('[cv] frame error:', e); this._warned = true; }
+      }
     }
     requestAnimationFrame(() => this.loop());
   },
@@ -208,11 +256,15 @@ export const cvSource = {
         );
         const wlm = foundWorld[s];
         if (wlm) {
-          bus.update(`pinch_${s}`, Math.min(1, dist3(wlm[4], wlm[8]) / PINCH_MAX));
+          bus.update(`pinch_${s}`, pinchStrength(wlm[4], wlm[8]));
         }
       } else {
-        [`hand_${s}_x`, `hand_${s}_y`, `hand_${s}_open`, `hand_${s}_spread`, `pinch_${s}`]
+        [`hand_${s}_x`, `hand_${s}_y`, `hand_${s}_open`, `hand_${s}_spread`]
           .forEach(k => bus.decay(k));
+        // Pinch does NOT decay toward 0: 0 now means "hand open", which a
+        // volume mapping reads as full blast. Losing tracking must fail quiet,
+        // so treat it as fully pinched.
+        bus.update(`pinch_${s}`, 1);
         ['thumb','index','middle','ring','pinky'].forEach(n => bus.decay(`finger_${s}_${n}`));
       }
     });
@@ -223,7 +275,15 @@ export const cvSource = {
 
   // ── Signal extraction: pose ──────────────────────────────────────────
   processPose(r) {
-    if (!r.landmarks?.length) { depthSource.feedPose(null); return; }
+    if (!r.landmarks?.length) {
+      // Decay pose signals like the hand path does — otherwise they freeze at
+      // their last value when the subject leaves the frame.
+      ['elbow_L','elbow_R','shoulder_y_L','shoulder_y_R','shoulder_width',
+       'arm_raise_L','arm_raise_R','torso_tilt','head_x','head_y','nose_y']
+        .forEach(k => bus.decay(k));
+      depthSource.feedPose(null);
+      return;
+    }
     const lm = r.landmarks[0];
     // Indices: 0=nose, 11=Lshoulder, 12=Rshoulder, 13=Lelbow,
     //          14=Relbow, 15=Lwrist, 16=Rwrist, 23=Lhip, 24=Rhip
@@ -270,43 +330,52 @@ export const cvSource = {
     const lx = x => ox + x * vw * scale;
     const ly = y => oy + y * vh * scale;
 
+    // Batched drawing: one stroked path per hand (all 24 connections), one
+    // filled path per dot colour — ~8 canvas ops instead of ~100.
     if (hr.landmarks) {
       hr.landmarks.forEach((lm, hi) => {
         const isRight = hr.handednesses[hi]?.[0]?.categoryName === 'Right';
         const col = isRight ? '#00e5cc' : '#9d5cff';
         ctx.strokeStyle = col + 'aa'; ctx.lineWidth = 1.5;
+        ctx.beginPath();
         HAND_CONNS.forEach(([a, b]) => {
-          ctx.beginPath();
           ctx.moveTo(lx(lm[a].x), ly(lm[a].y));
           ctx.lineTo(lx(lm[b].x), ly(lm[b].y));
-          ctx.stroke();
         });
+        ctx.stroke();
+        ctx.fillStyle = col;
+        ctx.beginPath();
         lm.forEach((pt, i) => {
-          ctx.fillStyle = i === 0 ? '#fff' : col;
-          ctx.beginPath();
-          ctx.arc(lx(pt.x), ly(pt.y), i === 0 ? 3 : 2, 0, Math.PI * 2);
-          ctx.fill();
+          if (i === 0) return;
+          ctx.moveTo(lx(pt.x) + 2, ly(pt.y));
+          ctx.arc(lx(pt.x), ly(pt.y), 2, 0, Math.PI * 2);
         });
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(lx(lm[0].x), ly(lm[0].y), 3, 0, Math.PI * 2);
+        ctx.fill();
       });
     }
 
     if (pr.landmarks?.length) {
       const lm = pr.landmarks[0];
       ctx.strokeStyle = '#f0a50066'; ctx.lineWidth = 2;
+      ctx.beginPath();
       POSE_CONNS.forEach(([a, b]) => {
         if (!lm[a] || !lm[b]) return;
-        ctx.beginPath();
         ctx.moveTo(lx(lm[a].x), ly(lm[a].y));
         ctx.lineTo(lx(lm[b].x), ly(lm[b].y));
-        ctx.stroke();
       });
+      ctx.stroke();
+      ctx.fillStyle = '#f0a500';
+      ctx.beginPath();
       [11, 12, 13, 14, 15, 16].forEach(i => {
         if (!lm[i]) return;
-        ctx.fillStyle = '#f0a500';
-        ctx.beginPath();
+        ctx.moveTo(lx(lm[i].x) + 3, ly(lm[i].y));
         ctx.arc(lx(lm[i].x), ly(lm[i].y), 3, 0, Math.PI * 2);
-        ctx.fill();
       });
+      ctx.fill();
     }
   },
 };

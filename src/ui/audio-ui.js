@@ -2,6 +2,8 @@ import { engine }                    from '../engine.js';
 import { mapper }                    from '../mapper.js';
 import { SCALES, TUNINGS, NOTE_NAMES } from '../scale.js';
 import { makeKbdView, midiOf, OSC1_COL, OSC2_COL } from './keyboard.js';
+import { isDesktop } from './viewport.js';
+import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS } from '../dynamics.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
@@ -13,7 +15,16 @@ const opts = (arr, sel) =>
 
 // The panel's pitch-quantise keyboard (canvas #quant-kbd, recreated with the
 // panel; the view looks it up by id on every draw).
-const panelKbd = makeKbdView('quant-kbd', { height: 46 });
+const panelKbd = makeKbdView('quant-kbd', { height: () => isDesktop() ? 60 : 46 });
+const sliderRefs = new Map();   // param key → {slider, valEl}, rebuilt per render
+
+// Saved best score for the currently selected song+difficulty (idle display).
+const bestLine = () => {
+  const song = document.getElementById('song-select')?.value ?? playalong.lastSong;
+  const diff = document.getElementById('diff-select')?.value ?? playalong.lastDiff;
+  const b = playalong.bestFor(song, diff);
+  return b ? `BEST ${b.score} · ${b.grade} · ${Math.round(b.acc * 100)}%` : '—';
+};
 const kbdOpts = () => {
   const t = engine.getTuning();
   return {
@@ -23,20 +34,39 @@ const kbdOpts = () => {
   };
 };
 
+// Tick marks at the snap values, drawn on the track as background gradients
+// (native <datalist> ticks are suppressed by our -webkit-appearance:none).
+// Module scope because the volume ladder changes at runtime, so handlers have
+// to repaint an existing slider's notches without a full re-render.
+const tickCss = p => !p.snaps?.length ? '' : p.snaps.map(s => {
+  const f = ((s - p.min) / (p.max - p.min) * 100).toFixed(2);
+  return `linear-gradient(90deg,transparent calc(${f}% - 1.5px),var(--dim) calc(${f}% - 1.5px),var(--dim) calc(${f}% + 1.5px),transparent calc(${f}% + 1.5px))`;
+}).join(',');
+
 export function renderAudioPanel() {
   const panel = document.getElementById('audio-panel');
+
+  const tickBg = p => tickCss(p) ? ` style="background-image:${tickCss(p)}"` : '';
 
   const rangeRow = (key, p) => `
     <div class="ctrl-row">
       <span class="ctrl-lbl">${p.label}</span>
       <input type="range" class="apr" data-key="${key}"
         min="${p.min}" max="${p.max}" value="${p.val}"
-        step="${((p.max - p.min) / 300).toPrecision(3)}">
+        step="${((p.max - p.min) / 300).toPrecision(3)}"${tickBg(p)}>
       <span class="ctrl-val" id="av-${key}">${p.val.toFixed(p.unit === 'Hz' ? 0 : 2)}</span>
     </div>`;
 
   const waveBtn = (type, label, osc) =>
     `<div class="wave-btn" data-type="${type}" data-osc="${osc}">${label}</div>`;
+
+  const vq = engine.getVolStep();
+  const vqStepOpts = STEP_OPTS.map(s =>
+    `<option value="${s}"${s === vq.steps ? ' selected' : ''}>${s} steps</option>`).join('');
+  const vqFloorOpts = FLOOR_OPTS.map(f =>
+    `<option value="${f}"${f === vq.floorDb ? ' selected' : ''}>${f} dB</option>`).join('');
+  const vqEdgeOpts = EDGE_KEYS.map(k =>
+    `<option value="${k}"${k === vq.edge ? ' selected' : ''}>${k.toUpperCase()}</option>`).join('');
 
   const t = engine.getTuning();
 
@@ -68,7 +98,7 @@ export function renderAudioPanel() {
         <div class="wave-btn${playalong.guide ? ' on' : ''}" id="guide-btn" title="Play a quiet guide melody">GUIDE</div>
       </div>
       <canvas id="game-canvas" class="game-canvas" style="display:${gv.state !== 'idle' ? 'block' : 'none'}"></canvas>
-      <div id="game-score" class="quant-notes">—</div>
+      <div id="game-score" class="quant-notes">${gv.state === 'idle' ? bestLine() : '—'}</div>
     </div>
     ${gestureSectionsHTML()}
     ${shaderSectionHTML()}
@@ -85,6 +115,23 @@ export function renderAudioPanel() {
       </div>
       <canvas id="quant-kbd" class="quant-kbd" style="display:${t.enabled ? 'block' : 'none'}"></canvas>
       <div id="quant-notes" class="quant-notes">${t.enabled ? '' : '—'}</div>
+    </div>
+    <div class="audio-section">
+      <div class="audio-section-label" style="display:flex;align-items:center;">
+        Volume Quantize
+        <div class="wave-btn${vq.enabled ? ' on' : ''}" id="vq-toggle"
+             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${vq.enabled ? 'ON' : 'OFF'}</div>
+      </div>
+      <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr;">
+        <select id="vq-steps" title="Loudness levels, silence included">${vqStepOpts}</select>
+        <select id="vq-floor" title="Bottom of the ladder — the silence anchor when GATE is on">${vqFloorOpts}</select>
+        <select id="vq-edge"  title="Attack / release speed at a level change">${vqEdgeOpts}</select>
+      </div>
+      <div class="wave-btns" style="margin-top:4px;">
+        <div class="wave-btn${vq.gate ? ' on' : ''}" id="vq-gate"
+             title="Make the bottom level true silence, so notes can be separated and re-attacked">GATE</div>
+      </div>
+      <div id="vq-level" class="quant-notes">${vq.enabled ? '' : '—'}</div>
     </div>
     <div class="audio-section">
       <div class="audio-section-label">Osc 1 Waveform</div>
@@ -136,6 +183,13 @@ export function renderAudioPanel() {
     playalong.setGuide(!playalong.guide);
     e.target.classList.toggle('on', playalong.guide);
   });
+  // Show the saved best for the selected song+difficulty while idle.
+  ['song-select', 'diff-select'].forEach(id =>
+    document.getElementById(id).addEventListener('change', () => {
+      if (playalong.view.state !== 'idle') return;
+      const el = document.getElementById('game-score');
+      if (el) el.textContent = bestLine();
+    }));
   // Manual timbre tweaks flip the kit selection to "Custom" in place
   // (no full re-render — that would kill a slider mid-drag).
   const syncKitToCustom = () => {
@@ -170,12 +224,22 @@ export function renderAudioPanel() {
     });
   });
 
+  // Magnetic detent: dragging within ~1.5% of the range of a snap value locks
+  // onto it. Applies only to user drags — mapped writeback never snaps.
+  const snapTo = (p, v) => {
+    if (!p.snaps) return v;
+    const tol = 0.015 * (p.max - p.min);
+    for (const s of p.snaps) if (Math.abs(v - s) <= tol) return s;
+    return v;
+  };
   panel.querySelectorAll('.apr').forEach(el => {
     el.addEventListener('input', e => {
       const key = e.target.dataset.key;
-      const val = parseFloat(e.target.value);
+      const p   = engine.PARAMS[key];
+      let val = parseFloat(e.target.value);
+      const s = snapTo(p, val);
+      if (s !== val) { val = s; e.target.value = s; }   // detent the thumb too
       engine.set(key, val);
-      const p     = engine.PARAMS[key];
       const dispEl = document.getElementById(`av-${key}`);
       if (dispEl) dispEl.textContent = val.toFixed(p.unit === 'Hz' ? 0 : 2);
       if (KIT_PARAM_KEYS.has(key)) syncKitToCustom();
@@ -202,6 +266,37 @@ export function renderAudioPanel() {
   document.getElementById('scale-tuning')
     .addEventListener('change', e => { engine.setTuning({ system: e.target.value }); redrawKbd(); });
 
+  // Volume quantisation (stepped dynamics). Mutates in place like the pitch
+  // handlers — a full re-render would kill an in-flight slider drag. The
+  // volume slider's notches are baked into an inline style at render time, so
+  // every change here has to repaint them or they'd silently lie.
+  const vqToggle = document.getElementById('vq-toggle');
+  const vqGate   = document.getElementById('vq-gate');
+  const refreshVolTicks = () => {
+    const r = sliderRefs.get('volume');
+    if (r) r.slider.style.backgroundImage = tickCss(engine.PARAMS.volume) || 'none';
+  };
+  vqToggle.addEventListener('click', () => {
+    const on = !engine.getVolStep().enabled;
+    engine.setVolStep({ enabled: on });
+    vqToggle.classList.toggle('on', on);
+    vqToggle.textContent = on ? 'ON' : 'OFF';
+    refreshVolTicks();
+    if (!on) document.getElementById('vq-level').textContent = '—';
+  });
+  vqGate.addEventListener('click', () => {
+    const on = !engine.getVolStep().gate;
+    engine.setVolStep({ gate: on });
+    vqGate.classList.toggle('on', on);
+    refreshVolTicks();
+  });
+  document.getElementById('vq-steps')
+    .addEventListener('change', e => { engine.setVolStep({ steps: +e.target.value }); refreshVolTicks(); });
+  document.getElementById('vq-floor')
+    .addEventListener('change', e => { engine.setVolStep({ floorDb: +e.target.value }); refreshVolTicks(); });
+  document.getElementById('vq-edge')
+    .addEventListener('change', e => { engine.setVolStep({ edge: e.target.value }); });
+
   // Reflect the engine's actual waveform / filter selections (they may have
   // just been restored from a saved preset, not the factory defaults).
   document.getElementById('osc1-waves').querySelector(`[data-type="${engine.getOsc1Type()}"]`)?.classList.add('on');
@@ -212,17 +307,22 @@ export function renderAudioPanel() {
 
   wireGestureSections(renderAudioPanel);
   wireShaderSection();
+
+  // Cache slider/readout refs — updateAudioSliders runs every frame and
+  // shouldn't pay for per-mapping querySelector calls.
+  sliderRefs.clear();
+  panel.querySelectorAll('.apr').forEach(el =>
+    sliderRefs.set(el.dataset.key, { slider: el, valEl: document.getElementById(`av-${el.dataset.key}`) }));
 }
 
 export function updateAudioSliders() {
   mapper.mappings.forEach(m => {
     if (!m.signal) return;
     const p = engine.PARAMS[m.audioParam];
-    if (!p) return;
-    const slider = document.querySelector(`.apr[data-key="${m.audioParam}"]`);
-    const valEl  = document.getElementById(`av-${m.audioParam}`);
-    if (slider) slider.value = p.val;
-    if (valEl)  valEl.textContent = p.val.toFixed(p.unit === 'Hz' ? 0 : 2);
+    const r = sliderRefs.get(m.audioParam);
+    if (!p || !r) return;
+    r.slider.value = p.val;
+    if (r.valEl) r.valEl.textContent = p.val.toFixed(p.unit === 'Hz' ? 0 : 2);
   });
 
   // Live readout of the notes the oscillators are currently snapped to, plus
@@ -235,6 +335,17 @@ export function updateAudioSliders() {
       if (notesEl.innerHTML !== html) notesEl.innerHTML = html;
     }
     panelKbd.draw(kbdOpts());
+  }
+
+  // Live volume rung — a level meter you can read at a glance while playing,
+  // so you can see the gate close rather than only hear it.
+  const lv = engine.volLevel();
+  const vqEl = document.getElementById('vq-level');
+  if (vqEl) {
+    const txt = !lv ? '—'
+      : Array.from({ length: lv.count }, (_, i) => (i > 0 && i <= lv.idx) ? '█' : '▁').join('')
+        + `  ${lv.idx + 1}/${lv.count} · ${lv.gain === 0 ? 'SILENT' : `${lv.db.toFixed(0)} dB`}`;
+    if (vqEl.textContent !== txt) vqEl.textContent = txt;
   }
 
   updateGesturePanel();

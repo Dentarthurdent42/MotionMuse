@@ -3,10 +3,11 @@
 // use. Toggling flips a `dev` class on <body> — CSS hides `.uc-feature`
 // elements unless that class is present — and notifies subscribers.
 
+import { lsGet, lsSet } from './storage.js';
+
 const KEY = 'motionmuse-dev';
 const cbs = [];
-let enabled = false;
-try { enabled = localStorage.getItem(KEY) === '1'; } catch { /* private mode */ }
+let enabled = lsGet(KEY) === '1';
 
 function sync() {
   document.body.classList.toggle('dev', enabled);
@@ -17,7 +18,7 @@ export const devmode = {
   get enabled() { return enabled; },
   set(on) {
     enabled = !!on;
-    try { localStorage.setItem(KEY, enabled ? '1' : '0'); } catch { /* ignore */ }
+    lsSet(KEY, enabled ? '1' : '0');
     sync();
   },
   toggle() { this.set(!enabled); },

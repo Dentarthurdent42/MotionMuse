@@ -14,9 +14,14 @@ import { currentKit, setCurrentLabel } from './soundkit.js';
 import { gesture } from './gesture.js';
 import { chordmode } from './chordmode.js';
 import { shader } from './shader.js';
+import { lsGet, lsSet } from './storage.js';
 
-const LS_KEY = 'biosignal-session-v1';
-const TAG    = 'biosignal-sound';
+const LS_KEY = 'motionmuse-session-v1';
+const TAG    = 'motionmuse-sound';
+// Preset files saved before the rename carry the old tag. They're the same
+// format, so keep loading them rather than telling people their file is
+// invalid.
+const LEGACY_TAGS = ['biosignal-sound'];
 
 export function snapshot() {
   return {
@@ -31,7 +36,7 @@ export function snapshot() {
 }
 
 export function apply(data) {
-  if (!data || data.app !== TAG) return false;
+  if (!data || (data.app !== TAG && !LEGACY_TAGS.includes(data.app))) return false;
   if (data.audio) engine.restore(data.audio);
   if (Array.isArray(data.mappings)) mapper.load(data.mappings);
   if (data.gestures) gesture.load(data.gestures);
@@ -44,12 +49,12 @@ export function apply(data) {
 }
 
 export function saveLocal() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(snapshot())); } catch { /* private mode / quota */ }
+  lsSet(LS_KEY, JSON.stringify(snapshot()));
 }
 
 export function restoreLocal() {
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = lsGet(LS_KEY);
     return raw ? apply(JSON.parse(raw)) : false;
   } catch { return false; }
 }
