@@ -5,6 +5,7 @@
 import { cvSource }      from '../cv.js';
 import { POSE_BACKENDS } from '../posebackends.js';
 import { toast }         from './status.js';
+import { lsSet }         from '../storage.js';
 
 const p95 = a => a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length * 0.95)] : null;
 const avg = a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
@@ -36,7 +37,7 @@ export function initModelPanel() {
         await cvSource.setPoseBackend(poseSel.value, delSel.value);
         toast(`Pose model: ${poseSel.value}`);
       } else {                       // camera not started yet — just persist
-        localStorage.setItem('motionmuse-posemodel',
+        lsSet('motionmuse-posemodel',
           JSON.stringify({ backend: poseSel.value, delegate: delSel.value }));
       }
     } catch (e) {

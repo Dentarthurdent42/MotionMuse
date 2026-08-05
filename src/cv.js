@@ -3,6 +3,7 @@ import { push30, dist3, angleBetween, handOpenness, fingerExt, pinchStrength } f
 import { setStatus }                                        from './ui/status.js';
 import { depthSource }                                      from './depth.js';
 import { createPoseBackend }                                from './posebackends.js';
+import { lsGet, lsSet }                                     from './storage.js';
 
 
 // Hand skeleton connections (MediaPipe 21-landmark topology)
@@ -107,7 +108,7 @@ export const cvSource = {
   _savedModel() {
     try {
       return { backend: 'mp-lite', delegate: 'GPU',
-               ...JSON.parse(localStorage.getItem('motionmuse-posemodel') || '{}') };
+               ...JSON.parse(lsGet('motionmuse-posemodel') || '{}') };
     } catch { return { backend: 'mp-lite', delegate: 'GPU' }; }
   },
 
@@ -128,7 +129,7 @@ export const cvSource = {
       this.poseBackend = next;
       old?.dispose?.();
       this._lat?.pose.splice(0);   // stats restart for the new model
-      try { localStorage.setItem('motionmuse-posemodel', JSON.stringify({ backend: id, delegate })); } catch {}
+      lsSet('motionmuse-posemodel', JSON.stringify({ backend: id, delegate }));
       this._setLatModel();
       return true;
     } finally {

@@ -233,7 +233,10 @@ mid-song discards the run.
 mapping plus all audio parameters, waveform/filter choices and the pitch-quantise
 tuning and the volume-step configuration — as a single `.json` file you can keep or share. **LOAD** restores one.
 The current session is also stored in `localStorage`, so your setup returns
-automatically after a reload or PWA relaunch. Serialisation lives in
+automatically after a reload or PWA relaunch. Preset files and stored keys were
+renamed with the MotionMuse rebrand; files saved under the old name still load,
+and existing settings, panel widths and high scores migrate across on first
+read (`src/storage.js`). Serialisation lives in
 `src/preset.js`; `engine.snapshot()`/`restore()` and `mapper.serialize()`/`load()`
 own their respective slices of state.
 
@@ -342,6 +345,7 @@ src/
   math.js           Geometry helpers (dist3, angleBetween, handOpenness, fingerExt)
   engine.js         Web Audio API synthesiser
   scale.js          Scale + tuning pitch quantiser
+  storage.js        Brand-prefixed localStorage + legacy-key migration
   dynamics.js       Volume step ladder (dB levels, silence gate, hysteresis)
   mapper.js         Signal → audio parameter routing and curves
   preset.js         Save/load of mappings + settings (file + localStorage)

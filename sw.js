@@ -1,8 +1,11 @@
-const CACHE = 'biosignal-v19';
+const CACHE = 'motionmuse-v1';
 
 // MediaPipe wasm + .task model files live at versioned/immutable URLs, so
 // cache-first is safe and saves ~10-25MB of re-download on every cold load
 // (the single biggest startup cost). Other cross-origin stays pass-through.
+// Deliberately keeps its pre-rebrand name: it's an internal Cache Storage key
+// holding ~15MB of MediaPipe wasm/models, and renaming it would evict them for
+// a re-download with no user-visible benefit.
 const CDN_CACHE = 'biosignal-cdn-v1';
 const CDN_RE = /(cdn\.jsdelivr\.net\/npm\/@mediapipe\/tasks-vision@|storage\.googleapis\.com\/mediapipe-models\/)/;
 
@@ -21,6 +24,7 @@ const STATIC = [
   '/src/math.js',
   '/src/engine.js',
   '/src/scale.js',
+  '/src/storage.js',
   '/src/dynamics.js',
   '/src/mapper.js',
   '/src/preset.js',

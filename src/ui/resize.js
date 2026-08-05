@@ -2,8 +2,9 @@
 // CSS variables on #main; dragging a splitter updates them, double-click
 // resets, and the result persists in localStorage.
 import { isDesktop } from './viewport.js';
+import { lsGet, lsSet } from '../storage.js';
 
-const KEY = 'biosignal-panel-widths';
+const KEY = 'motionmuse-panel-widths';
 const NARROW_DEF  = { l: 320, r: 280 };
 const DESKTOP_DEF = { l: 380, r: 340 };   // wide windows start with more breathing room
 const MIN = 200;       // narrowest a side column may go
@@ -15,7 +16,7 @@ export function initResize() {
   const DEF = isDesktop() ? DESKTOP_DEF : NARROW_DEF;
 
   let w;
-  try { w = { ...DEF, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }
+  try { w = { ...DEF, ...JSON.parse(lsGet(KEY) || '{}') }; }
   catch { w = { ...DEF }; }
 
   const clamp = () => {
@@ -28,7 +29,7 @@ export function initResize() {
     main.style.setProperty('--col-l', w.l + 'px');
     main.style.setProperty('--col-r', w.r + 'px');
   };
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(w)); } catch { /* private mode */ } };
+  const save = () => lsSet(KEY, JSON.stringify(w));
 
   clamp(); apply();
 
