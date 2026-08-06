@@ -9,7 +9,7 @@
 // (e.g. the ASL numbers) manageable.
 
 import { engine }                     from './engine.js';
-import { gesture }                    from './gesture.js';
+import { gesture, gestureLabel }      from './gesture.js';
 import { diatonicChord, isDiatonic }  from './chords.js';
 import { NOTE_NAMES }                 from './scale.js';
 import { devmode }                    from './devmode.js';
@@ -112,7 +112,7 @@ export const chordmode = (() => {
       const c = playing && chordFor(playing);
       if (!c) return '';
       const g = gesture.list().find(x => x.id === playing);
-      return `${g?.name ?? playing} → ${c.numeral} · ${c.rootName} ${c.quality}`;
+      return `${g ? gestureLabel(g) : playing} → ${c.numeral} · ${c.rootName} ${c.quality}`;
     },
 
     _sound(id) {

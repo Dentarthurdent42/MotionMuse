@@ -41,9 +41,47 @@ export const pinchStrength = (thumbTip, indexTip,
   return Math.max(0, Math.min(1, (open - d) / (open - closed)));
 };
 
+export const TIPS = [4, 8, 12, 16, 20];   // thumb, index, middle, ring, pinky
+
 export const fingerExt = (lm, f) => {
   const bases = [2, 5, 9, 13, 17];
-  const tips  = [4, 8, 12, 16, 20];
   const norm  = dist3(lm[0], lm[9]);
-  return norm < 1e-4 ? 0 : Math.min(1, dist3(lm[bases[f]], lm[tips[f]]) / (norm * 1.5));
+  return norm < 1e-4 ? 0 : Math.min(1, dist3(lm[bases[f]], lm[TIPS[f]]) / (norm * 1.5));
+};
+
+const unit = (d, lo, hi) => Math.max(0, Math.min(1, (hi - d) / (hi - lo)));
+
+// ── Thumb geometry ────────────────────────────────────────────────────────
+//
+// `fingerExt`'s thumb channel is structurally useless for telling handshapes
+// apart: measured across the reference photos it spans only 0.36–0.45, because
+// the thumb's base-to-tip distance barely changes as the thumb moves. What
+// actually changes is *where* the thumb goes — tucked across the palm, or
+// carried clear of it. Measuring the tip against the centre of the palm
+// (the middle-finger MCP) gives 0.23–0.25 tucked versus 0.91–0.99 clear:
+// a real, bimodal signal, and the one that separates ASL 2 from 3, or 4 from 5.
+export const THUMB_IN  = 0.22;   // × palm length — thumb folded over the palm
+export const THUMB_OUT = 1.00;   // × palm length — thumb carried clear
+export const thumbOut = (lm, inRatio = THUMB_IN, outRatio = THUMB_OUT) => {
+  const palm = dist3(lm[0], lm[9]);
+  if (palm < 1e-4) return 0;
+  return 1 - unit(dist3(lm[4], lm[9]) / palm, inRatio, outRatio);
+};
+
+// Thumb-tip ↔ fingertip contact, 0..1 (1 = pads touching). `f` is 1..4 for
+// index…pinky. Palm-normalised, so it's independent of hand size and camera
+// distance, and computed from image landmarks like every other feature —
+// world landmarks are optional in the MediaPipe result and a missing channel
+// here would read as a false contact.
+//
+// The window is deliberately tight. A merely *curled* finger parks its tip
+// near the thumb (a fist measures 0.19–0.58 palm units with nothing actually
+// touching), so a loose window would make "curled" and "touching"
+// indistinguishable. Genuine pad-to-pad contact sits below ~0.2.
+export const CONTACT_CLOSED = 0.18;
+export const CONTACT_OPEN   = 0.45;
+export const thumbContact = (lm, f, closed = CONTACT_CLOSED, open = CONTACT_OPEN) => {
+  const palm = dist3(lm[0], lm[9]);
+  if (palm < 1e-4 || !TIPS[f]) return 0;
+  return unit(dist3(lm[4], lm[TIPS[f]]) / palm, closed, open);
 };

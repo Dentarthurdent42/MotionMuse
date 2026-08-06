@@ -1,10 +1,10 @@
-// Unit tests for chord construction and gesture matching.
+// Unit tests for chord construction. Gesture matching lives in
+// gesture-match.test.js, diatonic degrees in diatonic.test.js.
 // Run: npm run test:unit
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { QUALITIES, chordFreqs, rootMidi, chordName } from '../../src/chords.js';
-import { matchGesture, FEATURES } from '../../src/gesture.js';
 
 const near = (a, b, tol = 0.5) => Math.abs(a - b) <= tol;
 
@@ -48,31 +48,4 @@ test('unknown quality falls back to major', () => {
 
 test('chordName formats root + quality', () => {
   assert.equal(chordName('C', 'maj7'), 'C maj7');
-});
-
-// ── Gesture matching ──
-const T = [
-  { id: 'fist', f: [0, 0, 0, 0, 0, 0, 0] },
-  { id: 'palm', f: [1, 1, 1, 1, 1, 1, 0.6] },
-];
-
-test('matchGesture: identical features match at distance 0', () => {
-  const m = matchGesture([0, 0, 0, 0, 0, 0, 0], T);
-  assert.equal(m.id, 'fist');
-  assert.ok(m.dist < 1e-9);
-});
-
-test('matchGesture: nearest template wins', () => {
-  const m = matchGesture([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.5], T);
-  assert.equal(m.id, 'palm');
-});
-
-test('matchGesture: ambiguous mid pose exceeds threshold → null', () => {
-  // Halfway between fist and palm is far from both.
-  const m = matchGesture([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.3], T, 0.55);
-  assert.equal(m, null);
-});
-
-test('matchGesture: feature vector length is 7', () => {
-  assert.equal(FEATURES.length, 7);
 });

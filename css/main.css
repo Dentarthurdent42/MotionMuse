@@ -636,7 +636,7 @@ option { background: var(--panel); }
 
 /* ── Gestures & chord mode ───────────────────────────────── */
 .gesture-row {
-  display: flex; align-items: center; gap: 7px;
+  display: flex; align-items: center; gap: 5px;
   padding: 3px 0; font-size: 10px; color: var(--text);
 }
 .gesture-dot {
@@ -647,7 +647,20 @@ option { background: var(--panel); }
 .gesture-dot.on { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
 .gesture-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gesture-tag  { font-size: 8px; color: var(--dim); letter-spacing: 1px; }
-.gesture-del  { flex-shrink: 0; }
+/* "est" = template is a geometric estimate, not measured on a real hand. */
+.gesture-tag.est { color: var(--amber); border: 1px solid var(--amber); padding: 0 3px; }
+.gesture-del, .gesture-cal { flex-shrink: 0; }
+.gesture-cal:hover { color: var(--cyan); }
+/* Collapsed group for the ASL number handshapes. */
+.gesture-group > summary {
+  font-size: 8px; letter-spacing: 1px; color: var(--dim);
+  cursor: pointer; padding: 4px 0; list-style: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.gesture-group > summary::-webkit-details-marker { display: none; }
+.gesture-group > summary::before { content: '▸'; font-size: 9px; }
+.gesture-group[open] > summary::before { content: '▾'; }
+.gesture-group > summary:hover { color: var(--text); }
 .chord-assign {
   display: grid;
   grid-template-columns: 1fr 1.15fr 0.5fr;

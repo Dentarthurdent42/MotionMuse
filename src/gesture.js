@@ -1,47 +1,140 @@
-// Hand-gesture recognition. A gesture is a template over the 7 normalized
-// hand features the CV source already publishes per hand: the five finger
-// extensions, openness, and spread. Recognition is nearest-template matching
-// with a distance threshold, a few frames of debounce, and hysteresis so a
-// held pose doesn't flicker.
+// Hand-gesture recognition. A gesture is a template over the 12 normalized
+// hand features the CV source publishes per hand: five finger extensions,
+// openness, spread, how far the thumb is carried from the palm, and the four
+// thumb-to-fingertip contacts. Recognition is nearest-template matching with
+// per-feature weights, a distance threshold, frame debounce, and hysteresis
+// so a held pose doesn't flicker.
 //
-// Built-in gestures ship as ideal-value templates; the user records custom
-// ones by holding a pose while ~10 frames of live features are averaged.
-// Every gesture is also published as a bus signal (`gesture_<id>`, 0/1-ish),
-// so gestures can drive ordinary mappings too, not just chord mode.
+// Built-in gestures ship as templates; the user records custom ones (or
+// recalibrates the built-ins) by holding a pose while ~10 frames of live
+// features are averaged. Every gesture is also published as a bus signal
+// (`gesture_<id>`, 0/1-ish), so gestures can drive ordinary mappings too.
 
 import { bus } from './bus.js';
 
-export const FEATURES = ['thumb', 'index', 'middle', 'ring', 'pinky', 'open', 'spread'];
+export const FEATURES = [
+  'thumb', 'index', 'middle', 'ring', 'pinky',   // finger extension
+  'open', 'spread',                              // whole-hand shape
+  'thumbOut',                                    // thumb carried clear of the palm
+  'cIndex', 'cMiddle', 'cRing', 'cPinky',        // thumb-to-fingertip contact
+];
 
-// Feature order: [thumb, index, middle, ring, pinky, openness, spread].
-// Templates are calibrated to real MediaPipe HandLandmarker output (measured
-// from reference gesture photos via fingerExt/handOpenness) — the raw values
-// cluster in a compressed range, not clean 0/1, so idealized templates never
-// matched. Users can still record their own for a personal fit.
+// Not every channel is equally informative, and an unweighted metric lets the
+// useless ones drown out the decisive ones. Measured spans across the
+// reference photos justify these:
+//   - `thumb` is fingerExt's thumb, which moves over a 0.09 range in total —
+//     nearly pure noise, kept only so old recordings stay comparable.
+//   - `spread` turned out to be unpredictable (a peace sign measured *lower*
+//     spread than a fist), so it gets a light vote.
+//   - the contacts are what separate the ASL number handshapes at all, so
+//     they get the loudest.
+export const WEIGHTS = [0.25, 1, 1, 1, 1, 0.7, 0.4, 1.1, 1.2, 1.2, 1.2, 1.2];
+
+// Value assumed for a channel a template doesn't carry. Templates recorded
+// before the vector grew are padded with these on load rather than being left
+// short — a short template used to produce a NaN distance, which silently made
+// it unmatchable forever instead of failing loudly.
+export const NEUTRAL = [0.40, 0.5, 0.5, 0.5, 0.5, 0.6, 0.3, 0.3, 0, 0, 0, 0];
+
+export const padTemplate = f =>
+  FEATURES.map((_, i) => Number.isFinite(f?.[i]) ? f[i] : NEUTRAL[i]);
+
+// ── Built-in templates ────────────────────────────────────────────────────
+//
+// `fist`, `peace`, `point` and `thumbs` are *measured*: MediaPipe run over the
+// reference photos in tests/gesture-img, features read straight out of
+// math.js. Run `npm run test:gesture-img -- --calibrate` to reprint them.
+//
+// The rest have no reference photo, so they're derived from a small geometric
+// model built on those same measurements: each shape is described by which
+// fingers are extended, where the thumb sits, and the thumb-to-fingertip
+// distances that implies, then run through the real feature formulas. That
+// makes them good starting points, not ground truth — hands differ, and the
+// ASL number shapes especially are worth recalibrating (Gestures → CALIBRATE)
+// so the templates fit your own hand. Estimated templates are flagged in the
+// UI until you do.
+//
+// Distances below are in palm lengths (wrist → middle-finger MCP), the same
+// unit math.js normalizes by. Reference values, all measured:
+//   thumb tucked, fingers curled, thumb wrapped over them   0.20 0.22 0.40 0.58
+//   thumb tucked beside the palm, fingers curled            0.50 0.52 0.56 0.63
+//   thumb tucked, fingers extended                          1.03 1.15 1.25 1.35
+//   thumb clear, fingers curled                             0.91 1.07 1.24 1.42
+//   thumb clear, fingers extended                           1.98 2.01 2.05 2.10
+//   pads actually touching                                  0.15
+// Extension levels: extended 0.82/0.90/0.85/0.80 (index…pinky), curled
+// 0.23/0.24/0.19/0.16, half-curled ~0.48. Openness by extended-finger count:
+// 0.38 0.50 0.70 0.80 0.87 0.92. Spread is always thumb↔pinky distance / 2.5.
 const BUILTINS = [
-  { id: 'fist',   name: 'Fist',      f: [0.35, 0.20, 0.20, 0.15, 0.15, 0.40, 0.20] },
-  { id: 'palm',   name: 'Open Palm', f: [0.50, 0.90, 0.95, 0.90, 0.85, 0.90, 0.60] },
-  { id: 'peace',  name: 'Peace',     f: [0.45, 0.90, 0.92, 0.46, 0.40, 0.70, 0.30] },
-  { id: 'point',  name: 'Point',     f: [0.35, 0.76, 0.25, 0.16, 0.15, 0.50, 0.25] },
-  { id: 'thumbs', name: 'Thumbs Up', f: [0.42, 0.24, 0.25, 0.24, 0.20, 0.36, 0.56] },
-  { id: 'horns',  name: 'Rock Horns',f: [0.38, 0.80, 0.22, 0.16, 0.80, 0.55, 0.50] },
-].map(g => ({ ...g, builtin: true, hand: 'any' }));
+  // id        name              ASL   f = [thumb,index,middle,ring,pinky, open,spread, thumbOut, cIdx,cMid,cRing,cPinky]
+  { id: 'fist',   name: 'Fist',       asl: 'S',
+    f: [0.36, 0.21, 0.19, 0.15, 0.13, 0.40, 0.23, 0.04, 0.95, 0.90, 0.19, 0.00] },
+  { id: 'point',  name: 'Point',      asl: '1',
+    f: [0.36, 0.75, 0.27, 0.17, 0.15, 0.50, 0.25, 0.02, 0.00, 0.00, 0.00, 0.00] },
+  { id: 'peace',  name: 'Peace',      asl: '2',
+    f: [0.45, 0.88, 0.94, 0.49, 0.39, 0.71, 0.19, 0.99, 0.00, 0.00, 0.52, 0.00] },
+  { id: 'thumbs', name: 'Thumbs Up',  asl: '10',
+    f: [0.40, 0.26, 0.27, 0.25, 0.20, 0.35, 0.57, 0.89, 0.00, 0.00, 0.00, 0.00] },
+  { id: 'palm',   name: 'Open Palm',  asl: '5', est: true,
+    f: [0.40, 0.82, 0.90, 0.85, 0.80, 0.92, 0.84, 0.90, 0.00, 0.00, 0.00, 0.00] },
+  { id: 'horns',  name: 'Rock Horns', est: true,
+    f: [0.40, 0.82, 0.24, 0.19, 0.80, 0.70, 0.54, 0.04, 0.00, 0.00, 0.00, 0.00] },
+  // ASL numbers. 1, 2, 5 and 10 are the shapes above — one template each, with
+  // both a descriptive name and the numeral, rather than duplicates that would
+  // sit on top of each other and make the match a coin toss.
+  { id: 'asl3',   name: 'Three',      asl: '3', est: true,
+    f: [0.40, 0.82, 0.90, 0.19, 0.16, 0.72, 0.57, 0.90, 0.00, 0.00, 0.00, 0.00] },
+  { id: 'asl4',   name: 'Four',       asl: '4', est: true,
+    f: [0.40, 0.82, 0.90, 0.85, 0.80, 0.87, 0.54, 0.04, 0.00, 0.00, 0.00, 0.00] },
+  { id: 'asl6',   name: 'Pinky Touch',asl: '6', est: true,
+    f: [0.40, 0.82, 0.90, 0.85, 0.35, 0.80, 0.06, 0.49, 0.00, 0.00, 0.00, 1.00] },
+  { id: 'asl7',   name: 'Ring Touch', asl: '7', est: true,
+    f: [0.40, 0.82, 0.90, 0.35, 0.80, 0.80, 0.48, 0.49, 0.00, 0.00, 1.00, 0.00] },
+  { id: 'asl8',   name: 'Middle Touch', asl: '8', est: true,
+    f: [0.40, 0.82, 0.35, 0.85, 0.80, 0.80, 0.54, 0.49, 0.00, 1.00, 0.00, 0.00] },
+  { id: 'asl9',   name: 'Index Touch', asl: '9', est: true,
+    f: [0.40, 0.35, 0.90, 0.85, 0.80, 0.80, 0.56, 0.49, 1.00, 0.00, 0.00, 0.00] },
+  { id: 'asl0',   name: 'Closed O',   asl: '0', est: true,
+    f: [0.40, 0.50, 0.52, 0.48, 0.45, 0.55, 0.14, 0.35, 0.93, 0.78, 0.56, 0.37] },
+].map(g => ({ ...g, builtin: true, hand: 'any', est: !!g.est }));
 
-export const MATCH_THRESHOLD = 0.6;    // max Euclidean distance to count as a match
-const HYSTERESIS  = 0.15;              // extra slack to *keep* the current match
-const HOLD_FRAMES = 2;                 // frames of continuous match before engaging
+// Display name including the ASL numeral, e.g. "Point · ASL 1".
+export const gestureLabel = g => g.asl ? `${g.name} · ASL ${g.asl}` : g.name;
+
+// The threshold is a *rejection* radius — "is this any of our gestures at
+// all" — not a separation guarantee; which gesture wins is decided by nearest
+// neighbour. Measured pairwise separation over the shipped templates bottoms
+// out at 0.70 (point vs horns, which genuinely differ only in the pinky), and
+// gesture-match.test.js fails if an edit brings any pair below 0.65. Sitting
+// the threshold just under that floor keeps a pose that's ambiguous between
+// two templates from being confidently misread; the frame debounce below is
+// what stops the remaining borderline cases from flickering.
+export const MATCH_THRESHOLD = 0.65;
+export const SEPARATION_FLOOR = 0.65;
+const HYSTERESIS     = 0.15;   // extra slack to *keep* the current match
+const HOLD_FRAMES    = 2;      // frames a new gesture must win before engaging
+const RELEASE_FRAMES = 3;      // frames of no match before letting go
+
+// Weighted Euclidean distance between a live feature vector and a template.
+// Templates shorter than FEATURES (recorded before the vector grew) read
+// NEUTRAL for the missing channels instead of NaN.
+export function templateDistance(features, t) {
+  let d2 = 0;
+  for (let i = 0; i < FEATURES.length; i++) {
+    const fv = Number.isFinite(features[i]) ? features[i] : NEUTRAL[i];
+    const tv = Number.isFinite(t.f?.[i])    ? t.f[i]      : NEUTRAL[i];
+    const dv = fv - tv;
+    d2 += WEIGHTS[i] * dv * dv;
+  }
+  return Math.sqrt(d2);
+}
 
 // Pure nearest-template match — unit-tested.
-// features: number[7]; templates: [{id, f}]; returns {id, dist} or null.
+// features: number[]; templates: [{id, f}]; returns {id, dist} or null.
 export function matchGesture(features, templates, threshold = MATCH_THRESHOLD, stickyId = null) {
   let best = null;
   for (const t of templates) {
-    let d2 = 0;
-    for (let i = 0; i < FEATURES.length; i++) {
-      const dv = features[i] - t.f[i];
-      d2 += dv * dv;
-    }
-    const dist = Math.sqrt(d2);
+    const dist = templateDistance(features, t);
     if (!best || dist < best.dist) best = { id: t.id, dist };
   }
   if (!best) return null;
@@ -53,14 +146,20 @@ export const gesture = (() => {
   let custom = [];               // user-recorded templates
   let nextCustom = 1;
   const hiddenBuiltins = new Set();   // built-in ids the user removed
-  // Per-hand recognition state.
+  const recal = new Map();            // built-in id → user-recalibrated vector
+  // Per-hand recognition state. `cand`/`candFrames` debounce *switching*
+  // between gestures, not just engaging one.
   const state = {
-    L: { candidate: null, frames: 0, active: null },
-    R: { candidate: null, frames: 0, active: null },
+    L: { active: null, cand: null, candFrames: 0, missFrames: 0 },
+    R: { active: null, cand: null, candFrames: 0, missFrames: 0 },
   };
   let recording = null;          // { name, hand, frames: [], onDone }
 
-  const all = () => [...BUILTINS.filter(g => !hiddenBuiltins.has(g.id)), ...custom];
+  const all = () => [
+    ...BUILTINS.filter(g => !hiddenBuiltins.has(g.id))
+               .map(g => recal.has(g.id) ? { ...g, f: recal.get(g.id), est: false } : g),
+    ...custom,
+  ];
 
   const featuresFor = side => {
     const v = k => bus.signals.get(k)?.value ?? 0;
@@ -70,9 +169,15 @@ export const gesture = (() => {
       v(`finger_${side}_thumb`), v(`finger_${side}_index`), v(`finger_${side}_middle`),
       v(`finger_${side}_ring`), v(`finger_${side}_pinky`),
       v(`hand_${side}_open`), v(`hand_${side}_spread`),
+      v(`thumb_out_${side}`),
+      v(`contact_${side}_index`), v(`contact_${side}_middle`),
+      v(`contact_${side}_ring`),  v(`contact_${side}_pinky`),
     ];
+    // Only the extension/openness channels are evidence of a hand: the
+    // contacts legitimately sit at 0 for most poses, so they must not count
+    // toward "is anything there".
     const present = bus.signals.get(`hand_${side}_x`)?.value > 0.001 ||
-                    f.reduce((s, x) => s + x, 0) > 0.05;
+                    f.slice(0, 6).reduce((s, x) => s + x, 0) > 0.05;
     return present ? f : null;
   };
 
@@ -82,7 +187,7 @@ export const gesture = (() => {
 
     registerSignals() {
       all().forEach(g => bus.register(`gesture_${g.id}`, {
-        label: g.name, group: 'gesture', min: 0, max: 1, source: 'gesture',
+        label: gestureLabel(g), group: 'gesture', min: 0, max: 1, source: 'gesture',
       }));
     },
 
@@ -97,14 +202,21 @@ export const gesture = (() => {
         if (recording.frames.length >= 10) {
           const n = recording.frames.length;
           const avg = FEATURES.map((_, i) =>
-            recording.frames.reduce((s, fr) => s + fr[i], 0) / n);
-          const g = {
-            id: `custom${nextCustom++}`,
-            name: recording.name, f: avg.map(x => +x.toFixed(3)),
-            builtin: false, hand: 'any',
-          };
-          custom.push(g);
-          bus.register(`gesture_${g.id}`, { label: g.name, group: 'gesture', min: 0, max: 1, source: 'gesture' });
+            +(recording.frames.reduce((s, fr) => s + fr[i], 0) / n).toFixed(3));
+          let g;
+          if (recording.target) {
+            // Recalibrating a built-in: replace its template in place, keeping
+            // its id (so chord assignments and mappings survive) and clearing
+            // the "estimated" flag now that it's been measured on a real hand.
+            recal.set(recording.target, avg);
+            g = all().find(x => x.id === recording.target);
+          } else {
+            g = { id: `custom${nextCustom++}`, name: recording.name, f: avg,
+                  builtin: false, hand: 'any' };
+            custom.push(g);
+            bus.register(`gesture_${g.id}`,
+              { label: gestureLabel(g), group: 'gesture', min: 0, max: 1, source: 'gesture' });
+          }
           const done = recording.onDone; recording = null;
           done?.(g);
         }
@@ -112,21 +224,33 @@ export const gesture = (() => {
       }
 
       const matched = new Set();
+      const templates = all();
       for (const side of ['L', 'R']) {
         const st = state[side];
         const f = featuresFor(side);
-        // Match each frame (hysteresis in matchGesture biases toward the
-        // currently-held gesture). Latch to the nearest under-threshold match
-        // after a couple of frames of *any* match — don't require the same
-        // nearest id every frame, or normal hand jitter (templates sit close
-        // together) keeps resetting the candidate and nothing ever engages.
-        const m = f ? matchGesture(f, all(), MATCH_THRESHOLD, st.active) : null;
+        // Hysteresis in matchGesture biases toward the currently-held gesture.
+        const m = f ? matchGesture(f, templates, MATCH_THRESHOLD, st.active) : null;
         if (m) {
-          st.frames = Math.min(st.frames + 1, 9);
-          if (st.frames >= HOLD_FRAMES || st.active) st.active = m.id;
+          st.missFrames = 0;
+          if (m.id === st.active) {
+            st.cand = null; st.candFrames = 0;
+          } else {
+            // Switching costs the same debounce as engaging. Without this,
+            // `active` was reassigned on *every* matching frame, so with
+            // templates sitting close together the winner could flip frame to
+            // frame — and chord mode, which is edge-triggered on the active
+            // id, would re-attack the chord each time.
+            if (m.id === st.cand) st.candFrames++;
+            else { st.cand = m.id; st.candFrames = 1; }
+            if (st.candFrames >= HOLD_FRAMES) {
+              st.active = m.id; st.cand = null; st.candFrames = 0;
+            }
+          }
         } else {
-          st.frames = 0;
-          st.active = null;
+          st.cand = null; st.candFrames = 0;
+          // Tolerate a few dropped frames before releasing, so one bad
+          // detection doesn't cut a sustained chord.
+          if (++st.missFrames >= RELEASE_FRAMES) st.active = null;
         }
         if (st.active) matched.add(st.active);
       }
@@ -149,11 +273,20 @@ export const gesture = (() => {
 
     // Begin recording; resolves via callback once ~10 frames are captured.
     // Caller is responsible for checking that the camera is running.
-    record(name, onDone, hand = 'any') {
-      recording = { name: name || `Gesture ${nextCustom}`, hand, frames: [], onDone };
+    // Pass `target` to overwrite an existing gesture's template instead of
+    // creating a new one — that's what calibration does.
+    record(name, onDone, hand = 'any', target = null) {
+      recording = { name: name || `Gesture ${nextCustom}`, hand, frames: [], onDone, target };
     },
+    recalibrate(id, onDone, hand = 'any') { this.record(null, onDone, hand, id); },
     get recordingActive() { return !!recording; },
+    get recordingTarget() { return recording?.target ?? null; },
     cancelRecord() { recording = null; },
+
+    // Gestures whose template is still a geometric estimate rather than
+    // something measured — the ones worth calibrating first.
+    estimated: () => all().filter(g => g.est).map(g => g.id),
+    resetCalibration(id) { if (id) recal.delete(id); else recal.clear(); },
 
     remove(id) {
       if (BUILTINS.some(g => g.id === id)) {
@@ -171,13 +304,21 @@ export const gesture = (() => {
 
     serialize() {
       return { custom: custom.map(({ id, name, f, hand }) => ({ id, name, f, hand })),
-               hidden: [...hiddenBuiltins] };
+               hidden: [...hiddenBuiltins],
+               recal: Object.fromEntries(recal) };
     },
     load(data) {
       // Back-compat: older presets stored just an array of custom gestures.
       const arr = Array.isArray(data) ? data : (data?.custom ?? []);
-      custom = arr.map(g => ({ ...g, builtin: false, hand: g.hand ?? 'any' }));
+      // Templates recorded against a shorter feature vector are padded to the
+      // current length. Left short they'd compare as NaN and become silently
+      // unmatchable — present in the list, impossible to trigger.
+      custom = arr.map(g => ({ ...g, f: padTemplate(g.f), builtin: false, hand: g.hand ?? 'any' }));
       hiddenBuiltins.clear();
+      recal.clear();
+      for (const [id, f] of Object.entries((Array.isArray(data) ? {} : data?.recal) ?? {})) {
+        if (BUILTINS.some(g => g.id === id)) recal.set(id, padTemplate(f));
+      }
       (Array.isArray(data) ? [] : (data?.hidden ?? [])).forEach(id => hiddenBuiltins.add(id));
       // Keep ids unique for future recordings.
       nextCustom = 1 + custom.reduce((mx, g) => {

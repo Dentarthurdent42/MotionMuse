@@ -2,7 +2,7 @@
 // cheap per-frame live updates (match dots, chord readout). Kept separate so
 // audio-ui.js stays focused on the synth panel.
 
-import { gesture }    from '../gesture.js';
+import { gesture, gestureLabel } from '../gesture.js';
 import { chordmode }  from '../chordmode.js';
 import { diatonicChord, DIATONIC_SCALES } from '../chords.js';
 import { NOTE_NAMES } from '../scale.js';
@@ -25,16 +25,43 @@ export function gestureSectionsHTML() {
   const on = chordmode.enabled;
   const asg = chordmode.assignments();
 
-  const gestureRows = gestures.map(g => `
-    <div class="gesture-row" data-gid="${g.id}">
+  const row = g => {
+    const label = gestureLabel(g);
+    // The panel column is narrow, so the row shows "Pinky Touch · 6" and keeps
+    // the spelled-out "ASL 6" for the tooltip, the signals panel and the chord
+    // readout, where there's room. Only `custom` earns a tag of its own —
+    // "built-in" on nine of eleven rows is noise that squeezes out the name.
+    const short = g.name + (g.asl ? ` · ${g.asl}` : '');
+    const tag = g.est
+      ? `<span class="gesture-tag est" title="Estimated template — calibrate it on your own hand">est</span>`
+      : (g.builtin ? '' : `<span class="gesture-tag">custom</span>`);
+    return `
+    <div class="gesture-row" data-gid="${g.id}" title="${label}${g.builtin ? ' (built-in)' : ''}">
       <span class="gesture-dot" id="gdot-${g.id}"></span>
-      <span class="gesture-name">${g.name}</span>
-      <span class="gesture-tag">${g.builtin ? 'built-in' : 'custom'}</span>
+      <span class="gesture-name">${short}</span>
+      ${tag}
+      <button class="rm-btn gesture-cal" data-gid="${g.id}"
+              title="Calibrate ${label} on your own hand" aria-label="Calibrate ${label}">⊙</button>
       <button class="rm-btn gesture-del" data-gid="${g.id}"
-              title="Remove ${g.name}" aria-label="Remove ${g.name}">×</button>
-    </div>`).join('');
+              title="Remove ${label}" aria-label="Remove ${label}">×</button>
+    </div>`;
+  };
+  // The number handshapes are a set you opt into, so they collapse away by
+  // default rather than tripling the length of the list you actually scan.
+  const isNum = g => /^asl\d/.test(g.id);
+  const nums  = gestures.filter(isNum);
+  const est   = gesture.estimated().length;
+  const gestureRows = gestures.filter(g => !isNum(g)).map(row).join('')
+    + (nums.length ? `
+    <details class="gesture-group" id="asl-group">
+      <summary>ASL NUMBERS <span class="gesture-tag">${nums.length}</span></summary>
+      ${nums.map(row).join('')}
+    </details>` : '');
   const restore = gesture.hiddenCount()
     ? `<button class="btn gesture-restore" style="margin-top:4px;width:100%;">RESTORE BUILT-IN GESTURES</button>` : '';
+  const calibrate = est
+    ? `<button class="btn gesture-cal-all" style="margin-top:4px;width:100%;"
+               title="Record each estimated handshape from your own hand, one at a time">CALIBRATE ${est} HANDSHAPE${est > 1 ? 'S' : ''}</button>` : '';
 
   const key  = chordmode.key();
   const eff  = chordmode.effectiveKey();
@@ -62,17 +89,24 @@ export function gestureSectionsHTML() {
                 : 'Take the key from Pitch Quantize, so chords match the melody'}">FOLLOW</button>
     </div>` : '';
 
-  const assignRows = on ? gestures.map(g => {
+  const assignRow = g => {
     const a = asg[g.id] ?? { degree: 0, seventh: false };
     return `
     <div class="chord-assign" data-gid="${g.id}">
-      <span class="gesture-name">${g.name}</span>
-      <select class="ch-deg" data-gid="${g.id}" aria-label="Scale degree for ${g.name}"
+      <span class="gesture-name" title="${gestureLabel(g)}">${g.name + (g.asl ? ` · ${g.asl}` : '')}</span>
+      <select class="ch-deg" data-gid="${g.id}" aria-label="Scale degree for ${gestureLabel(g)}"
         >${degOptions(a.degree)}</select>
       <button class="wave-btn ch-sev${a.seventh ? ' on' : ''}" data-gid="${g.id}"
               aria-pressed="${a.seventh}" title="Add the diatonic 7th">7th</button>
     </div>`;
-  }).join('') : '';
+  };
+  const assignRows = !on ? '' :
+    gestures.filter(g => !isNum(g)).map(assignRow).join('')
+    + (nums.length ? `
+    <details class="gesture-group">
+      <summary>ASL NUMBERS <span class="gesture-tag">${nums.length}</span></summary>
+      ${nums.map(assignRow).join('')}
+    </details>` : '');
 
   return `
     <div class="audio-section uc-feature">
@@ -82,6 +116,8 @@ export function gestureSectionsHTML() {
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">● REC</div>
       </div>
       <div id="gesture-list">${gestureRows}</div>
+      <div id="gesture-cal-status" class="quant-notes"></div>
+      ${calibrate}
       ${restore}
     </div>
     <div class="audio-section uc-feature">
@@ -96,9 +132,70 @@ export function gestureSectionsHTML() {
     </div>`;
 }
 
+// How to make each shape, shown during calibration. A template recorded from
+// the wrong pose is worse than the estimate it replaces, so the prompt has to
+// say exactly what to hold.
+const HOW_TO = {
+  palm:  'Open hand, all five fingers spread',
+  horns: 'Index and pinky up, middle and ring down, thumb tucked',
+  asl3:  'Thumb, index and middle up — ring and pinky folded down',
+  asl4:  'Four fingers up, thumb folded across the palm',
+  asl6:  'Pinky tip touching the thumb, other three fingers up',
+  asl7:  'Ring tip touching the thumb, other three fingers up',
+  asl8:  'Middle tip touching the thumb, other three fingers up',
+  asl9:  'Index tip touching the thumb, other three fingers up',
+  asl0:  'All fingertips curved to meet the thumb in an O',
+};
+
+// Countdown → record, shared by the single-gesture button and the walkthrough.
+// `onDone` receives true when a template was captured.
+function runCalibration(id, statusEl, onDone) {
+  const g = gesture.list().find(x => x.id === id);
+  const label = g ? gestureLabel(g) : id;
+  const say = t => { if (statusEl) statusEl.textContent = t; };
+  let n = 3;
+  say(`${label} — ${HOW_TO[id] ?? 'hold the pose'} … ${n}`);
+  const iv = setInterval(() => {
+    if (--n > 0) { say(`${label} — ${HOW_TO[id] ?? 'hold the pose'} … ${n}`); return; }
+    clearInterval(iv);
+    say(`${label} — hold still…`);
+    gesture.recalibrate(id, () => { say(`${label} ✓`); onDone(true); });
+  }, 900);
+}
+
 // rerender: renderAudioPanel (used for structural changes).
 export function wireGestureSections(rerender) {
   const recBtn = document.getElementById('record-gesture-btn');
+  const status = document.getElementById('gesture-cal-status');
+
+  const calGuard = () => {
+    if (gesture.recordingActive) return false;
+    if (!cvSource.running) { toast('Start the camera first'); return false; }
+    return true;
+  };
+
+  document.querySelectorAll('.gesture-cal').forEach(b =>
+    b.addEventListener('click', () => {
+      if (!calGuard()) return;
+      runCalibration(b.dataset.gid, status, () => rerender());
+    }));
+
+  document.querySelector('.gesture-cal-all')?.addEventListener('click', () => {
+    if (!calGuard()) return;
+    const queue = gesture.estimated();
+    const step = () => {
+      const id = queue.shift();
+      if (!id) {
+        toast('Calibration complete');
+        rerender();               // clears the `est` badges and the button
+        return;
+      }
+      // Re-render between steps would tear down this handler mid-walkthrough,
+      // so the list is only rebuilt once the queue is empty.
+      runCalibration(id, status, step);
+    };
+    step();
+  });
   recBtn?.addEventListener('click', () => {
     if (gesture.recordingActive) return;
     if (!cvSource.running) { toast('Start the camera first'); return; }
