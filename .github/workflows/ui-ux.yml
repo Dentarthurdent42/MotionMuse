@@ -27,6 +27,11 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      # The guided tour is data pointing at live UI — this fails the build if
+      # a UI change orphans a tutorial step (see src/ui/tutorial.js header).
+      - name: Tutorial staleness guard
+        run: npm run test:tutorial
+
       - name: Run UI/UX tests
         run: npm run test:ui
         env:

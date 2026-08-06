@@ -125,6 +125,33 @@ on top. Tweaking any waveform, filter or timbre slider flips the selector to
 "Custom". The chosen kit is saved with presets. Kits live in `src/soundkit.js`;
 custom waveforms are registered through `engine.defineWave()`.
 
+## Guided tour (in-app tutorial)
+
+First visit auto-offers a step-by-step tour of the whole app — camera, signals,
+patchbay, presets, audio engine, quantisers, play-along, dev mode, gestures and
+chords — as spotlight coach-marks over the live UI. The **?** button in the
+header re-opens it any time; the app stays fully clickable during the tour, so
+"click it now" actually works. Esc closes, ←/→ navigate; on phones the card
+becomes a bottom sheet.
+
+The tour is built for a project that changes weekly:
+
+- **It's data.** Every step is one entry in `TOUR_STEPS`
+  (`src/ui/tutorial.js`) — selector, title, two sentences. Adding, moving or
+  retiring a feature means editing one array entry; the file header documents
+  the exact workflow.
+- **It can't silently rot.** `npm run test:tutorial` (run in CI on every PR)
+  boots the app, enables every state steps declare they need, and **fails the
+  build if any step points at UI that no longer exists**. At runtime a stale
+  step is skipped gracefully instead — the app never breaks because the tour
+  lagged a release.
+- **Returning users see what's new.** Step ids are tracked per user; when a
+  release ships steps you haven't seen, the **?** pulses ("tour updated — 2 new
+  steps") instead of making you sit through the whole thing again.
+- Steps whose feature needs a particular state (audio on, dev mode) simply
+  don't show until the app is in it — the tour adapts to what's actually on
+  screen.
+
 ## Developer mode
 
 Most features are visible by default, but experimental / in-progress ones are
@@ -439,6 +466,7 @@ src/
     audio-ui.js     Audio panel (waveform buttons, sliders)
     model-ui.js     Dev-mode pose model comparison panel
     donate.js       Support/donations popover
+    tutorial.js     Guided tour — TOUR_STEPS data + spotlight engine
     viz.js          Waveform oscilloscope canvas
 scripts/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
@@ -450,6 +478,7 @@ tests/
   contrast/         WCAG contrast checks over the OKLab palette
   gesture-img/      Gesture recognition over reference photos (MediaPipe);
                     --calibrate prints vectors + pairwise template distances
+  tutorial/         Tour staleness guard — fails CI if a step targets dead UI
   pose-bench/       Synthetic 3D-mannequin pose-model benchmark
   audio-articulation/  Before/after articulation measurement (settling, gaps, attack)
   ui-ux/

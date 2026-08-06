@@ -18,6 +18,7 @@ import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
+import { initTutorial }                     from './ui/tutorial.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
@@ -201,6 +202,7 @@ initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
 initModelPanel();         // dev-mode pose model comparison panel
+initTutorial();           // guided tour (? button; auto-offers on first visit)
 preset.restoreLocal();    // bring back the last session's mappings + settings
 renderMapper();
 loop();

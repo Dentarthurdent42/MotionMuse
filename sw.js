@@ -53,6 +53,7 @@ const STATIC = [
   '/src/ui/audio-ui.js',
   '/src/ui/viz.js',
   '/src/ui/donate.js',
+  '/src/ui/tutorial.js',
   '/src/ui/model-ui.js',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
