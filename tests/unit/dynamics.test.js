@@ -130,3 +130,43 @@ test('edge presets are ordered attack ≤ release ≤ gate', () => {
     assert.ok(e.gateMs >= e.releaseMs, `${k} gate < release`);
   }
 });
+
+// ── Asymmetric silence capture (the "minimum step is just quiet" bug) ──
+import { GATE_CAPTURE } from '../../src/dynamics.js';
+
+test('silence captures well beyond the symmetric rounding boundary', () => {
+  const d = makeDynamics({ steps: 6, floorDb: -30, gate: true, hysteresis: 0.3 });
+  const gainAtPos = pos => 10 ** ((-30 + pos * d.stepDb) / 20);
+  // Entering from rung 1 used to need pos < 0.2 (0.5 boundary minus 0.3
+  // hysteresis). Now anything below GATE_CAPTURE lands on silence at once.
+  assert.equal(d.quantize(gainAtPos(GATE_CAPTURE - 0.05), 1).idx, 0);
+  assert.equal(d.quantize(gainAtPos(0.55), 1).idx, 0, 'the old sticky wall is gone');
+  // ...from any rung, not just the adjacent one.
+  assert.equal(d.quantize(gainAtPos(0.6), 4).idx, 0);
+  // But above the capture zone, normal stickiness still applies.
+  assert.equal(d.quantize(gainAtPos(0.8), 1).idx, 1);
+});
+
+test('leaving silence needs a deliberate move — no chatter at the edge', () => {
+  const d = makeDynamics({ steps: 6, floorDb: -30, gate: true, hysteresis: 0.3 });
+  const gainAtPos = pos => 10 ** ((-30 + pos * d.stepDb) / 20);
+  // Inside the dead band (capture … capture+hyst) silence holds.
+  assert.equal(d.quantize(gainAtPos(GATE_CAPTURE + 0.1), 0).idx, 0);
+  // Beyond it, we leave — to an audible rung, never "rounding back" to 0.
+  const out = d.quantize(gainAtPos(GATE_CAPTURE + 0.35), 0).idx;
+  assert.ok(out >= 1, `expected an audible rung, got ${out}`);
+  // Dithering across the capture edge produces zero flips.
+  let prev = 0, flips = 0;
+  for (let i = 0; i < 200; i++) {
+    const q = d.quantize(gainAtPos(GATE_CAPTURE + (i % 2 ? 0.08 : -0.08)), prev);
+    if (q.idx !== prev) flips++;
+    prev = q.idx;
+  }
+  assert.equal(flips, 0, `chatter at the silence edge: ${flips} flips`);
+});
+
+test('without the gate, the bottom rung keeps symmetric rounding', () => {
+  const d = makeDynamics({ steps: 6, floorDb: -30, gate: false, hysteresis: 0 });
+  const gainAtPos = pos => 10 ** ((-30 + pos * d.stepDb) / 20);
+  assert.equal(d.quantize(gainAtPos(0.6), null).idx, 1, 'no oversized capture when un-gated');
+});

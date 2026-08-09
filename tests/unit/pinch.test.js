@@ -4,7 +4,7 @@
 // Run: npm run test:unit  (plain `node --test`, no dependencies)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pinchStrength, PINCH_CLOSED, PINCH_OPEN } from '../../src/math.js';
+import { pinchStrength, PINCH_CLOSED, PINCH_OPEN, PINCH_SAT } from '../../src/math.js';
 import { mapper } from '../../src/mapper.js';
 import { engine } from '../../src/engine.js';
 import { bus } from '../../src/bus.js';
@@ -40,10 +40,20 @@ test('strength falls monotonically as the tips separate', () => {
 });
 
 test('the usable range is actually spanned, not squeezed into the top third', () => {
-  // The old mapping wasted everything below ~0.3. Mid-travel should now sit
-  // near the middle.
+  // The old mapping wasted everything below ~0.3. Mid-travel sits near the
+  // middle — slightly above it, because the closed end saturates (PINCH_SAT).
   const mid = at((PINCH_CLOSED + PINCH_OPEN) / 2);
-  assert.ok(Math.abs(mid - 0.5) < 0.02, `mid-travel reads ${mid}`);
+  assert.ok(mid > 0.45 && mid < 0.65, `mid-travel reads ${mid}`);
+});
+
+test('full strength saturates before the nominal closed distance', () => {
+  // PINCH_CLOSED is a guess at fingertip-centre separation; hands whose firm
+  // pinch measures a centimetre looser must still be able to read 1.0 —
+  // "can't quite reach 1" audibly means "can't stop the note".
+  const sat = PINCH_CLOSED + (PINCH_OPEN - PINCH_CLOSED) * PINCH_SAT;
+  assert.equal(at(sat), 1, 'edge of the saturation zone reads full strength');
+  assert.equal(at(sat - 0.002), 1);
+  assert.ok(at(sat + 0.004) < 1, 'saturation is a margin, not the whole range');
 });
 
 test('degenerate calibration windows do not produce NaN', () => {
@@ -72,4 +82,30 @@ test('the default preset can actually reach silence with a real pinch', () => {
   const frac = silent / n;
   assert.ok(frac > 0.12 && frac < 0.45,
     `silence should occupy a usable slice of travel, got ${(frac * 100).toFixed(0)}%`);
+});
+
+test('silence is reachable coming FROM loud — the direction that matters', () => {
+  // The reported bug: "minimum volume step is just quiet". The sweep above
+  // starts pinched (silent) and loosens, so it only ever measured *leaving*
+  // silence — sticky quantisation made that look fine while entering silence
+  // from a note needed 81% pinch strength held steady. Play a note, then
+  // close the pinch progressively: silence must engage before the fingers
+  // are implausibly tight, and stay engaged.
+  engine.setVolStep({ enabled: true, steps: 6, floorDb: -30, gate: true });
+  bus.register('pinch_R', { min: 0, max: 1 });
+  mapper.applyPreset();
+  const drive = strength => { bus.update('pinch_R', strength); mapper.tick(); return engine.PARAMS.volume.val; };
+
+  drive(0);                              // hand open: full level, sticky state at the top
+  let entered = null;
+  for (let d = PINCH_OPEN; d >= 0; d -= 0.001) {         // now close the pinch
+    if (drive(at(d)) === 0) { entered = d; break; }
+  }
+  assert.ok(entered !== null, 'closing the pinch never reached silence');
+  assert.ok(entered >= 0.045,
+    `silence should engage by ~4.5cm tip distance, only engaged at ${(entered * 100).toFixed(1)}cm`);
+  // and it must hold once entered (no flicker as the pinch tightens further)
+  for (let d = entered; d >= 0; d -= 0.001) {
+    assert.equal(drive(at(d)), 0, `silence flickered at ${d}`);
+  }
 });

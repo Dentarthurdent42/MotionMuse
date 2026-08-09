@@ -34,11 +34,18 @@ export const handOpenness = (lm) => {
 // pinch could never reach the ends of a mapping.
 export const PINCH_CLOSED = 0.03;   // m between tips at a firm pinch
 export const PINCH_OPEN   = 0.09;   // m between tips with the hand open
+// Fraction of the window that saturates to full strength. The closed distance
+// is a guess at fingertip-centre separation that varies by hand and camera;
+// without the margin, a hand whose firm pinch measures 3.5–4 cm could never
+// reach strength 1.0 — and full pinch is what has to hit the volume gate's
+// silence rung, so "can't quite reach 1" audibly means "can't stop the note".
+export const PINCH_SAT = 0.15;
 export const pinchStrength = (thumbTip, indexTip,
                               closed = PINCH_CLOSED, open = PINCH_OPEN) => {
   const d = dist3(thumbTip, indexTip);
   if (!(open > closed)) return 0;
-  return Math.max(0, Math.min(1, (open - d) / (open - closed)));
+  const sat = closed + (open - closed) * PINCH_SAT;
+  return Math.max(0, Math.min(1, (open - d) / (open - sat)));
 };
 
 export const TIPS = [4, 8, 12, 16, 20];   // thumb, index, middle, ring, pinky

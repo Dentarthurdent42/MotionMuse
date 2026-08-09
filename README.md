@@ -17,17 +17,16 @@ If MotionMuse is useful to you, you can support its development — the **♥**
 button in the app header links to:
 
 - [GitHub Sponsors](https://github.com/sponsors/Dentarthurdent42)
-- [Ko-fi](https://ko-fi.com/YOUR_KOFI_HANDLE)
+- [Ko-fi](https://ko-fi.com/mathieu71673)
 - [Buy Me a Coffee](https://buymeacoffee.com/YOUR_BMAC_HANDLE)
 - [PayPal](https://paypal.me/YOUR_PAYPAL_HANDLE)
 
-> **Maintainer setup** — the `YOUR_*_HANDLE` placeholders live in
-> `.github/FUNDING.yml` and `src/ui/donate.js`. To activate each platform:
-> enroll at [github.com/sponsors](https://github.com/sponsors) (GitHub renders
-> the repo's Sponsor button from `FUNDING.yml`); create a page at
-> [ko-fi.com](https://ko-fi.com) and [buymeacoffee.com](https://buymeacoffee.com);
-> claim a [paypal.me](https://paypal.me) link. Then replace the placeholders
-> with your handles.
+> **Maintainer setup** — the remaining `YOUR_*_HANDLE` placeholders live in
+> `.github/FUNDING.yml` and `src/ui/donate.js` (GitHub Sponsors and Ko-fi are
+> already wired up). To activate the rest: create a page at
+> [buymeacoffee.com](https://buymeacoffee.com); claim a
+> [paypal.me](https://paypal.me) link. Then replace the placeholders with your
+> handles.
 
 ## How it works
 

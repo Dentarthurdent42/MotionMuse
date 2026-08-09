@@ -831,16 +831,20 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   #app {
     height: auto;
     min-height: 100dvh;
-    grid-template-rows: 48px auto;
+    grid-template-rows: auto auto;   /* header may wrap to two rows */
   }
 
-  /* Header: compact */
+  /* Header: compact, WRAPPING. It used to overflow-x:auto when the buttons
+     outgrew a narrow phone, which failed twice over: scrolling a header is
+     undiscoverable on iOS (the ♥ button was simply invisible off the right
+     edge), and the header is the containing block for #donate-pop, so the
+     scroll container *clipped the popover itself* — even after reaching the
+     button, its menu couldn't render. Wrapping onto a second row costs
+     ~40px of height and has neither problem. */
   #header {
-    padding: 0 10px; gap: 8px;
-    /* Four buttons + logo no longer fit some narrow phones; scroll instead
-       of silently clipping past the edge (html/body's overflow-x:hidden
-       would otherwise just cut off whatever doesn't fit). */
-    overflow-x: auto; flex-wrap: nowrap;
+    padding: 5px 10px; gap: 8px;
+    flex-wrap: wrap; row-gap: 4px;
+    overflow: visible;
   }
   .logo   { font-size: 11px; flex-shrink: 0; }
   .hsep   { display: none; }

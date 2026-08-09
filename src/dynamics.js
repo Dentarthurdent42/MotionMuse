@@ -30,6 +30,10 @@ export const EDGES = {
 };
 export const EDGE_KEYS  = Object.keys(EDGES);
 export const STEP_OPTS  = [2, 3, 4, 5, 6, 8, 10, 12];
+// How far up the first step (in step units) the silence rung reaches when the
+// gate is on. See quantize() for why silence gets a bigger target than any
+// other rung.
+export const GATE_CAPTURE = 0.65;
 export const FLOOR_OPTS = [-12, -18, -24, -30, -36, -48];
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -73,9 +77,26 @@ export function makeDynamics({ steps = 6, floorDb = -30, gate = true, hysteresis
 
   const indexOf = v => clamp(Math.round(posOf(v)), 0, n - 1);
 
+  // Silence is the articulation anchor — the rung a player must be able to
+  // hit to separate notes — so when the gate is on, rung 0 gets a bigger
+  // capture zone than any other rung, and an asymmetric one. Symmetric
+  // rounding put the 0/1 boundary at pos 0.5 and the sticky hysteresis then
+  // demanded pos < 0.2 to *enter* silence from rung 1 — through the default
+  // pinch mapping that meant holding 81% pinch strength, which real hands
+  // rarely reach. Now: enter silence anywhere below GATE_CAPTURE (from any
+  // rung, immediately), leave it only above GATE_CAPTURE + hysteresis. The
+  // 0.65…0.95 dead band means no chatter at the edge in either direction.
   const quantize = (v, prevIdx = null) => {
     const prev = Number.isFinite(prevIdx) ? clamp(Math.round(prevIdx), 0, n - 1) : null;
-    const idx = clamp(stickyStep(posOf(v), prev, hyst), 0, n - 1);
+    const pos = posOf(v);
+    let idx;
+    if (g8 && prev === 0) {
+      idx = pos > GATE_CAPTURE + hyst ? clamp(Math.max(1, Math.round(pos)), 0, n - 1) : 0;
+    } else if (g8 && pos < GATE_CAPTURE) {
+      idx = 0;
+    } else {
+      idx = clamp(stickyStep(pos, prev, hyst), 0, n - 1);
+    }
     return { idx, gain: levels[idx] };
   };
 
