@@ -1,5 +1,6 @@
 import { bus }                                             from './bus.js';
-import { push30, dist3, angleBetween, handOpenness, fingerExt, pinchStrength } from './math.js';
+import { push30, dist3, angleBetween, handOpenness, fingerExt, pinchStrength,
+         thumbOut, thumbContact }                          from './math.js';
 import { setStatus }                                        from './ui/status.js';
 import { depthSource }                                      from './depth.js';
 import { createPoseBackend }                                from './posebackends.js';
@@ -54,6 +55,18 @@ export const cvSource = {
       ['Thumb','Index','Middle','Ring','Pinky'].forEach((fn, fi) =>
         bus.register(`finger_${s}_${fn.toLowerCase()}`, {
           label: `${lbl} ${fn}`, group: g, min: 0, max: 1, source: 'cv', smooth: true,
+        })
+      );
+      // 0 = thumb folded across the palm, 1 = carried clear of it. The one
+      // thumb measure that actually moves (see math.js) — and what separates
+      // handshapes that differ only in the thumb.
+      bus.register(`thumb_out_${s}`, { label: `${lbl} Thumb Out`, group: g, min: 0, max: 1, source: 'cv', smooth: true });
+      // Thumb-to-fingertip contacts: 1 when the pads meet. These are what make
+      // the ASL number handshapes distinguishable, and they're good triggers
+      // in their own right — a thumb-to-pinky tap is an easy discrete gesture.
+      ['Index','Middle','Ring','Pinky'].forEach((fn, i) =>
+        bus.register(`contact_${s}_${fn.toLowerCase()}`, {
+          label: `${lbl} ${fn} Touch`, group: g, min: 0, max: 1, source: 'cv', smooth: true,
         })
       );
     });
@@ -254,6 +267,10 @@ export const cvSource = {
         ['thumb','index','middle','ring','pinky'].forEach((n, fi) =>
           bus.update(`finger_${s}_${n}`, fingerExt(lm, fi))
         );
+        bus.update(`thumb_out_${s}`, thumbOut(lm));
+        ['index','middle','ring','pinky'].forEach((n, i) =>
+          bus.update(`contact_${s}_${n}`, thumbContact(lm, i + 1))
+        );
         const wlm = foundWorld[s];
         if (wlm) {
           bus.update(`pinch_${s}`, pinchStrength(wlm[4], wlm[8]));
@@ -266,6 +283,8 @@ export const cvSource = {
         // so treat it as fully pinched.
         bus.update(`pinch_${s}`, 1);
         ['thumb','index','middle','ring','pinky'].forEach(n => bus.decay(`finger_${s}_${n}`));
+        bus.decay(`thumb_out_${s}`);
+        ['index','middle','ring','pinky'].forEach(n => bus.decay(`contact_${s}_${n}`));
       }
     });
 

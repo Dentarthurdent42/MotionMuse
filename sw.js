@@ -1,4 +1,4 @@
-const CACHE = 'motionmuse-v1';
+const CACHE = 'motionmuse-v2';
 
 // MediaPipe wasm + .task model files live at versioned/immutable URLs, so
 // cache-first is safe and saves ~10-25MB of re-download on every cold load
@@ -53,6 +53,7 @@ const STATIC = [
   '/src/ui/audio-ui.js',
   '/src/ui/viz.js',
   '/src/ui/donate.js',
+  '/src/ui/tutorial.js',
   '/src/ui/model-ui.js',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -78,10 +79,28 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Stale-while-revalidate for local assets; network-only for CDN (MediaPipe
-// models, fonts). Serving from cache keeps loads instant and offline-capable,
-// while the background fetch refreshes the cache so a new deploy propagates on
-// the next load — no manual cache-version bump required for every change.
+// How long to wait for the network before falling back to cache. Long enough
+// that a normal mobile connection wins, short enough that a dead one doesn't
+// stall the app open.
+const NET_TIMEOUT = 3500;
+
+// Network-first for local assets, with cache fallback; cache-first for the
+// immutable MediaPipe CDN files.
+//
+// This used to be stale-while-revalidate — `cached || network` — which is
+// wrong for an app under active development, and shipped a genuinely bad
+// experience: a returning user ALWAYS saw the previous build, because the
+// cached copy was served and the fresh one only landed in the cache for next
+// time. Someone who opened the site every few weeks could sit many releases
+// behind and reasonably conclude features had been removed. Worse, each
+// resource revalidated independently, so a load could mix a new index.html
+// with stale modules.
+//
+// Network-first costs a round trip on a good connection and gives correctness:
+// what you load is what's deployed. Offline still works — the fetch fails (or
+// times out) and the cache answers — which is all the PWA install actually
+// needs. The heavy MediaPipe wasm/models stay cache-first below: they're
+// versioned, immutable, and ~15MB, so re-fetching them would be pure waste.
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
@@ -109,15 +128,38 @@ self.addEventListener('fetch', e => {
 
   e.respondWith(
     caches.open(CACHE).then(async cache => {
-      const cached = await cache.match(e.request);
-      const network = fetch(e.request)
-        .then(res => {
-          if (res.ok) cache.put(e.request, res.clone());
-          return res;
-        })
-        .catch(() => cached);
-      // Serve cache immediately when present; always revalidate in the background.
-      return cached || network;
+      try {
+        return await withTimeout(e.request, cache);
+      } catch {
+        // Offline, or the network is too slow to be worth waiting for.
+        const cached = await cache.match(e.request);
+        if (cached) return cached;
+        // A navigation with nothing cached for this exact URL still has the
+        // app shell to fall back on (the SPA rewrite means every path is
+        // index.html anyway).
+        if (e.request.mode === 'navigate') {
+          const shell = await cache.match(BASE + '/index.html');
+          if (shell) return shell;
+        }
+        return Response.error();
+      }
     })
   );
 });
+
+// Fetch with a deadline. The underlying request is deliberately NOT aborted on
+// timeout: letting it finish warms the cache, so a slow connection still
+// converges on fresh content for the next load.
+function withTimeout(request, cache) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('network timeout')), NET_TIMEOUT);
+    fetch(request).then(res => {
+      if (res.ok) cache.put(request, res.clone()).catch(() => {});
+      clearTimeout(timer);
+      resolve(res);
+    }).catch(err => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}

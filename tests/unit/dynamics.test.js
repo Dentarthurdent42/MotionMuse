@@ -130,3 +130,67 @@ test('edge presets are ordered attack ≤ release ≤ gate', () => {
     assert.ok(e.gateMs >= e.releaseMs, `${k} gate < release`);
   }
 });
+
+// ── Asymmetric silence gate (the "minimum step is just quiet" bug, and the
+// follow-up "at 2 steps it won't turn on until 0.85") ──
+import { GATE_HYST_DB } from '../../src/dynamics.js';
+
+const gainAtPos = (d, pos) => 10 ** ((d.floorDb + pos * d.stepDb) / 20);
+
+test('falling into silence is immediate — no stickiness to fight', () => {
+  const d = makeDynamics({ steps: 6, floorDb: -30, gate: true, hysteresis: 0.3 });
+  // Entering used to need pos < 0.2 (the 0.5 boundary minus 0.3 hysteresis).
+  assert.equal(d.quantize(gainAtPos(d, 0.45), 1).idx, 0, 'the old sticky wall is gone');
+  assert.equal(d.quantize(gainAtPos(d, 0.45), 4).idx, 0, '...from any rung, not just the adjacent one');
+  // Above the boundary, normal stickiness still applies.
+  assert.equal(d.quantize(gainAtPos(d, 0.8), 1).idx, 1);
+});
+
+test('leaving silence needs a deliberate move — no chatter at the edge', () => {
+  const d = makeDynamics({ steps: 6, floorDb: -30, gate: true, hysteresis: 0.3 });
+  assert.equal(d.quantize(gainAtPos(d, 0.55), 0).idx, 0, 'inside the dead band, silence holds');
+  const out = d.quantize(gainAtPos(d, 0.95), 0).idx;
+  assert.ok(out >= 1, `expected an audible rung, got ${out}`);
+  let prev = 0, flips = 0;
+  for (let i = 0; i < 200; i++) {
+    const q = d.quantize(gainAtPos(d, 0.5 + (i % 2 ? 0.08 : -0.08)), prev);
+    if (q.idx !== prev) flips++;
+    prev = q.idx;
+  }
+  assert.equal(flips, 0, `chatter at the silence edge: ${flips} flips`);
+});
+
+test('the gate dead band is the same width in dB at every step count', () => {
+  // The reported bug: the band was a fixed 0.3 *step units*, so it scaled with
+  // the ladder — 1.8 dB at 6 steps but 9 dB at 2 steps, where one step spans
+  // the whole range. At 2 steps the gate would not open until gain 0.84.
+  for (const steps of [2, 3, 4, 6, 8, 12]) {
+    const d = makeDynamics({ steps, floorDb: -30, gate: true, hysteresis: 0.3 });
+    let idx = 0, open = null, close = null;
+    for (let g = 0; g <= 1.0001; g += 0.0005) {
+      const q = d.quantize(g, idx); if (q.idx !== 0 && open === null) open = g; idx = q.idx;
+    }
+    for (let g = 1; g >= -0.0001; g -= 0.0005) {
+      const q = d.quantize(g, idx); if (q.idx === 0 && close === null) close = g; idx = q.idx;
+    }
+    const bandDb = 20 * Math.log10(open / close);
+    assert.ok(bandDb <= GATE_HYST_DB + 0.5,
+      `${steps} steps: dead band ${bandDb.toFixed(1)} dB exceeds ${GATE_HYST_DB} dB`);
+    assert.ok(bandDb > 0, `${steps} steps: no dead band at all — will chatter`);
+  }
+});
+
+test('a 2-step ladder is a usable on/off, not a near-impossible one', () => {
+  const d = makeDynamics({ steps: 2, floorDb: -30, gate: true, hysteresis: 0.3 });
+  assert.deepEqual(d.levels, [0, 1]);
+  let idx = 0, open = null;
+  for (let g = 0; g <= 1.0001; g += 0.0005) {
+    const q = d.quantize(g, idx); if (q.idx !== 0 && open === null) open = g; idx = q.idx;
+  }
+  assert.ok(open < 0.35, `2-step gate opens at ${open.toFixed(3)} — was 0.841 when this was reported`);
+});
+
+test('without the gate, the bottom rung keeps symmetric rounding', () => {
+  const d = makeDynamics({ steps: 6, floorDb: -30, gate: false, hysteresis: 0 });
+  assert.equal(d.quantize(gainAtPos(d, 0.6), null).idx, 1, 'no oversized capture when un-gated');
+});

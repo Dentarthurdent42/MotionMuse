@@ -19,19 +19,24 @@ export function initResize() {
   try { w = { ...DEF, ...JSON.parse(lsGet(KEY) || '{}') }; }
   catch { w = { ...DEF }; }
 
-  const clamp = () => {
+  // Clamp for *display* without touching the stored widths. Squeezing the
+  // window used to overwrite them, so narrowing to phone width and widening
+  // again left both side panels stuck at MIN with no way back short of a
+  // double-click — the layout could shrink but never recover.
+  const clamped = () => {
     const avail = main.clientWidth - HANDLES - MID_MIN;
-    if (avail < 2 * MIN) return;              // window too small — CSS mobile layout applies anyway
-    w.l = Math.min(Math.max(w.l, MIN), avail - MIN);
-    w.r = Math.min(Math.max(w.r, MIN), avail - w.l);
+    if (avail < 2 * MIN) return { ...w };     // window too small — CSS mobile layout applies anyway
+    const l = Math.min(Math.max(w.l, MIN), avail - MIN);
+    return { l, r: Math.min(Math.max(w.r, MIN), avail - l) };
   };
   const apply = () => {
-    main.style.setProperty('--col-l', w.l + 'px');
-    main.style.setProperty('--col-r', w.r + 'px');
+    const c = clamped();
+    main.style.setProperty('--col-l', c.l + 'px');
+    main.style.setProperty('--col-r', c.r + 'px');
   };
   const save = () => lsSet(KEY, JSON.stringify(w));
 
-  clamp(); apply();
+  apply();
 
   [['split-l', 'l', 1], ['split-r', 'r', -1]].forEach(([id, key, dir]) => {
     const el = document.getElementById(id);
@@ -40,7 +45,9 @@ export function initResize() {
       el.setPointerCapture(e.pointerId);
       const startX = e.clientX, startW = w[key];
       document.body.classList.add('resizing');
-      const move = ev => { w[key] = startW + dir * (ev.clientX - startX); clamp(); apply(); };
+      // A drag *is* an explicit request, so the clamped result is what gets
+      // stored — unlike a window resize, which must leave the intent alone.
+      const move = ev => { w[key] = startW + dir * (ev.clientX - startX); w = clamped(); apply(); };
       const up = () => {
         el.removeEventListener('pointermove', move);
         el.removeEventListener('pointerup', up);
@@ -50,7 +57,7 @@ export function initResize() {
       el.addEventListener('pointermove', move);
       el.addEventListener('pointerup', up);
     });
-    el.addEventListener('dblclick', () => { w = { ...DEF }; clamp(); apply(); save(); });
+    el.addEventListener('dblclick', () => { w = { ...DEF }; apply(); save(); });
   });
 
   // Keep the camera overlay canvases matched to their container as the left
@@ -64,5 +71,5 @@ export function initResize() {
   });
   new ResizeObserver(fit).observe(wrap);
 
-  window.addEventListener('resize', () => { clamp(); apply(); });
+  window.addEventListener('resize', apply);
 }

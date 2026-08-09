@@ -1,7 +1,12 @@
 // Gesture-recognition image test: run MediaPipe HandLandmarker over reference
-// gesture photos, extract the same 7 features cv.js publishes, and assert each
+// gesture photos, extract the same features cv.js publishes, and assert each
 // photo matches its intended built-in gesture (which chord mode maps to a
 // chord). This is what caught the original templates matching nothing real.
+//
+// Pass --calibrate to print the measured feature vector for each photo plus
+// the full sorted pairwise distance table between templates. That output is
+// where the measured built-in templates in gesture.js come from, and it's how
+// to tell whether a template edit has pushed two shapes too close together.
 //
 // Requires a browser (WebGL/WASM). Run:  node tests/gesture-img/index.js
 // Needs @mediapipe/tasks-vision installed and a Chromium at CHROME (or the
@@ -57,31 +62,83 @@ const results = await p.evaluate(async (imgs) => {
   const hand = await HandLandmarker.createFromOptions(vision, {
     baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate: 'CPU' },
     numHands: 1, runningMode: 'IMAGE' });
-  const { fingerExt, handOpenness, dist3 } = await import('/src/math.js');
-  const { gesture, matchGesture } = await import('/src/gesture.js');
+  const { fingerExt, handOpenness, dist3, thumbOut, thumbContact } = await import('/src/math.js');
+  const { gesture, matchGesture, templateDistance, templateSeparation, FEATURES, SEPARATION_FLOOR } =
+    await import('/src/gesture.js');
   const load = src => new Promise(r => { const im = new Image(); im.onload = () => r(im); im.src = src; });
-  const out = {};
+  const out = { images: {}, features: FEATURES, floor: SEPARATION_FLOOR };
   for (const [name, src] of Object.entries(imgs)) {
     const res = hand.detect(await load(src));
-    if (!res.landmarks?.length) { out[name] = { detected: false }; continue; }
+    if (!res.landmarks?.length) { out.images[name] = { detected: false }; continue; }
     const lm = res.landmarks[0];
-    const f = [fingerExt(lm,0),fingerExt(lm,1),fingerExt(lm,2),fingerExt(lm,3),fingerExt(lm,4),
-               handOpenness(lm), Math.min(1, dist3(lm[4],lm[20])/(dist3(lm[0],lm[9])*2.5))];
-    const m = matchGesture(f, gesture.list());
-    out[name] = { detected: true, match: m?.id ?? null };
+    // Exactly what cv.js publishes and gesture.js reads, in the same order.
+    const f = [
+      fingerExt(lm,0), fingerExt(lm,1), fingerExt(lm,2), fingerExt(lm,3), fingerExt(lm,4),
+      handOpenness(lm), Math.min(1, dist3(lm[4],lm[20])/(dist3(lm[0],lm[9])*2.5)),
+      thumbOut(lm),
+      thumbContact(lm,1), thumbContact(lm,2), thumbContact(lm,3), thumbContact(lm,4),
+    ].map(x => +x.toFixed(3));
+    const all = gesture.list();
+    const m = matchGesture(f, all);
+    out.images[name] = {
+      detected: true, match: m?.id ?? null, dist: m ? +m.dist.toFixed(3) : null, f,
+      // Runners-up, to show how decisive the win was.
+      ranked: all.map(t => [t.id, +templateDistance(f, t).toFixed(3)])
+                 .sort((a, b) => a[1] - b[1]).slice(0, 3),
+    };
   }
+  // Pairwise separation over the whole shipped template set — via the shared
+  // templateSeparation (min over both directions, since masks are
+  // asymmetric), the same definition the unit floor test uses.
+  const T = gesture.list();
+  const pairs = [];
+  for (let i = 0; i < T.length; i++)
+    for (let j = i + 1; j < T.length; j++)
+      pairs.push([T[i].id, T[j].id, +templateSeparation(T[i], T[j]).toFixed(3)]);
+  out.pairs = pairs.sort((a, b) => a[2] - b[2]);
+  out.templates = T.map(t => [t.id, t.est ? 'estimated' : 'measured', t.f]);
   return out;
 }, imgs);
 
 await b.close(); server.close();
 
+const CALIBRATE = process.argv.includes('--calibrate');
 let fail = 0;
 console.log('\nGesture image recognition\n');
 for (const [name, exp] of Object.entries(CASES)) {
-  const r = results[name] || {};
+  const r = results.images[name] || {};
   const ok = r.detected && r.match === exp;
   if (!ok) fail++;
-  console.log(`  [${ok ? ' PASS ' : ' FAIL '}]  ${name.padEnd(8)} → ${r.match ?? (r.detected ? '(no match)' : '(no hand)')}  (expected ${exp})`);
+  const runner = r.ranked?.[1];
+  console.log(`  [${ok ? ' PASS ' : ' FAIL '}]  ${name.padEnd(8)} → ${r.match ?? (r.detected ? '(no match)' : '(no hand)')}`
+    + `  (expected ${exp})`
+    + (r.dist != null ? `   d=${r.dist}${runner ? `, next ${runner[0]} @ ${runner[1]}` : ''}` : ''));
 }
+
+// The nearest template pair bounds how precisely a live hand has to be read
+// for the right gesture to win, so regressing it is worth failing over.
+const nearest = results.pairs[0];
+const floorOk = nearest[2] >= results.floor;
+if (!floorOk) fail++;
+console.log(`\n  [${floorOk ? ' PASS ' : ' FAIL '}]  closest template pair ${nearest[0]} ~ ${nearest[1]}`
+  + ` = ${nearest[2]}  (floor ${results.floor})`);
+
+if (CALIBRATE) {
+  const pad = s => String(s).padStart(7);
+  console.log('\n── Measured feature vectors ' + '─'.repeat(40));
+  console.log('  ' + 'photo'.padEnd(9) + results.features.map(pad).join(''));
+  for (const [name, r] of Object.entries(results.images)) {
+    if (r.detected) console.log('  ' + name.padEnd(9) + r.f.map(v => pad(v.toFixed(2))).join(''));
+  }
+  console.log('\n── Shipped templates ' + '─'.repeat(47));
+  console.log('  ' + 'id'.padEnd(9) + 'source'.padEnd(11) + results.features.map(pad).join(''));
+  for (const [id, src, f] of results.templates)
+    console.log('  ' + id.padEnd(9) + src.padEnd(11) + f.map(v => pad(v.toFixed(2))).join(''));
+  console.log('\n── Pairwise distances, closest first ' + '─'.repeat(31));
+  for (const [a, bId, d] of results.pairs.slice(0, 20))
+    console.log(`  ${d.toFixed(3)}  ${a} ~ ${bId}`);
+  console.log(`  … ${results.pairs.length} pairs total, farthest ${results.pairs.at(-1)[2]}`);
+}
+
 console.log(`\n${Object.keys(CASES).length} images — ${fail} failure(s)\n`);
 process.exit(fail ? 1 : 0);

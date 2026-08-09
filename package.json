@@ -10,7 +10,9 @@
     "test:unit": "node --test tests/unit/*.test.js",
     "test:gesture-img": "node tests/gesture-img/index.js",
     "test:pose-bench": "node tests/pose-bench/index.js",
-    "test:audio": "node tests/audio-articulation/index.js"
+    "test:audio": "node tests/audio-articulation/index.js",
+    "test:tutorial": "node tests/tutorial/index.js",
+    "test:sw": "node tests/sw-freshness/index.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.54.0",

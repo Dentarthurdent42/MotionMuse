@@ -30,6 +30,14 @@ export const EDGES = {
 };
 export const EDGE_KEYS  = Object.keys(EDGES);
 export const STEP_OPTS  = [2, 3, 4, 5, 6, 8, 10, 12];
+// Dead band before the gate re-opens, in **dB**. Step units are the wrong unit
+// here: a step is 2.7 dB on a 12-rung ladder but the whole 30 dB range on a
+// 2-rung one, so a "0.3 step" band that's imperceptible when fine becomes a
+// 9 dB chasm when coarse — at 2 steps the gate refused to open until the
+// signal passed 0.84 linear. Expressed in dB it means the same thing at every
+// step count. Also capped by the ladder's own hysteresis so it can never
+// exceed the general rung stickiness.
+export const GATE_HYST_DB = 2;
 export const FLOOR_OPTS = [-12, -18, -24, -30, -36, -48];
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -73,9 +81,29 @@ export function makeDynamics({ steps = 6, floorDb = -30, gate = true, hysteresis
 
   const indexOf = v => clamp(Math.round(posOf(v)), 0, n - 1);
 
+  // Silence is the articulation anchor — the rung a player must be able to hit
+  // to separate notes — so the gate is *asymmetric*: entering costs nothing,
+  // leaving costs a dead band. Entering used to be penalised by the ordinary
+  // rung stickiness, which demanded pos < 0.2 (0.5 boundary minus 0.3
+  // hysteresis) and, through the default pinch mapping, ~81% pinch strength
+  // held steady — so the bottom rung read as "quiet" rather than silent.
+  //
+  // The dead band is sized in dB (GATE_HYST_DB), not step units, so it stays
+  // the same perceptual width whether the ladder has 2 rungs or 12.
+  const gateHyst = Math.min(hyst, GATE_HYST_DB / stepDb);
   const quantize = (v, prevIdx = null) => {
     const prev = Number.isFinite(prevIdx) ? clamp(Math.round(prevIdx), 0, n - 1) : null;
-    const idx = clamp(stickyStep(posOf(v), prev, hyst), 0, n - 1);
+    const pos = posOf(v);
+    let idx;
+    if (g8 && prev === 0) {
+      // Held silent: re-open only past the dead band, and never back into 0.
+      idx = pos > 0.5 + gateHyst ? clamp(Math.max(1, Math.round(pos)), 0, n - 1) : 0;
+    } else if (g8 && pos < 0.5) {
+      // Falling into silence from any rung: immediate, no stickiness to fight.
+      idx = 0;
+    } else {
+      idx = clamp(stickyStep(pos, prev, hyst), 0, n - 1);
+    }
     return { idx, gain: levels[idx] };
   };
 

@@ -17,17 +17,14 @@ If MotionMuse is useful to you, you can support its development — the **♥**
 button in the app header links to:
 
 - [GitHub Sponsors](https://github.com/sponsors/Dentarthurdent42)
-- [Ko-fi](https://ko-fi.com/YOUR_KOFI_HANDLE)
-- [Buy Me a Coffee](https://buymeacoffee.com/YOUR_BMAC_HANDLE)
-- [PayPal](https://paypal.me/YOUR_PAYPAL_HANDLE)
+- [Ko-fi](https://ko-fi.com/mathieu71673)
+- [Buy Me a Coffee](https://buymeacoffee.com/dentarthurdent)
 
-> **Maintainer setup** — the `YOUR_*_HANDLE` placeholders live in
-> `.github/FUNDING.yml` and `src/ui/donate.js`. To activate each platform:
-> enroll at [github.com/sponsors](https://github.com/sponsors) (GitHub renders
-> the repo's Sponsor button from `FUNDING.yml`); create a page at
-> [ko-fi.com](https://ko-fi.com) and [buymeacoffee.com](https://buymeacoffee.com);
-> claim a [paypal.me](https://paypal.me) link. Then replace the placeholders
-> with your handles.
+> **Maintainer setup** — to add or change a platform, edit `LINKS` in
+> `src/ui/donate.js` (the in-app ♥ popover) and `.github/FUNDING.yml` (GitHub's
+> Sponsor button). Both are plain lists of name → URL; the popover sizes itself
+> to whatever is in it. GitHub Sponsors additionally requires
+> [enrolling](https://github.com/sponsors).
 
 ## How it works
 
@@ -125,6 +122,33 @@ on top. Tweaking any waveform, filter or timbre slider flips the selector to
 "Custom". The chosen kit is saved with presets. Kits live in `src/soundkit.js`;
 custom waveforms are registered through `engine.defineWave()`.
 
+## Guided tour (in-app tutorial)
+
+First visit auto-offers a step-by-step tour of the whole app — camera, signals,
+patchbay, presets, audio engine, quantisers, play-along, dev mode, gestures and
+chords — as spotlight coach-marks over the live UI. The **?** button in the
+header re-opens it any time; the app stays fully clickable during the tour, so
+"click it now" actually works. Esc closes, ←/→ navigate; on phones the card
+becomes a bottom sheet.
+
+The tour is built for a project that changes weekly:
+
+- **It's data.** Every step is one entry in `TOUR_STEPS`
+  (`src/ui/tutorial.js`) — selector, title, two sentences. Adding, moving or
+  retiring a feature means editing one array entry; the file header documents
+  the exact workflow.
+- **It can't silently rot.** `npm run test:tutorial` (run in CI on every PR)
+  boots the app, enables every state steps declare they need, and **fails the
+  build if any step points at UI that no longer exists**. At runtime a stale
+  step is skipped gracefully instead — the app never breaks because the tour
+  lagged a release.
+- **Returning users see what's new.** Step ids are tracked per user; when a
+  release ships steps you haven't seen, the **?** pulses ("tour updated — 2 new
+  steps") instead of making you sit through the whole thing again.
+- Steps whose feature needs a particular state (audio on, dev mode) simply
+  don't show until the app is in it — the tour adapts to what's actually on
+  screen.
+
 ## Developer mode
 
 Most features are visible by default, but experimental / in-progress ones are
@@ -160,33 +184,95 @@ labels, and icon **plus** text — never icon-only). Toggle controls expose
 ## Gestures & chord mode
 
 The **Gestures** section recognizes hand poses and turns them into discrete
-triggers. Six built-in gestures ship ready to use — **fist, open palm, peace,
-point, thumbs-up, rock horns** — and **● REC** records your own: name it, hold
-the pose during the 3-2-1 countdown, and it's captured (camera must be running).
+triggers. Thirteen built-in gestures ship ready to use — **fist, point, peace,
+thumbs-up, open palm, rock horns**, plus the **ASL number handshapes** in their
+own collapsed group — and **● REC** records your own: name it, hold the pose
+during the 3-2-1 countdown, and it's captured (camera must be running).
 Any gesture, built-in included, can be removed with its × (removals persist;
 **RESTORE BUILT-IN GESTURES** brings the defaults back).
-Recognition is nearest-template matching over the seven normalized hand features
-the CV source already publishes (five finger extensions + openness + spread),
-latching to a pose after a couple of frames of any under-threshold match (with
-hysteresis to hold it steady) — real MediaPipe features cluster close together,
-so the match tolerance and debounce are tuned for that rather than for idealized
-0/1 templates. The built-in templates are likewise calibrated to real MediaPipe
-output (see
-`tests/gesture-img/`, which runs the hand pipeline over reference gesture
-photos and asserts each maps to the right gesture + chord — `npm run
-test:gesture-img`, needs `@mediapipe/tasks-vision`, a Chromium, and
-`hand_landmarker.task` placed in that folder).
+
 Every gesture is also exposed as a mappable bus signal `gesture_<id>`, so a
 gesture can drive *any* audio parameter, not just chords.
 
-**Chord Mode** maps gestures to chords: toggle it on, and each gesture gets a
-**root + octave + quality** assignment (major, minor, maj7, dom7, sus4, dim, …).
+### The feature vector
+
+Recognition is nearest-template matching over twelve normalized hand features:
+five finger extensions, openness, spread, how far the thumb is carried from the
+palm, and the four thumb-to-fingertip contacts. The last five exist because the
+number handshapes can't be represented without them — ASL 6/7/8/9 differ only in
+*which* fingertip touches the thumb, and 2-vs-3 and 4-vs-5 only in whether the
+thumb is tucked. Both are palm-normalised, so they don't change with hand size or
+distance from the camera, and both are computed from image landmarks like every
+other feature (world landmarks are optional in the MediaPipe result, and a
+missing contact channel would read as a false touch).
+
+Channels are **weighted**, because they aren't equally informative — measured
+across the reference photos, `fingerExt`'s thumb moves over a 0.09 range in
+total, so unweighted it would just add noise; the contacts, which carry the
+number shapes, get the loudest vote. Each template also declares which channels
+**define** its shape (a don't-care mask): where the thumb tip incidentally rests
+against a fist's curled fingers varies hand to hand and is not what makes a
+fist a fist, so the classics ignore the contact channels entirely, while
+ASL 6–9 — which are *about* those contacts — care about all of them. Distance is
+a weight-normalized RMS over the cared channels, so ranking stays fair between
+7-channel and 12-channel templates.
+
+The threshold is a *rejection* radius, not a separation guarantee: which
+gesture wins is decided by nearest neighbour, and the value (0.20) sits at the
+measured knee of the operating curve — under a live-hand degradation model
+(compressed extensions, frame noise, spurious contacts) 99.6% of classic poses
+are recognized and 0.2% misread, while only ~4% of relaxed non-gesture hands
+slip under it per frame. `tests/unit/gesture-robust.test.js` drives the real
+matcher through that model deterministically, so a template or threshold edit
+that would regress live behaviour fails CI. Debounce does the rest — a new pose
+must win two frames before it takes over, and a few dropped frames are
+tolerated before release, so a borderline reading can't machine-gun chord mode.
+
+### Calibration
+
+`fist`, `point`, `peace` and `thumbs` are **measured**: MediaPipe run over the
+reference photos in `tests/gesture-img/`, features read straight out of
+`math.js`. The rest have no reference photo, so they're derived from a small
+geometric model built on those same measurements and shipped flagged **`est`** —
+good starting points, not ground truth. Hands differ, and 2-vs-3 in particular
+depends on where *you* put your thumb.
+
+**CALIBRATE** walks through every estimated shape in turn, prompting for the
+pose and recording it from your own hand (⊙ on a row does just that one).
+Calibrated templates replace the estimate in place, keeping the gesture's id — so
+chord assignments and mappings survive — clear the `est` flag, and save with
+presets.
+
+`npm run test:gesture-img` runs the hand pipeline over the reference photos,
+asserts each maps to the right gesture, and fails if a template edit pushes any
+pair below the separation floor. Add `-- --calibrate` to print the measured
+feature vectors, the whole template table and the sorted pairwise distances —
+that output is where the measured templates come from. (Needs
+`@mediapipe/tasks-vision`, a Chromium, and `hand_landmarker.task` in that folder.)
+
+### Chord mode
+
+**Chord Mode** maps gestures to chords **by scale degree in a key**, not by
+absolute root. Pick a key once — root, mode, octave — and each gesture gets a
+degree (**I ii iii IV V vi vii°**) plus an optional diatonic **7th**. Changing
+the key transposes every assignment at once, and every chord is guaranteed to
+belong to the key. With **FOLLOW** on (the default) the key comes from Pitch
+Quantize, so chords land in the same key the melody snaps to; it stands down
+automatically when quantise is off or its scale isn't one of the six seven-note
+modes, since roman numerals mean nothing over a pentatonic or whole-tone scale.
+
+Qualities and numerals are *derived*, never tabulated: stack every other scale
+tone and read the intervals back. Harmonic minor therefore comes out
+**i ii° III+ iv V vi° vii°** — leading tone and all — with no special cases.
+
 Holding an assigned gesture sustains its chord; releasing it lets the chord go
 (hold-to-sound). Chords play through a dedicated 4-voice bank that rides the same
-filter, reverb and sound-kit timbre as the main oscillators. Custom gestures and
-chord assignments are saved with presets. Logic: `src/gesture.js` (recognizer),
-`src/chords.js` (chord construction), `src/chordmode.js` (gesture→chord glue),
-with the voice bank in `engine.playChord()` / `releaseChord()`.
+filter, reverb and sound-kit timbre as the main oscillators — including the
+volume gate, so chords obey dynamics and go silent when it closes. Custom
+gestures, calibration and chord assignments are saved with presets. Logic:
+`src/gesture.js` (recognizer), `src/chords.js` (chord construction + `diatonic()`),
+`src/chordmode.js` (gesture→chord glue), with the voice bank in
+`engine.playChord()` / `releaseChord()`.
 
 ## Fullscreen camera view
 
@@ -230,8 +316,14 @@ mid-song discards the run.
 ## Saving & loading
 
 **SAVE** (in the mapper toolbar) downloads the entire instrument — every
-mapping plus all audio parameters, waveform/filter choices and the pitch-quantise
-tuning and the volume-step configuration — as a single `.json` file you can keep or share. **LOAD** restores one.
+mapping plus all audio parameters, waveform/filter choices, the pitch-quantise
+tuning, the volume-step configuration, and everything gesture-side (custom
+recordings, hidden built-ins, calibrated templates, the chord key and its degree
+assignments) — as a single `.json` file you can keep or share. **LOAD** restores
+one. Chord assignments merge over the shipped defaults rather than replacing
+them, so gestures added in a later version still arrive with a chord; assignments
+saved in the old absolute `root + octave + quality` format migrate to the nearest
+degree of the key.
 The current session is also stored in `localStorage`, so your setup returns
 automatically after a reload or PWA relaunch. Preset files and stored keys were
 renamed with the MotionMuse rebrand; files saved under the old name still load,
@@ -250,6 +342,8 @@ own their respective slices of state.
 | `hand_L_spread` / `hand_R_spread` | Thumb-to-pinky spread |
 | `pinch_L` / `pinch_R` | Pinch strength — 1 when the thumb and index tips are together, 0 with the hand open. World-space, so camera-independent |
 | `finger_L_thumb` … `finger_R_pinky` | Individual finger extension (0–1) |
+| `thumb_out_L` / `thumb_out_R` | How far the thumb is carried from the palm (0 = folded across it, 1 = clear) |
+| `contact_L_index` … `contact_R_pinky` | Thumb-to-fingertip contact (1 = pads touching). Palm-normalised, and tight enough that a merely curled finger doesn't register — a thumb-to-pinky tap makes a clean discrete trigger |
 | `elbow_L` / `elbow_R` | Elbow joint angle in degrees — **self-calibrating**: the observed per-user range (nobody's elbow reaches 0° or 180°) maps to the full control range once ≥25° of motion has been seen |
 | `shoulder_y_L` / `shoulder_y_R` | Shoulder height |
 | `shoulder_width` | Distance between shoulders |
@@ -288,7 +382,9 @@ can be mapped (and saved in presets) before tracking is enabled.
 ## Resizable panels
 
 On desktop, drag the dividers between the three columns to resize them
-(double-click a divider to reset). Widths persist across sessions.
+(double-click a divider to reset). Widths persist across sessions. A narrow
+window squeezes the columns down to fit, but only for display — your chosen
+widths are kept and come back when there's room again.
 
 ## Desktop sizing
 
@@ -342,7 +438,8 @@ css/
 src/
   bus.js            Signal registry (adaptive calibration + One-Euro smoothing)
   filter.js         One-Euro low-latency jitter filter
-  math.js           Geometry helpers (dist3, angleBetween, handOpenness, fingerExt)
+  math.js           Geometry helpers (dist3, angles, openness, extension,
+                    thumb-out and thumb-to-fingertip contact)
   engine.js         Web Audio API synthesiser
   scale.js          Scale + tuning pitch quantiser
   storage.js        Brand-prefixed localStorage + legacy-key migration
@@ -352,9 +449,10 @@ src/
   soundkit.js       Instrument timbre presets (synthesized)
   songs.js          Bundled play-along note charts
   playalong.js      Play-along game logic (scheduler, judging, difficulties)
-  chords.js         Chord construction (root + quality → frequencies)
-  gesture.js        Hand-gesture recognizer + custom-gesture store
-  chordmode.js      Gesture → chord mapping (hold-to-sound)
+  chords.js         Chord construction + diatonic degrees (I–vii in any mode)
+  gesture.js        Weighted 12-feature gesture recognizer, built-in and ASL
+                    templates, calibration store
+  chordmode.js      Gesture → scale-degree chord mapping (hold-to-sound)
   devmode.js        Developer-mode toggle (gates under-construction features)
   shader.js         WebGL visual-output shader (reacts to audio + signals)
   cv.js             MediaPipe Hand + swappable pose source (latency HUD)
@@ -376,15 +474,20 @@ src/
     audio-ui.js     Audio panel (waveform buttons, sliders)
     model-ui.js     Dev-mode pose model comparison panel
     donate.js       Support/donations popover
+    tutorial.js     Guided tour — TOUR_STEPS data + spotlight engine
     viz.js          Waveform oscilloscope canvas
 scripts/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
-sw.js               Service worker (offline cache + MediaPipe model cache)
+sw.js               Service worker (network-first app shell, cached MediaPipe models)
 tests/
-  unit/             node --test suites (chords, gestures, judging, notes, filter,
-                    dynamics, stepped volume, mapper steps)
+  unit/             node --test suites (chords, diatonic degrees, chord mode,
+                    gesture matching + degradation robustness, judging, notes,
+                    filter, dynamics, stepped volume, mapper steps)
   contrast/         WCAG contrast checks over the OKLab palette
-  gesture-img/      Gesture recognition over reference photos (MediaPipe)
+  gesture-img/      Gesture recognition over reference photos (MediaPipe);
+                    --calibrate prints vectors + pairwise template distances
+  tutorial/         Tour staleness guard — fails CI if a step targets dead UI
+  sw-freshness/     Proves a redeploy is visible on the very next load
   pose-bench/       Synthetic 3D-mannequin pose-model benchmark
   audio-articulation/  Before/after articulation measurement (settling, gaps, attack)
   ui-ux/
@@ -498,6 +601,25 @@ is critical and latency isn't, MoveNet **Lightning** as the low-latency
 alternative if its jitter score wins on your device. Missing `.task` models
 are fetched automatically; MoveNet rows skip when the TF.js CDN is
 unreachable. Harness: `tests/pose-bench/`.
+
+## Offline caching & getting updates
+
+The service worker is **network-first for the app itself** and cache-first only
+for the immutable MediaPipe wasm/model files. That ordering matters more than
+it sounds: it was originally cache-first everywhere, which meant a returning
+visitor always saw the *previous* deploy — open the site rarely enough and you
+could sit several releases behind and reasonably conclude features had been
+removed. Now what you load is what's deployed; the cache answers only when the
+network fails or takes longer than 3.5 s, which is all the offline/PWA promise
+actually needs. `npm run test:sw` proves it: it installs the worker, edits the
+served files, reloads once, and fails if the new content doesn't appear (it
+also fails if offline loading breaks). It runs in CI.
+
+**Seeing a stale version anyway?** A previously-installed worker from before
+this change can still be in charge. Reload once — that fetches the new
+`sw.js`, which claims the page and clears the old caches. A private/incognito
+tab (no worker, no cache) is the quickest way to confirm what the server is
+actually serving.
 
 ## Hosting
 

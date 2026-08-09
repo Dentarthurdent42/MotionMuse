@@ -1,7 +1,7 @@
 // Chord construction — pure helpers mapping a root note + quality to
 // frequencies. 12-TET anchored at A4 = 440 Hz, matching scale.js's math.
 
-import { NOTE_NAMES } from './scale.js';
+import { NOTE_NAMES, SCALES } from './scale.js';
 
 // Quality → semitone offsets from the root (ascending).
 export const QUALITIES = {
@@ -32,3 +32,83 @@ export function chordFreqs(root, octave = 4, quality = 'major') {
 }
 
 export const chordName = (root, quality) => `${root} ${quality}`;
+
+// ── Diatonic chords: degrees of a key, not absolute roots ────────────────
+//
+// Naming a chord by its scale degree ("the V") instead of its pitch ("G major")
+// means changing key transposes every assignment at once, and every chord is
+// guaranteed to belong to the key. Qualities are *derived*, never tabulated:
+// stack every other scale tone and read the intervals back. That way any
+// 7-note mode works — harmonic minor's V comes out major and its vii° dim
+// with no special cases.
+
+// The modes roman numerals are meaningful over: exactly the 7-note scales.
+export const DIATONIC_SCALES =
+  Object.keys(SCALES).filter(k => SCALES[k].length === 7);
+
+export const isDiatonic = scale => SCALES[scale]?.length === 7;
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+// Semitone offsets of a triad/seventh built on degree `i`, relative to the
+// chord's own root. `degrees` is a scale's semitone list (scale.js SCALES).
+export function diatonic(degrees, i, { seventh = false } = {}) {
+  const n = degrees.length;
+  const deg = ((Math.round(i) % n) + n) % n;
+  // Scale tone `k`, allowed to run past the octave (wraps, adding 12 per lap).
+  const at = k => degrees[((k % n) + n) % n] + 12 * Math.floor(k / n);
+  const steps = seventh ? [0, 2, 4, 6] : [0, 2, 4];
+  const offs  = steps.map(s => at(deg + s) - at(deg));
+  return {
+    degree: deg,
+    root: at(deg),              // semitones above the key's root
+    offs,
+    numeral: numeralFor(deg, offs, n),
+    quality: qualityFor(offs),
+  };
+}
+
+// Roman numeral read off the actual intervals: case from the third,
+// °/+ from the fifth, and the seventh's flavour appended.
+function numeralFor(deg, offs, n) {
+  if (n !== 7) return `${deg + 1}`;         // numerals only mean something over 7 tones
+  const [, third, fifth, sev] = offs;
+  const minor = third === 3;
+  let s = minor ? ROMAN[deg].toLowerCase() : ROMAN[deg];
+  if (third !== 3 && third !== 4) s += 'sus';   // e.g. a 2nd or 4th in place of the third
+  if (fifth === 6) s += '°';
+  else if (fifth === 8) s += '+';
+  if (sev !== undefined) {
+    if (fifth === 6 && sev === 9)       s = s.replace('°', '') + '°7';
+    else if (fifth === 6 && sev === 10) s = s.replace('°', '') + 'ø7';
+    else if (sev === 11)                s += 'maj7';
+    else                                s += '7';
+  }
+  return s;
+}
+
+// Name the interval set by matching it against the quality table, so the
+// readout says "dom7" rather than "[0,4,7,10]". Unmatched sets (possible in
+// exotic modes) fall back to listing the intervals.
+function qualityFor(offs) {
+  for (const [q, o] of Object.entries(QUALITIES)) {
+    if (o.length === offs.length && o.every((v, i) => v === offs[i])) return q;
+  }
+  return offs.join('-');
+}
+
+// Everything the UI and engine need for one degree of one key.
+// `octave` sets where the chord's root sits (C4 = 60).
+export function diatonicChord(keyRoot = 'C', octave = 4, scale = 'major (ionian)',
+                              degree = 0, seventh = false) {
+  const degrees = SCALES[scale]?.length === 7 ? SCALES[scale] : SCALES['major (ionian)'];
+  const d = diatonic(degrees, degree, { seventh });
+  const base = rootMidi(keyRoot, octave) + d.root;
+  return {
+    ...d,
+    midi: d.offs.map(o => base + o),
+    freqs: d.offs.map(o => mtof(base + o)),
+    // Pitch-class name of the chord's own root, for the readout ("G dom7").
+    rootName: NOTE_NAMES[((base % 12) + 12) % 12],
+  };
+}

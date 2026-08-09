@@ -1,7 +1,5 @@
 # GitHub renders this as a "Sponsor" button on the repository page.
-# Replace the YOUR_*_HANDLE placeholders after creating each account —
-# see README "Support" for per-platform setup steps.
 github: [Dentarthurdent42]        # requires enrolling in GitHub Sponsors
-ko_fi: mathieu71673           # https://ko-fi.com → account → copy your page handle
+ko_fi: mathieu71673
 custom:
-  - 'buymeacoffee.com/Dentarthurdent'
+  - 'https://buymeacoffee.com/dentarthurdent'

@@ -18,19 +18,28 @@
 <body>
 <div id="app">
   <!-- ── Header ──────────────────────────────────────────── -->
+  <!-- .htitle / .hbtns are `display: contents` on desktop, so the header is a
+       single flex row exactly as before; on mobile they become two centered
+       rows (title above, every button below) instead of letting the buttons
+       wrap raggedly. -->
   <header id="header">
-    <div class="logo">MOTION<span>MUSE</span></div>
-    <div class="hstatus">
-      <div class="dot" id="cv-dot"></div>
-      <span id="status-lbl">READY</span>
+    <div class="htitle">
+      <div class="logo">MOTION<span>MUSE</span></div>
+      <div class="hstatus">
+        <div class="dot" id="cv-dot"></div>
+        <span id="status-lbl">READY</span>
+      </div>
     </div>
     <div class="hsep"></div>
-    <button class="btn" id="cv-btn">START CAMERA</button>
-    <button class="btn purple" id="audio-btn">AUDIO OFF</button>
-    <button class="btn" id="dev-btn" aria-pressed="false"
-            title="Developer mode — reveals experimental, under-construction features">DEV</button>
-    <button class="btn" id="donate-btn" aria-haspopup="menu" aria-expanded="false"
-            title="Support this project — donation links">♥</button>
+    <div class="hbtns">
+      <button class="btn" id="cv-btn">START CAMERA</button>
+      <button class="btn purple" id="audio-btn">AUDIO OFF</button>
+      <button class="btn" id="dev-btn" aria-pressed="false"
+              title="Developer mode — reveals experimental, under-construction features">DEV</button>
+      <button class="btn" id="tour-btn" title="Guided tour">?</button>
+      <button class="btn" id="donate-btn" aria-haspopup="menu" aria-expanded="false"
+              title="Support this project — donation links">♥</button>
+    </div>
   </header>
 
   <!-- ── Main ───────────────────────────────────────────── -->

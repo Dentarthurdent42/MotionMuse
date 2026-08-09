@@ -4,9 +4,8 @@
 
 const LINKS = [
   ['GitHub Sponsors',   'https://github.com/sponsors/Dentarthurdent42'],
-  ['Ko-fi',             'https://ko-fi.com/YOUR_KOFI_HANDLE'],
-  ['Buy Me a Coffee',   'https://buymeacoffee.com/YOUR_BMAC_HANDLE'],
-  ['PayPal',            'https://paypal.me/YOUR_PAYPAL_HANDLE'],
+  ['Ko-fi',             'https://ko-fi.com/mathieu71673'],
+  ['Buy Me a Coffee',   'https://buymeacoffee.com/dentarthurdent'],
 ];
 
 export function initDonate() {
