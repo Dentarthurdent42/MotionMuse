@@ -19,16 +19,12 @@ button in the app header links to:
 - [GitHub Sponsors](https://github.com/sponsors/Dentarthurdent42)
 - [Ko-fi](https://ko-fi.com/mathieu71673)
 - [Buy Me a Coffee](https://buymeacoffee.com/dentarthurdent)
-- [PayPal](https://paypal.me/YOUR_PAYPAL_HANDLE)
 
-> **Maintainer setup** — GitHub Sponsors, Ko-fi and Buy Me a Coffee are wired
-> up. Only PayPal is still a placeholder: claim a handle at
-> [paypal.me](https://paypal.me) (PayPal account → **PayPal.Me** → pick a
-> link name), then replace `YOUR_PAYPAL_HANDLE` in `src/ui/donate.js` and
-> `.github/FUNDING.yml`. A **personal** PayPal account is enough for PayPal.Me;
-> switching to a free **business** account additionally unlocks the
-> [donate button](https://www.paypal.com/donate/buttons) and, if you're a
-> registered non-profit, reduced fees.
+> **Maintainer setup** — to add or change a platform, edit `LINKS` in
+> `src/ui/donate.js` (the in-app ♥ popover) and `.github/FUNDING.yml` (GitHub's
+> Sponsor button). Both are plain lists of name → URL; the popover sizes itself
+> to whatever is in it. GitHub Sponsors additionally requires
+> [enrolling](https://github.com/sponsors).
 
 ## How it works
 

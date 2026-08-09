@@ -6,7 +6,6 @@ const LINKS = [
   ['GitHub Sponsors',   'https://github.com/sponsors/Dentarthurdent42'],
   ['Ko-fi',             'https://ko-fi.com/mathieu71673'],
   ['Buy Me a Coffee',   'https://buymeacoffee.com/dentarthurdent'],
-  ['PayPal',            'https://paypal.me/YOUR_PAYPAL_HANDLE'],
 ];
 
 export function initDonate() {
