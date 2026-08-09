@@ -32,6 +32,11 @@ jobs:
       - name: Tutorial staleness guard
         run: npm run test:tutorial
 
+      # Proves a redeploy is visible on the next load. Regression guard for the
+      # service worker serving stale builds to returning visitors.
+      - name: Service-worker freshness
+        run: npm run test:sw
+
       - name: Run UI/UX tests
         run: npm run test:ui
         env:

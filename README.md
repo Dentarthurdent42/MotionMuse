@@ -480,7 +480,7 @@ src/
     viz.js          Waveform oscilloscope canvas
 scripts/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
-sw.js               Service worker (offline cache + MediaPipe model cache)
+sw.js               Service worker (network-first app shell, cached MediaPipe models)
 tests/
   unit/             node --test suites (chords, diatonic degrees, chord mode,
                     gesture matching + degradation robustness, judging, notes,
@@ -489,6 +489,7 @@ tests/
   gesture-img/      Gesture recognition over reference photos (MediaPipe);
                     --calibrate prints vectors + pairwise template distances
   tutorial/         Tour staleness guard — fails CI if a step targets dead UI
+  sw-freshness/     Proves a redeploy is visible on the very next load
   pose-bench/       Synthetic 3D-mannequin pose-model benchmark
   audio-articulation/  Before/after articulation measurement (settling, gaps, attack)
   ui-ux/
@@ -602,6 +603,25 @@ is critical and latency isn't, MoveNet **Lightning** as the low-latency
 alternative if its jitter score wins on your device. Missing `.task` models
 are fetched automatically; MoveNet rows skip when the TF.js CDN is
 unreachable. Harness: `tests/pose-bench/`.
+
+## Offline caching & getting updates
+
+The service worker is **network-first for the app itself** and cache-first only
+for the immutable MediaPipe wasm/model files. That ordering matters more than
+it sounds: it was originally cache-first everywhere, which meant a returning
+visitor always saw the *previous* deploy — open the site rarely enough and you
+could sit several releases behind and reasonably conclude features had been
+removed. Now what you load is what's deployed; the cache answers only when the
+network fails or takes longer than 3.5 s, which is all the offline/PWA promise
+actually needs. `npm run test:sw` proves it: it installs the worker, edits the
+served files, reloads once, and fails if the new content doesn't appear (it
+also fails if offline loading breaks). It runs in CI.
+
+**Seeing a stale version anyway?** A previously-installed worker from before
+this change can still be in charge. Reload once — that fetches the new
+`sw.js`, which claims the page and clears the old caches. A private/incognito
+tab (no worker, no cache) is the quickest way to confirm what the server is
+actually serving.
 
 ## Hosting
 
