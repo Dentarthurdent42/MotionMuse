@@ -211,13 +211,24 @@ missing contact channel would read as a false touch).
 Channels are **weighted**, because they aren't equally informative — measured
 across the reference photos, `fingerExt`'s thumb moves over a 0.09 range in
 total, so unweighted it would just add noise; the contacts, which carry the
-number shapes, get the loudest vote. The distance threshold is a *rejection*
-radius, not a separation guarantee: which gesture wins is decided by nearest
-neighbour, and the threshold sits just under the measured worst-case template
-separation (0.70, `point` vs `horns`, which genuinely differ only in the pinky).
-Debounce does the rest — a new pose must win two frames before it takes over,
-and a few dropped frames are tolerated before release, so a borderline reading
-can't machine-gun chord mode.
+number shapes, get the loudest vote. Each template also declares which channels
+**define** its shape (a don't-care mask): where the thumb tip incidentally rests
+against a fist's curled fingers varies hand to hand and is not what makes a
+fist a fist, so the classics ignore the contact channels entirely, while
+ASL 6–9 — which are *about* those contacts — care about all of them. Distance is
+a weight-normalized RMS over the cared channels, so ranking stays fair between
+7-channel and 12-channel templates.
+
+The threshold is a *rejection* radius, not a separation guarantee: which
+gesture wins is decided by nearest neighbour, and the value (0.20) sits at the
+measured knee of the operating curve — under a live-hand degradation model
+(compressed extensions, frame noise, spurious contacts) 99.6% of classic poses
+are recognized and 0.2% misread, while only ~4% of relaxed non-gesture hands
+slip under it per frame. `tests/unit/gesture-robust.test.js` drives the real
+matcher through that model deterministically, so a template or threshold edit
+that would regress live behaviour fails CI. Debounce does the rest — a new pose
+must win two frames before it takes over, and a few dropped frames are
+tolerated before release, so a borderline reading can't machine-gun chord mode.
 
 ### Calibration
 
@@ -472,8 +483,8 @@ scripts/
 sw.js               Service worker (offline cache + MediaPipe model cache)
 tests/
   unit/             node --test suites (chords, diatonic degrees, chord mode,
-                    gesture matching, judging, notes, filter, dynamics,
-                    stepped volume, mapper steps)
+                    gesture matching + degradation robustness, judging, notes,
+                    filter, dynamics, stepped volume, mapper steps)
   contrast/         WCAG contrast checks over the OKLab palette
   gesture-img/      Gesture recognition over reference photos (MediaPipe);
                     --calibrate prints vectors + pairwise template distances

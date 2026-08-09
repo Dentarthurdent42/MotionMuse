@@ -33,11 +33,34 @@ export const WEIGHTS = [0.25, 1, 1, 1, 1, 0.7, 0.4, 1.1, 1.2, 1.2, 1.2, 1.2];
 // Value assumed for a channel a template doesn't carry. Templates recorded
 // before the vector grew are padded with these on load rather than being left
 // short — a short template used to produce a NaN distance, which silently made
-// it unmatchable forever instead of failing loudly.
+// it unmatchable forever instead of failing loudly. (The padded channels are
+// also masked out of the metric — see masks below — so these values never
+// actually influence a match; they only keep the arrays rectangular.)
 export const NEUTRAL = [0.40, 0.5, 0.5, 0.5, 0.5, 0.6, 0.3, 0.3, 0, 0, 0, 0];
 
 export const padTemplate = f =>
   FEATURES.map((_, i) => Number.isFinite(f?.[i]) ? f[i] : NEUTRAL[i]);
+
+// ── Don't-care masks ──────────────────────────────────────────────────────
+//
+// A template also declares WHICH channels define its shape. This exists
+// because the first field reports came back "everything reads as point, or
+// nothing": each template was demanding a match on channels that are
+// *incidental* to its pose. The fist reference photo happened to have the
+// thumb wrapped over the fingers (contact readings 0.95/0.90) — a live fist
+// with the thumb resting beside them reads ~0.2 and sailed past the match
+// threshold. The peace photo happened to have its thumb extended. None of the
+// classic gestures are ABOUT where the thumb tip sits, so none of them should
+// pay a penalty for it; conversely ASL 6–9 are about exactly that, so for
+// them the contacts carry the match.
+//
+// Masks multiply the channel weights per template; distance is normalized by
+// the cared weight (see templateDistance), so a template that cares about
+// fewer channels isn't cheaper to match — its distance is an RMS over the
+// channels it does care about, on the same scale for every template.
+const care = (except = []) => FEATURES.map(f => (except.includes(f) ? 0 : 1));
+const CONTACTS = ['cIndex', 'cMiddle', 'cRing', 'cPinky'];
+export const maskFromLength = len => FEATURES.map((_, i) => (i < len ? 1 : 0));
 
 // ── Built-in templates ────────────────────────────────────────────────────
 //
@@ -67,34 +90,42 @@ export const padTemplate = f =>
 // 0.38 0.50 0.70 0.80 0.87 0.92. Spread is always thumb↔pinky distance / 2.5.
 const BUILTINS = [
   // id        name              ASL   f = [thumb,index,middle,ring,pinky, open,spread, thumbOut, cIdx,cMid,cRing,cPinky]
-  { id: 'fist',   name: 'Fist',       asl: 'S',
+  //
+  // Masks (`m`): the classic shapes ignore the contact channels — where the
+  // thumb tip happens to rest against curled fingers varies hand to hand and
+  // is not what makes a fist a fist. `peace` additionally ignores thumbOut:
+  // its photo was shot thumb-extended, but ASL 2 is the same shape thumb-
+  // tucked, and both must read as peace. The contact-defined numbers (0/6-9)
+  // care about every contact; 3 and 4 are extension/thumb shapes like the
+  // classics.
+  { id: 'fist',   name: 'Fist',       asl: 'S',  m: care(CONTACTS),
     f: [0.36, 0.21, 0.19, 0.15, 0.13, 0.40, 0.23, 0.04, 0.95, 0.90, 0.19, 0.00] },
-  { id: 'point',  name: 'Point',      asl: '1',
+  { id: 'point',  name: 'Point',      asl: '1',  m: care(CONTACTS),
     f: [0.36, 0.75, 0.27, 0.17, 0.15, 0.50, 0.25, 0.02, 0.00, 0.00, 0.00, 0.00] },
-  { id: 'peace',  name: 'Peace',      asl: '2',
+  { id: 'peace',  name: 'Peace',      asl: '2',  m: care([...CONTACTS, 'thumbOut']),
     f: [0.45, 0.88, 0.94, 0.49, 0.39, 0.71, 0.19, 0.99, 0.00, 0.00, 0.52, 0.00] },
-  { id: 'thumbs', name: 'Thumbs Up',  asl: '10',
+  { id: 'thumbs', name: 'Thumbs Up',  asl: '10', m: care(CONTACTS),
     f: [0.40, 0.26, 0.27, 0.25, 0.20, 0.35, 0.57, 0.89, 0.00, 0.00, 0.00, 0.00] },
-  { id: 'palm',   name: 'Open Palm',  asl: '5', est: true,
+  { id: 'palm',   name: 'Open Palm',  asl: '5', est: true, m: care(CONTACTS),
     f: [0.40, 0.82, 0.90, 0.85, 0.80, 0.92, 0.84, 0.90, 0.00, 0.00, 0.00, 0.00] },
-  { id: 'horns',  name: 'Rock Horns', est: true,
+  { id: 'horns',  name: 'Rock Horns', est: true, m: care(CONTACTS),
     f: [0.40, 0.82, 0.24, 0.19, 0.80, 0.70, 0.54, 0.04, 0.00, 0.00, 0.00, 0.00] },
   // ASL numbers. 1, 2, 5 and 10 are the shapes above — one template each, with
   // both a descriptive name and the numeral, rather than duplicates that would
   // sit on top of each other and make the match a coin toss.
-  { id: 'asl3',   name: 'Three',      asl: '3', est: true,
+  { id: 'asl3',   name: 'Three',      asl: '3', est: true, m: care(CONTACTS),
     f: [0.40, 0.82, 0.90, 0.19, 0.16, 0.72, 0.57, 0.90, 0.00, 0.00, 0.00, 0.00] },
-  { id: 'asl4',   name: 'Four',       asl: '4', est: true,
+  { id: 'asl4',   name: 'Four',       asl: '4', est: true, m: care(CONTACTS),
     f: [0.40, 0.82, 0.90, 0.85, 0.80, 0.87, 0.54, 0.04, 0.00, 0.00, 0.00, 0.00] },
-  { id: 'asl6',   name: 'Pinky Touch',asl: '6', est: true,
+  { id: 'asl6',   name: 'Pinky Touch',asl: '6', est: true, m: care(),
     f: [0.40, 0.82, 0.90, 0.85, 0.35, 0.80, 0.06, 0.49, 0.00, 0.00, 0.00, 1.00] },
-  { id: 'asl7',   name: 'Ring Touch', asl: '7', est: true,
+  { id: 'asl7',   name: 'Ring Touch', asl: '7', est: true, m: care(),
     f: [0.40, 0.82, 0.90, 0.35, 0.80, 0.80, 0.48, 0.49, 0.00, 0.00, 1.00, 0.00] },
-  { id: 'asl8',   name: 'Middle Touch', asl: '8', est: true,
+  { id: 'asl8',   name: 'Middle Touch', asl: '8', est: true, m: care(),
     f: [0.40, 0.82, 0.35, 0.85, 0.80, 0.80, 0.54, 0.49, 0.00, 1.00, 0.00, 0.00] },
-  { id: 'asl9',   name: 'Index Touch', asl: '9', est: true,
+  { id: 'asl9',   name: 'Index Touch', asl: '9', est: true, m: care(),
     f: [0.40, 0.35, 0.90, 0.85, 0.80, 0.80, 0.56, 0.49, 1.00, 0.00, 0.00, 0.00] },
-  { id: 'asl0',   name: 'Closed O',   asl: '0', est: true,
+  { id: 'asl0',   name: 'Closed O',   asl: '0', est: true, m: care(),
     f: [0.40, 0.50, 0.52, 0.48, 0.45, 0.55, 0.14, 0.35, 0.93, 0.78, 0.56, 0.37] },
 ].map(g => ({ ...g, builtin: true, hand: 'any', est: !!g.est }));
 
@@ -103,31 +134,52 @@ export const gestureLabel = g => g.asl ? `${g.name} · ASL ${g.asl}` : g.name;
 
 // The threshold is a *rejection* radius — "is this any of our gestures at
 // all" — not a separation guarantee; which gesture wins is decided by nearest
-// neighbour. Measured pairwise separation over the shipped templates bottoms
-// out at 0.70 (point vs horns, which genuinely differ only in the pinky), and
-// gesture-match.test.js fails if an edit brings any pair below 0.65. Sitting
-// the threshold just under that floor keeps a pose that's ambiguous between
-// two templates from being confidently misread; the frame debounce below is
-// what stops the remaining borderline cases from flickering.
-export const MATCH_THRESHOLD = 0.65;
-export const SEPARATION_FLOOR = 0.65;
-const HYSTERESIS     = 0.15;   // extra slack to *keep* the current match
+// neighbour, and near-ties are arbitrated by the hysteresis + frame debounce
+// below, not by the threshold. 0.20 sits at the measured knee of the
+// operating curve (tests/unit/gesture-robust.test.js re-derives it): under a
+// live-hand degradation model — compressed extensions, per-channel noise,
+// randomized incidental contacts — 99.6% of classic-gesture poses are
+// recognized, 0.2% misread, while only ~4% of relaxed non-gesture hands slip
+// under it per frame (and engagement needs consecutive frames).
+export const MATCH_THRESHOLD = 0.20;
+// No two shipped templates may sit closer than this (see templateSeparation);
+// the closest pair today is peace ~ asl6 at 0.167.
+export const SEPARATION_FLOOR = 0.15;
+const HYSTERESIS     = 0.06;   // extra slack to *keep* the current match
 const HOLD_FRAMES    = 2;      // frames a new gesture must win before engaging
 const RELEASE_FRAMES = 3;      // frames of no match before letting go
 
-// Weighted Euclidean distance between a live feature vector and a template.
-// Templates shorter than FEATURES (recorded before the vector grew) read
-// NEUTRAL for the missing channels instead of NaN.
+// Distance between a live feature vector and a template: weighted RMS over
+// the channels the template cares about (its mask × the global weights),
+// normalized by the total cared weight. Normalization is what makes ranking
+// fair across templates with different masks: without it, a 12-channel
+// template (the contact-defined ASL numbers) accumulates more noise-distance
+// than a 7-channel classic, and the classic steals its poses — measured, that
+// dropped asl6 recognition to 36%. For templates with identical masks (fist
+// vs point) normalization cancels out of the comparison entirely, so it costs
+// nothing where single-channel discrimination matters. Templates shorter than
+// FEATURES (recorded before the vector grew) read NEUTRAL for missing
+// channels, which their mask excludes anyway.
 export function templateDistance(features, t) {
-  let d2 = 0;
+  let d2 = 0, wsum = 0;
   for (let i = 0; i < FEATURES.length; i++) {
+    const w = WEIGHTS[i] * (t.m ? (t.m[i] ?? 1) : 1);
+    if (!w) continue;
     const fv = Number.isFinite(features[i]) ? features[i] : NEUTRAL[i];
     const tv = Number.isFinite(t.f?.[i])    ? t.f[i]      : NEUTRAL[i];
     const dv = fv - tv;
-    d2 += WEIGHTS[i] * dv * dv;
+    d2 += w * dv * dv;
+    wsum += w;
   }
-  return Math.sqrt(d2);
+  return wsum > 0 ? Math.sqrt(d2 / wsum) : Infinity;
 }
+
+// Separation between two templates: how far each one's exact pose sits from
+// the OTHER's acceptance region (min over both directions, since masks are
+// asymmetric). This is what the separation floor is measured over — shared
+// with tests/gesture-img so the definition can't drift.
+export const templateSeparation = (a, b) =>
+  Math.min(templateDistance(a.f, b), templateDistance(b.f, a));
 
 // Pure nearest-template match — unit-tested.
 // features: number[]; templates: [{id, f}]; returns {id, dist} or null.
@@ -303,7 +355,7 @@ export const gesture = (() => {
     hiddenCount: () => hiddenBuiltins.size,
 
     serialize() {
-      return { custom: custom.map(({ id, name, f, hand }) => ({ id, name, f, hand })),
+      return { custom: custom.map(({ id, name, f, hand, m }) => ({ id, name, f, hand, m })),
                hidden: [...hiddenBuiltins],
                recal: Object.fromEntries(recal) };
     },
@@ -311,9 +363,15 @@ export const gesture = (() => {
       // Back-compat: older presets stored just an array of custom gestures.
       const arr = Array.isArray(data) ? data : (data?.custom ?? []);
       // Templates recorded against a shorter feature vector are padded to the
-      // current length. Left short they'd compare as NaN and become silently
-      // unmatchable — present in the list, impossible to trigger.
-      custom = arr.map(g => ({ ...g, f: padTemplate(g.f), builtin: false, hand: g.hand ?? 'any' }));
+      // current length (left short they'd compare as NaN and become silently
+      // unmatchable) and the padded channels are masked out of the metric —
+      // the recording never saw them, so it has no opinion about them.
+      custom = arr.map(g => ({
+        ...g,
+        f: padTemplate(g.f),
+        m: g.m ?? maskFromLength(Array.isArray(g.f) ? g.f.length : 0),
+        builtin: false, hand: g.hand ?? 'any',
+      }));
       hiddenBuiltins.clear();
       recal.clear();
       for (const [id, f] of Object.entries((Array.isArray(data) ? {} : data?.recal) ?? {})) {

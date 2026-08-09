@@ -63,7 +63,7 @@ const results = await p.evaluate(async (imgs) => {
     baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate: 'CPU' },
     numHands: 1, runningMode: 'IMAGE' });
   const { fingerExt, handOpenness, dist3, thumbOut, thumbContact } = await import('/src/math.js');
-  const { gesture, matchGesture, templateDistance, FEATURES, SEPARATION_FLOOR } =
+  const { gesture, matchGesture, templateDistance, templateSeparation, FEATURES, SEPARATION_FLOOR } =
     await import('/src/gesture.js');
   const load = src => new Promise(r => { const im = new Image(); im.onload = () => r(im); im.src = src; });
   const out = { images: {}, features: FEATURES, floor: SEPARATION_FLOOR };
@@ -87,12 +87,14 @@ const results = await p.evaluate(async (imgs) => {
                  .sort((a, b) => a[1] - b[1]).slice(0, 3),
     };
   }
-  // Pairwise separation over the whole shipped template set.
+  // Pairwise separation over the whole shipped template set — via the shared
+  // templateSeparation (min over both directions, since masks are
+  // asymmetric), the same definition the unit floor test uses.
   const T = gesture.list();
   const pairs = [];
   for (let i = 0; i < T.length; i++)
     for (let j = i + 1; j < T.length; j++)
-      pairs.push([T[i].id, T[j].id, +templateDistance(T[i].f, T[j]).toFixed(3)]);
+      pairs.push([T[i].id, T[j].id, +templateSeparation(T[i], T[j]).toFixed(3)]);
   out.pairs = pairs.sort((a, b) => a[2] - b[2]);
   out.templates = T.map(t => [t.id, t.est ? 'estimated' : 'measured', t.f]);
   return out;

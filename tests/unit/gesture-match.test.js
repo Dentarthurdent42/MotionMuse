@@ -6,8 +6,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  gesture, gestureLabel, matchGesture, templateDistance,
-  FEATURES, WEIGHTS, NEUTRAL, padTemplate,
+  gesture, gestureLabel, matchGesture, templateDistance, templateSeparation,
+  FEATURES, WEIGHTS, NEUTRAL, padTemplate, maskFromLength,
   MATCH_THRESHOLD, SEPARATION_FLOOR,
 } from '../../src/gesture.js';
 import { bus } from '../../src/bus.js';
@@ -50,8 +50,11 @@ test('weights actually weight: the same error costs more on a louder channel', (
 
 test('hysteresis keeps the currently-held gesture but does not create matches', () => {
   const T = [{ id: 'a', f: V(0) }];
+  // Build a pose sitting 3% past the threshold on channel 1 (weight 1):
+  // normalized distance = Δ·sqrt(w/Σw), so invert for Δ.
+  const wsum = WEIGHTS.reduce((s, w) => s + w, 0);
   const edge = V(0);
-  edge[1] = 0.68;   // weight 1 → distance 0.68, just past the threshold
+  edge[1] = MATCH_THRESHOLD * 1.03 * Math.sqrt(wsum / WEIGHTS[1]);
   assert.equal(matchGesture(edge, T), null, 'not sticky: rejected');
   assert.equal(matchGesture(edge, T, MATCH_THRESHOLD, 'a')?.id, 'a', 'sticky: held');
   const far = V(0); far[1] = 3;
@@ -64,16 +67,16 @@ test('no two shipped templates sit closer than the separation floor', () => {
   let worst = { d: Infinity };
   for (let i = 0; i < T.length; i++)
     for (let j = i + 1; j < T.length; j++) {
-      const d = templateDistance(T[i].f, T[j]);
+      const d = templateSeparation(T[i], T[j]);
       if (d < worst.d) worst = { d, a: T[i].id, b: T[j].id };
     }
   assert.ok(worst.d >= SEPARATION_FLOOR,
     `${worst.a} ~ ${worst.b} = ${worst.d.toFixed(3)} < floor ${SEPARATION_FLOOR}`);
-});
-
-test('the rejection radius stays under the separation floor', () => {
-  // Otherwise a pose sitting between two templates gets confidently misread.
-  assert.ok(MATCH_THRESHOLD <= SEPARATION_FLOOR);
+  // The threshold may exceed the floor — a pose between two close shapes is
+  // arbitrated by nearest-neighbour + hysteresis + debounce, not rejected —
+  // but not by so much that a template's exact pose could be misread outright.
+  assert.ok(MATCH_THRESHOLD <= SEPARATION_FLOOR * 1.5,
+    'threshold has drifted far past the separation floor');
 });
 
 test('every template is full length and in range', () => {
@@ -112,6 +115,12 @@ test('a template from the 7-feature era is padded, not left unmatchable', () => 
   assert.equal(loaded.f.length, FEATURES.length);
   assert.deepEqual(loaded.f.slice(0, 7), old.f);
   assert.deepEqual(loaded.f.slice(7), NEUTRAL.slice(7));
+  // The channels the recording never saw are masked out of the metric — the
+  // padded values are placeholders, not opinions.
+  assert.deepEqual(loaded.m, maskFromLength(7));
+  const live = [...old.f, 0.9, 1, 1, 1, 1];        // wild new-channel values
+  assert.ok(templateDistance(live, loaded) < 1e-9,
+    'padded channels must not contribute distance');
   gesture.load({ custom: [] });
 });
 
