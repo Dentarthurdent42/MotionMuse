@@ -48,6 +48,10 @@ html, body {
   gap: 12px;
   flex-shrink: 0;
 }
+/* Grouping wrappers that dissolve on desktop: the header stays one flex row
+   with the same children, gap and order it always had. They only become real
+   boxes in the mobile block below. */
+.htitle, .hbtns { display: contents; }
 
 #main {
   display: grid;
@@ -834,18 +838,29 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
     grid-template-rows: auto auto;   /* header may wrap to two rows */
   }
 
-  /* Header: compact, WRAPPING. It used to overflow-x:auto when the buttons
-     outgrew a narrow phone, which failed twice over: scrolling a header is
-     undiscoverable on iOS (the ♥ button was simply invisible off the right
-     edge), and the header is the containing block for #donate-pop, so the
-     scroll container *clipped the popover itself* — even after reaching the
-     button, its menu couldn't render. Wrapping onto a second row costs
-     ~40px of height and has neither problem. */
+  /* Header: two deliberate rows — centered title, then every button beneath
+     it. Two earlier attempts were worse: overflow-x:auto silently pushed the
+     trailing buttons off-screen (scrolling a header is undiscoverable on iOS,
+     and the scroll container also clipped #donate-pop, which is positioned
+     against #header), and plain flex-wrap left one lonely button dangling on
+     a second line. Explicit rows fit any phone width and stay tidy. */
   #header {
-    padding: 5px 10px; gap: 8px;
-    flex-wrap: wrap; row-gap: 4px;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 6px 10px; gap: 6px;
     overflow: visible;
   }
+  .htitle {
+    display: flex; align-items: center; justify-content: center;
+    gap: 7px; width: 100%;
+  }
+  .hbtns {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; width: 100%; flex-wrap: wrap; row-gap: 6px;
+  }
+  /* Buttons share the row evenly rather than sizing to their text, so the
+     narrow ones (DEV, ?, ♥) still present a comfortable tap target. */
+  .hbtns .btn { flex: 1 1 auto; min-width: 44px; }
   .logo   { font-size: 11px; flex-shrink: 0; }
   .hsep   { display: none; }
   #status-lbl { display: none; }
