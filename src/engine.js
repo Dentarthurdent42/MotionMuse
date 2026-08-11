@@ -1,5 +1,5 @@
 import { makeQuantizer } from './scale.js';
-import { makeDynamics, EDGES } from './dynamics.js';
+import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 
 export const engine = (() => {
   let ctx, analyser, osc1, osc2, osc1g, osc2g, filt, lfo, lfog, revb, revgain, drygain, mastg;
@@ -66,7 +66,7 @@ export const engine = (() => {
   // let it complete. See src/dynamics.js.
   const VOL_SNAPS = PARAMS.volume.snaps;   // restored when stepping is off
   let volStep = { enabled: true, steps: 6, floorDb: -30, gate: true,
-                  hysteresis: 0.3, edge: 'key' };
+                  hysteresis: 0.3, edge: 'key', gateAt: GATE_AT_DEFAULT };
   let dyn = makeDynamics(volStep);
   let volIdx = null;    // rung currently scheduled on mastg (null = unknown)
   let volEdges = 0;     // envelopes fired — observability, and what the tests assert on
@@ -229,7 +229,11 @@ export const engine = (() => {
     if (!volStep.enabled) return null;
     const idx = volIdx ?? dyn.indexOf(PARAMS.volume.val);
     return { idx, count: dyn.levels.length, gain: dyn.levels[idx],
-             db: dyn.dbAt(idx), stepDb: dyn.stepDb, edges: volEdges };
+             db: dyn.dbAt(idx), stepDb: dyn.stepDb, edges: volEdges,
+             // Where the gate switches, in the same 0-1 units as the incoming
+             // cable value, so the panel can name the number the player is
+             // hunting for instead of leaving them to find it by trial.
+             gateGain: dyn.gate ? dyn.gateGain : null };
   }
 
   function setOsc1Type(t)   { osc1Type = t; if (osc1) applyType(osc1, t); }

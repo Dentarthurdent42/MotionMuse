@@ -3,7 +3,8 @@ import { mapper }                    from '../mapper.js';
 import { SCALES, TUNINGS, NOTE_NAMES } from '../scale.js';
 import { makeKbdView, midiOf, OSC1_COL, OSC2_COL } from './keyboard.js';
 import { isDesktop } from './viewport.js';
-import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS } from '../dynamics.js';
+import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS, GATE_AT_OPTS, GATE_AT_DEFAULT,
+         makeDynamics } from '../dynamics.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
@@ -12,6 +13,18 @@ import { shaderSectionHTML, wireShaderSection } from './shader-ui.js';
 
 const opts = (arr, sel) =>
   arr.map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`).join('');
+
+// Gate threshold options, labelled with the value the player actually reads off
+// a cable ("silent below 18%") rather than the internal rung position. The
+// percentage is obtained by asking the real quantiser, not by re-deriving the
+// ladder here, so a label can never drift from the behaviour it describes — and
+// it has to be rebuilt whenever steps or floor change, since both move it.
+const gateAtOpts = vq => GATE_AT_OPTS.map(p => {
+  const pct = makeDynamics({ ...vq, gateAt: p }).gateGain * 100;
+  return `<option value="${p}"${p === vq.gateAt ? ' selected' : ''}>`
+       + `&lt; ${pct < 10 ? pct.toFixed(1) : Math.round(pct)}%`
+       + `${p === GATE_AT_DEFAULT ? ' ·auto' : ''}</option>`;
+}).join('');
 
 // The panel's pitch-quantise keyboard (canvas #quant-kbd, recreated with the
 // panel; the view looks it up by id on every draw).
@@ -130,6 +143,9 @@ export function renderAudioPanel() {
       <div class="wave-btns" style="margin-top:4px;">
         <div class="wave-btn${vq.gate ? ' on' : ''}" id="vq-gate"
              title="Make the bottom level true silence, so notes can be separated and re-attacked">GATE</div>
+        <select id="vq-gate-at" style="flex:1 1 auto;min-width:0;"
+                ${vq.gate ? '' : 'disabled'}
+                title="Where the gate switches off, as a share of full volume. The ladder's own midpoint (·auto) is not always where you want the switch: with 2 steps it lands at 18%, so an on/off control flips very early. Raise it to move the switch later in the gesture.">${gateAtOpts(vq)}</select>
       </div>
       <div id="vq-level" class="quant-notes">${vq.enabled ? '' : '—'}</div>
     </div>
@@ -284,16 +300,28 @@ export function renderAudioPanel() {
     refreshVolTicks();
     if (!on) document.getElementById('vq-level').textContent = '—';
   });
+  // The gate threshold's labels are percentages of full volume, so changing the
+  // step count or the floor moves every one of them. Rebuilding the options
+  // (rather than only the selection) keeps the numbers true; without this the
+  // menu would keep advertising the thresholds of the previous ladder.
+  const vqGateAt = document.getElementById('vq-gate-at');
+  const refreshGateAt = () => { vqGateAt.innerHTML = gateAtOpts(engine.getVolStep()); };
   vqGate.addEventListener('click', () => {
     const on = !engine.getVolStep().gate;
     engine.setVolStep({ gate: on });
     vqGate.classList.toggle('on', on);
+    vqGateAt.disabled = !on;      // nothing to place when there's no silence rung
     refreshVolTicks();
   });
   document.getElementById('vq-steps')
-    .addEventListener('change', e => { engine.setVolStep({ steps: +e.target.value }); refreshVolTicks(); });
+    .addEventListener('change', e => {
+      engine.setVolStep({ steps: +e.target.value }); refreshVolTicks(); refreshGateAt();
+    });
   document.getElementById('vq-floor')
-    .addEventListener('change', e => { engine.setVolStep({ floorDb: +e.target.value }); refreshVolTicks(); });
+    .addEventListener('change', e => {
+      engine.setVolStep({ floorDb: +e.target.value }); refreshVolTicks(); refreshGateAt();
+    });
+  vqGateAt.addEventListener('change', e => { engine.setVolStep({ gateAt: +e.target.value }); });
   document.getElementById('vq-edge')
     .addEventListener('change', e => { engine.setVolStep({ edge: e.target.value }); });
 

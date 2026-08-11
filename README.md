@@ -101,7 +101,19 @@ envelope is the crisp attack you hear.
   of the range. The default 6 steps over −30 dB gives silence, −24, −18, −12,
   −6, 0 dB: exactly 6 dB apart.
 - **GATE** makes the bottom level *true* silence (gain exactly 0), which is what
-  makes a gap between notes possible at all.
+  makes a gap between notes possible at all. The select beside it says **where**
+  the gate switches, as a share of full volume (`< 18%` = silent below 18 %).
+  `·auto` is the ladder's own midpoint, which is a *derivation* rather than a
+  preference: with **2 steps** the midpoint lands at −15 dB, so a linear cable
+  flips off at 18 % of its travel when what an on/off control implies is
+  halfway. Raise it to move the switch later — at 2 steps the top setting puts
+  it at half of full scale. The dead band that stops chatter (2 dB) rides along
+  with it, and full volume always opens the gate at every setting.
+  The adjustment is deliberately bounded to the span between silence and the
+  first audible level, so it can only ever move the gate — never silence levels
+  that the slider's notches still advertise. That also means it does most of its
+  work at coarse step counts: at the default 6 steps the whole range is
+  3.8–5.5 %, because on a finer ladder the gate point *is* a fine detail.
 - **PLUCK / KEY / BOW** set the attack and release at a level change. Dropping to
   silence gets its own, slower time so it reads as a damped release rather than a
   chop.

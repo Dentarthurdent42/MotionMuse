@@ -194,3 +194,137 @@ test('without the gate, the bottom rung keeps symmetric rounding', () => {
   const d = makeDynamics({ steps: 6, floorDb: -30, gate: false, hysteresis: 0 });
   assert.equal(d.quantize(gainAtPos(d, 0.6), null).idx, 1, 'no oversized capture when un-gated');
 });
+
+// ── Where the gate switches (`gateAt`) ────────────────────────────────────
+//
+// The ladder's midpoint is a *derivation*, not a preference: at 2 steps it puts
+// the on/off switch at 18% of a linear cable's travel, when what an on/off
+// control implies is halfway. These tests pin the default to the shipped
+// behaviour and then pin the one property that must survive any setting — that
+// full volume always opens the gate.
+import { GATE_AT_OPTS, GATE_AT_DEFAULT } from '../../src/dynamics.js';
+
+// Sweep the real quantiser up then down, reporting where the gate actually
+// opens and closes. Measured, not derived — the point is to catch a
+// disagreement between the arithmetic and the state machine.
+//
+// The sweep runs in rung-position (i.e. dB) space, not linear gain. A linear
+// sweep can't resolve this: at -72 dB over 2 steps the gate sits near gain
+// 0.002 and its whole 2 dB dead band spans 0.0005 of linear travel, so a linear
+// step fine enough to measure it there would be absurdly fine at the top.
+const sweepGate = d => {
+  const N = d.steps - 1, STEP = N / 20000;
+  const gainAt = p => 10 ** ((d.floorDb + Math.min(p, N) * d.stepDb) / 20);
+  let idx = 0, openPos = null, closePos = null;
+  for (let p = 0; p <= N + 1e-9; p += STEP) {
+    const q = d.quantize(gainAt(p), idx); if (q.idx !== 0 && openPos === null) openPos = p; idx = q.idx;
+  }
+  for (let p = N; p >= -1e-9; p -= STEP) {
+    const q = d.quantize(p <= 0 ? 0 : gainAt(p), idx); if (q.idx === 0 && closePos === null) closePos = p; idx = q.idx;
+  }
+  return {
+    openPos, closePos,
+    open:  openPos  === null ? null : gainAt(openPos),
+    close: closePos === null ? null : gainAt(closePos),
+    bandDb: openPos === null || closePos === null ? null : (openPos - closePos) * d.stepDb,
+  };
+};
+
+test('gateAt defaults to the ladder midpoint — shipped behaviour unchanged', () => {
+  const d = makeDynamics({ steps: 2, floorDb: -30, gate: true, hysteresis: 0.3 });
+  assert.equal(d.gateAt, GATE_AT_DEFAULT);
+  assert.equal(GATE_AT_DEFAULT, 0.5, 'the default must stay the midpoint');
+  // -15 dB, the midpoint of a 2-rung/-30 dB ladder.
+  assert.ok(Math.abs(d.gateGain - 10 ** (-15 / 20)) < 1e-12,
+    `midpoint gate at ${d.gateGain}`);
+  // And an explicit 0.5 is indistinguishable from omitting it.
+  const e = makeDynamics({ steps: 2, floorDb: -30, gate: true, hysteresis: 0.3, gateAt: 0.5 });
+  assert.deepEqual(sweepGate(e), sweepGate(d));
+});
+
+test('raising gateAt moves the switch later, monotonically', () => {
+  const cfg = { steps: 2, floorDb: -30, gate: true, hysteresis: 0.3 };
+  const measured = GATE_AT_OPTS.map(gateAt => {
+    const d = makeDynamics({ ...cfg, gateAt });
+    const { open, close } = sweepGate(d);
+    // The advertised threshold is what the sweep actually finds, within the
+    // sweep's own resolution — otherwise the UI label would be a fiction.
+    assert.ok(Math.abs(20 * Math.log10(close / d.gateGain)) < 0.05,
+      `gateAt ${gateAt}: advertised ${d.gateGain.toFixed(4)}, measured ${close.toFixed(4)}`);
+    return { gateAt, open, close };
+  });
+  for (let i = 1; i < measured.length; i++) {
+    assert.ok(measured[i].close > measured[i - 1].close,
+      `gateAt ${measured[i].gateAt} closes at ${measured[i].close} — not later than ${measured[i - 1].close}`);
+    assert.ok(measured[i].open > measured[i - 1].open, 'open point must move with it');
+  }
+});
+
+test('the top of the range always opens the gate, whatever it is set to', () => {
+  // The failure this guards against is the one that shipped: an open point at
+  // or above the top rung, so the gate latches shut and the instrument is
+  // silent no matter what the player does. At 2 steps the top rung IS the
+  // gate's own neighbour, which is why it has to be checked there too.
+  for (const steps of [2, 3, 4, 6, 8, 12]) {
+    for (const floorDb of [-12, -30, -48, -72]) {
+      for (const gateAt of [...GATE_AT_OPTS, 0, 1, 5, -3, NaN, null, undefined]) {
+        const d = makeDynamics({ steps, floorDb, gate: true, hysteresis: 0.3, gateAt });
+        const where = `steps=${steps} floor=${floorDb} gateAt=${gateAt}`;
+        assert.equal(d.quantize(1, 0).idx > 0, true, `${where}: full scale left the gate shut`);
+        const { openPos, closePos, bandDb } = sweepGate(d);
+        assert.ok(openPos !== null, `${where}: gate never opened on the way up`);
+        assert.ok(closePos !== null, `${where}: gate never closed on the way down`);
+        assert.ok(bandDb > 0,
+          `${where}: dead band inverted (opens at ${openPos.toFixed(3)}, closes at ${closePos.toFixed(3)} rungs) — will chatter`);
+        assert.ok(bandDb <= GATE_HYST_DB + 0.1,
+          `${where}: dead band ${bandDb.toFixed(2)} dB, wider than ${GATE_HYST_DB} dB`);
+      }
+    }
+  }
+});
+
+test('gateAt never eats the ladder — only rung 0 is affected', () => {
+  // A threshold expressed against the whole ladder could silence rungs the
+  // slider notches still advertise. Bounding it below rung 1 makes that
+  // impossible: every audible rung stays selectable at every setting.
+  for (const gateAt of GATE_AT_OPTS) {
+    const d = makeDynamics({ steps: 12, floorDb: -48, gate: true, hysteresis: 0.3, gateAt });
+    const reached = new Set();
+    let idx = 0;
+    for (let g = 0; g <= 1.0001; g += 0.0002) { idx = d.quantize(Math.min(g, 1), idx).idx; reached.add(idx); }
+    assert.equal(reached.size, d.levels.length,
+      `gateAt ${gateAt}: only ${reached.size} of ${d.levels.length} rungs reachable`);
+  }
+});
+
+test('a raised gateAt is still chatter-free at its own edge', () => {
+  const d = makeDynamics({ steps: 2, floorDb: -30, gate: true, hysteresis: 0.3, gateAt: 0.8 });
+  const edge = d.gateGain;
+  let prev = 0, flips = 0;
+  for (let i = 0; i < 200; i++) {
+    // Dither by 1 dB either side of the switch — inside the 2 dB dead band.
+    const q = d.quantize(edge * 10 ** ((i % 2 ? 1 : -1) / 20), prev);
+    if (q.idx !== prev) flips++;
+    prev = q.idx;
+  }
+  assert.equal(flips, 0, `chatter at a raised gate edge: ${flips} flips`);
+});
+
+test('at 2 steps the top setting puts the switch near half volume', () => {
+  // The ask behind this control: an on/off cable that flips mid-gesture rather
+  // than at 18% of it.
+  const d = makeDynamics({ steps: 2, floorDb: -30, gate: true, hysteresis: 0.3, gateAt: 0.8 });
+  assert.ok(d.gateGain > 0.45 && d.gateGain < 0.55,
+    `expected the switch near half scale, got ${d.gateGain.toFixed(3)}`);
+});
+
+test('gateAt is reported clamped, and is inert when the gate is off', () => {
+  assert.equal(makeDynamics({ gateAt: 99 }).gateAt, 0.8);
+  assert.equal(makeDynamics({ gateAt: -1 }).gateAt, 0.05);
+  assert.equal(makeDynamics({ gateAt: 'nonsense' }).gateAt, GATE_AT_DEFAULT);
+  // Un-gated, the setting must not bend the ordinary rounding.
+  const a = makeDynamics({ steps: 6, gate: false, hysteresis: 0, gateAt: 0.05 });
+  const b = makeDynamics({ steps: 6, gate: false, hysteresis: 0, gateAt: 0.8 });
+  for (let g = 0; g <= 1.0001; g += 0.01)
+    assert.equal(a.quantize(g, null).idx, b.quantize(g, null).idx, `un-gated divergence at ${g}`);
+});
