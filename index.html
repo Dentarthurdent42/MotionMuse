@@ -32,13 +32,31 @@
     </div>
     <div class="hsep"></div>
     <div class="hbtns">
-      <button class="btn" id="cv-btn">START CAMERA</button>
-      <button class="btn purple" id="audio-btn">AUDIO OFF</button>
+      <!-- .btn-sizer holds the longest label this button can ever show, hidden
+           but occupying the same grid cell, so the button keeps one width as
+           its label changes (START CAMERA → LOADING… → STOP CAMERA) instead of
+           reflowing the whole header mid-press. JS writes .btn-text. -->
+      <button class="btn btn-fixed" id="cv-btn">
+        <span class="btn-sizer" aria-hidden="true">START CAMERA</span>
+        <span class="btn-text">START CAMERA</span>
+      </button>
+      <button class="btn purple btn-fixed" id="audio-btn">
+        <span class="btn-sizer" aria-hidden="true">AUDIO OFF</span>
+        <span class="btn-text">AUDIO OFF</span>
+      </button>
       <button class="btn" id="dev-btn" aria-pressed="false"
               title="Developer mode — reveals experimental, under-construction features">DEV</button>
       <button class="btn" id="tour-btn" title="Guided tour">?</button>
       <button class="btn" id="donate-btn" aria-haspopup="menu" aria-expanded="false"
               title="Support this project — donation links">♥</button>
+    </div>
+    <!-- Camera-dependent toggles: hidden until the camera is running, then
+         shown on their own row beneath the main controls. -->
+    <div class="hcam">
+      <button class="btn" id="face-btn"
+              title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears">☺ FACE</button>
+      <button class="btn" id="gaze-btn"
+              title="Track pupil orientation as gaze_x / gaze_y signals">◉ GAZE</button>
     </div>
   </header>
 
@@ -60,10 +78,6 @@
         <div class="cam-toggles">
           <button id="depth-btn" class="depth-toggle uc-feature"
                   title="Under construction — use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth (DEV mode feature)"><span id="depth-btn-lbl">◈ LiDAR</span><span class="src-tab-wip">🚧</span></button>
-          <button id="face-btn" class="depth-toggle" disabled
-                  title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears (start the camera first)">☺ FACE</button>
-          <button id="gaze-btn" class="depth-toggle" disabled
-                  title="Track pupil orientation as gaze_x / gaze_y signals (start the camera first)">◉ GAZE</button>
           <button id="fs-btn" class="depth-toggle"
                   title="Fullscreen camera view">⛶ FULL</button>
           <button id="fskbd-btn" class="depth-toggle fs-only"
