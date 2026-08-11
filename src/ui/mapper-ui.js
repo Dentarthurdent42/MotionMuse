@@ -90,11 +90,11 @@ const DEFAULT_RANGE = { osc1_freq: [220, 880], osc2_freq: [220, 880] };
 // from defaults, silently throwing away the range/curve/steps you'd set up.
 // The range and curve describe how that *parameter* is driven, so they should
 // outlive a change of source.
-const lastSettings = new Map();   // param key → { outMin, outMax, curve, steps }
+const lastSettings = new Map();   // param key → { outMin, outMax, curve, steps, invert }
 const rememberSettings = m => {
   if (!m?.audioParam) return;
   lastSettings.set(m.audioParam,
-    { outMin: m.outMin, outMax: m.outMax, curve: m.curve, steps: m.steps });
+    { outMin: m.outMin, outMax: m.outMax, curve: m.curve, steps: m.steps, invert: m.invert });
 };
 
 // ── Frequency-range picker state (oscillator-frequency cables only) ──────
@@ -158,6 +158,8 @@ export function renderMapper() {
         ${isFreq ? `title="${midiName(midiOf(sel.outMax))} — Hz or a note name like A4"` : 'step="any"'}></label>
       <label>curve <select class="m-curve">${CURVE_OPTS.replace(`value="${sel.curve}"`, `value="${sel.curve}" selected`)}</select></label>
       <label>steps <select class="m-steps">${STEP_SEL_OPTS.replace(`value="${sel.steps ?? 0}"`, `value="${sel.steps ?? 0}" selected`)}</select></label>
+      <button class="wave-btn m-invert${sel.invert ? ' on' : ''}" aria-pressed="${sel.invert ? 'true' : 'false'}"
+              title="Reverse the connection: the input's high end drives the output's low end">⇅ INVERT</button>
       <button class="rm-btn" id="ng-del" aria-label="Delete cable">×</button>
       ${isFreq ? `
       <div class="ng-freq-picker">
@@ -383,6 +385,13 @@ function wireHandlers(rows) {
   rows.querySelectorAll('.m-curve').forEach(el => el.addEventListener('change', e => {
     if (sel()) sel().curve = e.target.value;
   }));
+  rows.querySelectorAll('.m-invert').forEach(el => el.addEventListener('click', e => {
+    const s = sel();
+    if (!s) return;
+    s.invert = !s.invert;
+    e.currentTarget.classList.toggle('on', s.invert);
+    e.currentTarget.setAttribute('aria-pressed', String(s.invert));
+  }));
   rows.querySelectorAll('.m-steps').forEach(el => el.addEventListener('change', e => {
     const s = sel();
     if (!s) return;
@@ -506,7 +515,8 @@ function connect(sigKey, paramKey) {
   const prev = lastSettings.get(paramKey);
   const [lo, hi] = prev ? [prev.outMin, prev.outMax]
     : (DEFAULT_RANGE[paramKey] ?? [engine.PARAMS[paramKey].min, engine.PARAMS[paramKey].max]);
-  const id = mapper.add(paramKey, sigKey, lo, hi, prev?.curve ?? 'linear', prev?.steps ?? 0);
+  const id = mapper.add(paramKey, sigKey, lo, hi, prev?.curve ?? 'linear', prev?.steps ?? 0,
+                        prev?.invert ?? false);
   addedInputs.delete(sigKey);
   addedOutputs.delete(paramKey);
   selectedId = id;

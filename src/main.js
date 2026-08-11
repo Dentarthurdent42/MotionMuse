@@ -18,6 +18,7 @@ import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
+import { initPresetMenu }                   from './ui/preset-menu.js';
 import { initTutorial }                     from './ui/tutorial.js';
 import * as preset                          from './preset.js';
 
@@ -37,6 +38,15 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
+// ── Header button labels ─────────────────────────────────────────────────
+// Buttons whose caption changes carry a hidden .btn-sizer holding the longest
+// caption, so writing the visible .btn-text can't change the button's width.
+// Writing button.textContent directly would delete the sizer.
+const setLabel = (btn, text) => {
+  const t = btn.querySelector('.btn-text');
+  if (t) t.textContent = text; else btn.textContent = text;
+};
+
 // ── Camera button ────────────────────────────────────────────────────────
 document.getElementById('cv-btn').addEventListener('click', async () => {
   const btn = document.getElementById('cv-btn');
@@ -49,27 +59,30 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
       b.disabled = true; b.classList.remove('on');
     });
     setStatus('', 'STOPPED');
-    btn.textContent = 'START CAMERA';
+    setLabel(btn, 'START CAMERA');
     btn.classList.remove('on');
+    document.body.classList.remove('cam-on');   // hides the FACE/GAZE row
     return;
   }
   btn.disabled = true;
-  btn.textContent = 'LOADING…';
+  setLabel(btn, 'LOADING…');
   try {
     await cvSource.init();
     await cvSource.startCamera();
     setStatus('active', 'CV ACTIVE');
-    btn.textContent = 'STOP CAMERA';
+    setLabel(btn, 'STOP CAMERA');
     btn.disabled = false;
     btn.classList.add('on');
     buildSigPanel();
     renderMapper();
-    // Face & gaze tracking are opt-in once the camera is running.
+    // Face & gaze tracking are opt-in once the camera is running; their row in
+    // the header only exists from this point on.
+    document.body.classList.add('cam-on');
     document.getElementById('face-btn').disabled = false;
     document.getElementById('gaze-btn').disabled = false;
   } catch (err) {
     setStatus('error', 'ERROR: ' + err.message.slice(0, 30));
-    btn.textContent = 'RETRY';
+    setLabel(btn, 'RETRY');
     btn.disabled = false;
     console.error(err);
   }
@@ -129,7 +142,7 @@ document.getElementById('audio-btn').addEventListener('click', async () => {
     playalong.stop();          // a running game can't outlive its audio clock
     shader.setActive(false);   // panel (and its canvas) is about to be torn down
     engine.stop();
-    btn.textContent = 'AUDIO OFF';
+    setLabel(btn, 'AUDIO OFF');
     btn.classList.remove('on');
     document.getElementById('audio-panel').innerHTML = `
       <div style="padding:16px 10px;color:var(--border2);font-size:10px;text-align:center;">
@@ -137,17 +150,22 @@ document.getElementById('audio-btn').addEventListener('click', async () => {
       </div>`;
   } else {
     await engine.start();
-    btn.textContent = 'AUDIO ON';
+    setLabel(btn, 'AUDIO ON');
     btn.classList.add('on');
     renderAudioPanel();
   }
 });
 
 // ── Mapper buttons ───────────────────────────────────────────────────────
-document.getElementById('preset-btn').addEventListener('click', () => {
-  mapper.applyPreset();
-  renderMapper();
-  toast('Preset loaded — start camera + audio to play!');
+// PRESET opens a menu of starting patches; each reports what it still needs
+// switched on (camera / face / gaze) rather than loading silently.
+initPresetMenu({
+  onApply: () => renderMapper(),
+  state: () => ({
+    camera: cvSource.running,
+    face:   faceSource.faceOn,
+    gaze:   faceSource.gazeOn,
+  }),
 });
 
 // ── Save / load settings + mappings ──────────────────────────────────────

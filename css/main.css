@@ -34,7 +34,7 @@ html, body {
 /* ── Layout ─────────────────────────────────────────────── */
 #app {
   display: grid;
-  grid-template-rows: 40px 1fr;
+  grid-template-rows: auto 1fr;   /* header grows when the FACE/GAZE row shows */
   height: 100vh;       /* fallback for browsers without dvh */
   height: 100dvh;      /* visible viewport, excludes mobile browser UI */
 }
@@ -46,12 +46,33 @@ html, body {
   align-items: center;
   padding: 0 14px;
   gap: 12px;
+  row-gap: 6px;
+  flex-wrap: wrap;      /* only wraps when .hcam appears (flex-basis: 100%) */
   flex-shrink: 0;
+  min-height: 40px;
 }
 /* Grouping wrappers that dissolve on desktop: the header stays one flex row
    with the same children, gap and order it always had. They only become real
    boxes in the mobile block below. */
 .htitle, .hbtns { display: contents; }
+
+/* Camera-dependent toggles (FACE / GAZE) live on their own full-width line
+   under the main controls, and only once the camera is running. `flex-basis:
+   100%` forces the wrap; while hidden the header stays a single row. */
+.hcam {
+  display: none;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 8px;
+}
+body.cam-on .hcam { display: flex; }
+
+/* Keep one width as the caption changes: the hidden sizer holds the longest
+   label and shares a grid cell with the live text, so the box is sized by the
+   widest state rather than the current one. */
+.btn-fixed { display: inline-grid; place-items: center; }
+.btn-fixed > * { grid-area: 1 / 1; }
+.btn-sizer { visibility: hidden; pointer-events: none; }
 
 #main {
   display: grid;
@@ -190,6 +211,40 @@ body.resizing { cursor: col-resize; user-select: none; }
   border-radius: 3px;
 }
 #donate-pop a:hover, #donate-pop a:focus-visible { background: var(--faint); color: var(--cyan); }
+
+/* ── Preset menu ─────────────────────────────────────────── */
+.mapper-toolbar { position: relative; }   /* containing block for #preset-pop */
+#preset-pop {
+  position: absolute;
+  top: calc(100% + 4px); left: 0;
+  z-index: 60;
+  width: max(240px, 100%);
+  max-width: calc(100vw - 24px);
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  padding: 6px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+#preset-pop .preset-title {
+  font-size: 8px; letter-spacing: 2px; color: var(--dim);
+  padding: 3px 6px 6px;
+}
+.preset-item {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 3px;
+  padding: 6px; cursor: pointer;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.preset-item:hover, .preset-item:focus-visible { background: var(--faint); }
+.preset-item:hover .preset-name { color: var(--cyan); }
+.preset-name { display: block; font-size: 10px; color: var(--text); }
+.preset-hint { display: block; font-size: 9px; color: var(--dim); margin-top: 2px; line-height: 1.4; }
+.preset-needs {
+  display: inline-block; margin-top: 3px;
+  font-size: 8px; letter-spacing: 1px; color: var(--amber);
+  border: 1px solid var(--amber); border-radius: 2px; padding: 0 4px;
+}
 
 /* ── Developer mode / under-construction gating ──────────── */
 /* Experimental features are hidden until dev mode is on. Using
@@ -849,18 +904,24 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
     align-items: stretch;
     padding: 6px 10px; gap: 6px;
     overflow: visible;
+    /* The desktop rule wraps so .hcam can claim its own line. In a *column*
+       container wrapping means new COLUMNS, and flex-basis sizes height, not
+       width — which shoved FACE/GAZE off the right edge. Rows are explicit
+       here, so neither is wanted. */
+    flex-wrap: nowrap;
   }
+  .hcam { flex-basis: auto; }
   .htitle {
     display: flex; align-items: center; justify-content: center;
     gap: 7px; width: 100%;
   }
-  .hbtns {
+  .hbtns, body.cam-on .hcam {
     display: flex; align-items: center; justify-content: center;
     gap: 8px; width: 100%; flex-wrap: wrap; row-gap: 6px;
   }
   /* Buttons share the row evenly rather than sizing to their text, so the
      narrow ones (DEV, ?, ♥) still present a comfortable tap target. */
-  .hbtns .btn { flex: 1 1 auto; min-width: 44px; }
+  .hbtns .btn, .hcam .btn { flex: 1 1 auto; min-width: 44px; }
   .logo   { font-size: 11px; flex-shrink: 0; }
   .hsep   { display: none; }
   #status-lbl { display: none; }
