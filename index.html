@@ -40,9 +40,15 @@
         <span class="btn-sizer" aria-hidden="true">START CAMERA</span>
         <span class="btn-text">START CAMERA</span>
       </button>
-      <button class="btn purple btn-fixed" id="audio-btn">
-        <span class="btn-sizer" aria-hidden="true">AUDIO OFF</span>
-        <span class="btn-text">AUDIO OFF</span>
+      <!-- The engine starts with the page, so this is a mute toggle, not a
+           power switch. Muted is the launch state and must look like a state,
+           not a disabled control — hence the caption naming what you'd get,
+           the amber styling, and the banner over the visualiser. -->
+      <button class="btn purple btn-fixed muted" id="audio-btn" aria-pressed="true">
+        <!-- Sizer holds the LONGER of the two captions, not the initial one:
+             "🔊 SOUND ON" is 24px wider than "🔇 MUTED". -->
+        <span class="btn-sizer" aria-hidden="true">🔊 SOUND ON</span>
+        <span class="btn-text">🔇 MUTED</span>
       </button>
       <button class="btn" id="dev-btn" aria-pressed="false"
               title="Developer mode — reveals experimental, under-construction features">DEV</button>
@@ -148,10 +154,18 @@
     <!-- RIGHT: Audio engine -->
     <div class="panel">
       <div class="ph">AUDIO ENGINE</div>
-      <canvas id="viz-canvas"></canvas>
+      <div class="viz-wrap">
+        <canvas id="viz-canvas"></canvas>
+        <!-- The waveform keeps moving while muted (the mute gain sits after
+             the analyser), so without this banner a silent-but-live engine
+             looks like a broken one. -->
+        <div id="viz-muted" hidden>🔇 MUTED · PRESS <b id="mute-key-hint">SPACE</b></div>
+      </div>
       <div class="pb" id="audio-panel">
         <div style="padding:16px 10px;color:var(--dim);font-size:10px;text-align:center;">
-          Enable audio to begin
+          <!-- Replaced by the real panel as soon as the engine starts, which
+               happens on load. Only stays visible if audio is unavailable. -->
+          Starting audio engine…
         </div>
       </div>
     </div>

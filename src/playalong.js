@@ -95,7 +95,9 @@ export const playalong = {
 
   start(songId, dId) {
     if (state !== 'idle') this.stop();
-    if (!engine.started) { toast('Enable audio first'); return false; }
+    // The engine starts with the page, so this is an unavailable-audio path
+    // now, not a "you forgot to switch it on" one.
+    if (!engine.started) { toast('Audio engine unavailable'); return false; }
     song = SONGS.find(s => s.id === songId) ?? SONGS[0];
     cfg = DIFF[dId] ?? DIFF.medium;
     diffId = DIFF[dId] ? dId : 'medium';

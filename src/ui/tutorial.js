@@ -91,10 +91,12 @@ export const TOUR_STEPS = [
           'session also auto-saves locally, so a reload picks up where you left off.',
   },
   {
-    id: 'audio', target: '#audio-btn', title: 'Sound on',
-    body: 'Browsers keep audio muted until you ask — this switch starts the ' +
-          'synthesiser. Do it once per visit and the audio panel on the right ' +
-          'comes alive.',
+    id: 'audio', target: '#audio-btn', title: 'Muted, but running',
+    body: 'The synthesiser starts with the page, so every control is live from ' +
+          'the moment you arrive — but the output is muted, so setting up a ' +
+          'patch stays silent until you ask for sound. This unmutes it, and so ' +
+          'does the spacebar. The waveform keeps moving while muted, which is ' +
+          'how you can tell it is silent rather than stuck.',
   },
   {
     id: 'audio-panel', target: '#audio-panel', needs: ['audio'], title: 'The audio engine',

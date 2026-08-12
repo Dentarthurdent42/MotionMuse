@@ -80,6 +80,7 @@ const PAIRS = [
   ['--cyan',    '--surface', 'Cyan text on header (logo)'],
   ['--purple',  '--panel',   'Purple text on panel (ctrl-val, btn.purple.on)'],
   ['--amber',   '--panel',   'Amber text on panel (note-badge, wave-btn.on)'],
+  ['--amber',   '--surface', 'Amber text on header (audio-btn while muted)'],
   ['--green',   '--panel',   'Green status dot label on panel'],
   ['--red',     '--panel',   'Red text on panel'],
 ];

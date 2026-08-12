@@ -37,6 +37,12 @@ jobs:
       - name: Service-worker freshness
         run: npm run test:sw
 
+      # The engine starts with the page, muted. Forces the suspended
+      # AudioContext that real browsers hand you and headless Chromium does
+      # not, because that difference already hid one shipped bug.
+      - name: Audio launch (muted, suspended context)
+        run: npm run test:launch
+
       - name: Run UI/UX tests
         run: npm run test:ui
         env:

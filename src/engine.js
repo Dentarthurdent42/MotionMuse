@@ -2,8 +2,16 @@ import { makeQuantizer } from './scale.js';
 import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 
 export const engine = (() => {
-  let ctx, analyser, osc1, osc2, osc1g, osc2g, filt, lfo, lfog, revb, revgain, drygain, mastg;
+  let ctx, analyser, osc1, osc2, osc1g, osc2g, filt, lfo, lfog, revb, revgain, drygain, mastg, outg;
   let started = false;
+
+  // Muted on launch, always. The engine now starts with the page so every
+  // control is live from the first paint, and starting a synth that makes
+  // noise at someone before they have asked for any would be hostile — on a
+  // phone, in a shared room, most of all on a page they opened to read about.
+  // Deliberately NOT persisted: "it was unmuted last time" is not consent to
+  // make noise now, and the state is one keypress to change.
+  let muted = true;
 
   // Chord voice bank (chord mode): 4 oscillators with per-voice gains into a
   // shared gain, feeding the same filter/reverb chain as the main oscillators.
@@ -106,6 +114,12 @@ export const engine = (() => {
     revgain = ctx.createGain(); revgain.gain.value = PARAMS.reverb_mix.val;
     drygain = ctx.createGain(); drygain.gain.value = 1 - PARAMS.reverb_mix.val;
     mastg   = ctx.createGain(); mastg.gain.value = PARAMS.volume.val;
+    // Mute sits AFTER the analyser (see the graph below), which is what lets
+    // the visualiser keep drawing a live waveform while nothing is audible —
+    // the difference between "muted" and "broken" made visible. It also keeps
+    // mute completely clear of the volume ladder and its silence gate, which
+    // live on mastg and are measured at the analyser.
+    outg    = ctx.createGain(); outg.gain.value = muted ? 0 : 1;
 
     // Apply stored param values
     osc1.frequency.value = PARAMS.osc1_freq.val;
@@ -116,13 +130,13 @@ export const engine = (() => {
     filt.Q.value         = PARAMS.filter_q.val;
     lfo.frequency.value  = PARAMS.lfo_rate.val;
 
-    // Graph: oscs → filter → [dry + reverb] → master → analyser → out
+    // Graph: oscs → filter → [dry + reverb] → master → analyser → mute → out
     osc1.connect(osc1g); osc2.connect(osc2g);
     osc1g.connect(filt); osc2g.connect(filt);
     filt.connect(drygain); filt.connect(revb);
     revb.connect(revgain);
     drygain.connect(mastg); revgain.connect(mastg);
-    mastg.connect(analyser); analyser.connect(ctx.destination);
+    mastg.connect(analyser); analyser.connect(outg); outg.connect(ctx.destination);
 
     // LFO → filter cutoff (default target)
     lfo.connect(lfog); lfog.connect(filt.frequency);
@@ -318,6 +332,32 @@ export const engine = (() => {
 
   function stop() { ctx?.close(); started = false; volIdx = null; }
 
+  // Mute / unmute the output. A short ramp rather than a jump, because a step
+  // change on a running oscillator is an audible click — the very artefact the
+  // rest of the dynamics work exists to remove.
+  const MUTE_RAMP = 0.015;
+  function setMuted(m) {
+    muted = !!m;
+    if (!started) return muted;
+    const t = ctx.currentTime;
+    outg.gain.cancelScheduledValues(t);
+    outg.gain.setValueAtTime(outg.gain.value, t);
+    outg.gain.linearRampToValueAtTime(muted ? 0 : 1, t + MUTE_RAMP);
+    return muted;
+  }
+  const toggleMuted = () => setMuted(!muted);
+
+  // An AudioContext created without a user gesture starts suspended, and the
+  // page auto-starts the engine, so this is the normal case rather than an
+  // error path: the graph exists and every control works, but the clock is
+  // frozen until the browser sees a gesture. Callers hand that gesture over by
+  // calling this. Safe to call repeatedly.
+  async function resume() {
+    if (!started) return null;
+    try { await ctx.resume(); } catch { /* no gesture yet, or context closed */ }
+    return ctx.state;
+  }
+
   return {
     PARAMS,
     start, set, stop,
@@ -329,6 +369,9 @@ export const engine = (() => {
     defineWave, playTone, now,
     playChord, releaseChord, chordActive,
     getWaveform,
+    setMuted, toggleMuted, resume,
     get started() { return started; },
+    get muted() { return muted; },
+    get ctxState() { return started ? ctx.state : 'closed'; },
   };
 })();

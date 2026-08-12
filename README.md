@@ -39,6 +39,44 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
 - **Dynamics** (`src/dynamics.js`): the volume step ladder — equal-loudness (dB) levels, an exact-silence bottom rung, and the sticky rounding that keeps a jittery hand from chattering between levels.
 
+## Starting muted
+
+The synthesiser **starts with the page**, so every control in the audio panel is
+live from the first paint — you can build a patch, set ranges and audition
+nothing until you want to. The output is **muted on launch**, because a page
+that makes noise at you before you've asked is hostile on a phone, in a shared
+room, and most of all to someone who came to read about it.
+
+Muted is shown three ways, because a silent instrument and a broken one look
+identical otherwise:
+
+- the header button reads **🔇 MUTED** in amber (**🔊 SOUND ON** when live);
+- a **MUTED** banner sits over the visualiser;
+- the waveform **keeps moving** behind that banner. The mute gain is placed
+  *after* the analyser precisely so it does — you can see the instrument
+  responding to your hands while it is silent.
+
+**Spacebar toggles mute.** The binding is shown (and changed) under **Mute
+Hotkey** in the audio panel: click it, press the key you want, Esc cancels.
+
+Two details worth knowing about the spacebar in particular. It's the key
+browsers use to activate whatever has focus, so the app claims it — a focused
+button keeps **Enter** but loses Space, which is the trade that makes the
+shortcut behave the same way regardless of invisible focus state. And it is
+never intercepted while you're typing in a field or working a `<select>`.
+
+Mute state is deliberately **not remembered** between visits: "you unmuted last
+time" isn't consent to make noise now, and it's one keypress to change.
+
+Because the page builds an `AudioContext` without a user gesture, browsers hand
+it back **suspended** — the graph exists and every control works, but the clock
+is frozen until you interact. The first click, key or tap resumes it. The
+gotcha, which cost one shipped bug: `AudioContext.resume()` does not *reject*
+when permission is being withheld, it returns a promise that never settles, so
+awaiting it before rendering leaves the audio panel permanently empty on every
+browser that enforces the policy — and headless Chromium doesn't, so it passes
+CI. `npm run test:launch` now forces the suspension and fails if that returns.
+
 ## Starting patches (PRESET)
 
 **PRESET** opens a menu of complete patches rather than loading one silently:
@@ -509,18 +547,23 @@ src/
     preset-menu.js  PRESET button → named starting-patch menu
     tutorial.js     Guided tour — TOUR_STEPS data + spotlight engine
     viz.js          Waveform oscilloscope canvas
+    hotkeys.js      Keyboard shortcuts (mute, default Space) — rebindable,
+                    persisted, and kept clear of typing
 scripts/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
 sw.js               Service worker (network-first app shell, cached MediaPipe models)
 tests/
   unit/             node --test suites (chords, diatonic degrees, chord mode,
                     gesture matching + degradation robustness, judging, notes,
-                    filter, dynamics, stepped volume, mapper steps)
+                    filter, dynamics, stepped volume, mapper steps, hotkeys)
   contrast/         WCAG contrast checks over the OKLab palette
   gesture-img/      Gesture recognition over reference photos (MediaPipe);
                     --calibrate prints vectors + pairwise template distances
   tutorial/         Tour staleness guard — fails CI if a step targets dead UI
   sw-freshness/     Proves a redeploy is visible on the very next load
+  audio-launch/     Engine starts muted and usable against a *suspended*
+                    AudioContext — the state real browsers give you and
+                    headless Chromium does not
   pose-bench/       Synthetic 3D-mannequin pose-model benchmark
   audio-articulation/  Before/after articulation measurement (settling, gaps, attack)
   ui-ux/

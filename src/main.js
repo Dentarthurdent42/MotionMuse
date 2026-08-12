@@ -20,6 +20,7 @@ import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
 import { initTutorial }                     from './ui/tutorial.js';
+import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
@@ -135,26 +136,81 @@ depthBtn.addEventListener('click', async () => {
 // (a hidden, running XR session with no visible control would be confusing).
 devmode.onChange(on => { if (!on && depthSource.lidarActive) depthSource.stopLidar(); });
 
-// ── Audio button ─────────────────────────────────────────────────────────
-document.getElementById('audio-btn').addEventListener('click', async () => {
-  const btn = document.getElementById('audio-btn');
-  if (engine.started) {
-    playalong.stop();          // a running game can't outlive its audio clock
-    shader.setActive(false);   // panel (and its canvas) is about to be torn down
-    engine.stop();
-    setLabel(btn, 'AUDIO OFF');
-    btn.classList.remove('on');
-    document.getElementById('audio-panel').innerHTML = `
-      <div style="padding:16px 10px;color:var(--border2);font-size:10px;text-align:center;">
-        Enable audio to begin
-      </div>`;
-  } else {
-    await engine.start();
-    setLabel(btn, 'AUDIO ON');
-    btn.classList.add('on');
-    renderAudioPanel();
+// ── Audio: starts with the page, muted ───────────────────────────────────
+// The engine used to wait behind a button, which meant every control in the
+// audio panel was absent until you found it — you couldn't set up a patch and
+// then start playing, you had to start first and configure while it ran. Now
+// the graph is built at load so everything is manipulable immediately, and the
+// output is muted so building a patch stays silent until you ask for sound.
+//
+// The button is therefore a mute toggle, not a power switch.
+const audioBtn = document.getElementById('audio-btn');
+const vizMuted = document.getElementById('viz-muted');
+
+// One function owns every visible trace of mute state, so the button, the
+// banner and the assistive-tech state can't drift apart.
+function syncMuteUI() {
+  const m = engine.muted;
+  setLabel(audioBtn, m ? '🔇 MUTED' : '🔊 SOUND ON');
+  audioBtn.classList.toggle('muted', m);
+  audioBtn.classList.toggle('on', !m);
+  audioBtn.setAttribute('aria-pressed', String(m));
+  audioBtn.title = m
+    ? `Muted — the engine is running but silent. ${keyLabel(getBinding('mute'))} to unmute.`
+    : `Sound on. ${keyLabel(getBinding('mute'))} to mute.`;
+  vizMuted.hidden = !m;
+  document.getElementById('mute-key-hint').textContent = keyLabel(getBinding('mute'));
+}
+
+async function toggleMute() {
+  if (!engine.started) {            // auto-start failed — this click is the retry
+    await startAudio();
+    return;
   }
-});
+  // Unmuting is the user gesture the browser has been waiting for, so hand it
+  // over — but never await it (see startAudio). Scheduling the ramp against a
+  // frozen clock is safe: the AudioParam timeline is absolute, so it plays out
+  // normally once the clock starts.
+  engine.resume();
+  engine.setMuted(!engine.muted);
+  syncMuteUI();
+}
+
+async function startAudio() {
+  try {
+    await engine.start();
+  } catch (err) {
+    // Nothing else in the app depends on audio existing, so a failure here
+    // degrades to "press the button" rather than taking the page down.
+    console.warn('audio engine did not start', err);
+    audioBtn.title = 'Audio unavailable — click to retry';
+    return false;
+  }
+  renderAudioPanel();
+  syncMuteUI();
+  // Deliberately NOT awaited. `AudioContext.resume()` does not reject when the
+  // browser is withholding permission — it returns a promise that simply never
+  // settles until a gesture arrives. Awaiting it here left the audio panel
+  // unrendered on any browser that actually enforces the autoplay policy,
+  // which is every real one; the bug is invisible in headless Chromium,
+  // which doesn't.
+  engine.resume();
+  return true;
+}
+
+audioBtn.addEventListener('click', toggleMute);
+
+// Autoplay policy means the context starts suspended and its clock stays
+// frozen until a gesture. Resume on the first one, whatever it is, so the
+// instrument is already awake by the time the user unmutes.
+const wakeAudio = () => { engine.resume(); };
+['pointerdown', 'keydown'].forEach(ev =>
+  document.addEventListener(ev, wakeAudio, { once: true, capture: true }));
+
+initHotkeys({ mute: () => { toggleMute(); } });
+onBindingChange(syncMuteUI);    // rebinding the key relabels the button and banner
+syncMuteUI();                   // muted from the first paint, before the graph exists
+startAudio();
 
 // ── Mapper buttons ───────────────────────────────────────────────────────
 // PRESET opens a menu of starting patches; each reports what it still needs
