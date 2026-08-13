@@ -39,9 +39,12 @@ const STEP_SEL_OPTS = ['<option value="0">off</option>',
   ...STEP_OPTS.map(s => `<option value="${s}">${s}</option>`)].join('');
 
 // Output parameters grouped into meaningful categories for the picker.
-const PARAM_CATS = [
+// Exported for tests/unit/param-cats.test.js: a param key missing from this
+// table silently vanishes from the add-output picker.
+export const PARAM_CATS = [
   ['Oscillators', ['osc1_freq', 'osc1_detune', 'osc2_freq', 'osc2_detune', 'osc_mix']],
-  ['Filter',      ['filter_freq', 'filter_q']],
+  ['Filter',      ['filter_freq', 'filter_q', 'osc_volume']],
+  ['Chord Mode',  ['chord_filter_freq', 'chord_filter_q', 'chord_volume']],
   ['LFO',         ['lfo_rate', 'lfo_depth']],
   ['Output',      ['reverb_mix', 'volume']],
 ];

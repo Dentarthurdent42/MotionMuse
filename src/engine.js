@@ -2,7 +2,8 @@ import { makeQuantizer } from './scale.js';
 import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 
 export const engine = (() => {
-  let ctx, analyser, osc1, osc2, osc1g, osc2g, filt, lfo, lfog, revb, revgain, drygain, mastg, outg;
+  let ctx, analyser, osc1, osc2, osc1g, osc2g, filt, oscVol, lfo, lfog,
+      cfilt, chordVol, revb, revgain, drygain, mastg, outg;
   let started = false;
 
   // Muted on launch, always. The engine now starts with the page so every
@@ -25,7 +26,8 @@ export const engine = (() => {
 
   // Waveform / filter selections. Kept as state (not only on the live nodes)
   // so they survive save/load and a stop→start cycle.
-  let osc1Type = 'sine', osc2Type = 'triangle', filterType = 'lowpass';
+  let osc1Type = 'sine', osc2Type = 'triangle', filterType = 'lowpass',
+      chordFilterType = 'lowpass';
 
   // Custom waveforms ('custom:<name>') for the sound kit — harmonic tables
   // registered up front, resolved to PeriodicWaves lazily per AudioContext.
@@ -115,6 +117,9 @@ export const engine = (() => {
     osc1g = ctx.createGain(); osc1g.gain.value = 1 - PARAMS.osc_mix.val;
     osc2g = ctx.createGain(); osc2g.gain.value = PARAMS.osc_mix.val;
     filt  = ctx.createBiquadFilter(); filt.type = filterType;
+    oscVol = ctx.createGain(); oscVol.gain.value = PARAMS.osc_volume.val;
+    cfilt = ctx.createBiquadFilter(); cfilt.type = chordFilterType;
+    chordVol = ctx.createGain(); chordVol.gain.value = PARAMS.chord_volume.val;
     lfo   = ctx.createOscillator(); lfo.type = 'sine';
     lfog  = ctx.createGain(); lfog.gain.value = 0;
     revb  = ctx.createConvolver(); revb.buffer = makeImpulse(ctx);
@@ -133,24 +138,37 @@ export const engine = (() => {
     osc1.detune.value    = PARAMS.osc1_detune.val;
     osc2.frequency.value = PARAMS.osc2_freq.val;
     osc2.detune.value    = PARAMS.osc2_detune.val;
-    filt.frequency.value = PARAMS.filter_freq.val;
-    filt.Q.value         = PARAMS.filter_q.val;
-    lfo.frequency.value  = PARAMS.lfo_rate.val;
+    filt.frequency.value  = PARAMS.filter_freq.val;
+    filt.Q.value          = PARAMS.filter_q.val;
+    cfilt.frequency.value = PARAMS.chord_filter_freq.val;
+    cfilt.Q.value         = PARAMS.chord_filter_q.val;
+    lfo.frequency.value   = PARAMS.lfo_rate.val;
 
-    // Graph: oscs → filter → [dry + reverb] → master → analyser → mute → out
+    // Graph — the two sources get their own filter and level, then share the
+    // reverb/master/mute tail, so each can be shaped without touching the
+    // other while Master Vol (and its step ladder) still governs everything:
+    //
+    //   oscs   → filt  → oscVol   ┐
+    //                             ├→ [dry + reverb] → master → analyser → mute → out
+    //   chords → cfilt → chordVol ┘
     osc1.connect(osc1g); osc2.connect(osc2g);
     osc1g.connect(filt); osc2g.connect(filt);
-    filt.connect(drygain); filt.connect(revb);
+    filt.connect(oscVol);
+    oscVol.connect(drygain); oscVol.connect(revb);
     revb.connect(revgain);
     drygain.connect(mastg); revgain.connect(mastg);
     mastg.connect(analyser); analyser.connect(outg); outg.connect(ctx.destination);
 
-    // LFO → filter cutoff (default target)
+    // LFO → the *lead* filter's cutoff only. Chords deliberately keep a steady
+    // filter — a wobble that suits a lead line turns sustained chords to mud;
+    // map a signal to chord_filter_freq for movement there instead.
     lfo.connect(lfog); lfog.connect(filt.frequency);
 
-    // Chord voice bank → shared gain (silent until playChord) → filter.
+    // Chord voice bank → shared gain (silent until playChord) → its own chain.
     chordGain = ctx.createGain(); chordGain.gain.value = 0;
-    chordGain.connect(filt);
+    chordGain.connect(cfilt);
+    cfilt.connect(chordVol);
+    chordVol.connect(drygain); chordVol.connect(revb);
     chordOscs = []; chordVGains = []; chordOn = false;
     for (let i = 0; i < CHORD_VOICES; i++) {
       const o = ctx.createOscillator(), g = ctx.createGain();
@@ -185,6 +203,10 @@ export const engine = (() => {
         break;
       case 'filter_freq': filt.frequency.linearRampToValueAtTime(p.val, t + sm); break;
       case 'filter_q':    filt.Q.linearRampToValueAtTime(p.val, t + sm); break;
+      case 'osc_volume':  oscVol.gain.linearRampToValueAtTime(p.val, t + sm); break;
+      case 'chord_filter_freq': cfilt.frequency.linearRampToValueAtTime(p.val, t + sm); break;
+      case 'chord_filter_q':    cfilt.Q.linearRampToValueAtTime(p.val, t + sm); break;
+      case 'chord_volume':      chordVol.gain.linearRampToValueAtTime(p.val, t + sm); break;
       case 'lfo_rate':    lfo.frequency.linearRampToValueAtTime(p.val, t + sm); break;
       case 'lfo_depth':   lfog.gain.linearRampToValueAtTime(p.val * 800, t + sm); break;
       case 'reverb_mix':
@@ -260,6 +282,8 @@ export const engine = (() => {
   function setOsc1Type(t)   { osc1Type = t; if (osc1) applyType(osc1, t); }
   function setOsc2Type(t)   { osc2Type = t; if (osc2) applyType(osc2, t); }
   function setFilterType(t) { filterType = t; if (filt) filt.type = t; }
+  function setChordFilterType(t) { chordFilterType = t; if (cfilt) cfilt.type = t; }
+  function getChordFilterType() { return chordFilterType; }
   function getOsc1Type()    { return osc1Type; }
   function getOsc2Type()    { return osc2Type; }
   function getFilterType()  { return filterType; }
@@ -268,13 +292,15 @@ export const engine = (() => {
   function snapshot() {
     const params = {};
     for (const k in PARAMS) params[k] = PARAMS[k].val;
-    return { params, tuning: { ...tuning }, volStep: { ...volStep }, osc1Type, osc2Type, filterType };
+    return { params, tuning: { ...tuning }, volStep: { ...volStep },
+             osc1Type, osc2Type, filterType, chordFilterType };
   }
   function restore(s) {
     if (!s) return;
     if (s.osc1Type) setOsc1Type(s.osc1Type);
     if (s.osc2Type) setOsc2Type(s.osc2Type);
     if (s.filterType) setFilterType(s.filterType);
+    if (s.chordFilterType) setChordFilterType(s.chordFilterType);
     if (s.tuning) setTuning(s.tuning);
     if (s.volStep) setVolStep(s.volStep);   // before params, so volume quantises on the way in
     if (s.params) for (const k in s.params) if (PARAMS[k]) set(k, s.params[k]);
@@ -372,6 +398,7 @@ export const engine = (() => {
     setVolStep, getVolStep, volLevel,
     setOsc1Type, setOsc2Type, setFilterType,
     getOsc1Type, getOsc2Type, getFilterType,
+    setChordFilterType, getChordFilterType,
     snapshot, restore,
     defineWave, playTone, now,
     playChord, releaseChord, chordActive,

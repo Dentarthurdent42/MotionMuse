@@ -179,6 +179,14 @@ export function renderAudioPanel() {
         ).join('')}
       </div>
     </div>
+    <div class="audio-section">
+      <div class="audio-section-label">Chord Filter Type</div>
+      <div class="wave-btns" id="cfilt-types">
+        ${['lowpass','highpass','bandpass','notch'].map(t =>
+          `<div class="wave-btn" data-ftype="${t}">${t.slice(0, 3).toUpperCase()}</div>`
+        ).join('')}
+      </div>
+    </div>
     <div class="audio-section" style="border-bottom:none;">
       ${Object.entries(engine.PARAMS).map(([k, p]) => rangeRow(k, p)).join('')}
     </div>`;
@@ -245,6 +253,15 @@ export function renderAudioPanel() {
       engine.setFilterType(b.dataset.ftype);
       activateWave(b.parentElement, b.dataset.ftype);
       syncKitToCustom();
+    });
+  });
+  // Chord filter type — deliberately NOT part of kit matching: kits describe
+  // the lead voice, and repainting the kit select because the chord bed went
+  // bandpass would be noise.
+  document.getElementById('cfilt-types').querySelectorAll('.wave-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      engine.setChordFilterType(b.dataset.ftype);
+      activateWave(b.parentElement, b.dataset.ftype);
     });
   });
 
@@ -353,6 +370,7 @@ export function renderAudioPanel() {
   document.getElementById('osc1-waves').querySelector(`[data-type="${engine.getOsc1Type()}"]`)?.classList.add('on');
   document.getElementById('osc2-waves').querySelector(`[data-type="${engine.getOsc2Type()}"]`)?.classList.add('on');
   document.getElementById('filt-types').querySelector(`[data-ftype="${engine.getFilterType()}"]`)?.classList.add('on');
+  document.getElementById('cfilt-types').querySelector(`[data-ftype="${engine.getChordFilterType()}"]`)?.classList.add('on');
 
   if (t.enabled) redrawKbd();
 
