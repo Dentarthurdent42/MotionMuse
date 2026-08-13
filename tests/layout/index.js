@@ -135,6 +135,25 @@ const sections = await page.evaluate(() => {
       document.body.classList.remove('reordering');
       return bad;
     })(),
+    // Section headers must render identically to each other. They did not: four
+    // of them carried an inline `display:flex` (they hold an ON/OFF pill), and
+    // WebKit's text auto-inflation boosts block containers while skipping flex
+    // ones — so on a zoomed-out phone those four stayed small and the rest grew.
+    // Measuring the computed values catches both halves: a stray inline display
+    // and a stray font-size.
+    headerStyles: (() => {
+      const seen = {};
+      for (const el of document.querySelectorAll('.sec > .audio-section-label')) {
+        const cs = getComputedStyle(el);
+        const k = `${cs.fontSize}|${cs.display}|${cs.letterSpacing}`;
+        (seen[k] ??= []).push(el.textContent.trim().split('\n')[0].slice(0, 18));
+      }
+      return seen;
+    })(),
+    // …and the inflation heuristic itself is off, so the authored size is what
+    // ships at every zoom level rather than a per-container guess.
+    textSizeAdjust: getComputedStyle(document.documentElement).webkitTextSizeAdjust
+                 ?? getComputedStyle(document.documentElement).textSizeAdjust,
     // The collapse caret is drawn from borders rather than typed as a glyph, so
     // it looks the same on every platform. Empty content + a real border is the
     // signature of that; a character caret would show up as content text.
@@ -264,6 +283,13 @@ for (const { width, off, on, sections, camSticky } of results) {
     `${w}: every section in a host is draggable`, sections.notDraggable.join(' '));
   check(sections.unaimableHosts.length === 0,
     `${w}: every host is aimable mid-drag`, sections.unaimableHosts.join(' '));
+
+  // ── Header typography parity ──
+  const hStyles = Object.keys(sections.headerStyles);
+  check(hStyles.length <= 1, `${w}: every section header renders identically`,
+    hStyles.map(k => `${k} → ${sections.headerStyles[k].join(',')}`).join(' | '));
+  check(sections.textSizeAdjust === '100%',
+    `${w}: text auto-inflation is off`, String(sections.textSizeAdjust));
   if (sections.caret) {
     check(sections.caret.content === '""' || sections.caret.content === 'none',
       `${w}: the caret is drawn, not a font glyph`, sections.caret.content);

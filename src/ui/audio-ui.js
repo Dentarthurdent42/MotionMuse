@@ -1,7 +1,8 @@
 import { engine }                    from '../engine.js';
 import { mapper }                    from '../mapper.js';
+import { renderMapper }              from './mapper-ui.js';
 import { SCALES, TUNINGS, NOTE_NAMES } from '../scale.js';
-import { makeKbdView, midiOf, OSC1_COL, OSC2_COL } from './keyboard.js';
+import { makeKbdView, midiOf, OSC_COLS } from './keyboard.js';
 import { isDesktop } from './viewport.js';
 import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS, GATE_AT_OPTS, GATE_AT_DEFAULT,
          makeDynamics } from '../dynamics.js';
@@ -38,13 +39,13 @@ const bestLine = () => {
   const b = playalong.bestFor(song, diff);
   return b ? `BEST ${b.score} · ${b.grade} · ${Math.round(b.acc * 100)}%` : '—';
 };
+// One marker per live oscillator, so the picker keeps telling the truth as the
+// bank is resized rather than showing a fixed pair of dots.
+const oscMidis = () => Array.from({ length: engine.getOscCount() },
+  (_, i) => midiOf(engine.PARAMS[`osc${i + 1}_freq`].val));
 const kbdOpts = () => {
   const t = engine.getTuning();
-  return {
-    root: t.root, scale: t.scale,
-    m1: midiOf(engine.PARAMS.osc1_freq.val),
-    m2: midiOf(engine.PARAMS.osc2_freq.val),
-  };
+  return { root: t.root, scale: t.scale, markers: oscMidis() };
 };
 
 // Tick marks at the snap values, drawn on the track as background gradients
@@ -58,6 +59,7 @@ const tickCss = p => !p.snaps?.length ? '' : p.snaps.map(s => {
 
 export function renderAudioPanel() {
   const panel = document.getElementById('audio-panel');
+  const nOsc = engine.getOscCount();
 
   const tickBg = p => tickCss(p) ? ` style="background-image:${tickCss(p)}"` : '';
 
@@ -115,7 +117,7 @@ export function renderAudioPanel() {
     </div>
     ${gestureSectionsHTML()}
     <div class="audio-section">
-      <div class="audio-section-label" style="display:flex;align-items:center;">
+      <div class="audio-section-label">
         Pitch Quantize
         <div class="wave-btn${t.enabled ? ' on' : ''}" id="quant-toggle"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${t.enabled ? 'ON' : 'OFF'}</div>
@@ -129,7 +131,7 @@ export function renderAudioPanel() {
       <div id="quant-notes" class="quant-notes">${t.enabled ? '' : '—'}</div>
     </div>
     <div class="audio-section">
-      <div class="audio-section-label" style="display:flex;align-items:center;">
+      <div class="audio-section-label">
         Volume Quantize
         <div class="wave-btn${vq.enabled ? ' on' : ''}" id="vq-toggle"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${vq.enabled ? 'ON' : 'OFF'}</div>
@@ -148,19 +150,27 @@ export function renderAudioPanel() {
       </div>
       <div id="vq-level" class="quant-notes">${vq.enabled ? '' : '—'}</div>
     </div>
-    <div class="audio-section">
-      <div class="audio-section-label">Osc 1 Waveform</div>
-      <div class="wave-btns" id="osc1-waves">
-        ${waveBtn('sine','SIN','1')}${waveBtn('triangle','TRI','1')}
-        ${waveBtn('sawtooth','SAW','1')}${waveBtn('square','SQR','1')}
+    <div class="audio-section" data-sec="oscillators">
+      <div class="audio-section-label">Oscillators
+        <div class="num-step" style="margin-left:auto;">
+          <button class="wave-btn" id="osc-minus" type="button" aria-label="Remove an oscillator"
+                  title="Remove the last oscillator"${nOsc <= 1 ? ' disabled' : ''}>−</button>
+          <input type="number" id="osc-count" min="1" max="${engine.MAX_OSCS}" step="1"
+                 value="${nOsc}" inputmode="numeric" aria-label="Number of oscillators"
+                 title="How many oscillators the lead voice runs. Each gets its own pitch, detune, waveform and level.">
+          <button class="wave-btn" id="osc-plus" type="button" aria-label="Add an oscillator"
+                  title="Add an oscillator"${nOsc >= engine.MAX_OSCS ? ' disabled' : ''}>+</button>
+        </div>
       </div>
-    </div>
-    <div class="audio-section">
-      <div class="audio-section-label">Osc 2 Waveform</div>
-      <div class="wave-btns" id="osc2-waves">
-        ${waveBtn('sine','SIN','2')}${waveBtn('triangle','TRI','2')}
-        ${waveBtn('sawtooth','SAW','2')}${waveBtn('square','SQR','2')}
-      </div>
+      ${Array.from({ length: nOsc }, (_, i) => `
+        <div class="osc-row">
+          <span class="osc-row-n" style="color:${OSC_COLS[i % OSC_COLS.length]}">${i + 1}</span>
+          <div class="wave-btns" data-osc="${i}">
+            ${waveBtn('sine','SIN',i)}${waveBtn('triangle','TRI',i)}
+            ${waveBtn('sawtooth','SAW',i)}${waveBtn('square','SQR',i)}
+          </div>
+        </div>`).join('')}
+      <div class="osc-hint">Each has its own level: Osc1 Vol… under Parameters</div>
     </div>
     <div class="audio-section">
       <div class="audio-section-label">Filter Type</div>
@@ -231,20 +241,42 @@ export function renderAudioPanel() {
     sel.value = 'custom';
   };
 
-  document.getElementById('osc1-waves').querySelectorAll('.wave-btn').forEach(b => {
-    b.addEventListener('click', () => {
-      engine.setOsc1Type(b.dataset.type);
-      activateWave(b.parentElement, b.dataset.type);
-      syncKitToCustom();
+  // One handler for every slot's waveform buttons — the row count is a runtime
+  // value, so the group's own data-osc says which oscillator it drives.
+  document.querySelectorAll('.wave-btns[data-osc]').forEach(group => {
+    group.querySelectorAll('.wave-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        engine.setOscType(+group.dataset.osc, b.dataset.type);
+        activateWave(group, b.dataset.type);
+        syncKitToCustom();
+      });
     });
   });
-  document.getElementById('osc2-waves').querySelectorAll('.wave-btn').forEach(b => {
-    b.addEventListener('click', () => {
-      engine.setOsc2Type(b.dataset.type);
-      activateWave(b.parentElement, b.dataset.type);
-      syncKitToCustom();
-    });
-  });
+
+  // Bank size. Shrinking orphans any cable wired to a slot that no longer
+  // exists — engine.set() ignores an unknown key, so it would go quiet rather
+  // than break, but the patchbay would keep drawing a node for a parameter that
+  // is gone. Prune those cables instead of leaving them to confuse.
+  const setCount = n => {
+    const before = engine.getOscCount();
+    const after = engine.setOscCount(n);
+    if (after === before) return;
+    if (after < before) {
+      mapper.mappings
+        .filter(m => !engine.PARAMS[m.audioParam])
+        .map(m => m.id)
+        .forEach(id => mapper.remove(id));
+      renderMapper();     // the pruned cables' nodes have to leave the canvas too
+    }
+    syncKitToCustom();
+    renderAudioPanel();
+  };
+  document.getElementById('osc-minus').addEventListener('click', () => setCount(engine.getOscCount() - 1));
+  document.getElementById('osc-plus') .addEventListener('click', () => setCount(engine.getOscCount() + 1));
+  const oscCountInput = document.getElementById('osc-count');
+  // `change`, not `input`: typing "12" passes through "1", and re-rendering the
+  // panel on every keystroke would tear the field out from under the caret.
+  oscCountInput.addEventListener('change', e => setCount(e.target.value));
   document.getElementById('filt-types').querySelectorAll('.wave-btn').forEach(b => {
     b.addEventListener('click', () => {
       engine.setFilterType(b.dataset.ftype);
@@ -353,8 +385,10 @@ export function renderAudioPanel() {
 
   // Reflect the engine's actual waveform / filter selections (they may have
   // just been restored from a saved preset, not the factory defaults).
-  document.getElementById('osc1-waves').querySelector(`[data-type="${engine.getOsc1Type()}"]`)?.classList.add('on');
-  document.getElementById('osc2-waves').querySelector(`[data-type="${engine.getOsc2Type()}"]`)?.classList.add('on');
+  // A kit's custom harmonic table ('custom:piano') matches none of the four
+  // buttons, so a row can legitimately show nothing selected.
+  document.querySelectorAll('.wave-btns[data-osc]').forEach(group =>
+    group.querySelector(`[data-type="${engine.getOscType(+group.dataset.osc)}"]`)?.classList.add('on'));
   document.getElementById('filt-types').querySelector(`[data-ftype="${engine.getFilterType()}"]`)?.classList.add('on');
   document.getElementById('cfilt-types').querySelector(`[data-ftype="${engine.getChordFilterType()}"]`)?.classList.add('on');
 
@@ -384,8 +418,9 @@ export function updateAudioSliders() {
   if (engine.getTuning().enabled) {
     const notesEl = document.getElementById('quant-notes');
     if (notesEl) {
-      const html = `OSC1 <b style="color:${OSC1_COL}">${engine.noteFor('osc1_freq')}</b>`
-                 + `  ·  OSC2 <b style="color:${OSC2_COL}">${engine.noteFor('osc2_freq')}</b>`;
+      const html = Array.from({ length: engine.getOscCount() }, (_, i) =>
+        `OSC${i + 1} <b style="color:${OSC_COLS[i % OSC_COLS.length]}">`
+        + `${engine.noteFor(`osc${i + 1}_freq`)}</b>`).join('  ·  ');
       if (notesEl.innerHTML !== html) notesEl.innerHTML = html;
     }
     panelKbd.draw(kbdOpts());

@@ -5,7 +5,7 @@
 
 import { engine }              from '../engine.js';
 import { playalong }           from '../playalong.js';
-import { keyboardLayout, isWhite, KBD_LO, KBD_HI, OSC1_COL } from './keyboard.js';
+import { keyboardLayout, isWhite, KBD_LO, KBD_HI, OSC_COLS } from './keyboard.js';
 import { NOTE_NAMES, SCALES }  from '../scale.js';
 import { setFsGameRenderer }   from './fullscreen.js';
 import { renderAudioPanel }    from './audio-ui.js';
@@ -43,7 +43,7 @@ function drawKeys(ctx, W, yTop, keysH, root, scale, playerMidi) {
   if (playerMidi !== null && playerMidi >= KBD_LO && playerMidi <= KBD_HI) {
     const x = L.keyCenter(playerMidi);
     ctx.beginPath(); ctx.arc(x, yTop + keysH - 8, Math.min(L.ww * 0.45, 6), 0, Math.PI * 2);
-    ctx.fillStyle = OSC1_COL; ctx.fill();
+    ctx.fillStyle = OSC_COLS[0]; ctx.fill();
     ctx.lineWidth = 1.5; ctx.strokeStyle = '#0b0d12'; ctx.stroke();
   }
   return L;
@@ -79,7 +79,7 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
       const age = view.nowMs - (n.hitAtMs ?? n.tMs);
       if (age > 350) continue;                              // quick flash, tier-colored
       ctx.globalAlpha = Math.max(0, 1 - age / 350);
-      ctx.fillStyle = n.tier === 'perfect' ? '#f0a500' : OSC1_COL;
+      ctx.fillStyle = n.tier === 'perfect' ? '#f0a500' : OSC_COLS[0];
       ctx.fillRect(x - w / 2, hitY - 10, w, 10);
       ctx.globalAlpha = 1;
       continue;

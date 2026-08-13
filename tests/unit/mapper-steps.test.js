@@ -146,8 +146,15 @@ test('every preset references real params and real signals', async () => {
   for (const p of PRESETS) {
     assert.ok(p.id && p.name && p.hint, `${p.id} missing metadata`);
     assert.ok(p.mappings.length > 0, `${p.id} has no mappings`);
+    // A preset may name oscillator slots the bank does not currently have —
+    // most are voiced for two and the default bank is one — so APPLYING it has
+    // to make them real. That is the guarantee worth pinning: a preset whose
+    // params don't exist afterwards is a patch with dead cables in it.
+    engine.setOscCount(1);
+    mapper.applyPreset(p.id);
     for (const [param, sig, lo, hi] of p.mappings) {
-      assert.ok(engine.PARAMS[param], `${p.id}: unknown audio param ${param}`);
+      assert.ok(engine.PARAMS[param],
+        `${p.id}: ${param} still missing after the preset was applied`);
       assert.ok(bus.signals.has(sig), `${p.id}: unknown signal ${sig}`);
       assert.ok(Number.isFinite(lo) && Number.isFinite(hi), `${p.id}: bad range on ${param}`);
       const P = engine.PARAMS[param];
@@ -155,6 +162,20 @@ test('every preset references real params and real signals', async () => {
         `${p.id}: ${param} range ${lo}..${hi} escapes ${P.min}..${P.max}`);
     }
   }
+});
+
+test('a preset voiced for more oscillators grows the bank to fit', () => {
+  engine.setOscCount(1);
+  const p = PRESETS.find(x => x.mappings.some(m => /^osc2_/.test(m[0])));
+  assert.ok(p, 'no preset uses a second oscillator — this test has gone stale');
+  mapper.applyPreset(p.id);
+  assert.ok(engine.getOscCount() >= 2, `bank stayed at ${engine.getOscCount()}`);
+  // …and never the other way: a one-oscillator patch must not delete slots the
+  // player added.
+  engine.setOscCount(4);
+  mapper.applyPreset('face-brow-mouth');
+  assert.equal(engine.getOscCount(), 4, 'a smaller patch shrank the bank');
+  engine.setOscCount(1);
 });
 
 test('preset ids are unique and the default exists', () => {

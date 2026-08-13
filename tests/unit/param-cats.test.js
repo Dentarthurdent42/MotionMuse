@@ -13,8 +13,14 @@ globalThis.localStorage ??= {
 const { engine }     = await import('../../src/engine.js');
 const { PARAM_CATS } = await import('../../src/ui/mapper-ui.js');
 
-test('every engine param appears in exactly one picker category', () => {
-  const inCats = PARAM_CATS.flatMap(([, keys]) => keys);
+// PARAM_CATS is a function now: the oscillator bank is resizable, so which keys
+// exist is a runtime value. Checked at more than one bank size, since a table
+// that only agreed with the engine at the default count would be exactly the
+// silent-unreachable-param bug this test exists to catch.
+for (const count of [1, 2, 5, 8]) {
+test(`every engine param appears in exactly one picker category (${count} osc)`, () => {
+  engine.setOscCount(count);
+  const inCats = PARAM_CATS().flatMap(([, keys]) => keys);
   const dupes = inCats.filter((k, i) => inCats.indexOf(k) !== i);
   assert.deepEqual(dupes, [], `listed twice: ${dupes}`);
   const missing = Object.keys(engine.PARAMS).filter(k => !inCats.includes(k));
@@ -22,8 +28,22 @@ test('every engine param appears in exactly one picker category', () => {
     `unreachable from the patchbay picker: ${missing}`);
 });
 
-test('the picker lists no params the engine does not have', () => {
-  const ghosts = PARAM_CATS.flatMap(([, keys]) => keys)
+test(`the picker lists no params the engine does not have (${count} osc)`, () => {
+  engine.setOscCount(count);
+  const ghosts = PARAM_CATS().flatMap(([, keys]) => keys)
     .filter(k => !engine.PARAMS[k]);
   assert.deepEqual(ghosts, [], `picker offers nonexistent params: ${ghosts}`);
+});
+}
+
+test('the bank starts at one oscillator', async () => {
+  const { engine: fresh } = await import('../../src/engine.js');
+  // Same module instance the tests above resized, so assert on the shape of a
+  // freshly-built slot list rather than the live count.
+  fresh.setOscCount(1);
+  assert.equal(fresh.getOscCount(), 1);
+  assert.ok(fresh.PARAMS.osc1_volume, 'oscillator 1 has its own level');
+  assert.equal(fresh.PARAMS.osc2_volume, undefined, 'slot 2 is absent by default');
+  assert.equal(fresh.PARAMS.osc_mix, undefined, 'the 1<->2 crossfade is gone');
+  assert.equal(fresh.PARAMS.volume.label, 'Main Vol');
 });

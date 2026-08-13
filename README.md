@@ -39,7 +39,7 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 - **Tracking toggles**: **✋ L**, **R ✋** and **🧍 POSE** in the header (once the camera is on) switch each model off outright. Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` plus a swappable **pose backend** (`src/posebackends.js` — MediaPipe lite/full/heavy or TF.js MoveNet), extracts ~30 signals per frame, and writes them into the bus. Hand and pose inference **alternate frames** (each still ≥15 Hz at a 30 fps camera) so per-frame cost stays half of running both, and every positional signal passes through a per-signal **One-Euro filter** (`src/filter.js`, applied in `bus.update`) — the standard low-latency jitter filter: heavy smoothing on a held pose, light smoothing on fast moves.
 - **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert, invert+ease), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **inverted** with its `⇅ INVERT` toggle — the input's high end then drives the output's low end, which composes with (rather than replaces) the curve, so any response shape can run either way round. A cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired. An output also *remembers* its range, curve, steps and invert flag, so re-wiring a different input into it (or unplugging and re-plugging) doesn't reset them. Each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
-- **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter, and the chord-mode voice bank through a **second, independent filter and level** (`chord_filter_freq` / `chord_filter_q` / `chord_volume`, with `osc_volume` as the lead's counterpart) — the two sources converge into a shared convolution reverb and master gain. All driven by the Web Audio API with 25 ms parameter smoothing. **Volume is the exception**: it snaps onto a perceptual step ladder and fires *one* envelope per level change instead of re-smoothing every frame — see Volume quantisation below. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
+- **Audio Engine** (`src/engine.js`): a **resizable oscillator bank** — one oscillator by default, up to eight, each with its own frequency, detune, waveform and **level** (`oscN_freq` / `oscN_detune` / `oscN_volume`) — through a BiquadFilter, and the chord-mode voice bank through a **second, independent filter and level** (`chord_filter_freq` / `chord_filter_q` / `chord_volume`, with `osc_volume` as the whole bank's level, the lead's counterpart to `chord_volume`). The two sources converge into a shared convolution reverb and main gain. All driven by the Web Audio API with 25 ms parameter smoothing. **Volume is the exception**: it snaps onto a perceptual step ladder and fires *one* envelope per level change instead of re-smoothing every frame — see Volume quantisation below. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
 - **Dynamics** (`src/dynamics.js`): the volume step ladder — equal-loudness (dB) levels, an exact-silence bottom rung, and the sticky rounding that keeps a jittery hand from chattering between levels.
 
@@ -98,6 +98,37 @@ invisible on near-white, so every accent is re-chosen rather than reused.
 75 pairs across 5 themes, worst 5.10:1 against a 4.5:1 threshold. Checking only
 `:root` would have verified the default palette and let the other four ship
 unreadable, which is exactly the trap a light theme sets.
+
+## The oscillator bank
+
+The **Oscillators** panel starts with **one** oscillator and a `− n +` stepper to
+add more, up to eight. Each one gets a row of waveform buttons, a colour that
+matches its marker on the pitch-quantise keyboard, and its **own level** —
+`Osc1 Vol`, `Osc2 Vol`, … under Parameters, mappable from the patchbay like
+anything else.
+
+This replaced a fixed pair of oscillators balanced by a single `Osc Mix 1↔2`
+crossfade. One oscillator was not expressible with that arrangement (the mix
+could lean but the second voice was always in the graph) and three were
+impossible. Per-oscillator level is a superset: mix *m* was exactly osc1 at
+`1-m` and osc2 at `m`, which is how saved presets are migrated on load rather
+than dropped.
+
+Two behaviours worth knowing:
+
+- **Added oscillators arrive at half level.** Everything downstream — the volume
+  ladder's headroom, the reverb send, the main-gain default — is tuned around one
+  voice at unity, and two unity sawtooths into that clip.
+- **A patch grows the bank to fit it.** Most sound kits and mapping presets are
+  voiced for two oscillators, so applying one resizes the bank rather than
+  silently discarding the cables it can't host. Loading a *smaller* patch never
+  shrinks the bank — that would delete slots you added. Shrinking by hand does
+  prune the cables that pointed at the removed slots, since a mapping to a
+  parameter that no longer exists is a patchbay node with nothing behind it.
+
+A slot's values and waveform survive its removal, so shrinking to hear one voice
+and growing back returns the sound you had instead of resetting the slot you were
+part-way through dialling in.
 
 ## Sections: containers, scrolling and resizing
 
@@ -220,7 +251,7 @@ target — and a hand never lands on exactly zero, so "quiet" is a persistent
 low-level tone rather than silence. Together they mean notes can't be separated
 or re-attacked.
 
-The **Volume Quantize** panel (under Pitch Quantize) snaps the master gain onto
+The **Volume Quantize** panel (under Pitch Quantize) snaps the main gain onto
 discrete levels, which is what fixes it *indirectly*: once the value is
 quantised, changes become rare events, so the engine can fire **one envelope per
 level change** and let it complete. The stepping is the enabler; the completed
@@ -449,7 +480,7 @@ filter and level** — `Chord Cutoff` / `Chord Q` / `Chord Vol`, plus a **Chord
 Filter Type** row — so the chord bed can sit darker or quieter than the lead
 (or the other way round) without either touching the other. `Osc Vol` is the
 lead's own level on the same footing. Both sources then share the reverb and
-**Master Vol**, so the volume ladder and its silence gate still govern
+**Main Vol**, so the volume ladder and its silence gate still govern
 everything — chords obey dynamics and go silent when the gate closes. The LFO
 wobbles only the *lead* filter; for movement on the chord bed, map any signal
 to `chord_filter_freq` in the patchbay. Custom

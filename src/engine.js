@@ -2,8 +2,8 @@ import { makeQuantizer } from './scale.js';
 import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 
 export const engine = (() => {
-  let ctx, analyser, osc1, osc2, osc1g, osc2g, filt, oscVol, lfo, lfog,
-      cfilt, chordVol, revb, revgain, drygain, mastg, outg;
+  let ctx, analyser, filt, oscVol, lfo, lfog,
+      cfilt, chordVol, revb, revgain, drygain, maing, outg;
   let started = false;
 
   // Muted on launch, always. The engine now starts with the page so every
@@ -31,15 +31,41 @@ export const engine = (() => {
   const CHORD_ENV_MIN = 0.001;
   let chordEnv = { attack: 0.02, decay: 0.12, sustain: 0.7, release: 0.35 };
 
+  // ── Oscillator bank ──────────────────────────────────────────────────
+  // Dynamic: ONE oscillator by default, up to MAX_OSCS, each with its own
+  // frequency, detune, waveform and level. It used to be exactly two, balanced
+  // by a single `osc_mix` crossfade — which meant a single oscillator was not
+  // expressible (mix could lean but the other voice was always in the graph)
+  // and three were impossible. Per-oscillator level replaces the crossfade
+  // outright; `osc_volume` remains the level of the whole bank, the lead's
+  // counterpart to `chord_volume`.
+  const MAX_OSCS = 8;
+  // Starting pitch per slot: a harmonic series over 110 Hz, so slots 1 and 2
+  // keep their old 220/330 defaults and an added one lands somewhere musical
+  // rather than in unison with what is already sounding.
+  const oscFreqDefault = i => 110 * (i + 2);
+  const OSC_TYPE_CYCLE = ['sine', 'triangle', 'sawtooth', 'square'];
+  // Added oscillators arrive at HALF level. Everything downstream — the volume
+  // ladder's headroom, the reverb send, the master default — is tuned around
+  // one voice at unity, and two unity sawtooths into it clip.
+  const oscVolDefault = i => (i === 0 ? 1 : 0.5);
+
+  let oscCount = 1;
+  let oscs = [], oscGains = [];      // live nodes; length === oscCount once started
+  // Waveform per slot, kept for every slot rather than only the live ones, so
+  // shrinking the bank and growing it again brings back the timbre you chose
+  // instead of resetting it.
+  let oscTypes = Array.from({ length: MAX_OSCS }, (_, i) => OSC_TYPE_CYCLE[i % OSC_TYPE_CYCLE.length]);
+
   // Pitch quantisation: snap oscillator frequencies onto a scale + tuning.
-  const FREQ_KEYS = new Set(['osc1_freq', 'osc2_freq']);
+  const OSC_KEY_RE = /^osc(\d+)_(freq|detune|volume)$/;
+  const isFreqKey = k => /^osc\d+_freq$/.test(k);
   let tuning = { enabled: false, root: 'C', scale: 'chromatic', system: 'equal (12-TET)' };
   let quant  = makeQuantizer({ root: tuning.root, scale: tuning.scale, tuning: tuning.system });
 
-  // Waveform / filter selections. Kept as state (not only on the live nodes)
-  // so they survive save/load and a stop→start cycle.
-  let osc1Type = 'sine', osc2Type = 'triangle', filterType = 'lowpass',
-      chordFilterType = 'lowpass';
+  // Filter selections. Kept as state (not only on the live nodes) so they
+  // survive save/load and a stop→start cycle.
+  let filterType = 'lowpass', chordFilterType = 'lowpass';
 
   // Custom waveforms ('custom:<name>') for the sound kit — harmonic tables
   // registered up front, resolved to PeriodicWaves lazily per AudioContext.
@@ -66,12 +92,24 @@ export const engine = (() => {
   // Audio parameter definitions — name, display label, min, max, default value.
   // `snaps` marks musically meaningful values the slider magnetically detents
   // to when dragged near them (center detune, half volume, unity Q, …).
-  const PARAMS = {
-    osc1_freq:   { label: 'Osc1 Freq',     min: 40,   max: 2000,  val: 220,  unit: 'Hz' },
-    osc1_detune: { label: 'Osc1 Detune',   min: -100, max: 100,   val: 0,    unit: '¢',  snaps: [-50, 0, 50] },
-    osc2_freq:   { label: 'Osc2 Freq',     min: 40,   max: 2000,  val: 330,  unit: 'Hz' },
-    osc2_detune: { label: 'Osc2 Detune',   min: -100, max: 100,   val: 0,    unit: '¢',  snaps: [-50, 0, 50] },
-    osc_mix:     { label: 'Osc Mix 1↔2',  min: 0,    max: 1,     val: 0.0,   snaps: [0.5] },
+  const PARAMS = {};
+
+  // Three params per oscillator slot, generated rather than written out: the
+  // bank is resizable, so a hand-written list would cap it at whatever someone
+  // last typed.
+  const oscParamDefs = i => {
+    const n = i + 1;
+    return {
+      [`osc${n}_freq`]:   { label: `Osc${n} Freq`,   min: 40,   max: 2000, val: oscFreqDefault(i), unit: 'Hz' },
+      [`osc${n}_detune`]: { label: `Osc${n} Detune`, min: -100, max: 100,  val: 0, unit: '¢', snaps: [-50, 0, 50] },
+      [`osc${n}_volume`]: { label: `Osc${n} Vol`,    min: 0,    max: 1,    val: oscVolDefault(i), snaps: [0.5] },
+    };
+  };
+
+  // Everything downstream of the bank. Defined once: these exact objects become
+  // the live PARAMS entries, so anything holding a reference (the volume
+  // ladder's `snaps`, a cached slider ref) keeps working across a rebuild.
+  const TAIL_DEFS = {
     filter_freq: { label: 'Filter Cutoff', min: 80,   max: 16000, val: 3000, unit: 'Hz' },
     filter_q:    { label: 'Filter Q',      min: 0.1,  max: 18,    val: 1,     snaps: [1] },
     osc_volume:  { label: 'Osc Vol',       min: 0,    max: 1,     val: 1,     snaps: [0.5] },
@@ -84,8 +122,29 @@ export const engine = (() => {
     lfo_rate:    { label: 'LFO Rate',      min: 0.05, max: 20,    val: 1,    unit: 'Hz' },
     lfo_depth:   { label: 'LFO Depth',     min: 0,    max: 1,     val: 0,     snaps: [0.5] },
     reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12,  snaps: [0.25, 0.5] },
-    volume:      { label: 'Master Vol',    min: 0,    max: 1,     val: 0.55,  snaps: [0.25, 0.5, 0.75] },
+    volume:      { label: 'Main Vol',      min: 0,    max: 1,     val: 0.55,  snaps: [0.25, 0.5, 0.75] },
   };
+
+  // Every oscillator param object ever built, by key. A slot's values outlive
+  // its removal for the same reason its waveform does: shrinking the bank to
+  // hear one voice and growing it back should return the sound you had, not
+  // reset the slot you were mid-way through dialling in.
+  const oscParamCache = {};
+
+  // PARAMS is mutated in place, never reassigned: the mapper, the slider panel
+  // and the tests all hold this exact object. Rebuilt end-to-end rather than
+  // patched so the key ORDER stays canonical — deleting slot 2 and adding it
+  // back would otherwise leave its rows sitting after Main Vol in the panel.
+  // Entries are the same objects each time, so values and any live reference to
+  // them (the volume ladder writes through `snaps`) survive a resize.
+  function rebuildParams() {
+    for (const k in PARAMS) delete PARAMS[k];
+    for (let i = 0; i < oscCount; i++)
+      for (const [k, def] of Object.entries(oscParamDefs(i)))
+        PARAMS[k] = oscParamCache[k] ??= def;
+    for (const [k, def] of Object.entries(TAIL_DEFS)) PARAMS[k] = def;
+  }
+  rebuildParams();
 
   // Volume articulation. Every other param re-schedules a 25 ms ramp on every
   // frame, which never settles — a permanent glide. That's fine for a filter
@@ -97,7 +156,7 @@ export const engine = (() => {
   let volStep = { enabled: true, steps: 6, floorDb: -30, gate: true,
                   hysteresis: 0.3, edge: 'key', gateAt: GATE_AT_DEFAULT };
   let dyn = makeDynamics(volStep);
-  let volIdx = null;    // rung currently scheduled on mastg (null = unknown)
+  let volIdx = null;    // rung currently scheduled on maing (null = unknown)
   let volEdges = 0;     // envelopes fired — observability, and what the tests assert on
 
   // Tick/detent positions for the volume slider: drop rungs closer together
@@ -124,10 +183,6 @@ export const engine = (() => {
     analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
 
     periodicCache = new Map();               // PeriodicWaves are per-context
-    osc1 = ctx.createOscillator(); applyType(osc1, osc1Type);
-    osc2 = ctx.createOscillator(); applyType(osc2, osc2Type);
-    osc1g = ctx.createGain(); osc1g.gain.value = 1 - PARAMS.osc_mix.val;
-    osc2g = ctx.createGain(); osc2g.gain.value = PARAMS.osc_mix.val;
     filt  = ctx.createBiquadFilter(); filt.type = filterType;
     oscVol = ctx.createGain(); oscVol.gain.value = PARAMS.osc_volume.val;
     cfilt = ctx.createBiquadFilter(); cfilt.type = chordFilterType;
@@ -137,19 +192,15 @@ export const engine = (() => {
     revb  = ctx.createConvolver(); revb.buffer = makeImpulse(ctx);
     revgain = ctx.createGain(); revgain.gain.value = PARAMS.reverb_mix.val;
     drygain = ctx.createGain(); drygain.gain.value = 1 - PARAMS.reverb_mix.val;
-    mastg   = ctx.createGain(); mastg.gain.value = PARAMS.volume.val;
+    maing   = ctx.createGain(); maing.gain.value = PARAMS.volume.val;
     // Mute sits AFTER the analyser (see the graph below), which is what lets
     // the visualiser keep drawing a live waveform while nothing is audible —
     // the difference between "muted" and "broken" made visible. It also keeps
     // mute completely clear of the volume ladder and its silence gate, which
-    // live on mastg and are measured at the analyser.
+    // live on maing and are measured at the analyser.
     outg    = ctx.createGain(); outg.gain.value = muted ? 0 : 1;
 
     // Apply stored param values
-    osc1.frequency.value = PARAMS.osc1_freq.val;
-    osc1.detune.value    = PARAMS.osc1_detune.val;
-    osc2.frequency.value = PARAMS.osc2_freq.val;
-    osc2.detune.value    = PARAMS.osc2_detune.val;
     filt.frequency.value  = PARAMS.filter_freq.val;
     filt.Q.value          = PARAMS.filter_q.val;
     cfilt.frequency.value = PARAMS.chord_filter_freq.val;
@@ -157,19 +208,18 @@ export const engine = (() => {
     lfo.frequency.value   = PARAMS.lfo_rate.val;
 
     // Graph — the two sources get their own filter and level, then share the
-    // reverb/master/mute tail, so each can be shaped without touching the
-    // other while Master Vol (and its step ladder) still governs everything:
+    // reverb/main/mute tail, so each can be shaped without touching the other
+    // while Main Vol (and its step ladder) still governs everything:
     //
-    //   oscs   → filt  → oscVol   ┐
-    //                             ├→ [dry + reverb] → master → analyser → mute → out
-    //   chords → cfilt → chordVol ┘
-    osc1.connect(osc1g); osc2.connect(osc2g);
-    osc1g.connect(filt); osc2g.connect(filt);
+    //   osc_i → oscGain_i ┐
+    //                     ├→ filt  → oscVol   ┐
+    //                     ┘                   ├→ [dry + reverb] → main → analyser → mute → out
+    //   chords → cfilt → chordVol             ┘
     filt.connect(oscVol);
     oscVol.connect(drygain); oscVol.connect(revb);
     revb.connect(revgain);
-    drygain.connect(mastg); revgain.connect(mastg);
-    mastg.connect(analyser); analyser.connect(outg); outg.connect(ctx.destination);
+    drygain.connect(maing); revgain.connect(maing);
+    maing.connect(analyser); analyser.connect(outg); outg.connect(ctx.destination);
 
     // LFO → the *lead* filter's cutoff only. Chords deliberately keep a steady
     // filter — a wobble that suits a lead line turns sustained chords to mud;
@@ -184,35 +234,87 @@ export const engine = (() => {
     chordOscs = []; chordVGains = []; chordOn = false;
     for (let i = 0; i < CHORD_VOICES; i++) {
       const o = ctx.createOscillator(), g = ctx.createGain();
-      applyType(o, osc1Type);
+      applyType(o, oscTypes[0]);
       o.frequency.value = 220;
       g.gain.value = 0;
       o.connect(g); g.connect(chordGain);
       chordOscs.push(o); chordVGains.push(g);
     }
 
-    osc1.start(); osc2.start(); lfo.start();
+    lfo.start();
     chordOscs.forEach(o => o.start());
+    // The bank last, so `started` is already meaningful to addOsc() and the
+    // node it builds reads its values from PARAMS like any other resize.
     started = true;
+    oscs = []; oscGains = [];
+    for (let i = 0; i < oscCount; i++) addOsc(i);
   }
+
+  // One oscillator slot: node, its level gain, into the shared lead filter.
+  function addOsc(i) {
+    const n = i + 1;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    applyType(o, oscTypes[i]);
+    o.frequency.value = PARAMS[`osc${n}_freq`].val;
+    o.detune.value    = PARAMS[`osc${n}_detune`].val;
+    g.gain.value      = PARAMS[`osc${n}_volume`].val;
+    o.connect(g); g.connect(filt);
+    o.start();
+    oscs[i] = o; oscGains[i] = g;
+  }
+
+  // Drop every slot from `from` up. Stopped as well as disconnected: a running
+  // OscillatorNode with no outputs is still a node the context keeps alive.
+  function dropOscs(from) {
+    for (let i = from; i < oscs.length; i++) {
+      try { oscs[i].stop(); } catch { /* already stopped */ }
+      oscs[i].disconnect();
+      oscGains[i].disconnect();
+    }
+    oscs.length = Math.max(0, from);
+    oscGains.length = Math.max(0, from);
+  }
+
+  // Resize the bank. Params are rebuilt either way; the live nodes only when
+  // the engine is running, so this works before start() too (the panel is
+  // interactive from the first paint).
+  function setOscCount(n) {
+    const next = Math.max(1, Math.min(MAX_OSCS, Math.round(Number(n)) || 1));
+    if (next === oscCount) return oscCount;
+    const prev = oscCount;
+    oscCount = next;
+    rebuildParams();
+    if (started) {
+      if (next > prev) for (let i = prev; i < next; i++) addOsc(i);
+      else dropOscs(next);
+    }
+    return oscCount;
+  }
+  const getOscCount = () => oscCount;
 
   function set(key, raw) {
     const p = PARAMS[key];
     if (!p) return;
-    if (tuning.enabled && FREQ_KEYS.has(key)) raw = quant.quantize(raw);
+    if (tuning.enabled && isFreqKey(key)) raw = quant.quantize(raw);
     if (volStep.enabled && key === 'volume') return setVolume(raw);
     p.val = Math.max(p.min, Math.min(p.max, raw));
     if (!started) return;
     const t = ctx.currentTime, sm = 0.025; // 25 ms smoothing
+
+    // Oscillator params are matched, not enumerated — there are 3 per slot and
+    // the number of slots is a runtime value.
+    const om = OSC_KEY_RE.exec(key);
+    if (om) {
+      const i = +om[1] - 1;
+      const o = oscs[i], g = oscGains[i];
+      if (!o) return;                       // slot removed while a cable still drove it
+      if (om[2] === 'freq')   o.frequency.linearRampToValueAtTime(p.val, t + sm);
+      if (om[2] === 'detune') o.detune.linearRampToValueAtTime(p.val, t + sm);
+      if (om[2] === 'volume') g.gain.linearRampToValueAtTime(p.val, t + sm);
+      return;
+    }
+
     switch (key) {
-      case 'osc1_freq':   osc1.frequency.linearRampToValueAtTime(p.val, t + sm); break;
-      case 'osc1_detune': osc1.detune.linearRampToValueAtTime(p.val, t + sm); break;
-      case 'osc2_freq':   osc2.frequency.linearRampToValueAtTime(p.val, t + sm); break;
-      case 'osc2_detune': osc2.detune.linearRampToValueAtTime(p.val, t + sm); break;
-      case 'osc_mix':
-        osc1g.gain.linearRampToValueAtTime(1 - p.val, t + sm);
-        osc2g.gain.linearRampToValueAtTime(p.val, t + sm);
-        break;
       case 'filter_freq': filt.frequency.linearRampToValueAtTime(p.val, t + sm); break;
       case 'filter_q':    filt.Q.linearRampToValueAtTime(p.val, t + sm); break;
       case 'osc_volume':  oscVol.gain.linearRampToValueAtTime(p.val, t + sm); break;
@@ -225,15 +327,15 @@ export const engine = (() => {
         revgain.gain.linearRampToValueAtTime(p.val, t + sm);
         drygain.gain.linearRampToValueAtTime(1 - p.val, t + sm);
         break;
-      case 'volume': mastg.gain.linearRampToValueAtTime(p.val, t + sm); break;
+      case 'volume': maing.gain.linearRampToValueAtTime(p.val, t + sm); break;
     }
   }
 
-  // Stepped master gain. The early-out is the whole point: while a rung is
-  // held the AudioParam is not touched at all, so the envelope scheduled on
-  // entry actually completes — that's the crisp attack and the real silence.
+  // Stepped main gain. The early-out is the whole point: while a rung is held
+  // the AudioParam is not touched at all, so the envelope scheduled on entry
+  // actually completes — that's the crisp attack and the real silence.
   // Safe to cancelScheduledValues here only because nothing else automates
-  // mastg.gain (sole writers: start() and set()); keep that invariant.
+  // maing.gain (sole writers: start() and set()); keep that invariant.
   function setVolume(raw) {
     const p = PARAMS.volume;
     const q = dyn.quantize(Math.max(p.min, Math.min(p.max, raw)), volIdx);
@@ -249,23 +351,22 @@ export const engine = (() => {
     const ms = (prev === null || q.idx > prev) ? e.attackMs
              : (q.gain === 0 ? e.gateMs : e.releaseMs);
     const t = ctx.currentTime;
-    const cur = mastg.gain.value;                  // read before cancelling
-    mastg.gain.cancelScheduledValues(t);
-    mastg.gain.setValueAtTime(cur, t);              // anchor where we actually are
-    mastg.gain.linearRampToValueAtTime(p.val, t + Math.max(0.005, ms / 1000));
+    const cur = maing.gain.value;                  // read before cancelling
+    maing.gain.cancelScheduledValues(t);
+    maing.gain.setValueAtTime(cur, t);              // anchor where we actually are
+    maing.gain.linearRampToValueAtTime(p.val, t + Math.max(0.005, ms / 1000));
   }
 
   function setTuning(partial) {
     tuning = { ...tuning, ...partial };
     quant  = makeQuantizer({ root: tuning.root, scale: tuning.scale, tuning: tuning.system });
     // Re-apply current oscillator pitches so a scale/root change is audible at once.
-    set('osc1_freq', PARAMS.osc1_freq.val);
-    set('osc2_freq', PARAMS.osc2_freq.val);
+    for (let i = 1; i <= oscCount; i++) set(`osc${i}_freq`, PARAMS[`osc${i}_freq`].val);
   }
   function getTuning() { return { ...tuning }; }
   // Snapped note name for a frequency param, or null when quantisation is off.
   function noteFor(key) {
-    return (tuning.enabled && FREQ_KEYS.has(key)) ? quant.noteName(PARAMS[key].val) : null;
+    return (tuning.enabled && isFreqKey(key)) ? quant.noteName(PARAMS[key].val) : null;
   }
 
   // Same shape as setTuning: merge, rebuild, re-apply so the change is
@@ -291,13 +392,19 @@ export const engine = (() => {
              gateGain: dyn.gate ? dyn.gateGain : null };
   }
 
-  function setOsc1Type(t)   { osc1Type = t; if (osc1) applyType(osc1, t); }
-  function setOsc2Type(t)   { osc2Type = t; if (osc2) applyType(osc2, t); }
+  // Waveform per slot. Slot 0 also sets the chord voices' timbre, which is why
+  // it is applied to them too — chords ride the lead's tone by design.
+  function setOscType(i, t) {
+    if (!(i >= 0 && i < MAX_OSCS) || !t) return;
+    oscTypes[i] = t;
+    if (oscs[i]) applyType(oscs[i], t);
+    if (i === 0 && started) chordOscs.forEach(o => applyType(o, t));
+  }
+  const getOscType  = i => oscTypes[i];
+  const getOscTypes = () => oscTypes.slice(0, oscCount);
   function setFilterType(t) { filterType = t; if (filt) filt.type = t; }
   function setChordFilterType(t) { chordFilterType = t; if (cfilt) cfilt.type = t; }
   function getChordFilterType() { return chordFilterType; }
-  function getOsc1Type()    { return osc1Type; }
-  function getOsc2Type()    { return osc2Type; }
   function getFilterType()  { return filterType; }
 
   // ── Full audio-engine state for save/load ────────────────────────────
@@ -305,19 +412,45 @@ export const engine = (() => {
     const params = {};
     for (const k in PARAMS) params[k] = PARAMS[k].val;
     return { params, tuning: { ...tuning }, volStep: { ...volStep },
-             osc1Type, osc2Type, filterType, chordFilterType,
+             oscCount, oscTypes: getOscTypes(),
+             filterType, chordFilterType,
              chordEnv: { ...chordEnv } };
   }
   function restore(s) {
     if (!s) return;
-    if (s.osc1Type) setOsc1Type(s.osc1Type);
-    if (s.osc2Type) setOsc2Type(s.osc2Type);
+    // Bank size FIRST: the params a snapshot carries only exist once their
+    // slots do, and setOscCount rebuilds PARAMS.
+    setOscCount(oscCountOf(s));
+    (s.oscTypes ?? [s.osc1Type, s.osc2Type]).forEach((t, i) => setOscType(i, t));
     if (s.filterType) setFilterType(s.filterType);
     if (s.chordFilterType) setChordFilterType(s.chordFilterType);
     if (s.chordEnv) setChordEnv(s.chordEnv);
     if (s.tuning) setTuning(s.tuning);
     if (s.volStep) setVolStep(s.volStep);   // before params, so volume quantises on the way in
     if (s.params) for (const k in s.params) if (PARAMS[k]) set(k, s.params[k]);
+    // `osc_mix` was a 1↔2 crossfade, which per-oscillator level replaced.
+    // Translating it is exact — the old graph WAS osc1 at 1-mix and osc2 at mix
+    // — and without this every saved preset comes back with both oscillators at
+    // their new defaults, i.e. a different sound than the one that was saved.
+    const mix = s.params?.osc_mix;
+    if (mix !== undefined && s.params.osc1_volume === undefined) {
+      const m = Math.max(0, Math.min(1, Number(mix) || 0));
+      set('osc1_volume', 1 - m);
+      if (oscCount > 1) set('osc2_volume', m);
+    }
+  }
+
+  // How many slots a snapshot wants. Explicit when it was written by this
+  // version; otherwise inferred, because a pre-resize snapshot always described
+  // exactly two oscillators and would silently lose the second one.
+  function oscCountOf(s) {
+    if (Number.isFinite(s.oscCount)) return s.oscCount;
+    if (Array.isArray(s.oscTypes) && s.oscTypes.length) return s.oscTypes.length;
+    const highest = Object.keys(s.params ?? {})
+      .map(k => OSC_KEY_RE.exec(k)?.[1])
+      .filter(Boolean)
+      .reduce((a, n) => Math.max(a, +n), 0);
+    return Math.max(1, highest || (s.osc2Type ? 2 : 1));
   }
 
   // One-shot tone voice — used by play-along for the guide melody and
@@ -343,7 +476,7 @@ export const engine = (() => {
 
   // ── Chord voice bank (chord mode) ────────────────────────────────────
   // Sustains a chord while a gesture is held. Voices ride the same timbre
-  // as osc1 and run through the filter/reverb/master chain, so the sound
+  // as oscillator 1 and run through the filter/reverb/main chain, so the sound
   // kit and gesture-driven filter sweeps shape chords too.
   function playChord(freqs, { gain = 0.18 } = {}) {
     if (!started || !freqs?.length) return;
@@ -402,7 +535,14 @@ export const engine = (() => {
     return buf;
   }
 
-  function stop() { ctx?.close(); started = false; volIdx = null; }
+  function stop() {
+    ctx?.close();
+    started = false;
+    volIdx = null;
+    // The nodes belong to the closed context; keeping references would have
+    // set() ramping AudioParams that no longer run.
+    oscs = []; oscGains = [];
+  }
 
   // Mute / unmute the output. A short ramp rather than a jump, because a step
   // change on a running oscillator is an audible click — the very artefact the
@@ -435,8 +575,9 @@ export const engine = (() => {
     start, set, stop,
     setTuning, getTuning, noteFor,
     setVolStep, getVolStep, volLevel,
-    setOsc1Type, setOsc2Type, setFilterType,
-    getOsc1Type, getOsc2Type, getFilterType,
+    setOscCount, getOscCount, MAX_OSCS,
+    setOscType, getOscType, getOscTypes,
+    setFilterType, getFilterType,
     setChordFilterType, getChordFilterType,
     snapshot, restore,
     defineWave, playTone, now,

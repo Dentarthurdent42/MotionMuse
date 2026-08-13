@@ -133,6 +133,16 @@ html, body {
   color: var(--text);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
+  /* Opt out of WebKit/Blink text auto-inflation. On iOS, zooming out made the
+     section headers disagree with each other: the boost is applied per block
+     container and skips flex ones, so the four headers that carry an ON/OFF
+     pill (and are therefore flex rows) stayed at their authored size while the
+     plain ones grew. The layout is already viewport-sized and responsive, so
+     the heuristic has nothing to fix here — it only introduced the
+     inconsistency. Not `none`: that would also block a reader's own text
+     scaling, which is a different thing entirely. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* ── Layout ─────────────────────────────────────────────── */
@@ -795,8 +805,18 @@ option { background: var(--panel); }
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
 }
+/* Every section header is a flex row, declared once here. Four of them used to
+   carry `style="display:flex"` inline because they hold a trailing ON/OFF pill,
+   which made those four structurally different from the rest — and that
+   difference is what text auto-inflation latched onto (see html above). Same
+   box, same behaviour, whatever a header happens to contain. */
 .audio-section-label {
-  font-size: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* 10px, not the 8px this was: with inflation off, the authored size is what
+     ships, and 8px of letterspaced uppercase mono on a phone is a squint. */
+  font-size: 10px;
   letter-spacing: 2px;
   color: var(--dim);
   text-transform: uppercase;
@@ -806,6 +826,69 @@ option { background: var(--panel); }
 .wave-btns {
   display: flex; gap: 3px;
 }
+
+/* ── Oscillator bank ─────────────────────────────────────
+   One row per oscillator: its number in the colour of its keyboard marker,
+   then its waveform buttons. The number is what ties a row to the Osc<N> Vol
+   slider under Parameters and to the dot on the pitch-quantise keyboard. */
+.osc-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.osc-row + .osc-row { margin-top: 3px; }
+.osc-row-n {
+  flex: 0 0 auto;
+  width: 11px;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 600;
+}
+.osc-row > .wave-btns { flex: 1 1 auto; min-width: 0; }
+/* A pointer to where the levels live, not a readout — so dim, not the amber
+   .quant-notes uses for live values. */
+.osc-hint {
+  margin-top: 5px;
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  text-align: center;
+}
+
+/* Stepper for the oscillator count. The buttons stay square instead of
+   stretching like the waveform pills they share a class with, and the field is
+   wide enough for two digits so the caret is never hidden behind a spinner. */
+.num-step {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+}
+.num-step > .wave-btn {
+  flex: 0 0 auto;
+  width: 20px;
+  padding: 1px 0;
+  font-size: 11px;
+  line-height: 1.2;
+}
+.num-step > .wave-btn[disabled] { opacity: 0.35; cursor: default; }
+.num-step > input {
+  width: 34px;
+  padding: 1px 2px;
+  text-align: center;
+  font-family: inherit;
+  font-size: 10px;
+  color: var(--text);
+  background: var(--faint);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  /* Native spinners are ~13px of unusable target next to a 34px field, and the
+     ± buttons already do that job with a real hit area. */
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.num-step > input::-webkit-outer-spin-button,
+.num-step > input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .scale-grid {
   display: grid;
   grid-template-columns: 0.7fr 1.3fr 1.3fr;
@@ -1583,7 +1666,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   /* Audio panel */
   #viz-canvas { height: 96px; }   /* paired with viz.js drawViz() */
   .audio-section { padding: 11px 14px; }
-  .audio-section-label { font-size: 10px; margin-bottom: 8px; }
+  .audio-section-label { font-size: 11px; margin-bottom: 8px; }
   .wave-btns { gap: 4px; }
   .scale-grid { gap: 6px; }
   .quant-kbd { height: 60px; }    /* paired with audio-ui.js's panelKbd */

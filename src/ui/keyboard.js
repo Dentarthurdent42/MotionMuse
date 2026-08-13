@@ -6,8 +6,10 @@
 import { NOTE_NAMES, SCALES, midiName } from '../scale.js';
 
 export const KBD_LO = 36, KBD_HI = 96;                 // MIDI C2 … C7
-export const OSC1_COL = '#9d5cff';                     // osc1 marker (purple)
-export const OSC2_COL = '#00e5cc';                     // osc2 marker (cyan)
+// One colour per oscillator slot, cycled if the bank is grown past the list.
+// Ordered so slots 1 and 2 keep the purple/cyan they have always had.
+export const OSC_COLS = ['#9d5cff', '#00e5cc', '#ffb340', '#ff5c8a',
+                        '#5cff9d', '#5c9dff', '#ffe45c', '#ff8a5c'];
 
 const WHITE_PC = new Set([0, 2, 4, 5, 7, 9, 11]);
 export const isWhite = m => WHITE_PC.has(((m % 12) + 12) % 12);
@@ -40,11 +42,11 @@ export function midiAtPoint(width, height, x, y) {
   return L.whites[i];
 }
 
-// Pure draw. opts: { height, root, scale, m1, m2, labels, dpr }
+// Pure draw. opts: { height, root, scale, markers, labels, dpr }
 //   scale: null → plain keys, no in-scale tint (quantise off)
-//   m1/m2: marker midis or null
+//   markers: array of marker midis (one per oscillator); null entries skipped
 //   labels: true → octave anchors (C2…C7) on the C keys
-export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, m1 = null, m2 = null, labels = false, dpr } = {}) {
+export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, markers = [], labels = false, dpr } = {}) {
   dpr = dpr ?? Math.min(window.devicePixelRatio || 1, 2);
   const W = canvas.clientWidth || 260, H = height;
   if (canvas.width !== W * dpr || canvas.height !== H * dpr) { canvas.width = W * dpr; canvas.height = H * dpr; }
@@ -106,8 +108,9 @@ export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, m1
     ctx.lineWidth = 1.5; ctx.strokeStyle = inRange ? '#0b0d12' : col;
     ctx.stroke();
   };
-  marker(m2, OSC2_COL);
-  marker(m1, OSC1_COL);   // osc1 drawn last so it wins on unison
+  // Painted back to front so slot 1 wins on unison, as it always has.
+  for (let i = markers.length - 1; i >= 0; i--)
+    marker(markers[i], OSC_COLS[i % OSC_COLS.length]);
 
   return L;
 }
@@ -121,7 +124,7 @@ export function makeKbdView(canvasId, { height = 46 } = {}) {
       const c = document.getElementById(canvasId);
       if (!c) return;
       const h = typeof height === 'function' ? height() : height;
-      const s = `${opts.root}|${opts.scale}|${c.clientWidth}|${h}|${opts.m1}|${opts.m2}`;
+      const s = `${opts.root}|${opts.scale}|${c.clientWidth}|${h}|${(opts.markers ?? []).join(',')}`;
       if (s === sig) return;
       sig = s;
       drawKeyboard(c, { ...opts, height: h });
