@@ -111,6 +111,25 @@ const sections = await page.evaluate(() => {
   };
 });
 
+// Portrait pins the camera to the top of the scroll, for everyone — not just
+// dev mode. It is easy to break from a distance: an ancestor gaining
+// `overflow: hidden` turns it into a scroll container and `position: sticky`
+// then silently does nothing, which is exactly how this failed the first time.
+// So it is measured by actually scrolling, not by reading the property.
+const camSticky = await page.evaluate(async () => {
+  const cam = document.querySelector('.panel-cam');
+  const pos = getComputedStyle(cam).position;
+  const before = cam.getBoundingClientRect().top;
+  window.scrollTo(0, 700);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const scrolled = Math.round(window.scrollY);
+  const after = cam.getBoundingClientRect().top;
+  window.scrollTo(0, 0);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  return { pos, before: Math.round(before), after: Math.round(after), scrolled,
+           dev: document.body.classList.contains('dev') };
+});
+
 const off = await measure();
   // `cam-on` is what cv.js sets when the camera starts; driving it directly
   // exercises the same CSS without needing a webcam.
@@ -118,7 +137,7 @@ const off = await measure();
   await page.waitForTimeout(120);
   const on = await measure();
 
-  results.push({ width, off, on, sections });
+  results.push({ width, off, on, sections, camSticky });
   await page.close();
 }
 
@@ -132,7 +151,7 @@ const check = (ok, label, detail = '') => {
 
 console.log('\nHeader layout — every breakpoint, camera off and on\n');
 
-for (const { width, off, on, sections } of results) {
+for (const { width, off, on, sections, camSticky } of results) {
   const w = `${width}px`;
 
   check(sections.total >= 12, `${w}: sections are wrapped`, `${sections.total} found`);
@@ -198,6 +217,14 @@ for (const { width, off, on, sections } of results) {
         `${w} landscape: the camera box holds 4:3 (overlay alignment)`, ratio.toFixed(3));
     }
   } else {
+    // Sticky camera, and specifically NOT gated on dev mode.
+    check(camSticky.dev === false, `${w} portrait: measured outside dev mode`);
+    check(camSticky.pos === 'sticky', `${w} portrait: the camera is sticky`, camSticky.pos);
+    if (camSticky.scrolled > 0)
+      check(camSticky.after <= camSticky.before + 0.5 && camSticky.after <= 1,
+        `${w} portrait: the camera stays pinned while the page scrolls`,
+        `top ${camSticky.before} → ${camSticky.after} after ${camSticky.scrolled}px`);
+
     const stacked = [['cam', cam], ['sig', sig], ['map', map], ['aud', aud]];
     const order = [...stacked].sort((a, b) => a[1].top - b[1].top).map(([k]) => k).join('→');
     check(order === 'cam→sig→map→aud',

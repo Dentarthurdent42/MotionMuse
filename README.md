@@ -111,6 +111,12 @@ has to keep an exact 4:3 box or the landmark overlay stops lining up with the
 video, so that handle drags vertically but writes a *width* and lets the aspect
 ratio set the height.
 
+In **portrait** the camera also **sticks to the top** of the scroll, so you can
+still see yourself — and the tracking overlay — while working the patchbay and
+audio controls below it. This is an instrument you play by moving in front of a
+camera; losing sight of the camera while reaching for a control is backwards.
+The handle is there for when the height gets in the way.
+
 ## Starting patches (PRESET)
 
 **PRESET** opens a menu of complete patches rather than loading one silently:
