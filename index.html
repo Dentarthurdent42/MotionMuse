@@ -124,7 +124,7 @@
            (see the mobile block in main.css). -->
       <div id="cam-handle" title="Drag to resize the camera view — double-click to reset"></div>
 
-      <div class="panel uc-feature" id="model-panel" style="border-top:1px solid var(--border);">
+      <div class="panel uc-feature" data-sec="models" id="model-panel" style="border-top:1px solid var(--border);">
         <div class="ph">MODELS <span class="uc-badge">dev</span></div>
         <div class="pb" id="model-body">
           <label class="model-row">POSE
@@ -147,7 +147,7 @@
     </div>
 
     <!-- Signals — its own full-height column in landscape -->
-    <div class="panel panel-sig">
+    <div class="panel panel-sig" data-sec="signals">
       <div class="ph">
         SIGNALS
         <span style="margin-left:auto;font-size:8px;color:var(--dim);">CLICK TO COPY KEY</span>
@@ -162,7 +162,7 @@
     <div class="splitter" id="split-l" title="Drag to resize — double-click to reset"></div>
 
     <!-- Mapper — beneath the camera in landscape -->
-    <div class="panel panel-map">
+    <div class="panel panel-map" data-sec="patchbay">
       <div class="ph">PATCHBAY · INPUTS → OUTPUTS</div>
       <div class="mapper-toolbar">
         <span class="mapper-hint" style="flex:1">Drag a socket ● → ● to wire an input to an output</span>

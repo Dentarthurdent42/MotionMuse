@@ -83,6 +83,34 @@ awaiting it before rendering leaves the audio panel permanently empty on every
 browser that enforces the policy — and headless Chromium doesn't, so it passes
 CI. `npm run test:launch` now forces the suspension and fails if that returns.
 
+## Sections: containers, scrolling and resizing
+
+Every section — camera view, signals, models, patchbay, gestures, chord mode,
+each audio block, the parameter sliders — is its own container: a bordered box
+with a header strip, a body that can scroll on its own, and a **grip along the
+bottom edge** to set its height. Drag the grip to resize, **double-click it to
+fit the content** again. Heights persist per section.
+
+So there are two levels of scrolling, which is the point: long lists (signals,
+gestures, output sliders) scroll *inside* their section, and the sections
+themselves scroll within their column. Pin the ones you're working with to the
+size you want and page through the rest.
+
+Sections start at their natural height with **no** scrollbar; only open-ended
+lists get a default height. Giving every section a scroller by default would
+trade one annoyance for a worse one.
+
+This is applied at runtime (`src/ui/sections.js`) rather than baked into a
+dozen template strings: each section already had the same shape — a header
+followed by content — so a section added next week gets a container, a
+scroller and a grip without anyone remembering to add them. `npm run
+test:layout` fails the build if a section loses its body, its grip or its id.
+
+The camera view resizes with its own handle instead, directly beneath it: it
+has to keep an exact 4:3 box or the landmark overlay stops lining up with the
+video, so that handle drags vertically but writes a *width* and lets the aspect
+ratio set the height.
+
 ## Starting patches (PRESET)
 
 **PRESET** opens a menu of complete patches rather than loading one silently:

@@ -90,14 +90,35 @@ for (const width of WIDTHS) {
     };
   });
 
-  const off = await measure();
+  // Sections are wrapped at runtime (src/ui/sections.js), and panels that rebuild
+// their innerHTML have to get their wrappers back. A section that loses them
+// loses its scroller and its grip while still looking roughly right, so it is
+// checked rather than eyeballed.
+const sections = await page.evaluate(() => {
+  const all = [...document.querySelectorAll('.sec')];
+  return {
+    total: all.length,
+    ids: all.map(e => e.dataset.secId),
+    missingBody: all.filter(e => !e.querySelector(':scope > .sec-body')).map(e => e.dataset.secId),
+    missingGrip: all.filter(e => !e.querySelector(':scope > .sec-grip')).map(e => e.dataset.secId),
+    unnamed: all.filter(e => !e.dataset.secId).length,
+    // A section given a height must actually scroll, or the height just clips.
+    pinnedNotScrolling: all
+      .filter(e => {
+        const b = e.querySelector(':scope > .sec-body.sec-scroll');
+        return b && getComputedStyle(b).overflowY !== 'auto';
+      }).map(e => e.dataset.secId),
+  };
+});
+
+const off = await measure();
   // `cam-on` is what cv.js sets when the camera starts; driving it directly
   // exercises the same CSS without needing a webcam.
   await page.evaluate(() => document.body.classList.add('cam-on'));
   await page.waitForTimeout(120);
   const on = await measure();
 
-  results.push({ width, off, on });
+  results.push({ width, off, on, sections });
   await page.close();
 }
 
@@ -111,8 +132,15 @@ const check = (ok, label, detail = '') => {
 
 console.log('\nHeader layout — every breakpoint, camera off and on\n');
 
-for (const { width, off, on } of results) {
+for (const { width, off, on, sections } of results) {
   const w = `${width}px`;
+
+  check(sections.total >= 12, `${w}: sections are wrapped`, `${sections.total} found`);
+  check(sections.missingBody.length === 0, `${w}: every section has a scrollable body`, sections.missingBody.join(' '));
+  check(sections.missingGrip.length === 0, `${w}: every section has a resize grip`, sections.missingGrip.join(' '));
+  check(sections.unnamed === 0, `${w}: every section has an id (so its height can persist)`, String(sections.unnamed));
+  check(sections.pinnedNotScrolling.length === 0,
+    `${w}: a section given a height scrolls rather than clipping`, sections.pinnedNotScrolling.join(' '));
 
   check(off.escapees.length === 0, `${w} camera off: every control inside the header`, off.escapees.join(' '));
   check(on.escapees.length === 0,  `${w} camera on:  every control inside the header`, on.escapees.join(' '));

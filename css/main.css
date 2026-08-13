@@ -890,6 +890,59 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   #tour-ring { transition: none; }
 }
 
+/* ── Sections (see src/ui/sections.js) ───────────────────
+   Each section reads as its own container — border, header strip, a body that
+   can scroll on its own, and a grip along the bottom edge. */
+.sec {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel);
+  margin: 6px;
+  /* Room for the grip so it never sits on top of the last row of content. */
+  padding-bottom: 9px;
+}
+/* A section that IS a whole column shouldn't float inside itself. */
+.panel > .sec, .panel.sec { margin: 0; border-radius: 0; border: none; }
+
+.sec > .audio-section-label,
+.sec > .ph {
+  background: var(--faint);
+  border-bottom: 1px solid var(--border);
+  border-radius: 2px 2px 0 0;
+}
+.sec > .sec-body { min-height: 0; }
+/* A section that is a whole column fills it; one with an explicit height keeps
+   exactly that height instead of being stretched by the flex parent. */
+.panel.sec > .sec-body { flex: 1 1 auto; overflow-y: auto; }
+.sec > .sec-body.sec-scroll { flex: 0 0 auto; }
+/* Only a section with a height set (by default or by drag) scrolls; the rest
+   stay natural, so nothing gains a scrollbar it didn't need. */
+.sec > .sec-body.sec-scroll { overflow-y: auto; overscroll-behavior: contain; }
+.sec > .sec-body.sec-scroll::-webkit-scrollbar { width: 3px; }
+.sec > .sec-body.sec-scroll::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.sec-grip {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 9px;
+  cursor: ns-resize;
+  touch-action: none;      /* the drag is ours, not the panel scroller's */
+}
+.sec-grip::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 28px; height: 2px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: var(--border2);
+  transition: background 0.12s, width 0.12s;
+}
+.sec-grip:hover::after { background: var(--cyan); width: 44px; }
+body.resizing-sec { cursor: ns-resize; user-select: none; }
+body.resizing-sec .sec-grip::after { background: var(--cyan); }
+
 /* ── Panel grid layouts (desktop) ───────────────────────── */
 .panel-cam {
   display: grid;
@@ -933,8 +986,10 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
      is drawn in normalised coordinates across the full canvas — would no
      longer line up with the video under it. */
   .panel-cam #video-wrap {
-    --cam-h: 300px;
-    width: min(100%, calc(var(--cam-h) * 4 / 3));
+    /* Same custom property the drag handle writes (see ui/resize.js), so one
+       control resizes the camera in both orientations. 400px = the 300px-tall
+       default at 4:3. */
+    width: min(100%, var(--cam-w, 400px));
     margin-inline: auto;
   }
 }
@@ -1035,12 +1090,11 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
     width: min(100%, var(--cam-w, 100%));
     margin-inline: auto;
   }
-  body.dev #cam-handle { display: block; }
 }
 
 /* Grab bar under the camera. Hidden everywhere except portrait dev mode. */
 #cam-handle {
-  display: none;
+  display: block;
   height: 16px;
   flex-shrink: 0;
   cursor: ns-resize;

@@ -21,6 +21,7 @@ import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
 import { initTutorial }                     from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
+import { enhanceSections }                  from './ui/sections.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
@@ -305,4 +306,5 @@ initModelPanel();         // dev-mode pose model comparison panel
 initTutorial();           // guided tour (? button; auto-offers on first visit)
 preset.restoreLocal();    // bring back the last session's mappings + settings
 renderMapper();
+enhanceSections();        // wrap every section: own container, scroller, resize grip
 loop();

@@ -6,6 +6,7 @@ import { isDesktop } from './viewport.js';
 import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS, GATE_AT_OPTS, GATE_AT_DEFAULT,
          makeDynamics } from '../dynamics.js';
 import { keyLabel, getBinding, setBinding, captureNextKey } from './hotkeys.js';
+import { enhanceSections } from './sections.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
@@ -187,9 +188,15 @@ export function renderAudioPanel() {
         ).join('')}
       </div>
     </div>
-    <div class="audio-section" style="border-bottom:none;">
+    <div class="audio-section" data-sec="sliders" style="border-bottom:none;">
+      <div class="audio-section-label">Parameters</div>
       ${Object.entries(engine.PARAMS).map(([k, p]) => rangeRow(k, p)).join('')}
     </div>`;
+
+  // Re-wrap: innerHTML above discarded the section containers, grips and
+  // stored heights. Runs before the wiring below, so every handler attaches to
+  // nodes that are already in their final place.
+  enhanceSections(panel);
 
   const activateWave = (group, type) =>
     group.querySelectorAll('.wave-btn').forEach(b =>
