@@ -5,9 +5,7 @@ import { makeKbdView, midiOf, OSC1_COL, OSC2_COL } from './keyboard.js';
 import { isDesktop } from './viewport.js';
 import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS, GATE_AT_OPTS, GATE_AT_DEFAULT,
          makeDynamics } from '../dynamics.js';
-import { keyLabel, getBinding, setBinding, captureNextKey } from './hotkeys.js';
 import { enhanceSections } from './sections.js';
-import { THEMES, getTheme, setTheme } from './theme.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
@@ -149,19 +147,6 @@ export function renderAudioPanel() {
                 title="Where the gate switches off, as a share of full volume. The ladder's own midpoint (·auto) is not always where you want the switch: with 2 steps it lands at 18%, so an on/off control flips very early. Raise it to move the switch later in the gesture.">${gateAtOpts(vq)}</select>
       </div>
       <div id="vq-level" class="quant-notes">${vq.enabled ? '' : '—'}</div>
-    </div>
-    <div class="audio-section" data-sec="theme">
-      <div class="audio-section-label">Theme</div>
-      <select id="theme-select" title="Colour theme — every one is contrast-checked in CI">
-        ${THEMES.map(t => `<option value="${t.id}"${t.id === getTheme() ? ' selected' : ''}>${t.label} · ${t.dark ? 'dark' : 'light'}</option>`).join('')}
-      </select>
-    </div>
-    <div class="audio-section">
-      <div class="audio-section-label" style="display:flex;align-items:center;">
-        Mute Hotkey
-        <div class="wave-btn" id="mute-key-btn" style="flex:0 0 auto;margin-left:auto;padding:2px 9px;"
-             title="Click, then press the key you want. Esc cancels.">${keyLabel(getBinding('mute'))}</div>
-      </div>
     </div>
     <div class="audio-section">
       <div class="audio-section-label">Osc 1 Waveform</div>
@@ -360,23 +345,6 @@ export function renderAudioPanel() {
     });
   vqGateAt.addEventListener('change', e => { engine.setVolStep({ gateAt: +e.target.value }); });
 
-  // Rebind the mute key. The capture swallows the keystroke, so assigning a key
-  // can't also trigger whatever it is currently bound to (pressing Space here
-  // would otherwise mute on the way past).
-  document.getElementById('theme-select')
-    .addEventListener('change', e => setTheme(e.target.value));
-
-  const muteKeyBtn = document.getElementById('mute-key-btn');
-  muteKeyBtn.addEventListener('click', () => {
-    if (muteKeyBtn.classList.contains('on')) return;   // already listening
-    muteKeyBtn.classList.add('on');
-    muteKeyBtn.textContent = 'PRESS A KEY';
-    captureNextKey(code => {
-      if (code) setBinding('mute', code);
-      muteKeyBtn.classList.remove('on');
-      muteKeyBtn.textContent = keyLabel(getBinding('mute'));
-    });
-  });
   document.getElementById('vq-edge')
     .addEventListener('change', e => { engine.setVolStep({ edge: e.target.value }); });
 

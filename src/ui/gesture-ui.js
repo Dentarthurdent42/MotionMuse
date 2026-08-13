@@ -146,7 +146,7 @@ export function gestureSectionsHTML() {
         ${['attack', 'decay', 'sustain', 'release'].map(k => `
           <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
             ${k.slice(0, 3).toUpperCase()}
-            <input type="range" class="apr ck-env" data-env="${k}"
+            <input type="range" class="ck-env" data-env="${k}"
               min="${engine.CHORD_ENV_RANGE[k][0]}" max="${engine.CHORD_ENV_RANGE[k][1]}"
               step="0.005" value="${env[k]}">
             <span class="ctrl-val" id="ck-env-${k}">${k === 'sustain' ? Math.round(env[k] * 100) + '%' : env[k].toFixed(2) + 's'}</span>

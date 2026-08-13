@@ -322,6 +322,34 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 #donate-pop a:hover, #donate-pop a:focus-visible { background: var(--faint); color: var(--cyan); }
 
+/* ── Settings popover ────────────────────────────────────── */
+/* Fixed, not absolute: anchored to the ⚙ button's measured rect rather than
+   the header, which is its own containing block and wraps to three rows on a
+   phone — an absolutely-positioned menu would ride down with it. */
+#settings-pop {
+  position: fixed;
+  z-index: 70;
+  display: none;
+  min-width: 210px;
+  max-width: calc(100vw - 20px);
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  padding: 6px;
+  box-shadow: var(--shadow-lg);
+}
+#settings-pop.open { display: block; }
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--dim);
+}
+.set-row > select, .set-row > button { margin-left: auto; flex: 0 1 auto; min-width: 0; }
+
 /* ── Preset menu ─────────────────────────────────────────── */
 .mapper-toolbar { position: relative; }   /* containing block for #preset-pop */
 #preset-pop {
@@ -1002,7 +1030,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
    reorder a section fold it instead. */
 .sec-fold {
   flex: 0 0 auto;
-  width: 14px; height: 14px;
+  width: 18px; height: 18px;
   margin-right: 2px;
   padding: 0;
   border: none;
@@ -1012,9 +1040,9 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   font: inherit;
   line-height: 1;
 }
-.sec-fold::before { content: '▾'; font-size: 9px; display: block; transition: transform 0.12s; }
+.sec-fold::before { content: 'v'; font-size: 13px; font-weight: 600; display: block; }
 .sec.folded > * > .sec-fold::before,
-.sec.folded .sec-fold::before { transform: rotate(-90deg); }
+.sec.folded .sec-fold::before { content: '>'; }
 .sec-fold:hover { color: var(--cyan); }
 /* Folded: header only. The grip goes too — there is no height to drag. */
 .sec.folded > .sec-body { display: none; }
@@ -1144,14 +1172,17 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
 }
 .sig-sec[open] > summary { border-bottom-color: var(--border); }
 .sig-sec > summary::-webkit-details-marker { display: none; }
-/* A disclosure triangle drawn in text, so it inherits the theme's colours. */
+/* Literal carets rather than filled triangles: at 8-9px a solid ▸ reads as a
+   dot, and the two states are told apart by orientation alone. `v` and `>` in
+   the monospace face are unambiguous at a glance and scale with the text. */
 .sig-sec > summary::before {
-  content: '▸';
-  font-size: 8px;
+  content: '>';
+  font-size: 13px;
+  font-weight: 600;
+  width: 12px;
   color: var(--dim);
-  transition: transform 0.12s;
 }
-.sig-sec[open] > summary::before { transform: rotate(90deg); }
+.sig-sec[open] > summary::before { content: 'v'; }
 .sig-group-name { font-size: 9px; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
 .sig-group-meta { margin-left: auto; font-size: 8px; letter-spacing: 1px; color: var(--border2); }
 .sig-sec-body { padding: 2px 0 4px; }

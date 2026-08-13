@@ -24,6 +24,7 @@ import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys
 import { enhanceSections, colorSections }   from './ui/sections.js';
 import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
 import { initTheme }                        from './ui/theme.js';
+import { initSettings }                     from './ui/settings.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
@@ -328,6 +329,7 @@ initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
+initSettings();           // ⚙ theme + hotkeys: how the tool looks and is driven
 initModelPanel();         // dev-mode pose model comparison panel
 initTutorial();           // guided tour (? button; auto-offers on first visit)
 preset.restoreLocal();    // bring back the last session's mappings + settings
