@@ -670,7 +670,7 @@ src/
   chordmode.js      Gesture → scale-degree chord mapping (hold-to-sound)
   devmode.js        Developer-mode toggle (gates under-construction features)
   shader.js         WebGL visual-output shader (reacts to audio + signals)
-  cv.js             MediaPipe Hand + swappable pose source (latency HUD)
+  cv.js             MediaPipe Hand + swappable pose source (dev inference HUD)
   posebackends.js   Pose backends: MediaPipe lite/full/heavy + TF.js MoveNet
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
   face.js           Opt-in face landmark + gaze tracking (blendshape signals)
@@ -769,6 +769,20 @@ ANTHROPIC_API_KEY=sk-ant-… npm run test:ui
 ```
 
 Without `ANTHROPIC_API_KEY` the screenshots are still saved but LLM evaluation is skipped (CI exits 0).
+
+## Inference HUD (dev mode)
+
+The strip of timings across the bottom of the camera view — FPS, HAND, POSE,
+FACE, TOTAL, MODEL — is **dev-only**. They are numbers for tuning the vision
+pipeline, not something a player needs while performing.
+
+Each row appears only while the model behind it is actually running. HAND and
+POSE used to sit there whatever was enabled, so tracking the face alone showed
+two averages left over from models that had stopped — indistinguishable from
+live ones — and never showed the face model's own cost at all. FACE is measured
+on its own loop (`src/face.js`) and reports inference only, not the drawing and
+signal extraction around it; TOTAL covers the hand/pose loop, so it goes when
+both of those do, and MODEL names the pose backend, so it follows POSE.
 
 ## Pose model comparison (dev mode)
 

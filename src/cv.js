@@ -62,6 +62,11 @@ export const cvSource = {
     // keep drawing the last landmarks it saw as though they were live.
     if (!this.handsOn) this._hr = null;
     if (!this.poseOn)  this._pr = null;
+    // Drop the timings too, so switching a model back on reports what it is
+    // doing now rather than the average it left behind.
+    if (!this.handsOn) this._lat?.hand.splice(0);
+    if (!this.poseOn)  this._lat?.pose.splice(0);
+    this._syncLatRows();
     lsSet('motionmuse-tracking', JSON.stringify(
       { handsL: this.handsL, handsR: this.handsR, pose: this.poseOn }));
     // Only one side wanted means the model only ever needs to find one hand.
@@ -272,6 +277,7 @@ export const cvSource = {
 
     this._lat = { hand: [], pose: [], total: [], interval: [], lastT: 0, frame: 0 };
     document.getElementById('latency-bar').style.display = 'flex';
+    this._syncLatRows();
 
     this.running = true;
     this.loop();
@@ -336,6 +342,23 @@ export const cvSource = {
       }
     }
     requestAnimationFrame(() => this.loop());
+  },
+
+  // Show a timing row only while the model behind it is running. HAND and POSE
+  // used to sit there whatever was enabled, so tracking the face alone showed
+  // two averages from models that had stopped — numbers indistinguishable from
+  // live ones. TOTAL covers this loop's inference, so it goes when both do.
+  // (FACE has its own loop and owns its own row; see face.js.)
+  _syncLatRows() {
+    const show = (id, on) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = on ? '' : 'none';
+    };
+    show('lat-hand-wrap',  this.handsOn);
+    show('lat-pose-wrap',  this.poseOn);
+    show('lat-total-wrap', this.handsOn || this.poseOn);
+    // MODEL names the POSE backend, so it belongs to the pose row.
+    show('lat-model-wrap', this.poseOn);
   },
 
   _updateLatency() {

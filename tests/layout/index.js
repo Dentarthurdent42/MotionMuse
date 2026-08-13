@@ -251,6 +251,62 @@ const relocation = await (async () => {
   return { fresh, rerendered, reloaded, wired, errs };
 })();
 
+// The inference HUD is dev-only, and each of its rows belongs to a model that
+// is actually running. Both halves have failed before in the same way: a number
+// on screen that looks live and is not. The camera itself can't run here (no
+// device, and the model CDN is out of reach), so the tracker flags are set
+// directly — which is exactly what the toggles do — and the display logic is
+// what gets measured.
+const hud = await (async () => {
+  const page = await b.newPage({ viewport: { width: 1440, height: 900 } });
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://${'127.0.0.1'}:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+
+  const set = (o) => page.evaluate(async (o) => {
+    const { cvSource }   = await import('/src/cv.js');
+    const { faceSource } = await import('/src/face.js');
+    // What startCamera() does to the bar, minus the camera.
+    document.getElementById('latency-bar').style.display = 'flex';
+    cvSource.handsL = o.handsL; cvSource.handsR = o.handsR; cvSource.poseOn = o.pose;
+    cvSource._syncLatRows();
+    faceSource._running = o.face;
+    faceSource._syncLatRow();
+  }, o);
+
+  const read = () => page.evaluate(() => {
+    const vis = id => {
+      const e = document.getElementById(id);
+      return !!e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0;
+    };
+    return {
+      bar: getComputedStyle(document.getElementById('latency-bar')).display,
+      hand: vis('lat-hand-wrap'), pose: vis('lat-pose-wrap'), face: vis('lat-face-wrap'),
+      total: vis('lat-total-wrap'), model: vis('lat-model-wrap'),
+    };
+  });
+
+  const all = { handsL: true, handsR: true, pose: true, face: true };
+  await set(all);
+  const nodev = await read();                       // camera "on", DEV off
+  await page.click('#dev-btn');
+  await page.waitForTimeout(120);
+  const dev = await read();
+  await set({ handsL: false, handsR: false, pose: false, face: true });
+  const faceOnly = await read();
+  await set({ handsL: false, handsR: false, pose: true, face: false });
+  const poseOnly = await read();
+  // …and the toggles themselves must drive it, not just the internal helper.
+  await page.evaluate(async () => {
+    const { cvSource } = await import('/src/cv.js');
+    cvSource.setTracking({ hands: false, pose: true });
+  });
+  const viaToggle = await read();
+  await page.close();
+  return { nodev, dev, faceOnly, poseOnly, viaToggle, errs };
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -384,6 +440,27 @@ console.log('\nCross-column section placement\n');
   }
   check(wired, 'a relocated panel\'s sliders still drive the engine');
   check(errs.length === 0, 'no page errors while placing sections', errs.join(' | '));
+}
+
+// ── Inference HUD (dev-only, per-tracker rows) ──
+console.log('\nInference HUD\n');
+{
+  const { nodev, dev, faceOnly, poseOnly, viaToggle, errs } = hud;
+  check(nodev.bar === 'none', 'the HUD is hidden outside DEV, camera or not', nodev.bar);
+  check(dev.bar !== 'none', 'the HUD appears in DEV with the camera running', dev.bar);
+  check(dev.hand && dev.pose && dev.face && dev.total && dev.model,
+    'every row shows when every model is running', JSON.stringify(dev));
+  check(!faceOnly.hand && !faceOnly.pose, 'HAND/POSE are absent when only the face is tracked',
+    JSON.stringify(faceOnly));
+  check(faceOnly.face, 'FACE is shown when the face is tracked');
+  check(!faceOnly.total, 'TOTAL (the hand/pose loop) goes with them');
+  check(!faceOnly.model, 'MODEL names the pose backend, so it goes with POSE');
+  check(poseOnly.pose && poseOnly.model && poseOnly.total && !poseOnly.hand && !poseOnly.face,
+    'pose alone shows POSE/MODEL/TOTAL and nothing else', JSON.stringify(poseOnly));
+  check(!viaToggle.hand && viaToggle.pose,
+    'the tracking toggles drive the rows, not only the internal sync',
+    JSON.stringify(viaToggle));
+  check(errs.length === 0, 'no page errors while driving the HUD', errs.join(' | '));
 }
 
 console.log(`\n${fail} failure(s)\n`);

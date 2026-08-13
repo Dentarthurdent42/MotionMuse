@@ -105,12 +105,21 @@
           <button id="fskbd-btn" class="depth-toggle fs-only"
                   title="Show the piano keyboard overlay">🎹 KEYS</button>
         </div>
-        <div id="latency-bar">
+        <!-- Inference timings. Dev-only: these are numbers for tuning the
+             vision pipeline, not something a player needs while performing.
+             `uc-feature` hides it outside DEV mode, and its rule carries
+             !important, so it wins over the inline display cv.js writes when
+             the camera starts.
+             Each row appears only while the model behind it is actually
+             running — a timing from a stopped model is a stale average that
+             reads exactly like a live one. -->
+        <div id="latency-bar" class="uc-feature">
           <span>FPS <b id="lat-fps">—</b></span>
-          <span>HAND <b id="lat-hand">—</b></span>
-          <span>POSE <b id="lat-pose">—</b></span>
-          <span>TOTAL <b id="lat-total">—</b></span>
-          <span class="uc-feature">MODEL <b id="lat-model">—</b></span>
+          <span id="lat-hand-wrap">HAND <b id="lat-hand">—</b></span>
+          <span id="lat-pose-wrap">POSE <b id="lat-pose">—</b></span>
+          <span id="lat-face-wrap" style="display:none">FACE <b id="lat-face">—</b></span>
+          <span id="lat-total-wrap">TOTAL <b id="lat-total">—</b></span>
+          <span id="lat-model-wrap">MODEL <b id="lat-model">—</b></span>
           <span id="lat-depth-wrap" style="display:none">DEPTH <b id="lat-depth">—</b></span>
         </div>
         <div id="cam-placeholder">

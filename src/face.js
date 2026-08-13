@@ -6,6 +6,7 @@
 // Either toggle loads the (shared) face model on first use.
 
 import { bus } from './bus.js';
+import { push30 } from './math.js';
 
 // Face-oval landmarks nearest the ears (tragus region) in the 468-pt mesh.
 const EAR_R = 234, EAR_L = 454;   // subject's right / left
@@ -36,6 +37,8 @@ export const faceSource = {
   ctx: null,
   _lastT: -1,
   _running: false,
+  _lat: [],          // rolling face-inference times (ms), for the dev HUD
+  _frame: 0,
 
   registerSignals() {
     const gf = 'face';
@@ -100,6 +103,7 @@ export const faceSource = {
         const wrap  = this.video.parentElement;
         this.canvas.width  = wrap.offsetWidth;
         this.canvas.height = wrap.offsetHeight;
+        this._lat = []; this._frame = 0;
         this._running = true;
         this._loop();
       }
@@ -107,6 +111,22 @@ export const faceSource = {
       this._running = false;                       // loop exits on next frame
       this.ctx?.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this._decayAll();
+    }
+    this._syncLatRow();
+  },
+
+  // This model runs on its own loop, so it reports its own timing rather than
+  // folding into the hand/pose TOTAL — and the row is absent whenever the model
+  // is not running, which is how the HUD stays a statement about what is
+  // actually happening. Dev-only, along with the rest of the bar.
+  _syncLatRow() {
+    const on = this._running;
+    const wrap = document.getElementById('lat-face-wrap');
+    if (wrap) wrap.style.display = on ? '' : 'none';
+    if (!on) {
+      this._lat = [];
+      const el = document.getElementById('lat-face');
+      if (el) el.textContent = '—';
     }
   },
 
@@ -121,9 +141,21 @@ export const faceSource = {
     if (this.video.currentTime !== this._lastT && this.video.readyState >= 2) {
       this._lastT = this.video.currentTime;
       try {
-        const res = this._model.detectForVideo(this.video, performance.now());
+        const t0 = performance.now();
+        const res = this._model.detectForVideo(this.video, t0);
+        // Inference only — drawing and signal extraction are this module's
+        // cost, not the model's, and lumping them in would overstate it.
+        push30(this._lat, performance.now() - t0);
         this._process(res);
         this._draw(res);
+        // Same cadence as cv.js's HUD update: often enough to read, rarely
+        // enough that the DOM write is not part of the per-frame budget.
+        if (++this._frame % 15 === 0) {
+          const el = document.getElementById('lat-face');
+          if (el) el.textContent = this._lat.length
+            ? (this._lat.reduce((s, v) => s + v, 0) / this._lat.length).toFixed(1) + 'ms'
+            : '—';
+        }
       } catch (e) { console.error('Face frame error:', e); }
     }
     requestAnimationFrame(() => this._loop());
