@@ -31,6 +31,7 @@
   --green:     oklch(0.87 0.160 155);
   --shadow:    0 2px 6px rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.6);
+  --accent-l: 0.72; --accent-c: 0.13;
 }
 
 /* Maximum-contrast dark: near-black grounds, near-white text, accents pushed
@@ -54,6 +55,7 @@
   --green:     oklch(0.90 0.170 155);
   --shadow:    0 2px 6px rgba(0, 0, 0, 0.8);
   --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.85);
+  --accent-l: 0.80; --accent-c: 0.15;
 }
 
 /* Warm dark — same lightness structure, hues rotated to amber/brown. */
@@ -75,6 +77,7 @@
   --green:     oklch(0.86 0.150 150);
   --shadow:    0 2px 6px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.55);
+  --accent-l: 0.72; --accent-c: 0.13;
 }
 
 /* Light themes invert the lightness ramp: grounds go light, text goes dark,
@@ -99,6 +102,7 @@
   --green:     oklch(0.48 0.130 150);
   --shadow:    0 1px 3px rgba(20, 20, 40, 0.16);
   --shadow-lg: 0 8px 22px rgba(20, 20, 40, 0.20);
+  --accent-l: 0.55; --accent-c: 0.15;
 }
 
 /* Warm light, lower glare than pure white for long sessions. */
@@ -120,6 +124,7 @@
   --green:     oklch(0.46 0.130 150);
   --shadow:    0 1px 3px rgba(60, 40, 10, 0.18);
   --shadow-lg: 0 8px 22px rgba(60, 40, 10, 0.22);
+  --accent-l: 0.54; --accent-c: 0.15;
 }
 
 html, body {
@@ -990,6 +995,16 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   #tour-ring { transition: none; }
 }
 
+#audio-panel { display: flex; flex-direction: column; }
+/* Headers are drag handles for reordering. `grab` only where a drag can
+   actually start — inside the header's own controls the cursor stays default,
+   which is the honest signal that pressing there will not move anything. */
+.sec[data-reorder] > .audio-section-label { cursor: grab; }
+.sec.dragging { opacity: 0.55; box-shadow: var(--shadow-lg); }
+.sec.drop-before { box-shadow: 0 -3px 0 0 var(--cyan), var(--shadow); }
+.sec.drop-after  { box-shadow: 0 3px 0 0 var(--cyan), var(--shadow); }
+body.reordering { user-select: none; cursor: grabbing; }
+
 /* ── Sections (see src/ui/sections.js) ───────────────────
    Each section reads as its own container — border, header strip, a body that
    can scroll on its own, and a grip along the bottom edge. */
@@ -1010,11 +1025,28 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 /* A section that IS a whole column shouldn't float inside itself. */
 .panel > .sec, .panel.sec { margin: 0; border-radius: 0; border: none; box-shadow: none; }
 
+/* Position colour-coding. `--hue` is written per section by sections.js from
+   where the section actually sits — column sets the base hue, vertical order
+   shifts it — so the stripe down a header is a spatial cue you can aim at
+   without reading. It is decoration, never the only signal: no text or state
+   is carried by it, so it costs nothing to anyone who can't distinguish the
+   hues, and the AA-checked tokens still do all the real work.
+
+   Lightness and chroma come from the theme, not the hue: a stripe tuned for
+   near-black grounds vanishes on near-white. */
 .sec > .audio-section-label,
-.sec > .ph {
+.sec > .ph,
+.sig-sec > summary {
   background: var(--faint);
   border-bottom: 1px solid var(--border);
   border-radius: 2px 2px 0 0;
+  border-left: 3px solid oklch(var(--accent-l) var(--accent-c) var(--hue, 275));
+}
+/* A wash of the same hue over the header, far below any contrast threshold —
+   enough to tint the strip, not enough to touch the text sitting on it. */
+.sec > .audio-section-label, .sec > .ph, .sig-sec > summary {
+  background-image: linear-gradient(90deg,
+    oklch(var(--accent-l) var(--accent-c) var(--hue, 275) / 0.13), transparent 70%);
 }
 .sec > .sec-body { min-height: 0; }
 /* A section that is a whole column fills it; one with an explicit height keeps

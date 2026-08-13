@@ -83,6 +83,22 @@ awaiting it before rendering leaves the audio panel permanently empty on every
 browser that enforces the policy — and headless Chromium doesn't, so it passes
 CI. `npm run test:launch` now forces the suspension and fails if that returns.
 
+## Themes
+
+Five: **Midnight** (default), **High Contrast**, **Ember** — dark; **Paper**
+and **Sepia** — light. Picked in the audio panel, persisted, and applied before
+first paint so there's no flash of the wrong palette.
+
+Themes are pure CSS. Each is a `[data-theme]` block overriding the same colour
+tokens; nothing else in the stylesheet knows a theme exists. The light themes
+are not the dark palette inverted — an accent tuned to read on near-black is
+invisible on near-white, so every accent is re-chosen rather than reused.
+
+`npm run test:contrast` parses **every** theme's block and checks all of them:
+75 pairs across 5 themes, worst 5.10:1 against a 4.5:1 threshold. Checking only
+`:root` would have verified the default palette and let the other four ship
+unreadable, which is exactly the trap a light theme sets.
+
 ## Sections: containers, scrolling and resizing
 
 Every section — camera view, signals, models, patchbay, gestures, chord mode,
@@ -98,7 +114,25 @@ size you want and page through the rest.
 
 Sections start at their natural height with **no** scrollbar; only open-ended
 lists get a default height. Giving every section a scroller by default would
-trade one annoyance for a worse one.
+trade one annoyance for a worse one. A section that *is* clipped fades at its
+bottom edge, and the fade lifts when you reach the end — a 3px scrollbar is not
+an affordance.
+
+**Drag a section's header to reorder it** within its column. The order is
+stored as ids, not as moved DOM nodes: the audio panel rebuilds its markup on
+any structural change, which would discard a reordered DOM instantly, whereas a
+stored order is simply re-applied. It survives a re-render and a reload.
+Dragging *between* columns is deliberately not supported — landscape places
+panels in explicit grid cells while portrait uses source order, so that would
+have to rewrite two different layouts.
+
+Each container also carries a **hue drawn from where it is on screen** — column
+sets the base, vertical position walks it — so you can aim at a section without
+reading its title. It's derived from measured geometry rather than declared per
+section, because a hardcoded hue would lie the moment a section moved. It is
+decoration only: no state is carried by colour, and the accent's lightness is a
+per-theme token, because a stripe tuned for near-black grounds vanishes on
+near-white.
 
 This is applied at runtime (`src/ui/sections.js`) rather than baked into a
 dozen template strings: each section already had the same shape — a header

@@ -23,6 +23,7 @@
 import { lsGet, lsSet } from '../storage.js';
 
 const KEY = 'motionmuse-sections';
+const ORDER_KEY = 'motionmuse-sec-order';
 const MIN_H = 56;              // below this a section is unreadable, not compact
 
 // Sections whose content is an open-ended list get a default height, because
@@ -38,6 +39,15 @@ const DEFAULT_H = {
 };
 
 let heights = load();
+let order   = loadOrder();
+
+function loadOrder() {
+  try {
+    const v = JSON.parse(lsGet(ORDER_KEY) || '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch { return {}; }
+}
+const saveOrder = () => lsSet(ORDER_KEY, JSON.stringify(order));
 
 function load() {
   try {
@@ -105,6 +115,13 @@ function enhance(sec) {
     // reveals a row), which changes whether anything is hidden.
     new ResizeObserver(() => syncEnd(body)).observe(body);
 
+    // Only sections stacked inside a scrolling column are reorderable; a
+    // section that IS a column has nothing to reorder among.
+    if (sec.classList.contains('audio-section')) {
+      sec.dataset.reorder = '1';
+      wireDrag(sec, head);
+    }
+
     const grip = document.createElement('div');
     grip.className = 'sec-grip';
     grip.title = 'Drag to resize — double-click to fit';
@@ -155,4 +172,143 @@ function wireGrip(sec, grip, body, id) {
 export function enhanceSections(root = document) {
   root.querySelectorAll('.audio-section').forEach(enhance);
   root.querySelectorAll('[data-sec]').forEach(enhance);
+  applyOrder(document);
+  // Geometry is only settled after layout, and hues are derived from it.
+  requestAnimationFrame(() => colorSections(document));
+}
+
+// Position drives the hue, so anything that moves sections has to recolour.
+if (typeof window !== 'undefined') {
+  let t = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(t);
+    t = setTimeout(() => colorSections(document), 120);
+  });
+}
+
+
+// ── Position colour-coding ───────────────────────────────────────────────
+//
+// A hue per section, derived from where it actually is: the column sets the
+// base and vertical order shifts it. Derived from measured geometry rather
+// than declared per section, because the layout is rearrangeable — a hardcoded
+// hue would lie the moment a section moved, and lying is worse than absent.
+//
+// Hues are spaced around the wheel by column so neighbouring columns are
+// obviously different, then walked slowly within a column so a section's
+// neighbours are close but distinguishable.
+const COLUMN_HUES = [200, 280, 45, 140, 330];
+const STEP_WITHIN = 22;
+
+export function colorSections(root = document) {
+  const secs = [...root.querySelectorAll('.sec, .sig-sec')]
+    .filter(el => el.getClientRects().length);
+  if (!secs.length) return;
+  // Group by column using each section's left edge. Exact equality is wrong
+  // (margins, nesting), so cluster anything within 40px into one column.
+  const cols = [];
+  for (const el of secs) {
+    const r = el.getBoundingClientRect();
+    let col = cols.find(c => Math.abs(c.x - r.left) < 40);
+    if (!col) cols.push(col = { x: r.left, items: [] });
+    col.items.push({ el, top: r.top });
+  }
+  cols.sort((a, b) => a.x - b.x);
+  cols.forEach((col, ci) => {
+    col.items.sort((a, b) => a.top - b.top);
+    const base = COLUMN_HUES[ci % COLUMN_HUES.length];
+    col.items.forEach(({ el }, i) => {
+      el.style.setProperty('--hue', String((base + i * STEP_WITHIN) % 360));
+    });
+  });
+}
+
+// ── Drag to reorder ──────────────────────────────────────────────────────
+//
+// Order is stored as a map of id -> index and applied as CSS `order`, not by
+// moving DOM nodes. That is the whole reason it survives: the audio panel
+// rebuilds its innerHTML on any structural change, which would discard a
+// reordered DOM instantly. A stored order is simply re-applied by the next
+// enhanceSections() pass.
+//
+// Scope is deliberately within a container: sections reorder among their
+// siblings. Dragging one between columns would have to rewrite the landscape
+// grid placement AND the portrait source order, which are two different
+// layouts — a change worth making on its own terms, not smuggled in here.
+export function applyOrder(root = document) {
+  root.querySelectorAll('.sec[data-sec-id]').forEach(el => {
+    const i = order[el.dataset.secId];
+    if (Number.isFinite(i)) el.style.order = String(i);
+    else el.style.removeProperty('order');
+  });
+}
+
+function siblingsOf(sec) {
+  return [...sec.parentElement.children]
+    .filter(el => el.classList.contains('sec') && el.getClientRects().length);
+}
+
+// Renumber every sibling from its current visual position, so an order map
+// built from one drag stays coherent for the next.
+function commitOrder(list) {
+  list.forEach((el, i) => { order[el.dataset.secId] = i; el.style.order = String(i); });
+  saveOrder();
+}
+
+function wireDrag(sec, head) {
+  head.addEventListener('pointerdown', e => {
+    // Controls inside a header keep their own behaviour — a drag that starts
+    // on the ON/OFF pill would make the pill unclickable.
+    if (e.target.closest('button, select, input, textarea, .wave-btn, .sec-grip')) return;
+    if (e.button != null && e.button !== 0) return;
+
+    const startY = e.clientY;
+    let dragging = false, marked = null;
+    head.setPointerCapture(e.pointerId);
+
+    const move = ev => {
+      // A few pixels of slop, so a click on the header is still a click.
+      if (!dragging && Math.abs(ev.clientY - startY) < 5) return;
+      if (!dragging) {
+        dragging = true;
+        sec.classList.add('dragging');
+        document.body.classList.add('reordering');
+      }
+      const sibs = siblingsOf(sec).filter(el => el !== sec);
+      marked?.el.classList.remove('drop-before', 'drop-after');
+      marked = null;
+      for (const el of sibs) {
+        const r = el.getBoundingClientRect();
+        if (ev.clientY >= r.top && ev.clientY <= r.bottom) {
+          const after = ev.clientY > r.top + r.height / 2;
+          el.classList.add(after ? 'drop-after' : 'drop-before');
+          marked = { el, after };
+          break;
+        }
+      }
+    };
+    const up = () => {
+      head.removeEventListener('pointermove', move);
+      head.removeEventListener('pointerup', up);
+      head.removeEventListener('pointercancel', up);
+      document.body.classList.remove('reordering');
+      sec.classList.remove('dragging');
+      if (marked) {
+        marked.el.classList.remove('drop-before', 'drop-after');
+        const list = siblingsOf(sec)
+          .sort((a, b) => (+a.style.order || 0) - (+b.style.order || 0));
+        // Re-derive from visual position when no order has been set yet.
+        const visual = siblingsOf(sec).sort((a, b) =>
+          a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+        const seq = (list.every(el => el.style.order) ? list : visual).filter(el => el !== sec);
+        const at = seq.indexOf(marked.el) + (marked.after ? 1 : 0);
+        seq.splice(at, 0, sec);
+        commitOrder(seq);
+        colorSections();          // hues follow position, so they move too
+      }
+    };
+    head.addEventListener('pointermove', move);
+    head.addEventListener('pointerup', up);
+    head.addEventListener('pointercancel', up);
+  });
 }
