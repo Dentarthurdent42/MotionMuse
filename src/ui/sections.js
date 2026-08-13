@@ -62,6 +62,13 @@ function sectionId(sec, head) {
 const headOf = sec =>
   sec.querySelector(':scope > .audio-section-label, :scope > .ph, :scope > .src-tabs');
 
+// The bottom fade says "there is more below". It has to lift when you reach the
+// end, or a fully-scrolled list looks like it still has hidden content.
+function syncEnd(body) {
+  const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 2;
+  body.classList.toggle('at-end', atEnd);
+}
+
 export function applyHeight(sec, h) {
   const body = sec.querySelector(':scope > .sec-body');
   if (!body) return;
@@ -72,6 +79,7 @@ export function applyHeight(sec, h) {
     body.style.height = `${Math.max(MIN_H, h)}px`;
     body.classList.add('sec-scroll');
   }
+  syncEnd(body);
 }
 
 // Wrap one section's content and give it a grip. Idempotent: re-running over
@@ -92,6 +100,10 @@ function enhance(sec) {
     let n = head.nextSibling;
     while (n) { const next = n.nextSibling; body.appendChild(n); n = next; }
     sec.appendChild(body);
+    body.addEventListener('scroll', () => syncEnd(body), { passive: true });
+    // Content can change height without any scrolling (a list grows, a toggle
+    // reveals a row), which changes whether anything is hidden.
+    new ResizeObserver(() => syncEnd(body)).observe(body);
 
     const grip = document.createElement('div');
     grip.className = 'sec-grip';

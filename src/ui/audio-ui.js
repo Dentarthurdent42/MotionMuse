@@ -7,6 +7,7 @@ import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS, GATE_AT_OPTS, GATE_AT_DEFAULT,
          makeDynamics } from '../dynamics.js';
 import { keyLabel, getBinding, setBinding, captureNextKey } from './hotkeys.js';
 import { enhanceSections } from './sections.js';
+import { THEMES, getTheme, setTheme } from './theme.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
@@ -150,6 +151,12 @@ export function renderAudioPanel() {
                 title="Where the gate switches off, as a share of full volume. The ladder's own midpoint (·auto) is not always where you want the switch: with 2 steps it lands at 18%, so an on/off control flips very early. Raise it to move the switch later in the gesture.">${gateAtOpts(vq)}</select>
       </div>
       <div id="vq-level" class="quant-notes">${vq.enabled ? '' : '—'}</div>
+    </div>
+    <div class="audio-section" data-sec="theme">
+      <div class="audio-section-label">Theme</div>
+      <select id="theme-select" title="Colour theme — every one is contrast-checked in CI">
+        ${THEMES.map(t => `<option value="${t.id}"${t.id === getTheme() ? ' selected' : ''}>${t.label} · ${t.dark ? 'dark' : 'light'}</option>`).join('')}
+      </select>
     </div>
     <div class="audio-section">
       <div class="audio-section-label" style="display:flex;align-items:center;">
@@ -358,6 +365,9 @@ export function renderAudioPanel() {
   // Rebind the mute key. The capture swallows the keystroke, so assigning a key
   // can't also trigger whatever it is currently bound to (pressing Space here
   // would otherwise mute on the way past).
+  document.getElementById('theme-select')
+    .addEventListener('change', e => setTheme(e.target.value));
+
   const muteKeyBtn = document.getElementById('mute-key-btn');
   muteKeyBtn.addEventListener('click', () => {
     if (muteKeyBtn.classList.contains('on')) return;   // already listening

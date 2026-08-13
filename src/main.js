@@ -22,6 +22,7 @@ import { initPresetMenu }                   from './ui/preset-menu.js';
 import { initTutorial }                     from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { enhanceSections }                  from './ui/sections.js';
+import { initTheme }                        from './ui/theme.js';
 import * as preset                          from './preset.js';
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
@@ -288,6 +289,7 @@ window.addEventListener('beforeunload', persist);
 window.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
 
 // ── Init ─────────────────────────────────────────────────────────────────
+initTheme();              // before anything paints, so there is no flash of the default palette
 devmode.init();           // apply persisted dev-mode state to <body>
 depthSource.init();       // register depth signals so they appear in the panel
 // Register every source's signals up front, before any of them are running.

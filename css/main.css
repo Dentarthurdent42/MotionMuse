@@ -1,26 +1,125 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 /* Palette in OKLab (oklch: Lightness Chroma Hue). Lightness is perceptually
-   uniform, so contrast against the dark grounds is predictable — every
-   text/accent token is chosen to clear WCAG AA (≥4.5:1) on --panel, verified
-   by tests/contrast/index.js. Grounds share a ~275° blue-violet hue; accents
-   keep their identity hues at a lightness high enough to stay legible. */
-:root {
-  --bg:        oklch(0.13 0.015 275);
-  --surface:   oklch(0.17 0.020 275);
-  --panel:     oklch(0.20 0.025 275);
-  --border:    oklch(0.30 0.030 275);
-  --border2:   oklch(0.36 0.045 275);
-  --faint:     oklch(0.26 0.030 275);
-  --text:      oklch(0.87 0.020 275);
-  --dim:       oklch(0.72 0.055 280);
-  --cyan:      oklch(0.83 0.130 195);
-  --cyan-dim:  oklch(0.83 0.130 195 / 0.2);
-  --purple:    oklch(0.74 0.150 300);
-  --purple-dim:oklch(0.74 0.150 300 / 0.2);
-  --amber:     oklch(0.81 0.150 80);
-  --red:       oklch(0.68 0.200 20);
-  --green:     oklch(0.83 0.160 155);
+   uniform, so contrast against the grounds is predictable — every text/accent
+   token clears WCAG AA (>=4.5:1) on --panel AND --surface, verified for EVERY
+   theme below by tests/contrast/index.js.
+   
+   Themes override only these tokens; nothing else in the stylesheet knows a
+   theme exists. `[data-theme]` on <html> selects one — see src/ui/theme.js.
+   
+   The default dark palette was raised in contrast: body text 0.87 -> 0.93 and
+   dim labels 0.72 -> 0.80 against slightly darker grounds, which takes the
+   worst-case pair from 4.6:1 to comfortably past AA. `--dim` carries most of
+   the interface's labelling, so it was the one actually hurting legibility. */
+:root,
+:root[data-theme="midnight"] {
+  --bg:        oklch(0.11 0.015 275);
+  --surface:   oklch(0.15 0.020 275);
+  --panel:     oklch(0.18 0.025 275);
+  --border:    oklch(0.34 0.035 275);
+  --border2:   oklch(0.44 0.050 275);
+  --faint:     oklch(0.25 0.030 275);
+  --text:      oklch(0.95 0.015 275);
+  --dim:       oklch(0.82 0.045 280);
+  --cyan:      oklch(0.86 0.130 195);
+  --cyan-dim:  oklch(0.86 0.130 195 / 0.22);
+  --purple:    oklch(0.80 0.150 300);
+  --purple-dim:oklch(0.80 0.150 300 / 0.22);
+  --amber:     oklch(0.86 0.150 80);
+  --red:       oklch(0.74 0.190 20);
+  --green:     oklch(0.87 0.160 155);
+  --shadow:    0 2px 6px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.6);
+}
+
+/* Maximum-contrast dark: near-black grounds, near-white text, accents pushed
+   as light as their hue allows. For bright rooms and for anyone who finds the
+   default too soft. */
+:root[data-theme="contrast"] {
+  --bg:        oklch(0.06 0.000 0);
+  --surface:   oklch(0.10 0.005 275);
+  --panel:     oklch(0.13 0.008 275);
+  --border:    oklch(0.42 0.020 275);
+  --border2:   oklch(0.58 0.030 275);
+  --faint:     oklch(0.20 0.010 275);
+  --text:      oklch(0.99 0.000 0);
+  --dim:       oklch(0.88 0.020 280);
+  --cyan:      oklch(0.90 0.140 195);
+  --cyan-dim:  oklch(0.90 0.140 195 / 0.25);
+  --purple:    oklch(0.85 0.150 300);
+  --purple-dim:oklch(0.85 0.150 300 / 0.25);
+  --amber:     oklch(0.90 0.150 85);
+  --red:       oklch(0.78 0.190 22);
+  --green:     oklch(0.90 0.170 155);
+  --shadow:    0 2px 6px rgba(0, 0, 0, 0.8);
+  --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.85);
+}
+
+/* Warm dark — same lightness structure, hues rotated to amber/brown. */
+:root[data-theme="ember"] {
+  --bg:        oklch(0.12 0.020 45);
+  --surface:   oklch(0.16 0.028 45);
+  --panel:     oklch(0.19 0.032 45);
+  --border:    oklch(0.35 0.045 45);
+  --border2:   oklch(0.45 0.060 45);
+  --faint:     oklch(0.26 0.038 45);
+  --text:      oklch(0.95 0.020 60);
+  --dim:       oklch(0.82 0.050 60);
+  --cyan:      oklch(0.86 0.120 190);
+  --cyan-dim:  oklch(0.86 0.120 190 / 0.22);
+  --purple:    oklch(0.80 0.140 330);
+  --purple-dim:oklch(0.80 0.140 330 / 0.22);
+  --amber:     oklch(0.87 0.150 75);
+  --red:       oklch(0.74 0.190 25);
+  --green:     oklch(0.86 0.150 150);
+  --shadow:    0 2px 6px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.55);
+}
+
+/* Light themes invert the lightness ramp: grounds go light, text goes dark,
+   and every accent drops FAR down in lightness. An accent that reads well on
+   near-black is invisible on near-white — the same hue has to be re-chosen,
+   not merely reused, which is why these are hand-set rather than derived. */
+:root[data-theme="paper"] {
+  --bg:        oklch(0.94 0.005 275);
+  --surface:   oklch(0.98 0.004 275);
+  --panel:     oklch(1.00 0.000 0);
+  --border:    oklch(0.80 0.012 275);
+  --border2:   oklch(0.68 0.020 275);
+  --faint:     oklch(0.94 0.008 275);
+  --text:      oklch(0.22 0.020 275);
+  --dim:       oklch(0.42 0.030 280);
+  --cyan:      oklch(0.50 0.110 210);
+  --cyan-dim:  oklch(0.50 0.110 210 / 0.14);
+  --purple:    oklch(0.46 0.170 300);
+  --purple-dim:oklch(0.46 0.170 300 / 0.14);
+  --amber:     oklch(0.52 0.130 65);
+  --red:       oklch(0.50 0.200 25);
+  --green:     oklch(0.48 0.130 150);
+  --shadow:    0 1px 3px rgba(20, 20, 40, 0.16);
+  --shadow-lg: 0 8px 22px rgba(20, 20, 40, 0.20);
+}
+
+/* Warm light, lower glare than pure white for long sessions. */
+:root[data-theme="sepia"] {
+  --bg:        oklch(0.92 0.020 80);
+  --surface:   oklch(0.96 0.018 80);
+  --panel:     oklch(0.98 0.014 80);
+  --border:    oklch(0.79 0.028 70);
+  --border2:   oklch(0.66 0.038 70);
+  --faint:     oklch(0.93 0.022 80);
+  --text:      oklch(0.25 0.030 60);
+  --dim:       oklch(0.44 0.040 65);
+  --cyan:      oklch(0.49 0.110 205);
+  --cyan-dim:  oklch(0.49 0.110 205 / 0.14);
+  --purple:    oklch(0.45 0.170 310);
+  --purple-dim:oklch(0.45 0.170 310 / 0.14);
+  --amber:     oklch(0.48 0.130 60);
+  --red:       oklch(0.48 0.200 25);
+  --green:     oklch(0.46 0.130 150);
+  --shadow:    0 1px 3px rgba(60, 40, 10, 0.18);
+  --shadow-lg: 0 8px 22px rgba(60, 40, 10, 0.22);
 }
 
 html, body {
@@ -95,6 +194,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 
 .panel {
   background: var(--panel);
+  box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -899,11 +999,16 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   border-radius: 3px;
   background: var(--panel);
   margin: 6px;
+  /* Shadow, not just a border: a 1px line at these lightnesses reads as a
+     divider between things, whereas a shadow reads as one thing lifted off
+     another. That difference is what makes a stack of sections legible as a
+     stack of separate containers rather than a ruled list. */
+  box-shadow: var(--shadow);
   /* Room for the grip so it never sits on top of the last row of content. */
   padding-bottom: 9px;
 }
 /* A section that IS a whole column shouldn't float inside itself. */
-.panel > .sec, .panel.sec { margin: 0; border-radius: 0; border: none; }
+.panel > .sec, .panel.sec { margin: 0; border-radius: 0; border: none; box-shadow: none; }
 
 .sec > .audio-section-label,
 .sec > .ph {
@@ -918,7 +1023,21 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 .sec > .sec-body.sec-scroll { flex: 0 0 auto; }
 /* Only a section with a height set (by default or by drag) scrolls; the rest
    stay natural, so nothing gains a scrollbar it didn't need. */
-.sec > .sec-body.sec-scroll { overflow-y: auto; overscroll-behavior: contain; }
+.sec > .sec-body.sec-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* There IS more below — say so. A 3px scrollbar is not an affordance; the
+     MODELS section clipped its stats row and looked simply finished. This
+     fades the last few pixels of a scrollable body, and the mask is attached
+     to the scroll container so it stays at the bottom edge while the content
+     moves under it. It lifts once you reach the end (.at-end, set by JS). */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent 100%);
+}
+.sec > .sec-body.sec-scroll.at-end {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
 .sec > .sec-body.sec-scroll::-webkit-scrollbar { width: 3px; }
 .sec > .sec-body.sec-scroll::-webkit-scrollbar-thumb { background: var(--border2); }
 

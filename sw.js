@@ -55,6 +55,7 @@ const STATIC = [
   '/src/ui/donate.js',
   '/src/ui/hotkeys.js',
   '/src/ui/sections.js',
+  '/src/ui/theme.js',
   '/src/ui/tutorial.js',
   '/src/ui/preset-menu.js',
   '/src/ui/model-ui.js',
