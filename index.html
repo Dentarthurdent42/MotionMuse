@@ -89,8 +89,6 @@
     <div class="panel panel-cam">
       <div class="src-tabs">
         <div class="src-tab active">CV</div>
-        <div class="src-tab future uc-feature" data-soon="EEG input — under construction">EEG<span class="src-tab-wip">🚧</span></div>
-        <div class="src-tab future uc-feature" data-soon="EMG input — under construction">EMG<span class="src-tab-wip">🚧</span></div>
       </div>
 
       <div id="video-wrap">
@@ -125,6 +123,21 @@
            makes its height precious — this drags it smaller. Shown only there
            (see the mobile block in main.css). -->
       <div id="cam-handle" title="Drag to resize the camera view — double-click to reset"></div>
+
+      <!-- EEG and EMG were tabs in the CV strip, which promised a switchable
+           input that does not exist yet — clicking them did nothing. As their
+           own sections they read as what they are: planned inputs, listed
+           beside the one that works. -->
+      <div class="audio-section uc-feature" data-sec="eeg">
+        <div class="audio-section-label">EEG Input <span class="uc-badge">under construction</span></div>
+        <div class="quant-notes">Electroencephalography — not yet implemented. Will register its
+          own bus signals, mappable in the patchbay exactly like the camera's.</div>
+      </div>
+      <div class="audio-section uc-feature" data-sec="emg">
+        <div class="audio-section-label">EMG Input <span class="uc-badge">under construction</span></div>
+        <div class="quant-notes">Electromyography — not yet implemented. Muscle activation as
+          continuous signals, mappable in the patchbay exactly like the camera's.</div>
+      </div>
 
       <div class="panel uc-feature" data-sec="models" id="model-panel" style="border-top:1px solid var(--border);">
         <div class="ph">MODELS <span class="uc-badge">dev</span></div>

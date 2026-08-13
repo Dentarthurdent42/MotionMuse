@@ -24,6 +24,7 @@ import { lsGet, lsSet } from '../storage.js';
 
 const KEY = 'motionmuse-sections';
 const ORDER_KEY = 'motionmuse-sec-order';
+const FOLD_KEY  = 'motionmuse-sec-folded';
 const MIN_H = 56;              // below this a section is unreadable, not compact
 
 // Sections whose content is an open-ended list get a default height, because
@@ -48,6 +49,23 @@ function loadOrder() {
   } catch { return {}; }
 }
 const saveOrder = () => lsSet(ORDER_KEY, JSON.stringify(order));
+
+// Collapsed sections, by id. Separate from the height map: a folded section
+// still remembers how tall it was, so unfolding restores the size you chose
+// rather than resetting it.
+let folded = (() => {
+  try { return new Set(JSON.parse(lsGet(FOLD_KEY) || '[]')); } catch { return new Set(); }
+})();
+const saveFolded = () => lsSet(FOLD_KEY, JSON.stringify([...folded]));
+
+export function setFolded(sec, on) {
+  const id = sec.dataset.secId;
+  sec.classList.toggle('folded', on);
+  const btn = sec.querySelector(':scope > .sec-fold');
+  if (btn) btn.setAttribute('aria-expanded', String(!on));
+  if (on) folded.add(id); else folded.delete(id);
+  saveFolded();
+}
 
 function load() {
   try {
@@ -115,6 +133,19 @@ function enhance(sec) {
     // reveals a row), which changes whether anything is hidden.
     new ResizeObserver(() => syncEnd(body)).observe(body);
 
+    // Collapse control, before the drag wiring so its click is not read as a
+    // drag start (wireDrag ignores presses that land on a button).
+    const fold = document.createElement('button');
+    fold.className = 'sec-fold';
+    fold.type = 'button';
+    fold.title = 'Collapse / expand';
+    fold.setAttribute('aria-expanded', 'true');
+    head.insertBefore(fold, head.firstChild);
+    fold.addEventListener('click', e => {
+      e.stopPropagation();
+      setFolded(sec, !sec.classList.contains('folded'));
+    });
+
     // Only sections stacked inside a scrolling column are reorderable; a
     // section that IS a column has nothing to reorder among.
     if (sec.classList.contains('audio-section')) {
@@ -133,6 +164,7 @@ function enhance(sec) {
 
   const stored = heights[id];
   applyHeight(sec, stored === undefined ? DEFAULT_H[id] ?? null : stored);
+  if (folded.has(id)) setFolded(sec, true);
 }
 
 function wireGrip(sec, grip, body, id) {
