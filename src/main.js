@@ -2,7 +2,7 @@ import { cvSource }                        from './cv.js';
 import { depthSource }                      from './depth.js';
 import { faceSource }                       from './face.js';
 import { engine }                           from './engine.js';
-import { mapper }                           from './mapper.js';
+import { mapper, trackersFor }              from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
 import { buildSigPanel, updateSigPanel, syncSigGroups } from './ui/signals.js';
 import { renderMapper, updateMapperBars }   from './ui/mapper-ui.js';
@@ -85,6 +85,9 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
     document.body.classList.add('cam-on');
     document.getElementById('face-btn').disabled = false;
     document.getElementById('gaze-btn').disabled = false;
+    // A preset chosen while the camera was off asked for face or gaze; now
+    // there is a stream to run them on.
+    applyFaceIntent();
   } catch (err) {
     setStatus('error', 'ERROR: ' + err.message.slice(0, 30));
     setLabel(btn, 'RETRY');
@@ -260,13 +263,63 @@ startAudio();
 // PRESET opens a menu of starting patches; each reports what it still needs
 // switched on (camera / face / gaze) rather than loading silently.
 initPresetMenu({
-  onApply: () => renderMapper(),
+  onApply: async (preset, missing) => {
+    renderMapper();
+    const changed = await applyTrackers(trackersFor(preset));
+    const bits = [preset.hint];
+    if (changed.length) bits.push(changed.join(', '));
+    if (missing.length) bits.push(`switch on ${missing.join(' + ')}`);
+    toast(`${preset.name} — ${bits.join(' · ')}`);
+  },
   state: () => ({
     camera: cvSource.running,
     face:   faceSource.faceOn,
     gaze:   faceSource.gazeOn,
   }),
 });
+
+// Switch every tracker to what a patch actually uses. Loading a face patch with
+// hands and pose still running costs two models' worth of frame budget for
+// cables that do not exist, and leaves the signals panel full of numbers the
+// patch ignores — so this turns things OFF as well as on.
+//
+// The camera is deliberately not started here: that is the user's call, and
+// the menu says so. Face and gaze intent is remembered until it can be applied,
+// because their model needs a running stream.
+let pendingFace = null;
+async function applyTrackers(want) {
+  const changed = [];
+  const before = { handsL: cvSource.handsL, handsR: cvSource.handsR, pose: cvSource.poseOn };
+  cvSource.setTracking({ handsL: want.handsL, handsR: want.handsR, pose: want.pose });
+  syncAllTracking();
+  const hadHands = before.handsL || before.handsR;
+  const hasHands = want.handsL || want.handsR;
+  if (hadHands !== hasHands) changed.push(hasHands ? 'hands on' : 'hands off');
+  if (before.pose !== want.pose) changed.push(want.pose ? 'pose on' : 'pose off');
+
+  pendingFace = { face: want.face, gaze: want.gaze };
+  changed.push(...await applyFaceIntent());
+  return changed;
+}
+
+// Face and gaze need a running camera, so a preset chosen before the camera
+// starts leaves its intent here and the camera-start path applies it.
+async function applyFaceIntent() {
+  if (!pendingFace || !cvSource.running) return [];
+  const { face, gaze } = pendingFace;
+  pendingFace = null;
+  const changed = [];
+  try {
+    if (faceSource.faceOn !== face) { await faceSource.setFace(face); changed.push(face ? 'face on' : 'face off'); }
+    if (faceSource.gazeOn !== gaze) { await faceSource.setGaze(gaze); changed.push(gaze ? 'gaze on' : 'gaze off'); }
+  } catch (err) {
+    toast('Could not switch face tracking: ' + err.message);
+  }
+  document.getElementById('face-btn')?.classList.toggle('on', faceSource.faceOn);
+  document.getElementById('gaze-btn')?.classList.toggle('on', faceSource.gazeOn);
+  syncSigGroups();
+  return changed;
+}
 
 // ── Save / load settings + mappings ──────────────────────────────────────
 // Reflect a freshly loaded state everywhere: mapper rows always, and the audio

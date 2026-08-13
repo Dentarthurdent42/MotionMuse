@@ -7,6 +7,11 @@ import { createPoseBackend }                                from './posebackends
 import { lsGet, lsSet }                                     from './storage.js';
 import { gesture }                                          from './gesture.js';
 
+// How sure the handedness guess has to be before it is allowed to REJECT a
+// hand. MediaPipe reports a score per detection; below this the label is a coin
+// toss and rejecting on it would cost dropouts on a correctly-shown hand.
+const HANDEDNESS_SURE = 0.9;
+
 
 // Hand skeleton connections (MediaPipe 21-landmark topology)
 const HAND_CONNS = [
@@ -70,19 +75,30 @@ export const cvSource = {
     this._syncLatRows();
     lsSet('motionmuse-tracking', JSON.stringify(
       { handsL: this.handsL, handsR: this.handsR, pose: this.poseOn }));
-    // Only one side wanted means the model only ever needs to find one hand.
     this._applyHandCount();
     return { hands: this.handsOn, handsL: this.handsL, handsR: this.handsR, pose: this.poseOn };
   },
 
-  // Tracking one side is a real saving, not just a filter: numHands caps how
-  // many times the landmark stage runs.
+  // Always ask for two hands, even when only one side is enabled.
+  //
+  // This used to ask for one, on the reasoning that numHands caps how many
+  // times the landmark stage runs. It does — but only when a second hand is
+  // ACTUALLY IN FRAME. With one hand up, asking for two costs exactly the
+  // same, because the palm detector finds one hand and the landmark model runs
+  // once. So the saving was confined to precisely the situation the cap got
+  // wrong: with two hands visible and numHands 1, the model returns whichever
+  // palm scored highest — often the hand resting in your lap — and that hand
+  // then drove the enabled side's signals. Enabling only the left hand did not
+  // stop the right one playing.
+  //
+  // With two, both are landmarked and processHands picks the one whose
+  // handedness matches. Paying for a second landmark pass only when there is a
+  // second hand to tell apart is the right trade.
   _applyHandCount() {
     if (!this.hand || !this.handsOn) return;
-    const want = (this.handsL && this.handsR) ? 2 : 1;
-    if (this._handCount === want) return;
-    this._handCount = want;
-    this.setHandOptions({ hands: want });
+    if (this._handCount === 2) return;
+    this._handCount = 2;
+    this.setHandOptions({ hands: 2 });
   },
 
   _loadTracking() {
@@ -186,7 +202,7 @@ export const cvSource = {
     // Hand count is derived from which sides are wanted — one owner, so the
     // header toggles and the model can't disagree about it.
     this._loadTracking();
-    s.hands = (this.handsL && this.handsR) ? 2 : 1;
+    s.hands = 2;
     return s;
   },
 
@@ -402,23 +418,49 @@ export const cvSource = {
     document.getElementById('lat-total').textContent = ms(total);
   },
 
+  // Which detection to treat as `side`, or -1 for none. Exported shape kept
+  // simple (indices into the result) so the choice is one place and testable.
+  _pickSide(r, side) {
+    let unsure = -1;
+    for (let i = 0; i < r.landmarks.length; i++) {
+      const h = r.handednesses[i]?.[0];
+      const guess = h?.categoryName === 'Left' ? 'L' : 'R';
+      const score = h?.score ?? 0;
+      if (score < HANDEDNESS_SURE) { if (unsure < 0) unsure = i; continue; }
+      if (guess === side) return i;            // confident, and it's the one
+    }
+    return unsure;                             // no confident match; take a maybe
+  },
+
   // ── Signal extraction: hands ─────────────────────────────────────────
   processHands(r) {
     const found       = { L: null, R: null };
     const foundWorld  = { L: null, R: null };
     const foundCanned = { L: null, R: null };   // MediaPipe canned category
-    // With exactly one side enabled, do not consult the handedness guess at
-    // all: assign whatever was found to the side the user said they are using.
-    // That guess is the whole reason single-hand play was unreliable — one bad
-    // frame relabels the hand and every signal it drives jumps to the other
-    // side's keys. Being told which hand it is removes the failure mode rather
-    // than smoothing it over.
+    // With exactly one side enabled, pick the detection whose handedness
+    // matches — but only trust that guess when the model is sure of it.
+    //
+    // Both extremes are wrong. Trusting the guess outright is what made
+    // single-hand play unreliable in the first place: one bad frame relabels
+    // the hand and every signal it drives jumps to the other side's keys.
+    // Ignoring it entirely — which is what shipped instead — means whatever
+    // hand the model happens to return drives the enabled side, so a hand
+    // resting in your lap plays the instrument.
+    //
+    // So: prefer a confident match; fall back to a hand the model is unsure
+    // about (that is the old lenient behaviour, and it keeps a correctly-shown
+    // hand from dropping out on a shaky frame); and reject a hand it is
+    // confident belongs to the other side. That last case is the bug being
+    // fixed, and it is the only one where a hand is thrown away.
     const onlySide = this.handsL !== this.handsR ? (this.handsL ? 'L' : 'R') : null;
     if (r.handednesses && r.landmarks) {
       if (onlySide && r.landmarks.length) {
-        found[onlySide]      = r.landmarks[0];
-        foundWorld[onlySide] = r.worldLandmarks?.[0] ?? null;
-        foundCanned[onlySide] = r.gestures?.[0]?.[0] ?? null;
+        const i = this._pickSide(r, onlySide);
+        if (i >= 0) {
+          found[onlySide]       = r.landmarks[i];
+          foundWorld[onlySide]  = r.worldLandmarks?.[i] ?? null;
+          foundCanned[onlySide] = r.gestures?.[i]?.[0] ?? null;
+        }
       } else {
         r.handednesses.forEach((h, i) => {
           // MediaPipe Tasks API reports handedness from the subject's perspective

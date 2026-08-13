@@ -16,10 +16,16 @@ const NEEDS_LABEL = {
   gaze:   '◉ GAZE',
 };
 
-// What still needs switching on for this preset to make sound.
-export function missingFor(preset, { camera, face, gaze }) {
-  const have = { camera, face, gaze };
-  return (preset.needs ?? []).filter(n => !have[n]);
+// What the user still has to do themselves.
+//
+// Face and gaze used to be listed here, because applying a preset left them
+// untouched and a face patch with the face model off is silent. Applying a
+// preset now switches every model to what the patch actually uses (see
+// trackersFor in mapper.js), so the only prerequisite left is the one the app
+// will not take for you: the camera. Turning someone's webcam on because they
+// browsed a menu is not a decision this should make.
+export function missingFor(preset, { camera }) {
+  return (preset.needs ?? []).filter(n => n === 'camera' && !camera);
 }
 
 export function initPresetMenu({ onApply, state }) {
@@ -48,11 +54,9 @@ export function initPresetMenu({ onApply, state }) {
       el.addEventListener('click', () => {
         const preset = mapper.applyPreset(el.dataset.preset);
         setOpen(false);
-        onApply?.(preset);
-        const missing = missingFor(preset, state()).map(n => NEEDS_LABEL[n] ?? n);
-        toast(missing.length
-          ? `${preset.name} loaded — switch on ${missing.join(' + ')}`
-          : `${preset.name} loaded — ${preset.hint}`);
+        // The caller switches the models and reports what changed — it is the
+        // one that knows. Reporting here as well would race it and say less.
+        onApply?.(preset, missingFor(preset, state()).map(n => NEEDS_LABEL[n] ?? n));
       }));
   };
 

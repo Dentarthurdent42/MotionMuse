@@ -408,6 +408,43 @@ labels, and icon **plus** text — never icon-only). Toggle controls expose
 
 ## Gestures & chord mode
 
+### One hand means one hand
+
+Enabling only the left hand used to mean "label whatever hand you find as the
+left one", which is why the hand resting in your lap could play the instrument.
+That came from asking the model for a single hand — `numHands: 1` caps how many
+times the landmark stage runs, so it looked like a saving. It is, but only when
+a **second hand is actually in frame**: with one hand up, asking for two costs
+exactly the same, because the palm detector finds one hand and the landmark
+model runs once. So the cap was confined to precisely the case it got wrong.
+
+Both hands are now landmarked and the one whose handedness matches is used. The
+label is a guess, so it is only trusted when the model is sure of it (score
+≥ 0.9): a confident match wins, an unsure hand is accepted anyway — that is what
+keeps a correctly-shown hand from dropping out on a shaky frame — and a hand the
+model is confident belongs to the other side is rejected. That last case is the
+bug, and it is the only one where a hand is discarded.
+`tests/unit/hand-side.test.js` pins all four.
+
+### Presets switch the models they need
+
+Choosing a preset now switches every tracker to what the patch actually uses,
+off as well as on: **Face · Brow & Mouth** turns face tracking on and hands,
+pose and gaze off. Loading a face patch with hands and pose still running costs
+two models' worth of frame budget for cables that do not exist.
+
+What a preset needs is **derived from its own signals**, not declared beside it:
+every bus signal knows its group (`hand l`, `pose`, `face`, `gaze`…), so the
+trackers fall straight out of the cables and cannot drift from them. Wire a face
+signal into a preset and the face model becomes required, because that is what
+the word means here.
+
+The camera is the one thing it will not switch on for you — turning someone's
+webcam on because they browsed a menu is not a decision the app should make — so
+that is all the menu's "needs" line reports now. A preset chosen before the
+camera starts has its face/gaze intent remembered and applied when the stream
+arrives.
+
 ### Two recognizers, arbitrated
 
 Hand tracking runs MediaPipe's **GestureRecognizer** rather than the plain
@@ -857,8 +894,9 @@ or **TF.js MoveNet Lightning / Thunder** — and watch live detection FPS and
 per-model mean/p95 inference times while the camera runs, so variants can be
 A/B'd on the actual device. Switches happen live and persist in
 `localStorage`. The **DELEGATE** switch applies to *both* the pose and hand
-models, and **HANDS** sets the maximum hands tracked — the landmark stage runs
-once per detected hand, so one hand is close to half the hand cost.
+models, and **HANDS** is no longer set here: the header's ✋ L / R toggles own it, and the
+model is always asked for two hands so the one you enabled can be picked out
+from the one you did not (see "One hand means one hand").
 
 MoveNet loads TensorFlow.js lazily (only when selected) and adapts its 17 COCO
 keypoints onto the BlazePose indices the pose signals read — all 12 pose

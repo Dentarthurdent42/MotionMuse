@@ -80,7 +80,7 @@ test('steps is coerced and clamped', () => {
 });
 
 // ── Per-connection invert ──
-import { PRESETS, DEFAULT_PRESET } from '../../src/mapper.js';
+import { PRESETS, DEFAULT_PRESET, trackersFor } from '../../src/mapper.js';
 import { missingFor } from '../../src/ui/preset-menu.js';
 
 const driveInv = (v, opts) => {
@@ -178,6 +178,36 @@ test('a preset voiced for more oscillators grows the bank to fit', () => {
   engine.setOscCount(1);
 });
 
+test('a preset asks for exactly the trackers its cables use', () => {
+  // Derived from the signals the preset wires, not from a list beside it, so
+  // this checks the derivation against the requested behaviour: choosing
+  // "Face · Brow & Mouth" must switch face ON and hands, pose and gaze OFF.
+  const want = id => trackersFor(PRESETS.find(p => p.id === id));
+  assert.deepEqual(want('face-brow-mouth'),
+    { handsL: false, handsR: false, pose: false, face: true, gaze: false });
+  assert.deepEqual(want('gaze'),
+    { handsL: false, handsR: false, pose: false, face: true, gaze: true });
+  assert.deepEqual(want('pose'),
+    { handsL: false, handsR: false, pose: true, face: false, gaze: false });
+  // The hands patch uses both hands, and reaches for pose too (elbow angle,
+  // and hand_R_z comes off the depth pipeline).
+  assert.deepEqual(want('hands'),
+    { handsL: true, handsR: true, pose: true, face: false, gaze: false });
+
+  // Every preset must ask for something, or applying it silences the app.
+  for (const p of PRESETS) {
+    const t = trackersFor(p);
+    assert.ok(Object.values(t).some(Boolean), `${p.id} needs no tracker at all`);
+  }
+});
+
+test('an unknown or empty preset asks for nothing rather than throwing', () => {
+  assert.deepEqual(trackersFor(undefined),
+    { handsL: false, handsR: false, pose: false, face: false, gaze: false });
+  assert.deepEqual(trackersFor({ mappings: [['volume', 'nosuchsignal', 0, 1]] }),
+    { handsL: false, handsR: false, pose: false, face: false, gaze: false });
+});
+
 test('preset ids are unique and the default exists', () => {
   const ids = PRESETS.map(p => p.id);
   assert.equal(new Set(ids).size, ids.length);
@@ -204,11 +234,14 @@ test('the requested face patch is brow → pitch, mouth → volume', () => {
   assert.equal(p.mappings.length, 2, 'kept to exactly the two requested controls');
 });
 
-test('missingFor reports only what is still switched off', () => {
+test('missingFor reports only what the user still has to do', () => {
+  // Face and gaze used to be listed here. Applying a preset now switches every
+  // model to what the patch uses, so the only prerequisite left is the camera —
+  // the one thing the app will not turn on for you.
   const gazePreset = PRESETS.find(p => p.id === 'gaze');
   assert.deepEqual(missingFor(gazePreset, { camera: false, face: false, gaze: false }),
-                   ['camera', 'face', 'gaze']);
-  assert.deepEqual(missingFor(gazePreset, { camera: true, face: true, gaze: false }), ['gaze']);
+                   ['camera']);
+  assert.deepEqual(missingFor(gazePreset, { camera: true, face: false, gaze: false }), []);
   assert.deepEqual(missingFor(gazePreset, { camera: true, face: true, gaze: true }), []);
   assert.deepEqual(missingFor(PRESETS.find(p => p.id === 'hands'), { camera: true }), []);
 });

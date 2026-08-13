@@ -185,3 +185,37 @@ export const PRESETS = [
 ];
 
 export const DEFAULT_PRESET = 'hands';
+
+// ── What a preset actually needs switched on ───────────────────────────────
+//
+// Derived from the preset's own signals rather than declared beside it. Each
+// bus signal already knows its group ('hand l', 'pose', 'face', 'gaze', …), so
+// the trackers a patch requires fall straight out of the cables it wires — and
+// cannot drift from them the way a hand-maintained list would. Wire a face
+// signal into a preset and the face model is required, because that is what
+// the word "required" means here.
+const GROUP_TRACKERS = {
+  'hand l': ['handsL'],
+  'hand r': ['handsR'],
+  // A gesture is matched on whichever hand is up; the patch does not say which,
+  // so it asks for both rather than silently picking one.
+  gesture:  ['handsL', 'handsR'],
+  pose:     ['pose'],
+  depth:    ['pose'],       // hand_*_z is derived from the pose/depth pipeline
+  face:     ['face'],
+  gaze:     ['gaze'],
+};
+
+// { handsL, handsR, pose, face, gaze } — every tracker, so this is a complete
+// statement of the patch's needs and can be applied as-is. A tracker no cable
+// touches is `false`: loading "Face · Brow & Mouth" should leave hands and pose
+// OFF, not merely not-required, or the patch arrives with three models running
+// for nothing.
+export function trackersFor(preset) {
+  const want = { handsL: false, handsR: false, pose: false, face: false, gaze: false };
+  for (const [, signal] of preset?.mappings ?? []) {
+    const g = bus.signals.get(signal)?.group;
+    for (const t of GROUP_TRACKERS[g] ?? []) want[t] = true;
+  }
+  return want;
+}
