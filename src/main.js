@@ -21,7 +21,8 @@ import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
 import { initTutorial }                     from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
-import { enhanceSections }                  from './ui/sections.js';
+import { enhanceSections, colorSections }   from './ui/sections.js';
+import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
 import { initTheme }                        from './ui/theme.js';
 import * as preset                          from './preset.js';
 
@@ -149,6 +150,10 @@ devmode.onChange(on => {
   devBtn.setAttribute('aria-pressed', String(on));
 });
 devBtn.addEventListener('click', () => devmode.toggle());
+// Dev mode reveals whole sections (MODELS, Gestures, Chord Mode, Shader).
+// Position hues are derived from measured geometry and skip hidden elements,
+// so anything revealed here has no hue until this recolours the set.
+devmode.onChange(() => colorSections());
 
 // ── LiDAR / optical depth toggle ─────────────────────────────────────────
 const depthBtn = document.getElementById('depth-btn');
@@ -327,5 +332,10 @@ initModelPanel();         // dev-mode pose model comparison panel
 initTutorial();           // guided tour (? button; auto-offers on first visit)
 preset.restoreLocal();    // bring back the last session's mappings + settings
 renderMapper();
+// Shader controls belong with the patchbay — the shader reads signals and
+// mappings, so it sits beside the wiring rather than among synth parameters.
+// Rendered once: renderMapper() re-runs on every rewire.
+const shaderHost = document.getElementById('shader-host');
+if (shaderHost) { shaderHost.innerHTML = shaderSectionHTML(); wireShaderSection(); }
 enhanceSections();        // wrap every section: own container, scroller, resize grip
 loop();

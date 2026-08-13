@@ -306,7 +306,9 @@ elements carry a `.uc-feature` class hidden by CSS unless `<body class="dev">`.
 
 ## Shader — visual output
 
-The **Shader** panel renders a WebGL fragment shader (plasma / warp / bars)
+The **Shader** panel sits in the **patchbay** column, not the audio one: it is
+driven by signals and mappings, so it belongs beside the wiring that feeds it
+rather than among the synth's parameters. It renders a WebGL fragment shader (plasma / warp / bars)
 that reacts to the live audio level and two signals you pick (default
 `hand_R_x` / `hand_R_y`). It honors `prefers-reduced-motion` (freezes the time
 term). `src/shader.js` is the renderer (one program, `u_mode` branch);

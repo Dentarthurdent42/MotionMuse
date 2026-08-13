@@ -172,6 +172,12 @@
         <input type="file" id="load-file" accept="application/json,.json" hidden>
       </div>
       <div id="mapper-rows"></div>
+      <!-- Shader controls live here rather than in the audio column: the
+           shader is driven by signals and mappings, so it belongs beside the
+           wiring that feeds it, not among the synth's parameters. Filled by
+           main.js once at startup — renderMapper() runs on every rewire and
+           re-rendering the section each time would reset its controls. -->
+      <div id="shader-host"></div>
     </div>
 
     <div class="splitter" id="split-r" title="Drag to resize — double-click to reset"></div>
