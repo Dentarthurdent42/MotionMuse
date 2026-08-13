@@ -412,7 +412,21 @@ tone and read the intervals back. Harmonic minor therefore comes out
 **i ii° III+ iv V vi° vii°** — leading tone and all — with no special cases.
 
 Holding an assigned gesture sustains its chord; releasing it lets the chord go
-(hold-to-sound). Chords play through a dedicated 4-voice bank with **its own
+(hold-to-sound), shaped by a proper **ADSR** — attack, decay, sustain level and
+release, set in the Chord Mode section. The envelope sits on the shared chord
+gain rather than per voice: the whole chord is one note here (the voices are
+its intervals), so one envelope is what a player means by "the chord's attack".
+Retriggering mid-release starts from the dying value rather than snapping to
+zero, so fast chord changes don't click.
+
+A dedicated **release gesture** — **open palm** by default — lets a held chord
+go deliberately, which matters once the release is long enough to hear. It is a
+setting, not a reservation: pick any shape, or none. It *wins* over a chord
+assigned to the same gesture (a shape cannot both start and stop a chord), so
+the default set moves **IV** onto `asl4` rather than leaving palm holding a
+chord the release would mute. Assign a chord to your release gesture anyway and
+the picker marks the clash with ⚠ at the moment you choose, instead of quietly
+resolving it. Chords play through a dedicated 4-voice bank with **its own
 filter and level** — `Chord Cutoff` / `Chord Q` / `Chord Vol`, plus a **Chord
 Filter Type** row — so the chord bed can sit darker or quieter than the lead
 (or the other way round) without either touching the other. `Osc Vol` is the

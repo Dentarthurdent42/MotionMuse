@@ -23,9 +23,13 @@ export const DEFAULT_KEY = {
 
 // gestureId → { degree 0..6, seventh }. Starter assignments walking a
 // familiar progression so the mode makes sound out of the box.
+// `palm` is deliberately absent: it is the default RELEASE gesture, and a
+// shape cannot both sound a chord and stop one. IV moves to `asl4` (four
+// fingers up) rather than being dropped — losing the subdominant from the
+// default set would be a real musical regression, not a tidy-up.
 const DEFAULT_ASSIGNMENTS = {
   fist:   { degree: 0, seventh: false },   // I
-  palm:   { degree: 3, seventh: false },   // IV
+  asl4:   { degree: 3, seventh: false },   // IV
   peace:  { degree: 4, seventh: true  },   // V7
   point:  { degree: 5, seventh: false },   // vi
   thumbs: { degree: 1, seventh: false },   // ii
@@ -52,6 +56,10 @@ const normAssign = a => ({
 });
 
 export const chordmode = (() => {
+  // Gesture that releases a held chord. Defaults to the open palm — the
+  // natural "let go" shape — but is a setting, not a reservation: see tick().
+  const DEFAULT_RELEASE_GESTURE = 'palm';
+  let releaseGesture = DEFAULT_RELEASE_GESTURE;
   let enabled = false;
   let key = { ...DEFAULT_KEY };
   let assignments = { ...DEFAULT_ASSIGNMENTS };
@@ -126,15 +134,39 @@ export const chordmode = (() => {
         if (playing) { engine.releaseChord(); playing = null; }
         return;
       }
+      const held = gesture.current();
+
+      // A dedicated release gesture: hold it and the chord lets go, so a chord
+      // can be cut deliberately rather than only by dropping the gesture that
+      // started it — which matters once the release is long enough to hear.
+      //
+      // The release trigger wins over a chord assignment on the same shape —
+      // a gesture cannot both start and stop a chord, and deferring to the
+      // assignment instead would have made the default dead on arrival, since
+      // `palm` shipped holding IV. That default moved to `asl4` rather than
+      // being dropped. If a user *does* assign a chord to their release
+      // gesture, the picker flags the clash at the moment of choosing, which
+      // beats resolving it silently either way.
+      if (releaseGesture && held.includes(releaseGesture)) {
+        if (playing) { engine.releaseChord(); playing = null; }
+        return;
+      }
+
       // First currently-held gesture that has a chord assigned wins.
-      const id = gesture.current().find(g => assignments[g]) ?? null;
+      const id = held.find(g => assignments[g]) ?? null;
       if (id === playing) return;
       if (id) this._sound(id);
       else engine.releaseChord();
       playing = id;
     },
 
-    serialize() { return { enabled, key: { ...key }, assignments: { ...assignments } }; },
+    getReleaseGesture() { return releaseGesture; },
+    setReleaseGesture(id) {
+      releaseGesture = id || null;
+      return releaseGesture;
+    },
+
+    serialize() { return { enabled, key: { ...key }, assignments: { ...assignments }, releaseGesture }; },
 
     load(data) {
       if (!data) return;
@@ -150,6 +182,7 @@ export const chordmode = (() => {
         }
         assignments = merged;
       }
+      if (data.releaseGesture !== undefined) releaseGesture = data.releaseGesture || null;
       this.setEnabled(!!data.enabled);
     },
   };

@@ -17,7 +17,10 @@ const reset = () => {
 test('default assignments spell chords in the default key', () => {
   reset();
   assert.equal(chordmode.chordFor('fist').numeral, 'I');
-  assert.equal(chordmode.chordFor('palm').numeral, 'IV');
+  // IV lives on asl4, not palm: palm is the default release gesture and a
+  // shape cannot both sound a chord and stop one.
+  assert.equal(chordmode.chordFor('asl4').numeral, 'IV');
+  assert.equal(chordmode.chordFor('palm'), null, 'the release gesture holds no chord by default');
   assert.equal(chordmode.chordFor('peace').numeral, 'V7');
   assert.equal(chordmode.chordFor('peace').rootName, 'G');
 });
@@ -88,7 +91,7 @@ test('load merges over defaults so new gestures still get a chord', () => {
   chordmode.load({ enabled: false, assignments: { fist: { degree: 4, seventh: true } } });
   const a = chordmode.assignments();
   assert.equal(a.fist.degree, 4);
-  assert.equal(a.palm.degree, 3, 'defaults for untouched gestures survive');
+  assert.equal(a.asl4.degree, 3, 'defaults for untouched gestures survive');
 });
 
 test('old absolute-root assignments migrate to the nearest degree', () => {
@@ -123,4 +126,45 @@ test('serialize round-trips key and assignments', () => {
   chordmode.load(s);
   assert.deepEqual(chordmode.key(), { root: 'F', mode: 'dorian', octave: 3, follow: false });
   assert.deepEqual(chordmode.assignments().horns, { degree: 6, seventh: true });
+});
+
+// ── Chord ADSR + release gesture ─────────────────────────────────────────
+// The release gesture is the one place where two features want the same
+// input, so the resolution is pinned rather than left to whoever reads the
+// code next.
+
+test('chord envelope clamps to a musical range instead of any float', () => {
+  const before = engine.getChordEnv();
+  assert.deepEqual(engine.setChordEnv({ attack: 99 }).attack, 2, 'attack capped');
+  assert.equal(engine.setChordEnv({ sustain: -5 }).sustain, 0, 'sustain is a 0-1 level');
+  assert.equal(engine.setChordEnv({ sustain: 9 }).sustain, 1);
+  assert.ok(engine.setChordEnv({ release: 0 }).release > 0,
+    'a zero release would click rather than stop');
+  assert.equal(engine.setChordEnv({ attack: 'nonsense' }).attack, 2,
+    'garbage leaves the previous value alone');
+  engine.setChordEnv(before);
+});
+
+test('the release gesture defaults to open palm, and palm holds no chord', () => {
+  assert.equal(chordmode.getReleaseGesture(), 'palm');
+  // The two must not collide out of the box: a shape cannot both start and
+  // stop a chord, so IV was moved off palm rather than the default being left
+  // dead on arrival.
+  assert.equal(chordmode.chordFor('palm'), null);
+  assert.equal(chordmode.chordFor('asl4').numeral, 'IV', 'IV is still reachable');
+});
+
+test('the release gesture round-trips through save/load', () => {
+  chordmode.setReleaseGesture('horns');
+  const s = JSON.parse(JSON.stringify(chordmode.serialize()));
+  chordmode.setReleaseGesture('fist');
+  chordmode.load(s);
+  assert.equal(chordmode.getReleaseGesture(), 'horns');
+  chordmode.setReleaseGesture('palm');
+});
+
+test('clearing the release gesture is allowed', () => {
+  chordmode.setReleaseGesture(null);
+  assert.equal(chordmode.getReleaseGesture(), null);
+  chordmode.setReleaseGesture('palm');
 });

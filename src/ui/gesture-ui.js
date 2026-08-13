@@ -7,6 +7,7 @@ import { chordmode }  from '../chordmode.js';
 import { diatonicChord, DIATONIC_SCALES } from '../chords.js';
 import { NOTE_NAMES } from '../scale.js';
 import { cvSource }   from '../cv.js';
+import { engine }     from '../engine.js';
 import { toast }      from './status.js';
 import { buildSigPanel } from './signals.js';
 
@@ -22,6 +23,8 @@ const MODE_LABELS = {
 
 export function gestureSectionsHTML() {
   const gestures = gesture.list();
+  const relId = chordmode.getReleaseGesture();
+  const env = engine.getChordEnv();
   const on = chordmode.enabled;
   const asg = chordmode.assignments();
 
@@ -128,6 +131,27 @@ export function gestureSectionsHTML() {
       </div>
       ${keyRow}
       <div id="chord-assigns">${assignRows}</div>
+      <div class="chord-key" style="margin-top:6px;">
+        <span class="ctrl-lbl" style="flex:0 0 auto;">RELEASE</span>
+        <select id="ck-release" style="flex:1;min-width:0;"
+                title="Holding this shape lets a held chord go. It wins over any chord assigned to the same shape — a gesture cannot both start and stop a chord — so a clash is marked below.">
+          <option value=""${!relId ? ' selected' : ''}>none</option>
+          ${gesture.list().map(g => `<option value="${g.id}"${g.id === relId ? ' selected' : ''}>${gestureLabel(g)}${chordmode.chordFor(g.id) ? ' ⚠' : ''}</option>`).join('')}
+        </select>
+      </div>
+      ${relId && chordmode.chordFor(relId)
+        ? `<div class="quant-notes" style="color:var(--amber)">⚠ ${gestureLabel(gesture.list().find(g => g.id === relId) ?? { id: relId })} also has a chord assigned — the release wins, so that chord will not sound.</div>`
+        : ''}
+      <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;">
+        ${['attack', 'decay', 'sustain', 'release'].map(k => `
+          <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
+            ${k.slice(0, 3).toUpperCase()}
+            <input type="range" class="apr ck-env" data-env="${k}"
+              min="${engine.CHORD_ENV_RANGE[k][0]}" max="${engine.CHORD_ENV_RANGE[k][1]}"
+              step="0.005" value="${env[k]}">
+            <span class="ctrl-val" id="ck-env-${k}">${k === 'sustain' ? Math.round(env[k] * 100) + '%' : env[k].toFixed(2) + 's'}</span>
+          </label>`).join('')}
+      </div>
       <div id="chord-readout" class="quant-notes">${on ? '—' : 'hold a gesture to play its chord'}</div>
     </div>`;
 }
@@ -242,6 +266,22 @@ export function wireGestureSections(rerender) {
   document.getElementById('ck-root')?.addEventListener('change', e => setKey({ root: e.target.value }));
   document.getElementById('ck-mode')?.addEventListener('change', e => setKey({ mode: e.target.value }));
   document.getElementById('ck-oct') ?.addEventListener('change', e => setKey({ octave: Number(e.target.value) }));
+  // Release gesture + ADSR. Re-render on the release change so the clash
+  // warning and the ⚠ markers update; the sliders mutate in place, because a
+  // re-render mid-drag would drop the pointer capture.
+  document.getElementById('ck-release')?.addEventListener('change', e => {
+    chordmode.setReleaseGesture(e.target.value || null);
+    rerender?.();
+  });
+  document.querySelectorAll('.ck-env').forEach(el => {
+    el.addEventListener('input', e => {
+      const k = e.target.dataset.env;
+      const v = engine.setChordEnv({ [k]: +e.target.value })[k];
+      const out = document.getElementById(`ck-env-${k}`);
+      if (out) out.textContent = k === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`;
+    });
+  });
+
   document.getElementById('ck-follow')?.addEventListener('click', () => {
     // Turning follow off keeps whatever key was being followed, so the sound
     // doesn't jump the moment you take manual control.

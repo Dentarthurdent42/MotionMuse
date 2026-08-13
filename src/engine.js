@@ -19,6 +19,18 @@ export const engine = (() => {
   const CHORD_VOICES = 4;
   let chordOscs = [], chordVGains = [], chordGain = null, chordOn = false;
 
+  // Chord ADSR. Seconds, except `sustain`, which is the fraction of peak the
+  // note settles to while the gesture is held — the one ADSR value that is a
+  // level and not a time, and the reason a chord can now fade to a bed under
+  // the lead instead of sitting at full tilt until released.
+  //
+  // Held on the shared chordGain rather than per voice: the whole chord is one
+  // note here (the voices are its intervals), so one envelope is what a player
+  // means by "the chord's attack". Nothing else automates chordGain, which is
+  // what makes cancelScheduledValues safe below — keep that invariant.
+  const CHORD_ENV_MIN = 0.001;
+  let chordEnv = { attack: 0.02, decay: 0.12, sustain: 0.7, release: 0.35 };
+
   // Pitch quantisation: snap oscillator frequencies onto a scale + tuning.
   const FREQ_KEYS = new Set(['osc1_freq', 'osc2_freq']);
   let tuning = { enabled: false, root: 'C', scale: 'chromatic', system: 'equal (12-TET)' };
@@ -293,7 +305,8 @@ export const engine = (() => {
     const params = {};
     for (const k in PARAMS) params[k] = PARAMS[k].val;
     return { params, tuning: { ...tuning }, volStep: { ...volStep },
-             osc1Type, osc2Type, filterType, chordFilterType };
+             osc1Type, osc2Type, filterType, chordFilterType,
+             chordEnv: { ...chordEnv } };
   }
   function restore(s) {
     if (!s) return;
@@ -301,6 +314,7 @@ export const engine = (() => {
     if (s.osc2Type) setOsc2Type(s.osc2Type);
     if (s.filterType) setFilterType(s.filterType);
     if (s.chordFilterType) setChordFilterType(s.chordFilterType);
+    if (s.chordEnv) setChordEnv(s.chordEnv);
     if (s.tuning) setTuning(s.tuning);
     if (s.volStep) setVolStep(s.volStep);   // before params, so volume quantises on the way in
     if (s.params) for (const k in s.params) if (PARAMS[k]) set(k, s.params[k]);
@@ -339,20 +353,45 @@ export const engine = (() => {
       if (audible) o.frequency.linearRampToValueAtTime(freqs[i], t + sm);
       chordVGains[i].gain.linearRampToValueAtTime(audible ? 1 / Math.max(3, freqs.length) : 0, t + sm);
     });
-    chordGain.gain.cancelScheduledValues(t);
-    chordGain.gain.setValueAtTime(chordGain.gain.value, t);
-    chordGain.gain.linearRampToValueAtTime(gain, t + 0.015);
+    // Attack to peak, then decay to the sustain level, both anchored at the
+    // gain we are actually at — retriggering mid-release has to start from the
+    // dying value, not snap to zero first, or fast chord changes click.
+    const a = Math.max(CHORD_ENV_MIN, chordEnv.attack);
+    const d = Math.max(0, chordEnv.decay);
+    const sus = gain * Math.max(0, Math.min(1, chordEnv.sustain));
+    const g = chordGain.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(gain, t + a);
+    if (d > 0) g.linearRampToValueAtTime(sus, t + a + d);
     chordOn = true;
   }
 
   function releaseChord() {
     if (!started || !chordOn) return;
     const t = ctx.currentTime;
-    chordGain.gain.cancelScheduledValues(t);
-    chordGain.gain.setValueAtTime(chordGain.gain.value, t);
-    chordGain.gain.linearRampToValueAtTime(0, t + 0.12);
+    const g = chordGain.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(0, t + Math.max(CHORD_ENV_MIN, chordEnv.release));
     chordOn = false;
   }
+
+  // Times are clamped to a sane musical span rather than the full float range:
+  // a 30-second attack on a gesture-held chord is not a setting, it is a way
+  // to make the instrument look broken.
+  const CHORD_ENV_RANGE = { attack: [0, 2], decay: [0, 3], sustain: [0, 1], release: [0.005, 5] };
+  function setChordEnv(partial = {}) {
+    const next = { ...chordEnv };
+    for (const [k, [lo, hi]] of Object.entries(CHORD_ENV_RANGE)) {
+      if (partial[k] === undefined) continue;
+      const v = Number(partial[k]);
+      if (Number.isFinite(v)) next[k] = Math.max(lo, Math.min(hi, v));
+    }
+    chordEnv = next;
+    return { ...chordEnv };
+  }
+  const getChordEnv = () => ({ ...chordEnv });
 
   function chordActive() { return chordOn; }
 
@@ -402,6 +441,7 @@ export const engine = (() => {
     snapshot, restore,
     defineWave, playTone, now,
     playChord, releaseChord, chordActive,
+    setChordEnv, getChordEnv, CHORD_ENV_RANGE,
     getWaveform,
     setMuted, toggleMuted, resume,
     get started() { return started; },
