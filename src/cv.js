@@ -5,6 +5,7 @@ import { setStatus }                                        from './ui/status.js
 import { depthSource }                                      from './depth.js';
 import { createPoseBackend }                                from './posebackends.js';
 import { lsGet, lsSet }                                     from './storage.js';
+import { gesture }                                          from './gesture.js';
 
 
 // Hand skeleton connections (MediaPipe 21-landmark topology)
@@ -157,7 +158,7 @@ export const cvSource = {
     this.registerSignals();
     setStatus('loading', 'LOADING MODELS…');
 
-    const { FilesetResolver, HandLandmarker } = await import(
+    const { FilesetResolver, HandLandmarker, GestureRecognizer } = await import(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs'
     );
 
@@ -167,6 +168,7 @@ export const cvSource = {
 
     this._vision = vision;                 // kept so the hand model can be rebuilt
     this._HandLandmarker = HandLandmarker;
+    this._GestureRecognizer = GestureRecognizer;
     const saved = this._savedModel();
     this.hand = await this._makeHand(saved.delegate, saved.hands);
 
@@ -194,15 +196,40 @@ export const cvSource = {
   // delegate were hardcoded, which meant the Models panel's DELEGATE switch
   // silently applied to pose only while hands stayed on whatever the browser
   // gave it.
-  _makeHand(delegate = 'GPU', numHands = 2) {
-    return this._HandLandmarker.createFromOptions(this._vision, {
-      baseOptions: {
-        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-        delegate,
-      },
-      numHands,
-      runningMode: 'VIDEO',
-    });
+  //
+  // GestureRecognizer rather than HandLandmarker. It is not a second model on
+  // top: the .task bundle contains hand_landmarker.task and
+  // hand_gesture_recognizer.task side by side, and its result carries the same
+  // landmarks / worldLandmarks / handedness fields plus `gestures`. So the
+  // extra cost is a small classifier head, and in exchange the seven shapes it
+  // knows are recognized by a trained model instead of hand-measured
+  // templates. Everything else — ASL numbers, rock horns, user recordings —
+  // still comes from the templates (see resolveGesture in gesture.js).
+  async _makeHand(delegate = 'GPU', numHands = 2) {
+    const base = { numHands, runningMode: 'VIDEO' };
+    try {
+      return await this._GestureRecognizer.createFromOptions(this._vision, {
+        ...base,
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task',
+          delegate,
+        },
+      });
+    } catch (e) {
+      // Never lose hand tracking over the classifier. If the bundle will not
+      // load — old cache, blocked host, unsupported delegate — fall back to the
+      // plain landmarker and let the templates carry recognition exactly as
+      // they did before. Detected per-instance at the call site, so nothing
+      // downstream has to know which one it got.
+      console.warn('[cv] gesture recognizer unavailable, using hand landmarker:', e);
+      return this._HandLandmarker.createFromOptions(this._vision, {
+        ...base,
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+          delegate,
+        },
+      });
+    }
   },
 
   // Rebuild the hand model live (camera keeps running; hand frames reuse the
@@ -326,7 +353,9 @@ export const cvSource = {
         const runHand = both ? (lat.frame & 1) === 0 : this.handsOn;
         const runPose = both ? !runHand : this.poseOn;
         if (runHand) {
-          this._hr = this.hand.detectForVideo(this.video, now);
+          this._hr = this.hand.recognizeForVideo
+            ? this.hand.recognizeForVideo(this.video, now)
+            : this.hand.detectForVideo(this.video, now);
           push30(lat.hand, performance.now() - t0);
           this.processHands(this._hr);
         } else if (runPose) {
@@ -375,8 +404,9 @@ export const cvSource = {
 
   // ── Signal extraction: hands ─────────────────────────────────────────
   processHands(r) {
-    const found      = { L: null, R: null };
-    const foundWorld = { L: null, R: null };
+    const found       = { L: null, R: null };
+    const foundWorld  = { L: null, R: null };
+    const foundCanned = { L: null, R: null };   // MediaPipe canned category
     // With exactly one side enabled, do not consult the handedness guess at
     // all: assign whatever was found to the side the user said they are using.
     // That guess is the whole reason single-hand play was unreliable — one bad
@@ -388,6 +418,7 @@ export const cvSource = {
       if (onlySide && r.landmarks.length) {
         found[onlySide]      = r.landmarks[0];
         foundWorld[onlySide] = r.worldLandmarks?.[0] ?? null;
+        foundCanned[onlySide] = r.gestures?.[0]?.[0] ?? null;
       } else {
         r.handednesses.forEach((h, i) => {
           // MediaPipe Tasks API reports handedness from the subject's perspective
@@ -395,8 +426,17 @@ export const cvSource = {
           if (side === 'L' ? !this.handsL : !this.handsR) return;
           found[side]      = r.landmarks[i];
           foundWorld[side] = r.worldLandmarks?.[i] ?? null;
+          // Same index, same side resolution — so the classification and the
+          // landmarks can never end up describing different hands.
+          foundCanned[side] = r.gestures?.[i]?.[0] ?? null;
         });
       }
+    }
+    // 'None' is the classifier saying it has no opinion, not a gesture.
+    for (const side of ['L', 'R']) {
+      const c = foundCanned[side];
+      gesture.setCanned(side, c && c.categoryName !== 'None' ? c.categoryName : null,
+                        c?.score ?? 0);
     }
 
     ['L', 'R'].forEach(s => {

@@ -408,6 +408,41 @@ labels, and icon **plus** text — never icon-only). Toggle controls expose
 
 ## Gestures & chord mode
 
+### Two recognizers, arbitrated
+
+Hand tracking runs MediaPipe's **GestureRecognizer** rather than the plain
+HandLandmarker. It is not a second model on top: open `gesture_recognizer.task`
+and you find `hand_landmarker.task` and `hand_gesture_recognizer.task` side by
+side, and the result carries the same landmarks / world landmarks / handedness
+fields plus `gestures`. The extra cost is a small classifier head and about
+550 KB of download (8.4 MB against 7.8 MB), and in exchange seven shapes are
+recognized by a trained model instead of hand-measured templates:
+`Closed_Fist`, `Open_Palm`, `Pointing_Up`, `Thumb_Up`, `Thumb_Down`, `Victory`,
+`ILoveYou` — mapping to **Fist, Open Palm, Point, Thumbs Up, Thumbs Down, Peace**
+and **I Love You**. The last two are new, and ship without templates: they have
+never been measured on a hand here, and an invented vector would be a false
+match waiting to happen. Record one with ✎ and it gains a template like any
+other.
+
+The classifier knows only those seven. The ASL number handshapes, rock horns and
+anything you record still come from the template matcher, and the two are
+arbitrated by `resolveGesture` (unit-tested in
+`tests/unit/gesture-canned.test.js`):
+
+- The classifier wins a shape it **can** name — that is the point of adopting it.
+- A template match it **cannot** name wins instead. ASL 4 is four fingers with
+  the thumb folded across the palm; the classifier has no such category, so its
+  nearest answer is `Open_Palm`. That is it naming the closest thing it knows,
+  not evidence the hand is open, so the template survives.
+- Below a confidence of 0.6 it is ignored (MediaPipe's own default is 0.5; this
+  is stricter because a wrong confident answer silently steals a pose).
+- No hand means no gesture, whatever it last said.
+
+If the recognizer bundle will not load — old cache, blocked host, unsupported
+delegate — hand tracking falls back to the plain landmarker and the templates
+carry recognition exactly as before. Detection is per-instance at the call
+site, so nothing downstream knows which one it got.
+
 The **Gestures** section recognizes hand poses and turns them into discrete
 triggers. Thirteen built-in gestures ship ready to use — **fist, point, peace,
 thumbs-up, open palm, rock horns**, plus the **ASL number handshapes** in their
