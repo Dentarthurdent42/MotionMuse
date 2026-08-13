@@ -1062,6 +1062,41 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 body.resizing-sec { cursor: ns-resize; user-select: none; }
 body.resizing-sec .sec-grip::after { background: var(--cyan); }
 
+/* Signal sub-containers — one per tracked body part. Same visual language as
+   .sec (border, header strip, shadow) at a smaller scale, since these nest
+   inside the signals column rather than standing alone. */
+.sig-sec {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  margin: 5px 6px;
+  overflow: hidden;
+}
+.sig-sec > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--faint);
+  border-bottom: 1px solid transparent;
+}
+.sig-sec[open] > summary { border-bottom-color: var(--border); }
+.sig-sec > summary::-webkit-details-marker { display: none; }
+/* A disclosure triangle drawn in text, so it inherits the theme's colours. */
+.sig-sec > summary::before {
+  content: '▸';
+  font-size: 8px;
+  color: var(--dim);
+  transition: transform 0.12s;
+}
+.sig-sec[open] > summary::before { transform: rotate(90deg); }
+.sig-group-name { font-size: 9px; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
+.sig-group-meta { margin-left: auto; font-size: 8px; letter-spacing: 1px; color: var(--border2); }
+.sig-sec-body { padding: 2px 0 4px; }
+
 /* ── Panel grid layouts (desktop) ───────────────────────── */
 .panel-cam {
   display: grid;

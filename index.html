@@ -62,8 +62,10 @@
       <!-- Hand tracking costs about twice what pose does and is the usual
            frame-rate bottleneck, so both are switchable outright. With one
            off the other stops sharing frames and runs at the full rate. -->
-      <button class="btn on" id="hands-btn"
-              title="Hand tracking — the most expensive model. Turn it off to give pose the whole frame budget.">✋ HANDS</button>
+      <button class="btn on" id="hands-l-btn"
+              title="Track the left hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">✋ L</button>
+      <button class="btn on" id="hands-r-btn"
+              title="Track the right hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">R ✋</button>
       <button class="btn on" id="pose-btn"
               title="Body pose tracking. Turn it off to give hand tracking the whole frame budget.">🧍 POSE</button>
       <button class="btn" id="face-btn"
@@ -135,11 +137,9 @@
               <option>GPU</option><option>CPU</option>
             </select>
           </label>
-          <label class="model-row" title="Hand tracking runs the landmark stage once per detected hand and is usually the frame-rate bottleneck — one hand is close to half the work">HANDS
-            <select id="model-hands" aria-label="Maximum hands to track">
-              <option value="2">2</option><option value="1">1</option>
-            </select>
-          </label>
+          <!-- Hand COUNT is no longer set here: the header's ✋ L / R toggles
+               own it, since asking for one hand and naming which hand are the
+               same decision. Two controls writing numHands would disagree. -->
           <div id="model-stats">start camera for live stats</div>
         </div>
       </div>

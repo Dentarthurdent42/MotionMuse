@@ -37,27 +37,58 @@ export const cvSource = {
   // it costs roughly twice what pose does — so being able to switch either
   // off outright is the bluntest and most effective control there is. Both
   // default on; the choice persists.
-  handsOn: true,
-  poseOn:  true,
+  //
+  // Left and right are separate because handedness is a *guess*: MediaPipe
+  // infers it from the hand's appearance, and a single hand at an odd angle
+  // gets mislabelled, which silently swaps every signal it drives. Telling it
+  // you are only using your right hand removes the guess — anything detected
+  // is that hand — and, with only one side wanted, halves the landmark work.
+  handsL: true,
+  handsR: true,
+  poseOn: true,
 
-  setTracking({ hands, pose } = {}) {
-    if (hands !== undefined) this.handsOn = !!hands;
-    if (pose  !== undefined) this.poseOn  = !!pose;
+  // `handsOn` stays the question the render loop asks: is the hand model
+  // needed at all? Derived, so there is one source of truth rather than a
+  // third flag to keep in step.
+  get handsOn() { return this.handsL || this.handsR; },
+
+  setTracking({ hands, handsL, handsR, pose } = {}) {
+    // `hands` sets both, so existing callers and saved state keep working.
+    if (hands  !== undefined) { this.handsL = !!hands; this.handsR = !!hands; }
+    if (handsL !== undefined) this.handsL = !!handsL;
+    if (handsR !== undefined) this.handsR = !!handsR;
+    if (pose   !== undefined) this.poseOn = !!pose;
     // Drop the cached result of anything switched off, or the overlay would
     // keep drawing the last landmarks it saw as though they were live.
     if (!this.handsOn) this._hr = null;
     if (!this.poseOn)  this._pr = null;
-    lsSet('motionmuse-tracking', JSON.stringify({ hands: this.handsOn, pose: this.poseOn }));
-    return { hands: this.handsOn, pose: this.poseOn };
+    lsSet('motionmuse-tracking', JSON.stringify(
+      { handsL: this.handsL, handsR: this.handsR, pose: this.poseOn }));
+    // Only one side wanted means the model only ever needs to find one hand.
+    this._applyHandCount();
+    return { hands: this.handsOn, handsL: this.handsL, handsR: this.handsR, pose: this.poseOn };
+  },
+
+  // Tracking one side is a real saving, not just a filter: numHands caps how
+  // many times the landmark stage runs.
+  _applyHandCount() {
+    if (!this.hand || !this.handsOn) return;
+    const want = (this.handsL && this.handsR) ? 2 : 1;
+    if (this._handCount === want) return;
+    this._handCount = want;
+    this.setHandOptions({ hands: want });
   },
 
   _loadTracking() {
     try {
       const s = JSON.parse(lsGet('motionmuse-tracking') || '{}');
-      this.handsOn = s.hands !== false;
-      this.poseOn  = s.pose  !== false;
+      // Migrate the older single `hands` flag.
+      const both = s.hands !== false;
+      this.handsL = s.handsL ?? both;
+      this.handsR = s.handsR ?? both;
+      this.poseOn = s.pose !== false;
     } catch { /* defaults stand */ }
-    return { hands: this.handsOn, pose: this.poseOn };
+    return { hands: this.handsOn, handsL: this.handsL, handsR: this.handsR, pose: this.poseOn };
   },
 
   // ── Register all CV signals into the bus ────────────────────────────
@@ -141,12 +172,15 @@ export const cvSource = {
   },
 
   _savedModel() {
-    const dflt = { backend: 'mp-lite', delegate: 'GPU', hands: 2 };
-    try {
-      const s = { ...dflt, ...JSON.parse(lsGet('motionmuse-posemodel') || '{}') };
-      s.hands = s.hands === 1 ? 1 : 2;
-      return s;
-    } catch { return { ...dflt }; }
+    const dflt = { backend: 'mp-lite', delegate: 'GPU' };
+    let s;
+    try { s = { ...dflt, ...JSON.parse(lsGet('motionmuse-posemodel') || '{}') }; }
+    catch { s = { ...dflt }; }
+    // Hand count is derived from which sides are wanted — one owner, so the
+    // header toggles and the model can't disagree about it.
+    this._loadTracking();
+    s.hands = (this.handsL && this.handsR) ? 2 : 1;
+    return s;
   },
 
   // The hand model is the usual frame-rate bottleneck — it costs roughly twice
@@ -320,13 +354,26 @@ export const cvSource = {
   processHands(r) {
     const found      = { L: null, R: null };
     const foundWorld = { L: null, R: null };
+    // With exactly one side enabled, do not consult the handedness guess at
+    // all: assign whatever was found to the side the user said they are using.
+    // That guess is the whole reason single-hand play was unreliable — one bad
+    // frame relabels the hand and every signal it drives jumps to the other
+    // side's keys. Being told which hand it is removes the failure mode rather
+    // than smoothing it over.
+    const onlySide = this.handsL !== this.handsR ? (this.handsL ? 'L' : 'R') : null;
     if (r.handednesses && r.landmarks) {
-      r.handednesses.forEach((h, i) => {
-        // MediaPipe Tasks API reports handedness from the subject's perspective
-        const side = h[0].categoryName === 'Left' ? 'L' : 'R';
-        found[side]      = r.landmarks[i];
-        foundWorld[side] = r.worldLandmarks?.[i] ?? null;
-      });
+      if (onlySide && r.landmarks.length) {
+        found[onlySide]      = r.landmarks[0];
+        foundWorld[onlySide] = r.worldLandmarks?.[0] ?? null;
+      } else {
+        r.handednesses.forEach((h, i) => {
+          // MediaPipe Tasks API reports handedness from the subject's perspective
+          const side = h[0].categoryName === 'Left' ? 'L' : 'R';
+          if (side === 'L' ? !this.handsL : !this.handsR) return;
+          found[side]      = r.landmarks[i];
+          foundWorld[side] = r.worldLandmarks?.[i] ?? null;
+        });
+      }
     }
 
     ['L', 'R'].forEach(s => {

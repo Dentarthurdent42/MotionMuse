@@ -4,7 +4,7 @@ import { faceSource }                       from './face.js';
 import { engine }                           from './engine.js';
 import { mapper }                           from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
-import { buildSigPanel, updateSigPanel }    from './ui/signals.js';
+import { buildSigPanel, updateSigPanel, syncSigGroups } from './ui/signals.js';
 import { renderMapper, updateMapperBars }   from './ui/mapper-ui.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
@@ -100,6 +100,7 @@ const faceToggle = (btnId, key, setter, label) => {
     try {
       await setter(on);
       btn.classList.toggle('on', on);
+      syncSigGroups();   // face/gaze groups expand or fold away with their tracker
       toast(on ? `${label} tracking ON` : `${label} tracking off`);
     } catch (err) {
       toast(`Could not start ${label.toLowerCase()} tracking: ` + err.message);
@@ -113,24 +114,33 @@ faceToggle('gaze-btn', 'gazeOn', on => faceSource.setGaze(on), 'Gaze');
 // ── Hand / pose tracking toggles ─────────────────────────────────────────
 // Unlike face and gaze these are on by default and cost nothing to switch —
 // no model to load, just whether the loop runs it.
-const trackToggle = (btnId, key, label) => {
+// `flag` is the cvSource property the button reflects; `key` is what
+// setTracking() expects. Left and right are separate so a one-handed player
+// can tell the model which hand it is, instead of letting it guess.
+const trackToggle = (btnId, flag, key, label) => {
   const btn = document.getElementById(btnId);
-  const sync = () => btn.classList.toggle('on', cvSource[key === 'hands' ? 'handsOn' : 'poseOn']);
+  const sync = () => btn.classList.toggle('on', cvSource[flag]);
   btn.addEventListener('click', () => {
-    const now = cvSource.setTracking({ [key]: !cvSource[key === 'hands' ? 'handsOn' : 'poseOn'] });
-    sync();
-    const on = key === 'hands' ? now.hands : now.pose;
-    // Say what it bought them, since the point of the control is frame rate.
-    toast(on ? `${label} tracking ON`
-             : `${label} tracking off — ${key === 'hands' ? 'pose' : 'hands'} now runs every frame`);
+    cvSource.setTracking({ [key]: !cvSource[flag] });
+    syncAllTracking();
+    const on = cvSource[flag];
+    const only = cvSource.handsL !== cvSource.handsR;
+    toast(on ? `${label} ON`
+             : key === 'pose' ? 'Pose off — hands now run every frame'
+             : cvSource.handsOn ? `${label} off — no handedness guessing, one hand tracked`
+             : 'Hands off — pose now runs every frame');
+    if (on && only && key !== 'pose') toast(`${label} ON — single hand, no handedness guessing`);
   });
-  sync();
   return sync;
 };
-const syncHands = trackToggle('hands-btn', 'hands', 'Hand');
-const syncPose  = trackToggle('pose-btn',  'pose',  'Pose');
 cvSource._loadTracking();
-syncHands(); syncPose();
+const syncers = [
+  trackToggle('hands-l-btn', 'handsL', 'handsL', 'Left hand'),
+  trackToggle('hands-r-btn', 'handsR', 'handsR', 'Right hand'),
+  trackToggle('pose-btn',    'poseOn', 'pose',   'Pose'),
+];
+function syncAllTracking() { syncers.forEach(fn => fn()); syncSigGroups(); }
+syncAllTracking();
 
 // ── Developer mode toggle (reveals under-construction features) ──────────
 const devBtn = document.getElementById('dev-btn');
@@ -273,10 +283,19 @@ loadFile.addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    await preset.loadFromFile(file);
+    const { uiChanged } = await preset.loadFromFile(file);
     refreshFromState();
     preset.saveLocal();
-    toast('Settings loaded');
+    if (uiChanged) {
+      // Theme, panel sizes, section heights and tracker state are read once at
+      // startup by the modules that own them, so a reload is how they take
+      // effect — cheaper and more honest than a second apply path per module
+      // that would drift out of step with the real one.
+      toast('Full setup loaded — reloading');
+      setTimeout(() => location.reload(), 700);
+    } else {
+      toast('Settings loaded');
+    }
   } catch (err) {
     toast('Could not load: ' + err.message);
   }

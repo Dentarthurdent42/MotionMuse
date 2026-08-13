@@ -23,15 +23,59 @@ const TAG    = 'motionmuse-sound';
 // invalid.
 const LEGACY_TAGS = ['biosignal-sound'];
 
+// Everything that is "how the app is set up" but lives outside the audio graph
+// and the patch: which theme, how the panels and sections are sized, which
+// trackers are on, dev mode. It is all already persisted individually in
+// localStorage; collecting it here is what makes a saved file the WHOLE state
+// rather than most of it — so a setup can be moved between machines, or
+// restored after clearing site data, and actually look the same.
+//
+// Read straight from localStorage rather than from each module: these are the
+// values those modules already treat as the source of truth, and going through
+// the store means a module that is not loaded yet cannot cost us a key.
+const UI_KEYS = {
+  theme:       'motionmuse-theme',
+  sections:    'motionmuse-sections',
+  panelWidths: 'motionmuse-panel-widths',
+  camHeight:   'motionmuse-cam-height',
+  tracking:    'motionmuse-tracking',
+  models:      'motionmuse-posemodel',
+  hotkeys:     'motionmuse-hotkeys',
+  dev:         'motionmuse-dev',
+};
+
+function uiSnapshot() {
+  const out = {};
+  for (const [name, key] of Object.entries(UI_KEYS)) {
+    const v = lsGet(key);
+    if (v !== null && v !== '') out[name] = v;    // stored verbatim, as strings
+  }
+  return out;
+}
+
+// Written back to the same keys, then the page reloads: every one of these is
+// read at startup by the module that owns it, and re-applying them live would
+// mean re-implementing each module's init in here — a second code path that
+// would drift. A reload is honest and total.
+function uiApply(ui) {
+  if (!ui || typeof ui !== 'object') return false;
+  let any = false;
+  for (const [name, key] of Object.entries(UI_KEYS)) {
+    if (typeof ui[name] === 'string') { lsSet(key, ui[name]); any = true; }
+  }
+  return any;
+}
+
 export function snapshot() {
   return {
-    app: TAG, v: 1,
+    app: TAG, v: 2,
     kit: currentKit(),
     mappings: mapper.serialize(),
     audio: engine.snapshot(),
     gestures: gesture.serialize(),   // custom gestures + hidden built-ins
     chord: chordmode.serialize(),
     shader: shader.serialize(),
+    ui: uiSnapshot(),
   };
 }
 
@@ -46,6 +90,16 @@ export function apply(data) {
   // from the snapshot above, so re-applying the kit would stomp them.
   setCurrentLabel(data.kit ?? 'custom');
   return true;
+}
+
+// Full restore including layout/theme/tracking. Separate from apply() because
+// apply() runs on every session restore, and rewriting the UI keys on each
+// startup with values that came from that same startup is pointless churn —
+// this is for an explicit LOAD of a saved file.
+export function applyAll(data) {
+  const ok = apply(data);
+  const uiChanged = ok && uiApply(data.ui);
+  return { ok, uiChanged };
 }
 
 export function saveLocal() {
@@ -71,6 +125,7 @@ export function downloadFile(name = 'motionmuse-preset.json') {
 // caller can surface a clear message.
 export async function loadFromFile(file) {
   const data = JSON.parse(await file.text());
-  if (!apply(data)) throw new Error('Not a MotionMuse preset');
-  return true;
+  const { ok, uiChanged } = applyAll(data);
+  if (!ok) throw new Error('Not a MotionMuse preset');
+  return { uiChanged };
 }
