@@ -14,6 +14,7 @@ const ms  = v => v == null ? '—' : v.toFixed(1) + 'ms';
 export function initModelPanel() {
   const poseSel = document.getElementById('model-pose');
   const delSel  = document.getElementById('model-delegate');
+  const handSel = document.getElementById('model-hands');
   const stats   = document.getElementById('model-stats');
   if (!poseSel) return;
 
@@ -23,6 +24,7 @@ export function initModelPanel() {
   const saved = cvSource._savedModel();
   poseSel.value = saved.backend;
   delSel.value  = saved.delegate;
+  handSel.value = String(saved.hands);
   const syncDelegate = () => {
     // MoveNet runs on tfjs's own backend; the delegate choice is MediaPipe-only.
     delSel.disabled = poseSel.value.startsWith('movenet');
@@ -30,26 +32,33 @@ export function initModelPanel() {
   syncDelegate();
 
   const apply = async () => {
-    poseSel.disabled = delSel.disabled = true;
+    poseSel.disabled = delSel.disabled = handSel.disabled = true;
     const prev = cvSource.poseBackend?.id;
+    const hands = +handSel.value;
     try {
       if (cvSource.hand) {           // models are loaded — swap live
+        // The delegate is a property of BOTH models. It only ever reached the
+        // pose backend, so switching to CPU (or back) left hand inference —
+        // the more expensive of the two — untouched, and the panel's own
+        // latency readout made that look like the switch had done nothing.
+        await cvSource.setHandOptions({ delegate: delSel.value, hands });
         await cvSource.setPoseBackend(poseSel.value, delSel.value);
-        toast(`Pose model: ${poseSel.value}`);
+        toast(`Pose ${poseSel.value} · ${delSel.value} · ${hands} hand${hands > 1 ? 's' : ''}`);
       } else {                       // camera not started yet — just persist
-        lsSet('motionmuse-posemodel',
-          JSON.stringify({ backend: poseSel.value, delegate: delSel.value }));
+        lsSet('motionmuse-posemodel', JSON.stringify(
+          { ...cvSource._savedModel(), backend: poseSel.value, delegate: delSel.value, hands }));
       }
     } catch (e) {
       toast(`Model switch failed: ${String(e).slice(0, 40)}`);
       if (prev) poseSel.value = prev;
     } finally {
-      poseSel.disabled = false;
+      poseSel.disabled = handSel.disabled = false;
       syncDelegate();
     }
   };
   poseSel.addEventListener('change', apply);
   delSel.addEventListener('change', apply);
+  handSel.addEventListener('change', apply);
 
   // Live stats at 2Hz — cheap, and only meaningful while the camera runs.
   setInterval(() => {

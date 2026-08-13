@@ -102,27 +102,62 @@ export const cvSource = {
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
     );
 
-    this.hand = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-        delegate: 'GPU',
-      },
-      numHands: 2,
-      runningMode: 'VIDEO',
-    });
+    this._vision = vision;                 // kept so the hand model can be rebuilt
+    this._HandLandmarker = HandLandmarker;
+    const saved = this._savedModel();
+    this.hand = await this._makeHand(saved.delegate, saved.hands);
 
     // Pose runs behind a swappable backend (dev Models panel).
-    const saved = this._savedModel();
     this.poseBackend = createPoseBackend(saved.backend, { delegate: saved.delegate });
     await this.poseBackend.init();
     this._setLatModel();
   },
 
   _savedModel() {
+    const dflt = { backend: 'mp-lite', delegate: 'GPU', hands: 2 };
     try {
-      return { backend: 'mp-lite', delegate: 'GPU',
-               ...JSON.parse(lsGet('motionmuse-posemodel') || '{}') };
-    } catch { return { backend: 'mp-lite', delegate: 'GPU' }; }
+      const s = { ...dflt, ...JSON.parse(lsGet('motionmuse-posemodel') || '{}') };
+      s.hands = s.hands === 1 ? 1 : 2;
+      return s;
+    } catch { return { ...dflt }; }
+  },
+
+  // The hand model is the usual frame-rate bottleneck — it costs roughly twice
+  // what pose does, and `numHands: 2` runs the landmark stage per detected
+  // hand, so tracking one hand is close to half the work. Both that and the
+  // delegate were hardcoded, which meant the Models panel's DELEGATE switch
+  // silently applied to pose only while hands stayed on whatever the browser
+  // gave it.
+  _makeHand(delegate = 'GPU', numHands = 2) {
+    return this._HandLandmarker.createFromOptions(this._vision, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        delegate,
+      },
+      numHands,
+      runningMode: 'VIDEO',
+    });
+  },
+
+  // Rebuild the hand model live (camera keeps running; hand frames reuse the
+  // previous result until the replacement is ready).
+  async setHandOptions({ delegate, hands } = {}) {
+    if (this._switching || !this._vision) return false;
+    this._switching = true;
+    try {
+      const saved = this._savedModel();
+      const d = delegate ?? saved.delegate;
+      const n = hands ?? saved.hands;
+      const next = await this._makeHand(d, n);
+      const old = this.hand;
+      this.hand = next;
+      old?.close?.();
+      this._lat?.hand.splice(0);
+      lsSet('motionmuse-posemodel', JSON.stringify({ ...saved, delegate: d, hands: n }));
+      return true;
+    } finally {
+      this._switching = false;
+    }
   },
 
   _setLatModel() {
@@ -142,7 +177,10 @@ export const cvSource = {
       this.poseBackend = next;
       old?.dispose?.();
       this._lat?.pose.splice(0);   // stats restart for the new model
-      lsSet('motionmuse-posemodel', JSON.stringify({ backend: id, delegate }));
+      // Merge, don't replace: this used to drop the hand settings stored
+      // alongside, so changing the pose model reset hands to the default.
+      lsSet('motionmuse-posemodel',
+        JSON.stringify({ ...this._savedModel(), backend: id, delegate }));
       this._setLatModel();
       return true;
     } finally {

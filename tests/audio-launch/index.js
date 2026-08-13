@@ -120,6 +120,12 @@ await p.waitForTimeout(150);
 const afterTyping = (await engineState()).muted;
 await p.evaluate(() => document.getElementById('__probe')?.remove());
 
+// Tapping the visualiser is the third path to mute, alongside button and key.
+const beforeViz = (await engineState()).muted;
+await p.click('#viz-wrap');
+await p.waitForTimeout(150);
+const afterViz = (await engineState()).muted;
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -146,6 +152,7 @@ check(afterSpace.muted && analyserRms > 0.01,
   'the waveform stays live while muted (mute sits after the analyser)', `rms ${analyserRms.toFixed(3)}`);
 check(beforeFocused !== afterFocused, 'the spacebar toggles once, not twice, with a button focused');
 check(beforeTyping === afterTyping, 'the spacebar is left alone while typing in a field');
+check(beforeViz !== afterViz, 'tapping the visualiser toggles mute');
 check(pageErrors.length === 0, 'no page errors', pageErrors.join(' | '));
 
 console.log(`\n${fail} failure(s)\n`);

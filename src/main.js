@@ -199,6 +199,10 @@ async function startAudio() {
 }
 
 audioBtn.addEventListener('click', toggleMute);
+// The visualiser is the largest thing on screen already showing mute state,
+// so it doubles as the target for it. The banner over it is pointer-events:
+// none, so a tap anywhere in the box lands here.
+document.getElementById('viz-wrap').addEventListener('click', toggleMute);
 
 // Autoplay policy means the context starts suspended and its clock stays
 // frozen until a gesture. Resume on the first one, whatever it is, so the

@@ -124,6 +124,11 @@
               <option>GPU</option><option>CPU</option>
             </select>
           </label>
+          <label class="model-row" title="Hand tracking runs the landmark stage once per detected hand and is usually the frame-rate bottleneck — one hand is close to half the work">HANDS
+            <select id="model-hands" aria-label="Maximum hands to track">
+              <option value="2">2</option><option value="1">1</option>
+            </select>
+          </label>
           <div id="model-stats">start camera for live stats</div>
         </div>
       </div>
@@ -163,7 +168,11 @@
     <!-- RIGHT: Audio engine -->
     <div class="panel panel-aud">
       <div class="ph">AUDIO ENGINE</div>
-      <div class="viz-wrap">
+      <!-- Tapping the visualiser toggles mute: it is the biggest thing on
+           screen that already *shows* mute state, so it is where a thumb goes
+           first. The header button and the hotkey remain the accessible
+           paths — this is a third, redundant one, so it is not focusable. -->
+      <div class="viz-wrap" id="viz-wrap" title="Tap to mute / unmute">
         <canvas id="viz-canvas"></canvas>
         <!-- The waveform keeps moving while muted (the mute gain sits after
              the analyser), so without this banner a silent-but-live engine

@@ -638,7 +638,7 @@ option { background: var(--panel); }
 /* Positioning context for the mute banner. `flex-shrink:0` moves up from the
    canvas to the wrapper — the wrapper is now the flex item, and without it the
    visualiser gets squeezed away when the panel is short. */
-.viz-wrap { position: relative; flex-shrink: 0; }
+.viz-wrap { position: relative; flex-shrink: 0; cursor: pointer; }
 #viz-muted {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center; gap: 4px;

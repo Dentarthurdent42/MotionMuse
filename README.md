@@ -59,8 +59,10 @@ identical otherwise:
   *after* the analyser precisely so it does — you can see the instrument
   responding to your hands while it is silent.
 
-**Spacebar toggles mute.** The binding is shown (and changed) under **Mute
-Hotkey** in the audio panel: click it, press the key you want, Esc cancels.
+Three ways to toggle it: the header button, **tapping the visualiser** (the
+biggest thing on screen already showing the state), and **Spacebar**. The key
+binding is shown, and changed, under **Mute Hotkey** in the audio panel: click
+it, press the key you want, Esc cancels.
 
 Two details worth knowing about the spacebar in particular. It's the key
 browsers use to activate whatever has focus, so the app claims it — a focused
