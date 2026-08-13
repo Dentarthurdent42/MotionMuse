@@ -60,6 +60,13 @@ export const engine = (() => {
     osc_mix:     { label: 'Osc Mix 1↔2',  min: 0,    max: 1,     val: 0.0,   snaps: [0.5] },
     filter_freq: { label: 'Filter Cutoff', min: 80,   max: 16000, val: 3000, unit: 'Hz' },
     filter_q:    { label: 'Filter Q',      min: 0.1,  max: 18,    val: 1,     snaps: [1] },
+    osc_volume:  { label: 'Osc Vol',       min: 0,    max: 1,     val: 1,     snaps: [0.5] },
+    // Chord mode has its own filter + level so the two sources can be shaped
+    // independently (chords darker than the lead, lead quieter than the
+    // chords, …). Defaults match the old shared chain exactly.
+    chord_filter_freq: { label: 'Chord Cutoff', min: 80,  max: 16000, val: 3000, unit: 'Hz' },
+    chord_filter_q:    { label: 'Chord Q',      min: 0.1, max: 18,    val: 1,    snaps: [1] },
+    chord_volume:      { label: 'Chord Vol',    min: 0,   max: 1,     val: 1,    snaps: [0.5] },
     lfo_rate:    { label: 'LFO Rate',      min: 0.05, max: 20,    val: 1,    unit: 'Hz' },
     lfo_depth:   { label: 'LFO Depth',     min: 0,    max: 1,     val: 0,     snaps: [0.5] },
     reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12,  snaps: [0.25, 0.5] },

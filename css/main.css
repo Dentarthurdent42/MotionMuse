@@ -891,14 +891,52 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 }
 
 /* ── Panel grid layouts (desktop) ───────────────────────── */
-.panel-src {
+.panel-cam {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto auto auto;
 }
 
 .panel-map {
   display: grid;
   grid-template-rows: auto auto auto 1fr;
+}
+
+/* ── Landscape panel arrangement ─────────────────────────
+   Source order is portrait order (camera, signals, patchbay, audio); landscape
+   places each panel into a cell explicitly, so rearranging the wide layout
+   cannot reshuffle the phone one.
+
+       ┌─────────┬──────────────┬────────┐
+       │ SIGNALS │ CAMERA VIEW  │ AUDIO  │
+       │         ├──────────────┤ ENGINE │
+       │         │  PATCHBAY    │        │
+       └─────────┴──────────────┴────────┘
+
+   The splitters still drive columns 1 and 5 (--col-l / --col-r), so the
+   existing drag/persist logic needs no change — only the contents moved. */
+@media (min-width: 769px) {
+  #main { grid-template-rows: auto 1fr; }
+
+  .panel-sig { grid-column: 1; grid-row: 1 / span 2; }
+  #split-l   { grid-column: 2; grid-row: 1 / span 2; }
+  .panel-cam { grid-column: 3; grid-row: 1; }
+  .panel-map { grid-column: 3; grid-row: 2; }
+  #split-r   { grid-column: 4; grid-row: 1 / span 2; }
+  .panel-aud { grid-column: 5; grid-row: 1 / span 2; }
+
+  .panel-cam { border-bottom: 1px solid var(--border); }
+
+  /* The camera left a ~320px side column for the wide middle one, where a 4:3
+     box would be ~880px tall and swallow the patchbay it now sits above. Cap
+     the height and DERIVE the width from it, rather than capping height alone:
+     the aspect ratio has to stay exactly 4/3 or the landmark overlay — which
+     is drawn in normalised coordinates across the full canvas — would no
+     longer line up with the video under it. */
+  .panel-cam #video-wrap {
+    --cam-h: 300px;
+    width: min(100%, calc(var(--cam-h) * 4 / 3));
+    margin-inline: auto;
+  }
 }
 
 /* ── Mobile ──────────────────────────────────────────────── */
@@ -958,7 +996,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   .splitter { display: none; }
 
   /* All panels: natural height */
-  .panel, .panel-src, .panel-map {
+  .panel, .panel-cam, .panel-map, .panel-sig {
     display: flex;
     flex-direction: column;
     overflow: visible;
@@ -1044,8 +1082,11 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 @media (min-width: 1200px) {
   html, body { font-size: 13px; }
 
-  #app { grid-template-rows: 52px 1fr; }
-  #header { padding: 0 20px; gap: 16px; }
+  /* `min-height` on the header, NOT a fixed grid row. A fixed row cannot grow
+     when the FACE/GAZE line wraps in with the camera, so that second row
+     overflowed the header and painted straight over the panel below it. The
+     single-row height is unchanged at 52px. */
+  #header { padding: 0 20px; gap: 16px; min-height: 52px; }
   .logo { font-size: 16px; }
   .hstatus { font-size: 11px; gap: 8px; }
   .dot { width: 9px; height: 9px; }

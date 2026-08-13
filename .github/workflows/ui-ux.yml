@@ -43,6 +43,11 @@ jobs:
       - name: Audio launch (muted, suspended context)
         run: npm run test:launch
 
+      # Header + panel geometry at every breakpoint, camera off AND on. The
+      # camera-on state is where three header bugs shipped unseen.
+      - name: Layout guard
+        run: npm run test:layout
+
       - name: Run UI/UX tests
         run: npm run test:ui
         env:

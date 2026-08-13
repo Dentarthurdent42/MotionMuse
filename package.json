@@ -14,7 +14,8 @@
     "test:audio": "node tests/audio-articulation/index.js",
     "test:tutorial": "node tests/tutorial/index.js",
     "test:sw": "node tests/sw-freshness/index.js",
-    "test:launch": "node tests/audio-launch/index.js"
+    "test:launch": "node tests/audio-launch/index.js",
+    "test:layout": "node tests/layout/index.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.54.0",

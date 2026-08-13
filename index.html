@@ -69,8 +69,15 @@
   <!-- ── Main ───────────────────────────────────────────── -->
   <div id="main">
 
-    <!-- LEFT: Input source + Signals -->
-    <div class="panel panel-src">
+    <!-- Panels are in *source* order = the order they stack in portrait, which
+         is unchanged: camera, signals, patchbay, audio. Landscape places them
+         into grid cells explicitly (see the min-width:769px block in main.css),
+         giving SIGNALS | CAMERA over PATCHBAY | AUDIO. Keeping source order
+         portrait-shaped is what stops a landscape rearrangement from silently
+         reshuffling the phone layout. -->
+
+    <!-- Input source (camera) -->
+    <div class="panel panel-cam">
       <div class="src-tabs">
         <div class="src-tab active">CV</div>
         <div class="src-tab future uc-feature" data-soon="EEG input — under construction">EEG<span class="src-tab-wip">🚧</span></div>
@@ -121,22 +128,24 @@
         </div>
       </div>
 
-      <div class="panel" style="border-top:1px solid var(--border);">
-        <div class="ph">
-          SIGNALS
-          <span style="margin-left:auto;font-size:8px;color:var(--dim);">CLICK TO COPY KEY</span>
-        </div>
-        <div class="pb" id="sig-list">
-          <div style="padding:20px 10px;color:var(--dim);font-size:10px;text-align:center;">
-            Start camera to see signals
-          </div>
+    </div>
+
+    <!-- Signals — its own full-height column in landscape -->
+    <div class="panel panel-sig">
+      <div class="ph">
+        SIGNALS
+        <span style="margin-left:auto;font-size:8px;color:var(--dim);">CLICK TO COPY KEY</span>
+      </div>
+      <div class="pb" id="sig-list">
+        <div style="padding:20px 10px;color:var(--dim);font-size:10px;text-align:center;">
+          Start camera to see signals
         </div>
       </div>
     </div>
 
     <div class="splitter" id="split-l" title="Drag to resize — double-click to reset"></div>
 
-    <!-- MIDDLE: Mapper -->
+    <!-- Mapper — beneath the camera in landscape -->
     <div class="panel panel-map">
       <div class="ph">PATCHBAY · INPUTS → OUTPUTS</div>
       <div class="mapper-toolbar">
@@ -152,7 +161,7 @@
     <div class="splitter" id="split-r" title="Drag to resize — double-click to reset"></div>
 
     <!-- RIGHT: Audio engine -->
-    <div class="panel">
+    <div class="panel panel-aud">
       <div class="ph">AUDIO ENGINE</div>
       <div class="viz-wrap">
         <canvas id="viz-canvas"></canvas>
