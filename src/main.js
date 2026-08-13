@@ -25,7 +25,13 @@ import { enhanceSections, colorSections }   from './ui/sections.js';
 import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
 import { initTheme }                        from './ui/theme.js';
 import { initSettings }                     from './ui/settings.js';
+import { initShare, consumeSharedLink, announceSharedLink } from './ui/share.js';
 import * as preset                          from './preset.js';
+
+// ── A shared setup, if this page was opened from a QR code / link ────────
+// First thing: it applies the state, persists it and reloads without the
+// fragment, so the sooner it runs the less of the old setup flashes past.
+consumeSharedLink();
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
 function loop() {
@@ -383,9 +389,11 @@ initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
 initSettings();           // ⚙ theme + hotkeys: how the tool looks and is driven
+initShare();              // SHARE → a QR code of this setup
 initModelPanel();         // dev-mode pose model comparison panel
 initTutorial();           // guided tour (? button; auto-offers on first visit)
 preset.restoreLocal();    // bring back the last session's mappings + settings
+announceSharedLink();     // …which may have just come from a scanned QR code
 renderMapper();
 // Shader controls belong with the patchbay — the shader reads signals and
 // mappings, so it sits beside the wiring rather than among synth parameters.

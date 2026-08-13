@@ -150,6 +150,44 @@ The **Parameters** section groups its sliders under the same headings the
 patchbay's output picker uses, from the same table — so a parameter is in the
 same place whichever way you go looking for it, and the two cannot drift apart.
 
+## Share: a QR code of your setup
+
+**SHARE** (beside SAVE and LOAD) shows a QR code of everything you have set up.
+Point a phone at it and the app opens configured the same way — the point being
+that handing someone a patch should not require a file, an account or a server.
+
+The state is compressed and carried in the URL **fragment**, which is never sent
+to a server. There is no server; a shared setup stays between the two people
+holding the phones.
+
+What travels is the **instrument**, not the window. Panel widths, section
+heights, section order and which column you dragged something to describe the
+screen you arranged them on, and pushing a phone's layout onto a laptop is not
+"the same settings". The pose-model choice is left behind for the same reason: a
+MoveNet variant picked for one machine's GPU is not a recommendation for
+someone else's. Theme, tracking toggles and dev mode do travel, along with every
+mapping, gesture, chord assignment and audio parameter.
+
+Opening a shared link applies the state, saves it, and reloads the page without
+the fragment. The reload is not laziness — several modules read their state at
+import time, so applying afterwards would leave half the app on the old values.
+
+The encoder is `src/qr.js`: byte mode, all 40 versions, four error-correction
+levels, no dependencies. Written rather than pulled in because this is a
+build-less static PWA that has to work offline, so a CDN script would be a
+runtime dependency on a network the user may not have. A hand-written QR encoder
+is exactly the kind of code that looks right and is not, so nothing is asserted
+about the module pattern: `tests/unit/qr.test.js` encodes, renders to a bitmap
+and decodes it with **jsQR**, an independent decoder, then compares the text —
+including a 2900-byte version-40 payload and every ECC level. (jsQR is a
+devDependency; the app itself ships no dependencies.)
+
+Codes are drawn at error-correction level **L** — the most payload per module,
+and the tolerance it gives up, for a torn or dirty code, does not apply to a
+picture on a screen being read seconds later. If a setup is too large to fit
+any version, the popover says so and offers **COPY LINK**; the link always
+works, only the picture of it does not.
+
 ## Sections: containers, scrolling and resizing
 
 Every section — camera view, signals, models, patchbay, gestures, chord mode,
@@ -755,6 +793,8 @@ css/
 src/
   bus.js            Signal registry (adaptive calibration + One-Euro smoothing)
   filter.js         One-Euro low-latency jitter filter
+  qr.js             QR encoder (byte mode, no dependencies)
+  share.js          Setup <-> shareable link
   math.js           Geometry helpers (dist3, angles, openness, extension,
                     thumb-out and thumb-to-fingertip contact)
   engine.js         Web Audio API synthesiser

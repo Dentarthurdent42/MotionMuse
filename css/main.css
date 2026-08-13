@@ -860,6 +860,45 @@ option { background: var(--panel); }
   margin-bottom: 5px;
 }
 
+/* ── Share popover ───────────────────────────────────────
+   Anchored to the middle of the screen rather than the button: it holds a QR
+   code that has to be big enough for another phone's camera, which is not a
+   size that fits beside a toolbar button. */
+#share-pop {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 200;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  max-width: min(92vw, 360px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: var(--shadow-lg);
+}
+#share-pop.open { display: flex; }
+.share-qr {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+  /* The code is drawn at whole-pixel modules; letting the browser resample it
+     to a fractional size is what makes a QR stop scanning. */
+  image-rendering: pixelated;
+  border-radius: 2px;
+}
+.share-note {
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-align: center;
+  color: var(--dim);
+  word-break: break-all;
+}
+.share-note.warn { color: var(--amber); }
+
 .osc-hint {
   margin-top: 5px;
   font-size: 8px;

@@ -341,6 +341,35 @@ const hud = await (async () => {
              dupes: shown.filter((k, i) => shown.indexOf(k) !== i) };
   });
 
+  // Share: the QR has to be a real, scannable code of a real link. Decoding is
+  // out of scope here (tests/unit/qr.test.js round-trips through jsQR); this
+  // checks the button exists, the popover opens, and it produced a code rather
+  // than the "too big" fallback.
+  const share = await (async () => {
+    await page.click('#share-btn');
+    await page.waitForTimeout(400);
+    const out = await page.evaluate(() => {
+      const c = document.getElementById('share-qr');
+      const note = document.getElementById('share-note');
+      const ctx = c?.getContext('2d');
+      let dark = 0;
+      if (ctx && c.width) {
+        const d = ctx.getImageData(0, 0, c.width, c.height).data;
+        for (let i = 0; i < d.length; i += 4) if (d[i] < 128) dark++;
+      }
+      return {
+        open: document.getElementById('share-pop')?.classList.contains('open'),
+        w: c?.width ?? 0, h: c?.height ?? 0,
+        hidden: c?.style.display === 'none',
+        note: note?.textContent ?? '',
+        warn: note?.classList.contains('warn') ?? false,
+        darkFraction: c?.width ? dark / (c.width * c.height) : 0,
+      };
+    });
+    await page.keyboard.press('Escape');
+    return out;
+  })();
+
   const all = { handsL: true, handsR: true, pose: true, face: true };
   await set(all);
   const nodev = await read();                       // camera "on", DEV off
@@ -358,7 +387,7 @@ const hud = await (async () => {
   });
   const viaToggle = await read();
   await page.close();
-  return { nodev, dev, faceOnly, poseOnly, viaToggle, params, errs };
+  return { nodev, dev, faceOnly, poseOnly, viaToggle, params, share, errs };
 })();
 
 await b.close(); server.close();
@@ -518,6 +547,20 @@ console.log('\nInference HUD\n');
     'the tracking toggles drive the rows, not only the internal sync',
     JSON.stringify(viaToggle));
   check(errs.length === 0, 'no page errors while driving the HUD', errs.join(' | '));
+}
+
+// ── Share ──
+console.log('\nShare\n');
+{
+  const s = hud.share;
+  check(s.open, 'the SHARE popover opens');
+  check(!s.hidden && s.w > 200, 'a QR code was drawn', `${s.w}x${s.h}`);
+  check(s.w === s.h, 'the code is square', `${s.w}x${s.h}`);
+  check(!s.warn, 'the default setup fits comfortably in a scannable code', s.note);
+  // A blank or all-black canvas would satisfy every check above.
+  check(s.darkFraction > 0.2 && s.darkFraction < 0.7,
+    'the code is a pattern, not a blank or filled square',
+    `${(s.darkFraction * 100).toFixed(0)}% dark`);
 }
 
 // ── Parameter sliders are grouped exactly as the patchbay picker groups them ──

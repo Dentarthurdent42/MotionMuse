@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "jsqr": "^1.4.0"
   }
 }
