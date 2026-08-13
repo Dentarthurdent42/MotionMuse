@@ -33,6 +33,33 @@ export const cvSource = {
   lastTime: -1,
   _lat:     null,
 
+  // Which models run. Hand tracking is normally the frame-rate bottleneck —
+  // it costs roughly twice what pose does — so being able to switch either
+  // off outright is the bluntest and most effective control there is. Both
+  // default on; the choice persists.
+  handsOn: true,
+  poseOn:  true,
+
+  setTracking({ hands, pose } = {}) {
+    if (hands !== undefined) this.handsOn = !!hands;
+    if (pose  !== undefined) this.poseOn  = !!pose;
+    // Drop the cached result of anything switched off, or the overlay would
+    // keep drawing the last landmarks it saw as though they were live.
+    if (!this.handsOn) this._hr = null;
+    if (!this.poseOn)  this._pr = null;
+    lsSet('motionmuse-tracking', JSON.stringify({ hands: this.handsOn, pose: this.poseOn }));
+    return { hands: this.handsOn, pose: this.poseOn };
+  },
+
+  _loadTracking() {
+    try {
+      const s = JSON.parse(lsGet('motionmuse-tracking') || '{}');
+      this.handsOn = s.hands !== false;
+      this.poseOn  = s.pose  !== false;
+    } catch { /* defaults stand */ }
+    return { hands: this.handsOn, pose: this.poseOn };
+  },
+
   // ── Register all CV signals into the bus ────────────────────────────
   registerSignals() {
     ['L', 'R'].forEach(s => {
@@ -251,11 +278,18 @@ export const cvSource = {
       lat.lastT = now;
       try {
         const t0 = performance.now();
-        if ((lat.frame & 1) === 0) {
+        // With both enabled the two models alternate. With one disabled the
+        // other runs EVERY frame rather than idling on its turn: switching
+        // pose off is meant to buy hand tracking the whole frame budget, and
+        // keeping the alternation would have thrown half of it away.
+        const both = this.handsOn && this.poseOn;
+        const runHand = both ? (lat.frame & 1) === 0 : this.handsOn;
+        const runPose = both ? !runHand : this.poseOn;
+        if (runHand) {
           this._hr = this.hand.detectForVideo(this.video, now);
           push30(lat.hand, performance.now() - t0);
           this.processHands(this._hr);
-        } else {
+        } else if (runPose) {
           this._pr = this.poseBackend.detect(this.video, now);
           push30(lat.pose, performance.now() - t0);
           this.processPose(this._pr);

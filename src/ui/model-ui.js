@@ -49,7 +49,12 @@ export function initModelPanel() {
           { ...cvSource._savedModel(), backend: poseSel.value, delegate: delSel.value, hands }));
       }
     } catch (e) {
-      toast(`Model switch failed: ${String(e).slice(0, 40)}`);
+      // The full text matters here: the previous 40-character truncation cut
+      // "SyntaxError: Importing binding name 'PoseDetector' is not found" down
+      // to "Syntax Error: Importing binding name 'Pos", which named neither
+      // the binding nor the module and made the cause unguessable.
+      console.error('[models] switch failed', e);
+      toast(`Model switch failed — ${String(e?.message || e).slice(0, 110)}`);
       if (prev) poseSel.value = prev;
     } finally {
       poseSel.disabled = handSel.disabled = false;

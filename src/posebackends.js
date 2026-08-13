@@ -22,6 +22,28 @@ const MP_WASM   = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/
 // (processPose, drawOverlay, depthSource.feedPose) already null-guards.
 const COCO_TO_BLAZE = [[0, 0], [5, 11], [6, 12], [7, 13], [8, 14], [9, 15], [10, 16], [11, 23], [12, 24]];
 
+// UMD builds — see the note in movenetBackend.init() for why these are script
+// tags rather than ES module imports.
+const TFJS_UMD           = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js';
+const POSE_DETECTION_UMD = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js';
+
+// Inject a classic script once, resolving when it has run. Cached by src so a
+// second MoveNet switch doesn't refetch or re-execute.
+const scripts = new Map();
+function loadScript(src) {
+  if (scripts.has(src)) return scripts.get(src);
+  const p = new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = src;
+    el.async = true;
+    el.onload = () => resolve();
+    el.onerror = () => { scripts.delete(src); reject(new Error(`could not load ${src.split('/npm/')[1] ?? src}`)); };
+    document.head.appendChild(el);
+  });
+  scripts.set(src, p);
+  return p;
+}
+
 export function createPoseBackend(id, { delegate = 'GPU' } = {}) {
   const spec = POSE_BACKENDS.find(b => b.id === id) ?? POSE_BACKENDS[0];
   return spec.kind === 'mp' ? mpBackend(spec, delegate) : movenetBackend(spec);
@@ -57,9 +79,23 @@ function movenetBackend(spec) {
     async init() {
       // Dev-only cost: tfjs loads lazily, and only when a MoveNet backend is
       // actually selected in the Models panel.
-      const tf = await import('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/+esm');
-      await tf.ready();
-      const pd = await import('https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/+esm');
+      //
+      // Loaded as classic UMD scripts, NOT as `+esm` modules. jsdelivr's
+      // `+esm` transform rewrites these CommonJS packages into ESM whose
+      // internal cross-package imports don't line up — pose-detection ends up
+      // importing a binding from tfjs's ESM build that isn't exported there,
+      // and the browser rejects the module at link time with
+      // "SyntaxError: Importing binding name '…' is not found". That is a
+      // packaging mismatch inside the CDN's generated bundles, so no amount
+      // of ordering or awaiting fixes it — the UMD builds (the combination
+      // TensorFlow actually documents for browsers) sidestep the ESM linker
+      // entirely and attach to window.
+      await loadScript(TFJS_UMD);
+      if (!window.tf) throw new Error('tfjs failed to attach to window');
+      await window.tf.ready();
+      await loadScript(POSE_DETECTION_UMD);
+      const pd = window.poseDetection;
+      if (!pd) throw new Error('pose-detection failed to attach to window');
       detector = await pd.createDetector(pd.SupportedModels.MoveNet, {
         modelType: spec.modelType,
       });

@@ -59,6 +59,13 @@
     <!-- Camera-dependent toggles: hidden until the camera is running, then
          shown on their own row beneath the main controls. -->
     <div class="hcam">
+      <!-- Hand tracking costs about twice what pose does and is the usual
+           frame-rate bottleneck, so both are switchable outright. With one
+           off the other stops sharing frames and runs at the full rate. -->
+      <button class="btn on" id="hands-btn"
+              title="Hand tracking — the most expensive model. Turn it off to give pose the whole frame budget.">✋ HANDS</button>
+      <button class="btn on" id="pose-btn"
+              title="Body pose tracking. Turn it off to give hand tracking the whole frame budget.">🧍 POSE</button>
       <button class="btn" id="face-btn"
               title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears">☺ FACE</button>
       <button class="btn" id="gaze-btn"
@@ -112,6 +119,10 @@
         </div>
         <canvas id="fs-kbd"></canvas>
       </div>
+      <!-- Portrait dev mode pins the camera to the top of the scroll, which
+           makes its height precious — this drags it smaller. Shown only there
+           (see the mobile block in main.css). -->
+      <div id="cam-handle" title="Drag to resize the camera view — double-click to reset"></div>
 
       <div class="panel uc-feature" id="model-panel" style="border-top:1px solid var(--border);">
         <div class="ph">MODELS <span class="uc-badge">dev</span></div>

@@ -108,6 +108,28 @@ const faceToggle = (btnId, key, setter, label) => {
 faceToggle('face-btn', 'faceOn', on => faceSource.setFace(on), 'Face');
 faceToggle('gaze-btn', 'gazeOn', on => faceSource.setGaze(on), 'Gaze');
 
+// ── Hand / pose tracking toggles ─────────────────────────────────────────
+// Unlike face and gaze these are on by default and cost nothing to switch —
+// no model to load, just whether the loop runs it.
+const trackToggle = (btnId, key, label) => {
+  const btn = document.getElementById(btnId);
+  const sync = () => btn.classList.toggle('on', cvSource[key === 'hands' ? 'handsOn' : 'poseOn']);
+  btn.addEventListener('click', () => {
+    const now = cvSource.setTracking({ [key]: !cvSource[key === 'hands' ? 'handsOn' : 'poseOn'] });
+    sync();
+    const on = key === 'hands' ? now.hands : now.pose;
+    // Say what it bought them, since the point of the control is frame rate.
+    toast(on ? `${label} tracking ON`
+             : `${label} tracking off — ${key === 'hands' ? 'pose' : 'hands'} now runs every frame`);
+  });
+  sync();
+  return sync;
+};
+const syncHands = trackToggle('hands-btn', 'hands', 'Hand');
+const syncPose  = trackToggle('pose-btn',  'pose',  'Pose');
+cvSource._loadTracking();
+syncHands(); syncPose();
+
 // ── Developer mode toggle (reveals under-construction features) ──────────
 const devBtn = document.getElementById('dev-btn');
 devmode.onChange(on => {

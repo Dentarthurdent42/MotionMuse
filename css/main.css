@@ -941,8 +941,15 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
 /* ── Mobile ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  /* Allow vertical scroll */
-  html, body { height: auto; overflow-x: hidden; overflow-y: auto; }
+  /* Allow vertical scroll.
+     `overflow-x: clip` rather than `hidden` on the body: `hidden` makes it a
+     scroll container, and since the element that actually scrolls is <html>,
+     anything sticky inside body then sticks to a scrollport that never moves
+     — position:sticky silently does nothing. `clip` suppresses the same
+     horizontal overflow without creating that container. The `hidden`
+     declaration is kept first so browsers without `clip` still get it. */
+  html { height: auto; overflow-y: auto; overflow-x: hidden; overflow-x: clip; }
+  body { height: auto; overflow-y: visible; overflow-x: hidden; overflow-x: clip; }
 
   #app {
     height: auto;
@@ -1008,6 +1015,50 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
   /* Cap the signal list so it doesn't eat the page */
   #sig-list { max-height: 260px; overflow-y: auto; }
+
+  /* Portrait dev mode: the camera stays put while the page scrolls, so the
+     tracking overlay is visible while you work the patchbay below it. Only in
+     dev — for everyone else the camera scrolling away is the right default on
+     a phone, where vertical space is the scarce thing. */
+  body.dev .panel-cam {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: var(--panel);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+  }
+  /* Shrinking is done by narrowing the box, not by clipping it: aspect-ratio
+     then takes the height down with it, so the frame stays whole and the
+     landmark overlay stays registered to the video. Clipping would hide the
+     bottom of the frame — exactly where your hands are. */
+  body.dev .panel-cam #video-wrap {
+    width: min(100%, var(--cam-w, 100%));
+    margin-inline: auto;
+  }
+  body.dev #cam-handle { display: block; }
+}
+
+/* Grab bar under the camera. Hidden everywhere except portrait dev mode. */
+#cam-handle {
+  display: none;
+  height: 16px;
+  flex-shrink: 0;
+  cursor: ns-resize;
+  touch-action: none;              /* the drag is ours, not the scroller's */
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+#cam-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 46px; height: 3px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: var(--border2);
+}
+#cam-handle:active::after, body.resizing-cam #cam-handle::after { background: var(--cyan); }
 
   /* Mapper rows: keep a scroll cap */
   /* Roomier than the old 240px so the taller, finger-sized frequency picker
