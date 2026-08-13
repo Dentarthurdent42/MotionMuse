@@ -118,7 +118,16 @@ export const engine = (() => {
     // chords, …). Defaults match the old shared chain exactly.
     chord_filter_freq: { label: 'Chord Cutoff', min: 80,  max: 16000, val: 3000, unit: 'Hz' },
     chord_filter_q:    { label: 'Chord Q',      min: 0.1, max: 18,    val: 1,    snaps: [1] },
-    chord_volume:      { label: 'Chord Vol',    min: 0,   max: 1,     val: 1,    snaps: [0.5] },
+    // Ceiling of 4, not 1. The chord bank is voiced well under the lead on
+    // purpose — it was always a bed beneath it — but the bank can now be
+    // emptied to play chords alone, and at unity that is a whisper: measured
+    // -31 dBFS against a unity lead's -6. The extra 12 dB puts chord-only at
+    // about -17 dBFS, a healthy standalone level. Deliberately NOT enough to
+    // match the lead exactly, which would mean a ceiling of ~16 and squash
+    // unity into the bottom 6% of the slider; the lead is the hot one, not the
+    // chords the quiet one. Default and old behaviour are unchanged, and 1 is
+    // a detent so unity is still where the thumb lands.
+    chord_volume:      { label: 'Chord Vol',    min: 0,   max: 4,     val: 1,    snaps: [0.5, 1, 2] },
     lfo_rate:    { label: 'LFO Rate',      min: 0.05, max: 20,    val: 1,    unit: 'Hz' },
     lfo_depth:   { label: 'LFO Depth',     min: 0,    max: 1,     val: 0,     snaps: [0.5] },
     reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12,  snaps: [0.25, 0.5] },
@@ -278,8 +287,14 @@ export const engine = (() => {
   // Resize the bank. Params are rebuilt either way; the live nodes only when
   // the engine is running, so this works before start() too (the panel is
   // interactive from the first paint).
+  //
+  // Zero is a legal size: chord mode has its own voice bank, filter and level,
+  // so it is a complete instrument on its own, and leaving a lead oscillator
+  // running under it is a drone nobody asked for. `|| 1` on the parse would
+  // quietly turn 0 into 1, hence the explicit finite check.
   function setOscCount(n) {
-    const next = Math.max(1, Math.min(MAX_OSCS, Math.round(Number(n)) || 1));
+    const v = Math.round(Number(n));
+    const next = Number.isFinite(v) ? Math.max(0, Math.min(MAX_OSCS, v)) : oscCount;
     if (next === oscCount) return oscCount;
     const prev = oscCount;
     oscCount = next;

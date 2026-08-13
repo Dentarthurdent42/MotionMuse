@@ -1,6 +1,6 @@
 import { engine }                    from '../engine.js';
 import { mapper }                    from '../mapper.js';
-import { renderMapper }              from './mapper-ui.js';
+import { renderMapper, PARAM_CATS }  from './mapper-ui.js';
 import { SCALES, TUNINGS, NOTE_NAMES } from '../scale.js';
 import { makeKbdView, midiOf, OSC_COLS } from './keyboard.js';
 import { isDesktop } from './viewport.js';
@@ -154,10 +154,10 @@ export function renderAudioPanel() {
       <div class="audio-section-label">Oscillators
         <div class="num-step" style="margin-left:auto;">
           <button class="wave-btn" id="osc-minus" type="button" aria-label="Remove an oscillator"
-                  title="Remove the last oscillator"${nOsc <= 1 ? ' disabled' : ''}>−</button>
-          <input type="number" id="osc-count" min="1" max="${engine.MAX_OSCS}" step="1"
+                  title="Remove the last oscillator"${nOsc <= 0 ? ' disabled' : ''}>−</button>
+          <input type="number" id="osc-count" min="0" max="${engine.MAX_OSCS}" step="1"
                  value="${nOsc}" inputmode="numeric" aria-label="Number of oscillators"
-                 title="How many oscillators the lead voice runs. Each gets its own pitch, detune, waveform and level.">
+                 title="How many oscillators the lead voice runs. Each gets its own pitch, detune, waveform and level. Zero leaves chord mode playing on its own.">
           <button class="wave-btn" id="osc-plus" type="button" aria-label="Add an oscillator"
                   title="Add an oscillator"${nOsc >= engine.MAX_OSCS ? ' disabled' : ''}>+</button>
         </div>
@@ -170,7 +170,9 @@ export function renderAudioPanel() {
             ${waveBtn('sawtooth','SAW',i)}${waveBtn('square','SQR',i)}
           </div>
         </div>`).join('')}
-      <div class="osc-hint">Each has its own level: Osc1 Vol… under Parameters</div>
+      <div class="osc-hint">${nOsc
+        ? 'Each has its own level: Osc1 Vol… under Parameters'
+        : 'No lead oscillators — chord mode plays on its own'}</div>
     </div>
     <div class="audio-section">
       <div class="audio-section-label">Filter Type</div>
@@ -190,7 +192,31 @@ export function renderAudioPanel() {
     </div>
     <div class="audio-section" data-sec="sliders" style="border-bottom:none;">
       <div class="audio-section-label">Parameters</div>
-      ${Object.entries(engine.PARAMS).map(([k, p]) => rangeRow(k, p)).join('')}
+      ${(() => {
+        // Grouped by the SAME table the patchbay's add-output picker uses, so a
+        // parameter is in the same place whichever way you go looking for it.
+        // Sharing the table also means the two cannot drift: a new param has to
+        // be categorised once, and tests/unit/param-cats.test.js already fails
+        // the build if it is missing from that table.
+        const listed = new Set();
+        const groups = PARAM_CATS().map(([cat, keys]) => {
+          const rows = keys.filter(k => engine.PARAMS[k]);
+          rows.forEach(k => listed.add(k));
+          return !rows.length ? '' : `
+            <div class="param-group">
+              <div class="param-group-name">${cat}</div>
+              ${rows.map(k => rangeRow(k, engine.PARAMS[k])).join('')}
+            </div>`;
+        }).join('');
+        // A param the table forgot still gets a slider — being uncategorised
+        // should cost it a heading, not its control.
+        const orphans = Object.entries(engine.PARAMS).filter(([k]) => !listed.has(k));
+        return groups + (!orphans.length ? '' : `
+          <div class="param-group">
+            <div class="param-group-name">Other</div>
+            ${orphans.map(([k, p]) => rangeRow(k, p)).join('')}
+          </div>`);
+      })()}
     </div>`;
 
   // Re-wrap: innerHTML above discarded the section containers, grips and
@@ -420,7 +446,7 @@ export function updateAudioSliders() {
     if (notesEl) {
       const html = Array.from({ length: engine.getOscCount() }, (_, i) =>
         `OSC${i + 1} <b style="color:${OSC_COLS[i % OSC_COLS.length]}">`
-        + `${engine.noteFor(`osc${i + 1}_freq`)}</b>`).join('  ·  ');
+        + `${engine.noteFor(`osc${i + 1}_freq`)}</b>`).join('  ·  ') || '—';
       if (notesEl.innerHTML !== html) notesEl.innerHTML = html;
     }
     panelKbd.draw(kbdOpts());

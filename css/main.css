@@ -847,6 +847,19 @@ option { background: var(--panel); }
 .osc-row > .wave-btns { flex: 1 1 auto; min-width: 0; }
 /* A pointer to where the levels live, not a readout — so dim, not the amber
    .quant-notes uses for live values. */
+/* Parameter groups, headed the same way the patchbay's output picker groups
+   its <optgroup>s. Lighter than a section header — these sit inside one. */
+.param-group + .param-group { margin-top: 9px; }
+.param-group-name {
+  font-size: 8px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--border2);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 3px;
+  margin-bottom: 5px;
+}
+
 .osc-hint {
   margin-top: 5px;
   font-size: 8px;
@@ -1328,6 +1341,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
+  background: var(--panel);
   /* No `min-height: 0` here even though it reads as the obvious companion to
      the scroller: an id selector outranks the `body.reordering [data-sec-host]`
      rule that gives an empty host something to aim at, so declaring it would

@@ -244,6 +244,9 @@ function wireGrip(sec, grip, body, id) {
 export function enhanceSections(root = document) {
   root.querySelectorAll('.audio-section').forEach(enhance);
   root.querySelectorAll('[data-sec]').forEach(enhance);
+  // Before the hosts are tagged: #cam-extras is one of them, and this decides
+  // which box it lives in.
+  placeCamExtras();
   // Hosts are the column bodies, and a column body is itself created by
   // enhance() above — so they can only be tagged once that pass has run.
   tagHosts();
@@ -256,12 +259,14 @@ export function enhanceSections(root = document) {
   requestAnimationFrame(() => colorSections(document));
 }
 
-// Position drives the hue, so anything that moves sections has to recolour.
+// Position drives the hue, so anything that moves sections has to recolour —
+// and crossing the portrait breakpoint moves the camera column's extras between
+// two different parents, so that is re-decided here too.
 if (typeof window !== 'undefined') {
   let t = null;
   window.addEventListener('resize', () => {
     clearTimeout(t);
-    t = setTimeout(() => colorSections(document), 120);
+    t = setTimeout(() => { placeCamExtras(); colorSections(document); }, 120);
   });
 }
 
@@ -316,6 +321,32 @@ export function colorSections(root = document) {
 // cells in landscape and a plain source-order stack in portrait, so relocating
 // the node is the one operation that means the same thing in both. Moving nodes
 // rather than re-creating them keeps listeners and canvas contexts intact.
+
+// In portrait the camera panel is sticky — pinned to the top of the page so the
+// picture stays visible while you scroll (see the mobile block in main.css).
+// Everything inside it rides along, including the dev-only EEG / EMG / MODELS
+// sections, which then sit pinned under the video occupying a screen you cannot
+// scroll past. They are not the picture, so in portrait they move OUT of the
+// sticky panel and become its next sibling — which, in a single-column stack, is
+// exactly where they already appeared. Landscape puts them back inside: #main's
+// grid places each panel in an explicit cell there, and a stray child would be
+// auto-placed into whatever cell happened to be free.
+//
+// A DOM move rather than CSS because there is no CSS for "opt out of an
+// ancestor's stickiness": position:sticky pins the element's whole box, and
+// this content's only problem is which box it is in.
+const PORTRAIT = '(max-width: 768px)';
+
+function placeCamExtras() {
+  const ex   = document.getElementById('cam-extras');
+  const cam  = document.querySelector('.panel-cam');
+  const main = document.getElementById('main');
+  if (!ex || !cam || !main) return;
+  const portrait = window.matchMedia?.(PORTRAIT).matches ?? false;
+  const want = portrait ? main : cam;
+  if (ex.parentElement === want) return;
+  if (portrait) cam.after(ex); else cam.appendChild(ex);
+}
 
 function tagHosts() {
   for (const [id, sel] of HOSTS) {

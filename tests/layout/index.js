@@ -150,6 +150,17 @@ const sections = await page.evaluate(() => {
       }
       return seen;
     })(),
+    // The camera panel is sticky in portrait, and everything inside it rides
+    // along. The dev-only sections must therefore live OUTSIDE it there, or
+    // they sit pinned under the video occupying a screen you cannot scroll
+    // past — and back inside in landscape, where #main's grid would otherwise
+    // auto-place a stray child into whatever cell was free.
+    camExtras: (() => {
+      const ex = document.getElementById('cam-extras');
+      if (!ex) return null;
+      const p = ex.parentElement;
+      return p.id === 'main' ? 'main' : (p.classList.contains('panel-cam') ? 'panel-cam' : p.className);
+    })(),
     // …and the inflation heuristic itself is off, so the authored size is what
     // ships at every zoom level rather than a per-container guess.
     textSizeAdjust: getComputedStyle(document.documentElement).webkitTextSizeAdjust
@@ -287,6 +298,49 @@ const hud = await (async () => {
     };
   });
 
+  const params = await page.evaluate(async () => {
+    const { renderMapper } = await import('/src/ui/mapper-ui.js');
+    const { engine } = await import('/src/engine.js');
+    const grab = () => {
+      const sec = document.querySelector('.sec[data-sec-id="sliders"]');
+      return [...sec.querySelectorAll('.param-group')].map(g => [
+        g.querySelector('.param-group-name').textContent,
+        [...g.querySelectorAll('.apr')].map(e => e.dataset.key)]);
+    };
+    // Read the picker's REAL rendered optgroups rather than re-deriving them
+    // from the shared table: re-deriving would mean the test agreeing with
+    // itself, and it did — an empty category (no oscillators) is dropped when
+    // the <select> is built, which a naive re-derivation kept.
+    const cats = () => [...document.querySelectorAll('#ng-add-output optgroup')]
+      .map(g => [g.label, [...g.querySelectorAll('option')].map(o => o.value)]);
+    const one = { groups: grab(), picker: cats() };
+    // The bank is resizable, so the grouping has to follow it — a table read
+    // once at first render would go stale the moment an oscillator was added.
+    engine.setOscCount(3);
+    (await import('/src/ui/audio-ui.js')).renderAudioPanel();
+    renderMapper();
+    const three = { groups: grab(), picker: cats() };
+    const shown = three.groups.flatMap(([, ks]) => ks);
+    // Zero is a legal bank size — chord mode is a complete instrument on its
+    // own — so the panel has to survive having no oscillator params at all.
+    engine.setOscCount(0);
+    (await import('/src/ui/audio-ui.js')).renderAudioPanel();
+    renderMapper();
+    const zero = {
+      groups: grab(), picker: cats(),
+      rows: document.querySelectorAll('.osc-row').length,
+      minusDisabled: document.getElementById('osc-minus').disabled,
+      field: document.getElementById('osc-count').value,
+      oscParams: Object.keys(engine.PARAMS).filter(k => /^osc\d+_/.test(k)).length,
+    };
+    engine.setOscCount(1);
+    (await import('/src/ui/audio-ui.js')).renderAudioPanel();
+    renderMapper();
+    return { one, three, zero,
+             missing: Object.keys(engine.PARAMS).filter(k => !shown.includes(k)),
+             dupes: shown.filter((k, i) => shown.indexOf(k) !== i) };
+  });
+
   const all = { handsL: true, handsR: true, pose: true, face: true };
   await set(all);
   const nodev = await read();                       // camera "on", DEV off
@@ -304,7 +358,7 @@ const hud = await (async () => {
   });
   const viaToggle = await read();
   await page.close();
-  return { nodev, dev, faceOnly, poseOnly, viaToggle, errs };
+  return { nodev, dev, faceOnly, poseOnly, viaToggle, params, errs };
 })();
 
 await b.close(); server.close();
@@ -346,6 +400,9 @@ for (const { width, off, on, sections, camSticky } of results) {
     hStyles.map(k => `${k} → ${sections.headerStyles[k].join(',')}`).join(' | '));
   check(sections.textSizeAdjust === '100%',
     `${w}: text auto-inflation is off`, String(sections.textSizeAdjust));
+  check(sections.camExtras === (width < 769 ? 'main' : 'panel-cam'),
+    `${w}: the camera column's extra sections are ${width < 769 ? 'outside' : 'inside'} the sticky panel`,
+    String(sections.camExtras));
   if (sections.caret) {
     check(sections.caret.content === '""' || sections.caret.content === 'none',
       `${w}: the caret is drawn, not a font glyph`, sections.caret.content);
@@ -461,6 +518,31 @@ console.log('\nInference HUD\n');
     'the tracking toggles drive the rows, not only the internal sync',
     JSON.stringify(viaToggle));
   check(errs.length === 0, 'no page errors while driving the HUD', errs.join(' | '));
+}
+
+// ── Parameter sliders are grouped exactly as the patchbay picker groups them ──
+// Both read the same table, so this pins that they still do: a second,
+// hand-maintained copy of the grouping is how the two would drift apart.
+console.log('\nParameter grouping\n');
+{
+  const { one, three, missing, dupes } = hud.params;
+  for (const [label, st] of [['1 oscillator', one], ['3 oscillators', three]]) {
+    check(JSON.stringify(st.groups) === JSON.stringify(st.picker),
+      `${label}: the Parameters groups match the patchbay's output picker`,
+      `panel ${JSON.stringify(st.groups)} vs picker ${JSON.stringify(st.picker)}`);
+  }
+  check(missing.length === 0, 'every engine param has a slider', missing.join(' '));
+  check(dupes.length === 0, 'no parameter is listed twice', dupes.join(' '));
+
+  const z = hud.params.zero;
+  check(z.oscParams === 0 && z.rows === 0,
+    'the bank can be emptied for chord-mode-only play',
+    `${z.oscParams} params, ${z.rows} rows`);
+  check(z.minusDisabled && z.field === '0', 'the stepper bottoms out at zero',
+    `disabled=${z.minusDisabled} field=${z.field}`);
+  check(JSON.stringify(z.groups) === JSON.stringify(z.picker),
+    'with no oscillators the Oscillators group is absent from both lists',
+    `panel ${JSON.stringify(z.groups.map(g => g[0]))} vs picker ${JSON.stringify(z.picker.map(g => g[0]))}`);
 }
 
 console.log(`\n${fail} failure(s)\n`);

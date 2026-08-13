@@ -114,6 +114,22 @@ impossible. Per-oscillator level is a superset: mix *m* was exactly osc1 at
 `1-m` and osc2 at `m`, which is how saved presets are migrated on load rather
 than dropped.
 
+The stepper goes down to **zero**. Chord mode has its own voice bank, filter,
+level and envelope, so it is a complete instrument on its own, and leaving a
+lead oscillator running underneath it is a drone nobody asked for. With an empty
+bank the Oscillators rows and every `oscN_*` slider disappear — and so does the
+Oscillators group in the patchbay's output picker, since both read the same
+table. Starting Play Along puts one oscillator back, because the game scores the
+pitch of oscillator 1 and cannot judge anything without it.
+
+Chord mode is voiced well below the lead on purpose — it was always a bed
+beneath it — so **Chord Vol** now runs to 4 rather than 1. At unity, chords
+alone measure about −31 dBFS against a unity lead's −6; the extra 12 dB puts
+chord-only play at roughly −17 dBFS, a healthy standalone level. It is
+deliberately *not* enough to match the lead exactly, which would need a ceiling
+near 16 and would squash unity into the bottom 6% of the slider. The default is
+unchanged and 1 is a detent.
+
 Two behaviours worth knowing:
 
 - **Added oscillators arrive at half level.** Everything downstream — the volume
@@ -129,6 +145,10 @@ Two behaviours worth knowing:
 A slot's values and waveform survive its removal, so shrinking to hear one voice
 and growing back returns the sound you had instead of resetting the slot you were
 part-way through dialling in.
+
+The **Parameters** section groups its sliders under the same headings the
+patchbay's output picker uses, from the same table — so a parameter is in the
+same place whichever way you go looking for it, and the two cannot drift apart.
 
 ## Sections: containers, scrolling and resizing
 
@@ -154,6 +174,16 @@ rather than pinned there: a section taller than its contents is a box of empty
 space with its own scrollbar, and pinning it at exactly the content height would
 stop it growing the next time its list gained a row — it would just start
 hiding it.
+
+In **portrait**, the camera panel is pinned to the top of the page, and
+everything inside it is pinned with it. The dev-only **EEG / EMG / MODELS**
+sections therefore move *out* of that panel at that width and become its next
+sibling — in a single-column stack, exactly where they already appeared —
+returning inside it in landscape, where the grid places each panel in an
+explicit cell and a stray child would land in whatever cell was free. It is a
+DOM move because there is no CSS for "opt out of an ancestor's stickiness":
+`position: sticky` pins the element's whole box, and this content's only problem
+was which box it was in.
 
 **Drag a section's header to move it** — up and down within its column, or
 across into another one. Each column offers a single drop host, outlined while
