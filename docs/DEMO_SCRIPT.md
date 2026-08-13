@@ -27,8 +27,8 @@ Why this framing works: it states the product *and* the engineering claim
 ## 1. The hook — make sound with your hand — 60 sec
 
 **[DO]** Click **START CAMERA**. Wait for the hand skeleton overlay to appear.
-**[DO]** Click **AUDIO ON**.
 **[DO]** Click **PRESET**.
+**[DO]** Press **Space** to unmute (the synth is already running — it starts silent).
 **[DO]** Raise and lower your hand, open and close your fist.
 
 > "Everything you're hearing is driven live off the camera. As my hand goes up,
@@ -204,7 +204,7 @@ Then stop talking and let them drive the questions.
 
 ## Cheat sheet — click order
 
-1. START CAMERA → AUDIO ON → PRESET → move hand
+1. START CAMERA → PRESET → Space to unmute → move hand
 2. Pitch Quantize: ON, root, minor pentatonic, just intonation
 3. Sound Kit: Synth → Piano → Organ → Strings
 4. Play Along: Ode to Joy, easy

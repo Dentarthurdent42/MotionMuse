@@ -4,12 +4,15 @@ A browser-based instrument that maps live webcam data — hand position, gesture
 
 ## Demo
 
-![MotionMuse screenshot](docs/screenshot.png)
+![MotionMuse: the camera panel, the patchbay wiring hand signals to synth parameters, and the audio engine — shown with the default Hands patch loaded and the output muted](docs/screenshot.png)
+
+<sub>Regenerate with `npm run screenshot` after a visible UI change.</sub>
 
 Open `index.html` (or the Netlify deploy) and:
 1. Click **START CAMERA** — MediaPipe loads and begins detecting hands and pose
-2. Click **AUDIO ON** — the Web Audio synthesiser starts
-3. Click **PRESET** — pick a starting patch (hands, face, gaze or whole-body); move and play
+2. Click **PRESET** — pick a starting patch (hands, face, gaze or whole-body)
+3. Press **Space** (or click **🔇 MUTED**) to unmute, then move and play — the synthesiser
+   is already running, it just starts silent
 
 ## Support
 
@@ -551,6 +554,7 @@ src/
                     persisted, and kept clear of typing
 scripts/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
+  screenshot.mjs    Regenerates docs/screenshot.png (npm run screenshot)
 sw.js               Service worker (network-first app shell, cached MediaPipe models)
 tests/
   unit/             node --test suites (chords, diatonic degrees, chord mode,

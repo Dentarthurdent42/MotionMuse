@@ -38,7 +38,8 @@ await p.setViewportSize({ width: 1440, height: 950 });
 await p.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
 
 // Put the app in every state a step can declare via `needs`. Playwright
-// clicks count as user gestures, so AUDIO ON genuinely starts the engine.
+// clicks count as user gestures, so this genuinely resumes the audio context
+// (the engine itself now starts with the page, muted).
 await p.click('#dev-btn');        // 'dev'
 await p.click('#audio-btn');      // 'audio' — builds the audio panel sections
 await p.waitForTimeout(400);

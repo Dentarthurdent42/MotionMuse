@@ -140,8 +140,8 @@ export const TOUR_STEPS = [
   },
   {
     id: 'finish', target: null, title: 'That’s the tour',
-    body: 'Quick start: <b>START CAMERA → AUDIO ON → PRESET</b>, then move ' +
-          'your right hand up and down and pinch to shape notes.<br><br>' +
+    body: 'Quick start: <b>START CAMERA → PRESET → Space</b> to unmute, then ' +
+          'move your right hand up and down and pinch to shape notes.<br><br>' +
           'MotionMuse updates often — when new features land, the <b>?</b> ' +
           'button pulses and the tour gains steps. The README covers ' +
           'everything here in depth.',
