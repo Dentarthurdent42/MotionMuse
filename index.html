@@ -126,6 +126,15 @@
            (see the mobile block in main.css). -->
       <div id="cam-handle" title="Drag to resize the camera view — double-click to reset"></div>
 
+      <!-- Everything in the camera column that is not the picture lives in one
+           box, and that box is a drop host for sections dragged in from other
+           columns (see src/ui/sections.js). Keeping it separate from
+           #video-wrap is what leaves the sticky-camera and aspect-ratio logic
+           above untouched — a section dropped in here scrolls inside this box
+           instead of growing the panel that is pinned to the top of a phone
+           screen. -->
+      <div id="cam-extras">
+
       <!-- EEG and EMG were tabs in the CV strip, which promised a switchable
            input that does not exist yet — clicking them did nothing. As their
            own sections they read as what they are: planned inputs, listed
@@ -159,6 +168,7 @@
         </div>
       </div>
 
+      </div><!-- /#cam-extras -->
     </div>
 
     <!-- Signals — its own full-height column in landscape -->

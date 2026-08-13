@@ -108,6 +108,43 @@ const sections = await page.evaluate(() => {
         const b = e.querySelector(':scope > .sec-body.sec-scroll');
         return b && getComputedStyle(b).overflowY !== 'auto';
       }).map(e => e.dataset.secId),
+    // A section may not be taller than its own content: a height past that is a
+    // box of empty space with a scrollbar attached, which is what applyHeight's
+    // ceiling exists to prevent.
+    tallerThanContent: all
+      .filter(e => {
+        const b = e.querySelector(':scope > .sec-body.sec-scroll');
+        return b && b.scrollHeight <= b.clientHeight + 1;
+      }).map(e => e.dataset.secId),
+    // Cross-column moves: every column contributes exactly one drop host, and
+    // every section sitting in one is draggable and knows where it was born.
+    hosts: [...document.querySelectorAll('[data-sec-host]')].map(e => e.dataset.secHost).sort(),
+    inHost: all.filter(e => e.parentElement?.dataset.secHost).map(e => e.dataset.secId),
+    noBirth: all.filter(e => e.parentElement?.dataset.secHost && !e.dataset.secBirth)
+                .map(e => e.dataset.secId),
+    notDraggable: all.filter(e => e.parentElement?.dataset.secHost && !e.dataset.reorder)
+                     .map(e => e.dataset.secId),
+    // A host with nothing in it still has to be aimable during a drag, or the
+    // column it belongs to cannot receive anything. `body.reordering` is
+    // exactly the state the drag puts the page in.
+    unaimableHosts: (() => {
+      document.body.classList.add('reordering');
+      const bad = [...document.querySelectorAll('[data-sec-host]')]
+        .filter(e => e.getBoundingClientRect().height < 12)
+        .map(e => e.dataset.secHost);
+      document.body.classList.remove('reordering');
+      return bad;
+    })(),
+    // The collapse caret is drawn from borders rather than typed as a glyph, so
+    // it looks the same on every platform. Empty content + a real border is the
+    // signature of that; a character caret would show up as content text.
+    caret: (() => {
+      const btn = [...document.querySelectorAll('.sec-fold')].find(b => b.getClientRects().length);
+      if (!btn) return null;
+      const cs = getComputedStyle(btn, '::before');
+      return { content: cs.content, border: parseFloat(cs.borderBottomWidth),
+               w: parseFloat(cs.width), target: Math.round(btn.getBoundingClientRect().width) };
+    })(),
   };
 });
 
@@ -141,6 +178,60 @@ const off = await measure();
   await page.close();
 }
 
+// A relocated section has to STAY relocated through the two things that
+// destroy it: the audio panel rebuilding its innerHTML, and a reload. Both are
+// exercised here rather than trusted, because the failure mode is silent — the
+// section simply reappears in its birth column, and a user reads that as the
+// drag not having worked.
+const relocation = await (async () => {
+  const page = await b.newPage({ viewport: { width: 1440, height: 900 } });
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  // Seeded rather than dragged: the drag itself is a pointer-sequence concern,
+  // while what must not regress is that the stored map is honoured.
+  await page.addInitScript(() =>
+    localStorage.setItem('motionmuse-sec-home', JSON.stringify({ gestures: 'map', 'sound-kit': 'cam' })));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+
+  const where = () => page.evaluate(() => {
+    const at = id => document.querySelector(`.sec[data-sec-id="${id}"]`)?.parentElement?.dataset.secHost ?? null;
+    const counts = {};
+    for (const e of document.querySelectorAll('.sec[data-sec-id]'))
+      counts[e.dataset.secId] = (counts[e.dataset.secId] || 0) + 1;
+    return {
+      gestures: at('gestures'), kit: at('sound-kit'),
+      dupes: Object.entries(counts).filter(([, n]) => n > 1).map(([k]) => k),
+      // Sliders are wired by renderAudioPanel; if it scopes its queries to the
+      // panel, a section that has moved out of it loses every handler.
+      apr: document.querySelectorAll('.apr').length,
+    };
+  });
+
+  const fresh = await where();
+  await page.evaluate(async () => (await import('/src/ui/audio-ui.js')).renderAudioPanel());
+  await page.waitForTimeout(300);
+  const rerendered = await where();
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+  const reloaded = await where();
+
+  // The moved section's controls must still drive the engine.
+  const wired = await page.evaluate(async () => {
+    const { engine } = await import('/src/engine.js');
+    const el = document.querySelector('.apr');
+    if (!el) return false;
+    const p = engine.PARAMS[el.dataset.key];
+    const before = p.val;
+    el.value = String(p.min + (p.max - p.min) * 0.42);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return p.val !== before;
+  });
+
+  await page.close();
+  return { fresh, rerendered, reloaded, wired, errs };
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -160,6 +251,28 @@ for (const { width, off, on, sections, camSticky } of results) {
   check(sections.unnamed === 0, `${w}: every section has an id (so its height can persist)`, String(sections.unnamed));
   check(sections.pinnedNotScrolling.length === 0,
     `${w}: a section given a height scrolls rather than clipping`, sections.pinnedNotScrolling.join(' '));
+  check(sections.tallerThanContent.length === 0,
+    `${w}: no section is taller than its contents`, sections.tallerThanContent.join(' '));
+
+  // ── Cross-column moves ──
+  check(sections.hosts.join(',') === 'audio,cam,map,sig',
+    `${w}: one drop host per column`, sections.hosts.join(','));
+  check(sections.inHost.length >= 12, `${w}: sections live in hosts`, `${sections.inHost.length}`);
+  check(sections.noBirth.length === 0,
+    `${w}: every movable section records its birth column`, sections.noBirth.join(' '));
+  check(sections.notDraggable.length === 0,
+    `${w}: every section in a host is draggable`, sections.notDraggable.join(' '));
+  check(sections.unaimableHosts.length === 0,
+    `${w}: every host is aimable mid-drag`, sections.unaimableHosts.join(' '));
+  if (sections.caret) {
+    check(sections.caret.content === '""' || sections.caret.content === 'none',
+      `${w}: the caret is drawn, not a font glyph`, sections.caret.content);
+    check(sections.caret.border >= 1.5 && sections.caret.w >= 6,
+      `${w}: the caret has a visible stroke`,
+      `${sections.caret.border}px stroke, ${sections.caret.w}px box`);
+    check(sections.caret.target >= 18, `${w}: the caret's hit target is large enough`,
+      `${sections.caret.target}px`);
+  }
 
   check(off.escapees.length === 0, `${w} camera off: every control inside the header`, off.escapees.join(' '));
   check(on.escapees.length === 0,  `${w} camera on:  every control inside the header`, on.escapees.join(' '));
@@ -230,6 +343,21 @@ for (const { width, off, on, sections, camSticky } of results) {
     check(order === 'cam→sig→map→aud',
       `${w} portrait: panels stack camera→signals→patchbay→audio`, order);
   }
+}
+
+// ── Cross-column placement survives a re-render and a reload ──
+console.log('\nCross-column section placement\n');
+{
+  const { fresh, rerendered, reloaded, wired, errs } = relocation;
+  const stages = [['on load', fresh], ['after renderAudioPanel()', rerendered], ['after reload', reloaded]];
+  for (const [label, st] of stages) {
+    check(st.gestures === 'map', `${label}: GESTURES is in the patchbay column`, String(st.gestures));
+    check(st.kit === 'cam', `${label}: SOUND KIT is in the camera column`, String(st.kit));
+    check(st.dupes.length === 0, `${label}: no duplicated sections`, st.dupes.join(' '));
+    check(st.apr > 0, `${label}: parameter sliders exist`, String(st.apr));
+  }
+  check(wired, 'a relocated panel\'s sliders still drive the engine');
+  check(errs.length === 0, 'no page errors while placing sections', errs.join(' | '));
 }
 
 console.log(`\n${fail} failure(s)\n`);

@@ -118,13 +118,23 @@ trade one annoyance for a worse one. A section that *is* clipped fades at its
 bottom edge, and the fade lifts when you reach the end — a 3px scrollbar is not
 an affordance.
 
-**Drag a section's header to reorder it** within its column. The order is
-stored as ids, not as moved DOM nodes: the audio panel rebuilds its markup on
-any structural change, which would discard a reordered DOM instantly, whereas a
-stored order is simply re-applied. It survives a re-render and a reload.
-Dragging *between* columns is deliberately not supported — landscape places
-panels in explicit grid cells while portrait uses source order, so that would
-have to rewrite two different layouts.
+**The content height is the ceiling.** Drag past it and the height is released
+rather than pinned there: a section taller than its contents is a box of empty
+space with its own scrollbar, and pinning it at exactly the content height would
+stop it growing the next time its list gained a row — it would just start
+hiding it.
+
+**Drag a section's header to move it** — up and down within its column, or
+across into another one. Each column offers a single drop host, outlined while
+you drag, and an empty one (the camera column with its dev-only sections
+hidden, say) grows a target so it can still be aimed at. Placement moves the
+real DOM node, which is what makes one drag mean the same thing in both
+orientations: landscape puts the columns in explicit grid cells and portrait
+stacks them in source order, so a *stored* position has to name a container,
+not a coordinate. Both the host and the position within it are re-applied after
+every render, so a move survives the audio panel rebuilding its markup and a
+reload. Drag a section back to the column it started in and the override is
+dropped rather than pinned.
 
 Each container also carries a **hue drawn from where it is on screen** — column
 sets the base, vertical position walks it — so you can aim at a section without
@@ -138,7 +148,15 @@ This is applied at runtime (`src/ui/sections.js`) rather than baked into a
 dozen template strings: each section already had the same shape — a header
 followed by content — so a section added next week gets a container, a
 scroller and a grip without anyone remembering to add them. `npm run
-test:layout` fails the build if a section loses its body, its grip or its id.
+test:layout` fails the build if a section loses its body, its grip or its id,
+if a column stops offering a drop host, if a relocated section drifts back to
+its birth column across a render or a reload, or if a section ends up taller
+than its own contents.
+
+The collapse caret is **drawn from borders, not typed as a character**. The UI
+face is IBM Plex Mono, which has no chevron glyph, so a text caret falls back to
+whatever the platform substitutes — a different weight, size and baseline on
+every device, which is exactly the legibility problem it kept having.
 
 The camera view resizes with its own handle instead, directly beneath it: it
 has to keep an exact 4:3 box or the landmark overlay stops lining up with the

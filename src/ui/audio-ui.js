@@ -270,7 +270,10 @@ export function renderAudioPanel() {
     for (const s of p.snaps) if (Math.abs(v - s) <= tol) return s;
     return v;
   };
-  panel.querySelectorAll('.apr').forEach(el => {
+  // Scoped to the document, not the panel: enhanceSections() above may have
+  // relocated a section to another column, so the sliders this render just
+  // created are no longer guaranteed to be inside `panel`.
+  document.querySelectorAll('.apr').forEach(el => {
     el.addEventListener('input', e => {
       const key = e.target.dataset.key;
       const p   = engine.PARAMS[key];
@@ -362,7 +365,7 @@ export function renderAudioPanel() {
   // Cache slider/readout refs — updateAudioSliders runs every frame and
   // shouldn't pay for per-mapping querySelector calls.
   sliderRefs.clear();
-  panel.querySelectorAll('.apr').forEach(el =>
+  document.querySelectorAll('.apr').forEach(el =>
     sliderRefs.set(el.dataset.key, { slider: el, valEl: document.getElementById(`av-${el.dataset.key}`) }));
 }
 

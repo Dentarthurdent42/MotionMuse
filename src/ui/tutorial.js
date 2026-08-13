@@ -107,6 +107,16 @@ export const TOUR_STEPS = [
           'patchbay.',
   },
   {
+    // Rearranging is invisible until someone tries it — there is no button for
+    // it — so the tour is the only place a user finds out it exists.
+    id: 'layout', target: '#audio-panel', needs: ['audio'], title: 'Make it yours',
+    body: 'Every section is a container you can rearrange. <b>Drag its ' +
+          'header</b> to move it up, down, or into another column; drag the ' +
+          '<b>grip along its bottom edge</b> to set a height (double-click to ' +
+          'fit); click the <b>caret</b> to collapse it. Where you leave things ' +
+          'is remembered.',
+  },
+  {
     id: 'playalong', target: '#audio-panel', needs: ['audio'], title: 'Play along',
     body: 'The <b>Play Along</b> section is a falling-note game: pick a song ' +
           'and difficulty, and hit the notes with whatever gesture controls ' +

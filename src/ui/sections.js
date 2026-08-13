@@ -25,7 +25,19 @@ import { lsGet, lsSet } from '../storage.js';
 const KEY = 'motionmuse-sections';
 const ORDER_KEY = 'motionmuse-sec-order';
 const FOLD_KEY  = 'motionmuse-sec-folded';
+const HOME_KEY  = 'motionmuse-sec-home';
 const MIN_H = 56;              // below this a section is unreadable, not compact
+
+// The containers a section is allowed to live in — one per column, so a drop
+// always lands somewhere that can hold it. Landscape and portrait differ in
+// where these boxes sit on screen, not in what they contain, which is what lets
+// one drag mean the same thing in both.
+const HOSTS = [
+  ['audio', '#audio-panel'],
+  ['cam',   '#cam-extras'],
+  ['sig',   '.panel-sig > .sec-body'],
+  ['map',   '.panel-map > .sec-body'],
+];
 
 // Sections whose content is an open-ended list get a default height, because
 // "scroll the list" is the whole point of them. Everything else stays natural.
@@ -40,15 +52,17 @@ const DEFAULT_H = {
 };
 
 let heights = load();
-let order   = loadOrder();
+let order   = loadMap(ORDER_KEY);
+let home    = loadMap(HOME_KEY);
 
-function loadOrder() {
+function loadMap(key) {
   try {
-    const v = JSON.parse(lsGet(ORDER_KEY) || '{}');
+    const v = JSON.parse(lsGet(key) || '{}');
     return v && typeof v === 'object' ? v : {};
   } catch { return {}; }
 }
 const saveOrder = () => lsSet(ORDER_KEY, JSON.stringify(order));
+const saveHome  = () => lsSet(HOME_KEY,  JSON.stringify(home));
 
 // Collapsed sections, by id. Separate from the height map: a folded section
 // still remembers how tall it was, so unfolding restores the size you chose
@@ -97,15 +111,41 @@ function syncEnd(body) {
   body.classList.toggle('at-end', atEnd);
 }
 
+// How tall the body would be if left alone. Measured with the height released,
+// because `scrollHeight` on a box that is already taller than its content just
+// reports the box — which would make the content look as tall as whatever the
+// last drag left behind, and the clamp below would then never bite.
+function contentHeight(body) {
+  const prev = body.style.height;
+  body.style.height = 'auto';
+  const h = body.scrollHeight;
+  if (prev) body.style.height = prev; else body.style.removeProperty('height');
+  return h;
+}
+
+function natural(body) {
+  body.style.removeProperty('height');
+  body.classList.remove('sec-scroll');
+}
+
 export function applyHeight(sec, h) {
   const body = sec.querySelector(':scope > .sec-body');
   if (!body) return;
   if (h == null) {
-    body.style.removeProperty('height');
-    body.classList.remove('sec-scroll');
+    natural(body);
   } else {
-    body.style.height = `${Math.max(MIN_H, h)}px`;
-    body.classList.add('sec-scroll');
+    // Content height is the ceiling: past it a section is just a box of empty
+    // space with its own scrollbar, which is strictly worse than the natural
+    // height in every way. Rather than pinning at exactly the content height,
+    // release the height altogether — a pinned section would stop growing when
+    // its list gained a row, and silently start hiding it.
+    const max = contentHeight(body);
+    const want = Math.max(MIN_H, h);
+    if (want >= max) natural(body);
+    else {
+      body.style.height = `${want}px`;
+      body.classList.add('sec-scroll');
+    }
   }
   syncEnd(body);
 }
@@ -133,8 +173,8 @@ function enhance(sec) {
     // reveals a row), which changes whether anything is hidden.
     new ResizeObserver(() => syncEnd(body)).observe(body);
 
-    // Collapse control, before the drag wiring so its click is not read as a
-    // drag start (wireDrag ignores presses that land on a button).
+    // Collapse control. Its click must not read as a drag start — wireDrag
+    // ignores presses that land on a button, so order here is incidental.
     const fold = document.createElement('button');
     fold.className = 'sec-fold';
     fold.type = 'button';
@@ -145,13 +185,6 @@ function enhance(sec) {
       e.stopPropagation();
       setFolded(sec, !sec.classList.contains('folded'));
     });
-
-    // Only sections stacked inside a scrolling column are reorderable; a
-    // section that IS a column has nothing to reorder among.
-    if (sec.classList.contains('audio-section')) {
-      sec.dataset.reorder = '1';
-      wireDrag(sec, head);
-    }
 
     const grip = document.createElement('div');
     grip.className = 'sec-grip';
@@ -181,7 +214,14 @@ function wireGrip(sec, grip, body, id) {
       grip.removeEventListener('pointerup', up);
       grip.removeEventListener('pointercancel', up);
       document.body.classList.remove('resizing-sec');
-      heights[id] = Math.round(body.getBoundingClientRect().height);
+      // Dragged to (or past) the content height: applyHeight released the
+      // height, so store nothing. Persisting the measured pixel value here
+      // would freeze the section at today's content size and stop it growing.
+      if (body.classList.contains('sec-scroll')) {
+        heights[id] = Math.round(body.getBoundingClientRect().height);
+      } else {
+        delete heights[id];
+      }
       save();
     };
     grip.addEventListener('pointermove', move);
@@ -204,7 +244,14 @@ function wireGrip(sec, grip, body, id) {
 export function enhanceSections(root = document) {
   root.querySelectorAll('.audio-section').forEach(enhance);
   root.querySelectorAll('[data-sec]').forEach(enhance);
-  applyOrder(document);
+  // Hosts are the column bodies, and a column body is itself created by
+  // enhance() above — so they can only be tagged once that pass has run.
+  tagHosts();
+  dedupe();          // drop stale copies of anything this render recreated
+  recordBirth();
+  applyPlacement();  // …then put the moved ones back where the user left them
+  applyOrder();
+  wireMovable();
   // Geometry is only settled after layout, and hues are derived from it.
   requestAnimationFrame(() => colorSections(document));
 }
@@ -255,36 +302,132 @@ export function colorSections(root = document) {
   });
 }
 
-// ── Drag to reorder ──────────────────────────────────────────────────────
+// ── Drag to rearrange, within and between columns ────────────────────────
 //
-// Order is stored as a map of id -> index and applied as CSS `order`, not by
-// moving DOM nodes. That is the whole reason it survives: the audio panel
-// rebuilds its innerHTML on any structural change, which would discard a
-// reordered DOM instantly. A stored order is simply re-applied by the next
-// enhanceSections() pass.
+// Two things are stored: which host a section lives in (`home`) and where it
+// sits among that host's sections (`order`). Both are re-applied on every
+// enhanceSections() pass, which is what makes them survive the audio panel
+// rebuilding its innerHTML — the panel discards its children, they come back in
+// their birth column, and the next pass puts them where the user left them.
 //
-// Scope is deliberately within a container: sections reorder among their
-// siblings. Dragging one between columns would have to rewrite the landscape
-// grid placement AND the portrait source order, which are two different
-// layouts — a change worth making on its own terms, not smuggled in here.
-export function applyOrder(root = document) {
-  root.querySelectorAll('.sec[data-sec-id]').forEach(el => {
+// Placement moves real DOM nodes. An earlier version applied `order` as CSS,
+// which was cheaper but cannot cross a container, and a section moved to
+// another column has to actually live there: the columns are explicit grid
+// cells in landscape and a plain source-order stack in portrait, so relocating
+// the node is the one operation that means the same thing in both. Moving nodes
+// rather than re-creating them keeps listeners and canvas contexts intact.
+
+function tagHosts() {
+  for (const [id, sel] of HOSTS) {
+    const el = document.querySelector(sel);
+    if (el) el.dataset.secHost = id;
+  }
+}
+
+const hostSecs = host =>
+  [...host.children].filter(el => el.classList.contains('sec'));
+
+const visibleHosts = () =>
+  [...document.querySelectorAll('[data-sec-host]')].filter(el => el.getClientRects().length);
+
+// A re-render recreates sections the user has since moved away, so the same id
+// exists twice for a moment: the fresh copy in its birth column and the moved,
+// now-stale one. The fresh copy wins — it carries the state that caused the
+// re-render — and the relocated one is dropped before placement runs again.
+function dedupe() {
+  const seen = new Map();
+  for (const el of document.querySelectorAll('.sec[data-sec-id]')) {
+    const id = el.dataset.secId;
+    const prev = seen.get(id);
+    if (!prev) { seen.set(id, el); continue; }
+    const stale = prev.dataset.secMoved ? prev : el;
+    stale.remove();
+    seen.set(id, stale === prev ? el : prev);
+  }
+}
+
+// Where a section was born — which host its markup puts it in. Recorded the
+// first time it is seen, so "dragged back to where it started" can clear the
+// stored entry instead of pinning the section there forever.
+function recordBirth() {
+  for (const host of document.querySelectorAll('[data-sec-host]')) {
+    for (const el of hostSecs(host)) {
+      if (!el.dataset.secBirth) el.dataset.secBirth = host.dataset.secHost;
+    }
+  }
+}
+
+export function applyPlacement() {
+  for (const el of document.querySelectorAll('.sec[data-sec-id]')) {
+    const want = home[el.dataset.secId];
+    if (!want) continue;
+    const host = document.querySelector(`[data-sec-host="${want}"]`);
+    if (!host || el.parentElement === host) continue;
+    el.dataset.secMoved = '1';
+    host.appendChild(el);
+  }
+}
+
+export function applyOrder() {
+  document.querySelectorAll('[data-sec-host]').forEach(orderHost);
+}
+
+function orderHost(host) {
+  const kids = hostSecs(host);
+  // Earlier builds wrote CSS `order`; left behind it would fight the DOM order
+  // this now relies on.
+  kids.forEach(el => el.style.removeProperty('order'));
+  if (kids.length < 2) return;
+  // A section with no stored index keeps its markup position, after the placed
+  // ones — a host the user has never touched is left exactly as authored.
+  const rank = el => {
     const i = order[el.dataset.secId];
-    if (Number.isFinite(i)) el.style.order = String(i);
-    else el.style.removeProperty('order');
-  });
+    return Number.isFinite(i) ? i : 1e6 + kids.indexOf(el);
+  };
+  const want = kids.slice().sort((a, b) => rank(a) - rank(b));
+  if (want.every((el, i) => el === kids[i])) return;
+  let prev = null;
+  for (const el of want) {
+    if (prev) prev.after(el); else host.insertBefore(el, kids[0]);
+    prev = el;
+  }
 }
 
-function siblingsOf(sec) {
-  return [...sec.parentElement.children]
-    .filter(el => el.classList.contains('sec') && el.getClientRects().length);
-}
-
-// Renumber every sibling from its current visual position, so an order map
-// built from one drag stays coherent for the next.
-function commitOrder(list) {
-  list.forEach((el, i) => { order[el.dataset.secId] = i; el.style.order = String(i); });
+// Renumber a host's sections from their current positions, so a map built by
+// one drag stays coherent for the next.
+function commitOrder(host) {
+  hostSecs(host).forEach((el, i) => { order[el.dataset.secId] = i; });
   saveOrder();
+}
+
+// Which host the pointer is over. Hit-tested against measured rects rather than
+// elementFromPoint: the dragged section sits under the cursor for the whole
+// drag, and the usual fix — pointer-events:none on it — would also disable the
+// element holding the pointer capture that is driving the drag.
+function hostUnder(x, y) {
+  let best = null, bestArea = Infinity;
+  for (const h of visibleHosts()) {
+    const r = h.getBoundingClientRect();
+    if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+    const a = r.width * r.height;
+    if (a < bestArea) { best = h; bestArea = a; }
+  }
+  return best;
+}
+
+// Every section sitting directly in a host is draggable. A section that IS a
+// column (the panels themselves) lives in #main, which is not a host, so it
+// stays put — there is nothing to rearrange it among.
+function wireMovable() {
+  for (const host of document.querySelectorAll('[data-sec-host]')) {
+    for (const sec of hostSecs(host)) {
+      if (sec.dataset.reorder) continue;      // already wired
+      const head = headOf(sec);
+      if (!head) continue;
+      sec.dataset.reorder = '1';
+      wireDrag(sec, head);
+    }
+  }
 }
 
 function wireDrag(sec, head) {
@@ -294,51 +437,65 @@ function wireDrag(sec, head) {
     if (e.target.closest('button, select, input, textarea, .wave-btn, .sec-grip')) return;
     if (e.button != null && e.button !== 0) return;
 
-    const startY = e.clientY;
-    let dragging = false, marked = null;
+    const startX = e.clientX, startY = e.clientY;
+    let dragging = false, marked = null, target = null;
     head.setPointerCapture(e.pointerId);
 
+    const clearMark = () => {
+      marked?.classList.remove('drop-before', 'drop-after', 'drop-into');
+      marked = null;
+    };
+
     const move = ev => {
-      // A few pixels of slop, so a click on the header is still a click.
-      if (!dragging && Math.abs(ev.clientY - startY) < 5) return;
+      // A few pixels of slop, so a click on the header is still a click. Both
+      // axes now: a move into the next column is mostly horizontal, and a
+      // vertical-only threshold left those drags feeling dead until the pointer
+      // happened to wander far enough up or down.
+      if (!dragging && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
       if (!dragging) {
         dragging = true;
         sec.classList.add('dragging');
         document.body.classList.add('reordering');
       }
-      const sibs = siblingsOf(sec).filter(el => el !== sec);
-      marked?.el.classList.remove('drop-before', 'drop-after');
-      marked = null;
-      for (const el of sibs) {
+      const host = hostUnder(ev.clientX, ev.clientY);
+      if (!host) return;      // off every column — keep the last valid target
+      clearMark();
+      const sibs = hostSecs(host).filter(el => el !== sec && el.getClientRects().length);
+      // DOM order is visual order now that placement moves nodes, so the first
+      // sibling whose midpoint is below the pointer is the insertion point.
+      const before = sibs.find(el => {
         const r = el.getBoundingClientRect();
-        if (ev.clientY >= r.top && ev.clientY <= r.bottom) {
-          const after = ev.clientY > r.top + r.height / 2;
-          el.classList.add(after ? 'drop-after' : 'drop-before');
-          marked = { el, after };
-          break;
-        }
-      }
+        return ev.clientY < r.top + r.height / 2;
+      }) ?? null;
+      target = { host, before };
+      if (before) { marked = before; before.classList.add('drop-before'); }
+      else if (sibs.length) { marked = sibs[sibs.length - 1]; marked.classList.add('drop-after'); }
+      else { marked = host; host.classList.add('drop-into'); }
     };
+
     const up = () => {
       head.removeEventListener('pointermove', move);
       head.removeEventListener('pointerup', up);
       head.removeEventListener('pointercancel', up);
       document.body.classList.remove('reordering');
       sec.classList.remove('dragging');
-      if (marked) {
-        marked.el.classList.remove('drop-before', 'drop-after');
-        const list = siblingsOf(sec)
-          .sort((a, b) => (+a.style.order || 0) - (+b.style.order || 0));
-        // Re-derive from visual position when no order has been set yet.
-        const visual = siblingsOf(sec).sort((a, b) =>
-          a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-        const seq = (list.every(el => el.style.order) ? list : visual).filter(el => el !== sec);
-        const at = seq.indexOf(marked.el) + (marked.after ? 1 : 0);
-        seq.splice(at, 0, sec);
-        commitOrder(seq);
-        colorSections();          // hues follow position, so they move too
+      clearMark();
+      if (!dragging || !target) return;
+      const { host, before } = target;
+      if (before) host.insertBefore(sec, before); else host.appendChild(sec);
+      const hostId = host.dataset.secHost;
+      if (hostId === sec.dataset.secBirth) {
+        delete home[sec.dataset.secId];
+        delete sec.dataset.secMoved;
+      } else {
+        home[sec.dataset.secId] = hostId;
+        sec.dataset.secMoved = '1';
       }
+      saveHome();
+      commitOrder(host);
+      colorSections();          // hues follow position, so they move too
     };
+
     head.addEventListener('pointermove', move);
     head.addEventListener('pointerup', up);
     head.addEventListener('pointercancel', up);

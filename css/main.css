@@ -1039,10 +1039,39 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   cursor: pointer;
   font: inherit;
   line-height: 1;
+  /* inline-flex, not flex: some section headers are plain blocks rather than
+     flex rows (only the ones carrying an ON/OFF pill are flex), and a
+     block-level button there pushes the title onto its own line. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
 }
-.sec-fold::before { content: 'v'; font-size: 13px; font-weight: 600; display: block; }
+/* The chevron is DRAWN, not typed. The UI face is IBM Plex Mono, which has no
+   chevron glyph (⌄ ‹ › ⌃ are all absent), so any character caret falls back to
+   whichever font the platform happens to substitute — different weight, size
+   and baseline on every device, which is exactly the legibility problem this
+   control has had twice. Two borders on a rotated box are the same shape
+   everywhere, scale with the button, and are a clean stroke rather than a
+   filled triangle. */
+.sec-fold::before,
+.sig-sec > summary::before {
+  content: '';
+  display: block;
+  box-sizing: border-box;
+  width: 7px; height: 7px;
+  /* 2px, not 1.5: a fractional border snaps down to a hairline at DPR 1, which
+     is where the legibility complaint came from in the first place. */
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transition: transform .12s ease;
+}
+/* Rotating the bottom-right corner: +45° points it down (expanded), -45°
+   points it right (collapsed). The translate re-centres the glyph, since a
+   rotated square's ink sits off-centre in its own box. */
+.sec-fold::before          { transform: translateY(-2px) rotate(45deg); }
 .sec.folded > * > .sec-fold::before,
-.sec.folded .sec-fold::before { content: '>'; }
+.sec.folded .sec-fold::before { transform: translateX(-2px) rotate(-45deg); }
 .sec-fold:hover { color: var(--cyan); }
 /* Folded: header only. The grip goes too — there is no height to drag. */
 .sec.folded > .sec-body { display: none; }
@@ -1051,11 +1080,28 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 /* Headers are drag handles for reordering. `grab` only where a drag can
    actually start — inside the header's own controls the cursor stays default,
    which is the honest signal that pressing there will not move anything. */
-.sec[data-reorder] > .audio-section-label { cursor: grab; }
+.sec[data-reorder] > .audio-section-label,
+.sec[data-reorder] > .ph { cursor: grab; }
 .sec.dragging { opacity: 0.55; box-shadow: var(--shadow-lg); }
 .sec.drop-before { box-shadow: 0 -3px 0 0 var(--cyan), var(--shadow); }
 .sec.drop-after  { box-shadow: 0 3px 0 0 var(--cyan), var(--shadow); }
 body.reordering { user-select: none; cursor: grabbing; }
+/* Sections can move between columns, so a drag has to show WHERE it can land —
+   otherwise the only discoverable move is the one within the current column,
+   and the rest of the feature may as well not exist. Every host outlines while
+   dragging; the one under the pointer fills in. */
+body.reordering [data-sec-host] {
+  outline: 1px dashed var(--border2);
+  outline-offset: -2px;
+  /* A host with nothing in it — the camera column with its dev-only sections
+     hidden, say — is zero pixels tall and so impossible to aim at. It only
+     needs to be a target while a drag is in progress. */
+  min-height: 34px;
+}
+body.reordering [data-sec-host].drop-into {
+  outline: 2px solid var(--cyan);
+  background: oklch(var(--accent-l) var(--accent-c) 200 / 0.08);
+}
 
 /* ── Sections (see src/ui/sections.js) ───────────────────
    Each section reads as its own container — border, header strip, a body that
@@ -1172,17 +1218,16 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
 }
 .sig-sec[open] > summary { border-bottom-color: var(--border); }
 .sig-sec > summary::-webkit-details-marker { display: none; }
-/* Literal carets rather than filled triangles: at 8-9px a solid ▸ reads as a
-   dot, and the two states are told apart by orientation alone. `v` and `>` in
-   the monospace face are unambiguous at a glance and scale with the text. */
+/* Same drawn chevron as .sec-fold (shape declared up with that rule) — only
+   the colour, spacing and rotation differ here. A solid ▸ at this size reads as
+   a dot, and the two states would then be told apart by orientation alone. */
 .sig-sec > summary::before {
-  content: '>';
-  font-size: 13px;
-  font-weight: 600;
-  width: 12px;
+  flex: 0 0 auto;
+  margin: 0 3px 0 1px;
   color: var(--dim);
+  transform: translateX(-2px) rotate(-45deg);
 }
-.sig-sec[open] > summary::before { content: 'v'; }
+.sig-sec[open] > summary::before { transform: translateY(-2px) rotate(45deg); }
 .sig-group-name { font-size: 9px; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
 .sig-group-meta { margin-left: auto; font-size: 8px; letter-spacing: 1px; color: var(--border2); }
 .sig-sec-body { padding: 2px 0 4px; }
@@ -1192,10 +1237,30 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   display: grid;
   grid-template-rows: auto auto auto;
 }
+/* Drop host for the camera column. Scrolls on its own so a section dragged in
+   here cannot grow the panel — which in portrait is pinned to the top of the
+   screen, and would otherwise push the picture out of view. */
+#cam-extras {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* No `min-height: 0` here even though it reads as the obvious companion to
+     the scroller: an id selector outranks the `body.reordering [data-sec-host]`
+     rule that gives an empty host something to aim at, so declaring it would
+     make this column silently undroppable. A scroll container's automatic
+     minimum size is already zero. */
+}
 
+/* Rows: header, body, grip. The body is the 1fr — it is created at runtime by
+   sections.js, which wraps everything after the header, so the old
+   `auto auto auto 1fr` (written for the unwrapped toolbar/rows/shader markup)
+   left the body sized to its content and the rest of the column dead: 360px of
+   empty background that no longer scrolled and, now, could not be dropped
+   into. */
 .panel-map {
   display: grid;
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-rows: auto 1fr auto;
 }
 
 /* ── Landscape panel arrangement ─────────────────────────

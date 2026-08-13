@@ -36,6 +36,9 @@ const LEGACY_TAGS = ['biosignal-sound'];
 const UI_KEYS = {
   theme:       'motionmuse-theme',
   sections:    'motionmuse-sections',
+  secOrder:    'motionmuse-sec-order',
+  secFolded:   'motionmuse-sec-folded',
+  secHome:     'motionmuse-sec-home',
   panelWidths: 'motionmuse-panel-widths',
   camHeight:   'motionmuse-cam-height',
   tracking:    'motionmuse-tracking',
