@@ -587,11 +587,26 @@ that output is where the measured templates come from. (Needs
 
 ### Chord mode
 
-**Chord Mode** maps gestures to chords **by scale degree in a key**, not by
-absolute root. Pick a key once — root, mode, octave — and each gesture gets a
-degree (**I ii iii IV V vi vii°**) plus an optional diatonic **7th**. Changing
-the key transposes every assignment at once, and every chord is guaranteed to
-belong to the key. With **FOLLOW** on (the default) the key comes from Pitch
+**Chord Mode** maps handshapes to chords **by scale degree in a key**, not by
+absolute root. Pick a key once — root, mode, octave — and the panel lists the
+seven chords in it (**I ii iii IV V vi vii°**) plus **RELEASE**, each with a
+dropdown choosing which handshape plays it and an optional diatonic **7th**.
+Changing the key transposes every assignment at once, and every chord is
+guaranteed to belong to the key.
+
+The list is of **chords**, one handshape each, and that is the point. It ran the
+other way round — a row per handshape, with a chord dropdown — which let the
+same shape be a chord *and* the release. The panel would show that happily and
+the tick loop then broke the tie by fiat, so what you saw was not what you
+heard. Listing the chords makes the mapping a bijection by construction, and
+every writer enforces it: choosing a shape takes it off whatever it was doing,
+and the shape that was on that chord **swaps** into the one the newcomer just
+left rather than being dropped. Dropping it is the obvious reading of "one
+shape, one job" and worse to use — moving Peace from V to ii would silently
+leave V unplayable. Saved setups from the old format are repaired on load.
+
+The **7th** belongs to the chord, not to the handshape that plays it, so it
+survives unassigning the shape. With **FOLLOW** on (the default) the key comes from Pitch
 Quantize, so chords land in the same key the melody snaps to; it stands down
 automatically when quantise is off or its scale isn't one of the six seven-note
 modes, since roman numerals mean nothing over a pentatonic or whole-tone scale.
@@ -608,14 +623,12 @@ its intervals), so one envelope is what a player means by "the chord's attack".
 Retriggering mid-release starts from the dying value rather than snapping to
 zero, so fast chord changes don't click.
 
-A dedicated **release gesture** — **open palm** by default — lets a held chord
-go deliberately, which matters once the release is long enough to hear. It is a
-setting, not a reservation: pick any shape, or none. It *wins* over a chord
-assigned to the same gesture (a shape cannot both start and stop a chord), so
-the default set moves **IV** onto `asl4` rather than leaving palm holding a
-chord the release would mute. Assign a chord to your release gesture anyway and
-the picker marks the clash with ⚠ at the moment you choose, instead of quietly
-resolving it. Chords play through a dedicated 4-voice bank with **its own
+The **RELEASE** row — **open palm** by default — lets a held chord go
+deliberately, which matters once the release is long enough to hear. It is a
+setting, not a reservation: pick any shape, or none. Giving it a shape that was
+playing a chord takes that shape off the chord, exactly as moving a shape
+between two chords does; the default set still puts **IV** on `asl4` so nothing
+has to be displaced out of the box. Chords play through a dedicated 4-voice bank with **its own
 filter and level** — `Chord Cutoff` / `Chord Q` / `Chord Vol`, plus a **Chord
 Filter Type** row — so the chord bed can sit darker or quieter than the lead
 (or the other way round) without either touching the other. `Osc Vol` is the

@@ -35,25 +35,110 @@ test('changing the key transposes every assignment at once', () => {
   after.forEach((m, i) => assert.equal(m - before[i], 4, 'up a major third'));
 });
 
-test('the 7th toggle adds a fourth voice without changing the root', () => {
+test('the 7th belongs to the chord, not the handshape that plays it', () => {
   reset();
   const triad = chordmode.chordFor('fist');
-  chordmode.assign('fist', { seventh: true });
+  chordmode.setSeventh(0, true);
   const sev = chordmode.chordFor('fist');
   assert.equal(triad.midi.length, 3);
   assert.equal(sev.midi.length, 4);
   assert.equal(sev.midi[0], triad.midi[0]);
   assert.equal(sev.numeral, 'Imaj7');
+  // Take the shape away and the chord keeps its 7th — it is a property of I,
+  // not of the fist.
+  chordmode.setDegreeGesture(0, null);
+  assert.equal(chordmode.chordAt(0).numeral, 'Imaj7');
+  chordmode.setSeventh(0, false);
 });
 
-test('assign clamps a nonsense degree instead of producing NaN pitches', () => {
+test('a nonsense degree clamps instead of producing NaN pitches', () => {
   reset();
-  chordmode.assign('fist', { degree: 99 });
-  assert.equal(chordmode.assignments().fist.degree, 6);
-  chordmode.assign('fist', { degree: -3 });
-  assert.equal(chordmode.assignments().fist.degree, 0);
-  chordmode.assign('fist', { degree: 'nope' });
+  chordmode.setDegreeGesture(99, 'fist');
+  assert.equal(chordmode.assignments().fist, 6);
+  chordmode.setDegreeGesture(-3, 'fist');
+  assert.equal(chordmode.assignments().fist, 0);
+  chordmode.setDegreeGesture('nope', 'fist');
   assert.ok(Number.isFinite(chordmode.chordFor('fist').freqs[0]));
+});
+
+// ── One handshape, one job ──
+// The reported bug: Open Palm was both the RELEASE shape and the chord on I,
+// so the panel offered a configuration the tick loop then had to break by
+// fiat. The mapping is a bijection now and every writer enforces it.
+test('a handshape is never on two chords at once', () => {
+  reset();
+  assert.equal(chordmode.assignments().fist, 0, 'fist starts on I');
+  chordmode.setDegreeGesture(3, 'fist');          // move it to IV
+  assert.equal(chordmode.assignments().fist, 3, 'and only IV');
+  // asl4 held IV, so it swaps into the chord fist left rather than going free.
+  assert.equal(chordmode.gestureFor(0), 'asl4');
+  const ids = Object.keys(chordmode.assignments());
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test('moving a handshape onto another chord swaps them', () => {
+  reset();
+  assert.equal(chordmode.gestureFor(0), 'fist');
+  assert.equal(chordmode.gestureFor(4), 'peace');
+  chordmode.setDegreeGesture(4, 'fist');
+  assert.equal(chordmode.gestureFor(4), 'fist');
+  // Not dropped: peace takes the chord fist just left, so rearranging two
+  // shapes costs neither of them their assignment.
+  assert.equal(chordmode.gestureFor(0), 'peace', 'peace should have taken I');
+  const degrees = Object.values(chordmode.assignments());
+  assert.equal(new Set(degrees).size, degrees.length, 'still a bijection');
+});
+
+test('a handshape with no chord to swap back leaves the other one free', () => {
+  reset();
+  // vii° is unmanned by default, so nothing comes back the other way.
+  assert.equal(chordmode.gestureFor(6), null);
+  chordmode.setDegreeGesture(6, 'fist');
+  assert.equal(chordmode.gestureFor(6), 'fist');
+  assert.equal(chordmode.gestureFor(0), null, 'I is now unmanned');
+
+  // …and an unassigned newcomer displaces without giving anything back.
+  reset();
+  chordmode.setDegreeGesture(4, 'asl6');
+  assert.equal(chordmode.gestureFor(4), 'asl6');
+  assert.equal(chordmode.assignments().peace, undefined);
+});
+
+test('a chord cannot be assigned to the release shape', () => {
+  reset();
+  chordmode.setReleaseGesture('palm');
+  chordmode.setDegreeGesture(2, 'palm');
+  assert.equal(chordmode.getReleaseGesture(), null, 'it stopped being the release');
+  assert.equal(chordmode.chordFor('palm').numeral.startsWith('iii'), true);
+});
+
+test('taking a shape for the release takes its chord away', () => {
+  reset();
+  assert.equal(chordmode.chordFor('fist').numeral, 'I');
+  chordmode.setReleaseGesture('fist');
+  assert.equal(chordmode.chordFor('fist'), null, 'it cannot also sound a chord');
+  assert.equal(chordmode.gestureFor(0), null);
+  chordmode.setReleaseGesture('palm');
+});
+
+test('loaded data that breaks the bijection is repaired on the way in', () => {
+  reset();
+  chordmode.load({
+    enabled: false,
+    releaseGesture: 'palm',
+    // Exactly the state the old panel could produce: palm is the release AND
+    // holds I, and two shapes share iii.
+    assignments: { palm: 0, fist: 2, horns: 2, peace: 4 },
+  });
+  const a = chordmode.assignments();
+  assert.equal(a.palm, undefined, 'the release shape gave up its chord');
+  assert.equal(chordmode.chordFor('palm'), null);
+  const onIii = Object.entries(a).filter(([, d]) => d === 2).map(([id]) => id);
+  assert.equal(onIii.length, 1, `two shapes still share iii: ${onIii}`);
+  // Every remaining shape drives exactly one chord, and every chord at most
+  // one shape.
+  const degrees = Object.values(a);
+  assert.equal(new Set(degrees).size, degrees.length, 'a degree is claimed twice');
 });
 
 // ── Follow Pitch Quantize ──
@@ -90,8 +175,12 @@ test('load merges over defaults so new gestures still get a chord', () => {
   reset();
   chordmode.load({ enabled: false, assignments: { fist: { degree: 4, seventh: true } } });
   const a = chordmode.assignments();
-  assert.equal(a.fist.degree, 4);
-  assert.equal(a.asl4.degree, 3, 'defaults for untouched gestures survive');
+  assert.equal(a.fist, 4);
+  assert.equal(a.asl4, 3, 'defaults for untouched gestures survive');
+  // fist displaced peace off V, since a chord takes one shape.
+  assert.equal(chordmode.gestureFor(4), 'fist');
+  // The old per-handshape 7th moves onto the chord it played.
+  assert.equal(chordmode.sevenths()[4], true);
 });
 
 test('old absolute-root assignments migrate to the nearest degree', () => {
@@ -106,9 +195,10 @@ test('old absolute-root assignments migrate to the nearest degree', () => {
     },
   });
   const a = chordmode.assignments();
-  assert.deepEqual(a.fist,  { degree: 0, seventh: false });   // C → I
-  assert.deepEqual(a.peace, { degree: 4, seventh: true  });   // G7 → V7
-  assert.deepEqual(a.point, { degree: 5, seventh: false });   // Am → vi
+  assert.equal(a.fist,  0);   // C  → I
+  assert.equal(a.peace, 4);   // G7 → V7
+  assert.equal(a.point, 5);   // Am → vi
+  assert.equal(chordmode.sevenths()[4], true, 'the dominant 7th survived the move');
 });
 
 test('degreeFromRoot snaps an out-of-key root to the closest degree', () => {
@@ -117,15 +207,18 @@ test('degreeFromRoot snaps an out-of-key root to the closest degree', () => {
   assert.ok(d === 1 || d === 2, `expected ii or iii, got ${d}`);
 });
 
-test('serialize round-trips key and assignments', () => {
+test('serialize round-trips key, assignments and sevenths', () => {
   reset();
   chordmode.setKey({ root: 'F', mode: 'dorian', octave: 3, follow: false });
-  chordmode.assign('horns', { degree: 6, seventh: true });
+  chordmode.setDegreeGesture(6, 'horns');
+  chordmode.setSeventh(6, true);
   const s = JSON.parse(JSON.stringify(chordmode.serialize()));
   reset();
   chordmode.load(s);
   assert.deepEqual(chordmode.key(), { root: 'F', mode: 'dorian', octave: 3, follow: false });
-  assert.deepEqual(chordmode.assignments().horns, { degree: 6, seventh: true });
+  assert.equal(chordmode.assignments().horns, 6);
+  assert.equal(chordmode.sevenths()[6], true);
+  assert.equal(chordmode.gestureFor(6), 'horns');
 });
 
 // ── Chord ADSR + release gesture ─────────────────────────────────────────

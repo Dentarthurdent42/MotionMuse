@@ -341,6 +341,41 @@ const hud = await (async () => {
              dupes: shown.filter((k, i) => shown.indexOf(k) !== i) };
   });
 
+  // Chord mode: the list is of CHORDS, each with one handshape, so the same
+  // shape cannot be a chord and the release at once. That was possible before,
+  // and the panel showed it while the tick loop played something else.
+  const chords = await (async () => {
+    await page.evaluate(() => document.getElementById('dev-btn').click());
+    await page.waitForTimeout(150);
+    await page.evaluate(() => document.getElementById('chord-toggle')?.click());
+    await page.waitForTimeout(250);
+    const read = () => page.evaluate(() =>
+      [...document.querySelectorAll('#chord-assigns .chord-assign')].map(r => ({
+        d: r.dataset.degree,
+        label: r.querySelector('.chord-degree')?.textContent ?? '',
+        shape: r.querySelector('.ch-shape')?.value ?? '',
+        hasSelect: !!r.querySelector('.ch-shape'),
+      })));
+    const initial = await read();
+    // Hand the release the shape that plays the first chord.
+    const taken = initial.find(r => r.d === '0')?.shape;
+    if (taken) {
+      await page.selectOption('.ch-shape[data-degree="release"]', taken);
+      await page.waitForTimeout(200);
+    }
+    const after = await read();
+    const state = await page.evaluate(async () => {
+      const { chordmode } = await import('/src/chordmode.js');
+      const a = chordmode.assignments();
+      return { release: chordmode.getReleaseGesture(),
+               releaseHasChord: !!chordmode.chordFor(chordmode.getReleaseGesture()),
+               degrees: Object.values(a), ids: Object.keys(a) };
+    });
+    await page.evaluate(() => document.getElementById('dev-btn').click());
+    await page.waitForTimeout(120);
+    return { initial, after, taken, state };
+  })();
+
   // Share: the QR has to be a real, scannable code of a real link. Decoding is
   // out of scope here (tests/unit/qr.test.js round-trips through jsQR); this
   // checks the button exists, the popover opens, and it produced a code rather
@@ -387,7 +422,7 @@ const hud = await (async () => {
   });
   const viaToggle = await read();
   await page.close();
-  return { nodev, dev, faceOnly, poseOnly, viaToggle, params, share, errs };
+  return { nodev, dev, faceOnly, poseOnly, viaToggle, params, share, chords, errs };
 })();
 
 await b.close(); server.close();
@@ -547,6 +582,26 @@ console.log('\nInference HUD\n');
     'the tracking toggles drive the rows, not only the internal sync',
     JSON.stringify(viaToggle));
   check(errs.length === 0, 'no page errors while driving the HUD', errs.join(' | '));
+}
+
+// ── Chord mode: one handshape, one job ──
+console.log('\nChord mode\n');
+{
+  const { initial, after, taken, state } = hud.chords;
+  check(initial.length === 8, 'seven chords in the key, plus RELEASE', `${initial.length} rows`);
+  check(initial.every(r => r.hasSelect), 'every row picks a handshape');
+  check(initial.some(r => r.d === 'release'), 'the release is one of the rows');
+  check(/^I\b/.test(initial[0]?.label ?? ''), 'rows are labelled by degree', initial[0]?.label);
+  check(!!taken, 'the tonic starts with a handshape on it', String(taken));
+  check(after.find(r => r.d === 'release')?.shape === taken,
+    'the release took the shape', after.find(r => r.d === 'release')?.shape);
+  check(after.find(r => r.d === '0')?.shape === '',
+    'and it left the chord it was playing', after.find(r => r.d === '0')?.shape);
+  check(!state.releaseHasChord, 'the release shape holds no chord');
+  check(new Set(state.degrees).size === state.degrees.length,
+    'no chord is claimed by two handshapes', state.degrees.join(','));
+  check(new Set(state.ids).size === state.ids.length,
+    'no handshape claims two chords', state.ids.join(','));
 }
 
 // ── Share ──

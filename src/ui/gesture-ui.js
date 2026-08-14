@@ -3,7 +3,7 @@
 // audio-ui.js stays focused on the synth panel.
 
 import { gesture, gestureLabel } from '../gesture.js';
-import { chordmode }  from '../chordmode.js';
+import { chordmode, DEGREES } from '../chordmode.js';
 import { diatonicChord, DIATONIC_SCALES } from '../chords.js';
 import { NOTE_NAMES } from '../scale.js';
 import { cvSource }   from '../cv.js';
@@ -26,7 +26,6 @@ export function gestureSectionsHTML() {
   const relId = chordmode.getReleaseGesture();
   const env = engine.getChordEnv();
   const on = chordmode.enabled;
-  const asg = chordmode.assignments();
 
   const row = g => {
     const label = gestureLabel(g);
@@ -68,14 +67,8 @@ export function gestureSectionsHTML() {
 
   const key  = chordmode.key();
   const eff  = chordmode.effectiveKey();
+  const sevenths = chordmode.sevenths();
   const flw  = chordmode.isFollowing();   // armed *and* actually overriding
-  // Degree options are labelled with the numeral *and* the chord it currently
-  // spells ("V · G"), so the abstraction stays legible while you pick.
-  const degOptions = sel => Array.from({ length: 7 }, (_, i) => {
-    const c = diatonicChord(eff.root, eff.octave, eff.mode, i);
-    return `<option value="${i}"${i === sel ? ' selected' : ''}>${c.numeral} · ${c.rootName}</option>`;
-  }).join('');
-
   const keyRow = on ? `
     <div class="chord-key">
       <span class="chord-key-lbl">KEY</span>
@@ -92,24 +85,41 @@ export function gestureSectionsHTML() {
                 : 'Take the key from Pitch Quantize, so chords match the melody'}">FOLLOW</button>
     </div>` : '';
 
-  const assignRow = g => {
-    const a = asg[g.id] ?? { degree: 0, seventh: false };
+  // One row per CHORD, not per handshape.
+  //
+  // It was the other way round, and that let the same shape be a chord *and*
+  // the release — a configuration the panel would happily show and the tick
+  // loop then had to break by fiat, so what you saw was not what you heard.
+  // Listing the chords instead makes the mapping a function by construction:
+  // seven degrees plus RELEASE, one handshape each, and choosing a shape takes
+  // it off whatever it was doing before.
+  const shapeOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
+    + gesture.list().map(g =>
+        `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>${gestureLabel(g)}</option>`).join('');
+
+  const chordRow = i => {
+    const c = diatonicChord(eff.root, eff.octave, eff.mode, i, sevenths[i]);
+    const gid = chordmode.gestureFor(i);
     return `
-    <div class="chord-assign" data-gid="${g.id}">
-      <span class="gesture-name" title="${gestureLabel(g)}">${g.name + (g.asl ? ` · ${g.asl}` : '')}</span>
-      <select class="ch-deg" data-gid="${g.id}" aria-label="Scale degree for ${gestureLabel(g)}"
-        >${degOptions(a.degree)}</select>
-      <button class="wave-btn ch-sev${a.seventh ? ' on' : ''}" data-gid="${g.id}"
-              aria-pressed="${a.seventh}" title="Add the diatonic 7th">7th</button>
+    <div class="chord-assign" data-degree="${i}">
+      <span class="chord-degree" title="${c.numeral} · ${c.rootName} ${c.quality}"
+        >${c.numeral} · ${c.rootName}</span>
+      <select class="ch-shape" data-degree="${i}"
+              aria-label="Handshape that plays ${c.numeral}"
+        >${shapeOptions(gid)}</select>
+      <button class="wave-btn ch-sev${sevenths[i] ? ' on' : ''}" data-degree="${i}"
+              aria-pressed="${sevenths[i]}" title="Add the diatonic 7th">7th</button>
     </div>`;
   };
+
   const assignRows = !on ? '' :
-    gestures.filter(g => !isNum(g)).map(assignRow).join('')
-    + (nums.length ? `
-    <details class="gesture-group">
-      <summary>ASL NUMBERS <span class="gesture-tag">${nums.length}</span></summary>
-      ${nums.map(assignRow).join('')}
-    </details>` : '');
+    Array.from({ length: DEGREES }, (_, i) => chordRow(i)).join('') + `
+    <div class="chord-assign" data-degree="release">
+      <span class="chord-degree" title="Holding this shape lets a held chord go">RELEASE</span>
+      <select class="ch-shape" data-degree="release" aria-label="Handshape that releases a held chord"
+        >${shapeOptions(relId)}</select>
+      <span class="ch-sev-gap"></span>
+    </div>`;
 
   return `
     <div class="audio-section uc-feature" data-sec="gestures">
@@ -131,17 +141,6 @@ export function gestureSectionsHTML() {
       </div>
       ${keyRow}
       <div id="chord-assigns">${assignRows}</div>
-      <div class="chord-key" style="margin-top:6px;">
-        <span class="ctrl-lbl" style="flex:0 0 auto;">RELEASE</span>
-        <select id="ck-release" style="flex:1;min-width:0;"
-                title="Holding this shape lets a held chord go. It wins over any chord assigned to the same shape — a gesture cannot both start and stop a chord — so a clash is marked below.">
-          <option value=""${!relId ? ' selected' : ''}>none</option>
-          ${gesture.list().map(g => `<option value="${g.id}"${g.id === relId ? ' selected' : ''}>${gestureLabel(g)}${chordmode.chordFor(g.id) ? ' ⚠' : ''}</option>`).join('')}
-        </select>
-      </div>
-      ${relId && chordmode.chordFor(relId)
-        ? `<div class="quant-notes" style="color:var(--amber)">⚠ ${gestureLabel(gesture.list().find(g => g.id === relId) ?? { id: relId })} also has a chord assigned — the release wins, so that chord will not sound.</div>`
-        : ''}
       <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;">
         ${['attack', 'decay', 'sustain', 'release'].map(k => `
           <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
@@ -266,13 +265,8 @@ export function wireGestureSections(rerender) {
   document.getElementById('ck-root')?.addEventListener('change', e => setKey({ root: e.target.value }));
   document.getElementById('ck-mode')?.addEventListener('change', e => setKey({ mode: e.target.value }));
   document.getElementById('ck-oct') ?.addEventListener('change', e => setKey({ octave: Number(e.target.value) }));
-  // Release gesture + ADSR. Re-render on the release change so the clash
-  // warning and the ⚠ markers update; the sliders mutate in place, because a
-  // re-render mid-drag would drop the pointer capture.
-  document.getElementById('ck-release')?.addEventListener('change', e => {
-    chordmode.setReleaseGesture(e.target.value || null);
-    rerender?.();
-  });
+  // ADSR sliders mutate in place: a re-render mid-drag would drop the pointer
+  // capture and the slider would stop following the finger.
   document.querySelectorAll('.ck-env').forEach(el => {
     el.addEventListener('input', e => {
       const k = e.target.dataset.env;
@@ -291,16 +285,31 @@ export function wireGestureSections(rerender) {
       : { follow: true });
   });
 
-  document.querySelectorAll('.ch-deg').forEach(sel =>
-    sel.addEventListener('change', e =>
-      chordmode.assign(e.target.dataset.gid, { degree: Number(e.target.value) })));
+  // Choosing a handshape for a chord (or for RELEASE) always re-renders:
+  // the shape is taken off whatever it was doing, so at least one other row
+  // changes too. Updating only the row that was touched is what would let the
+  // panel disagree with the state again.
+  document.querySelectorAll('.ch-shape').forEach(sel =>
+    sel.addEventListener('change', e => {
+      const where = e.target.dataset.degree;
+      const id = e.target.value || null;
+      if (where === 'release') chordmode.setReleaseGesture(id);
+      else chordmode.setDegreeGesture(Number(where), id);
+      rerender?.();
+    }));
 
+  // The 7th belongs to the chord, so it needs no re-render — nothing else moves.
   document.querySelectorAll('.ch-sev').forEach(btn =>
     btn.addEventListener('click', () => {
-      const on = !(chordmode.assignments()[btn.dataset.gid]?.seventh);
-      chordmode.assign(btn.dataset.gid, { seventh: on });
+      const d = Number(btn.dataset.degree);
+      const on = !chordmode.sevenths()[d];
+      chordmode.setSeventh(d, on);
       btn.classList.toggle('on', on);
       btn.setAttribute('aria-pressed', String(on));
+      // The row label carries the quality ("V" vs "V7"), so it moves with it.
+      const lbl = btn.parentElement?.querySelector('.chord-degree');
+      const c = chordmode.chordAt(d);
+      if (lbl && c) { lbl.textContent = `${c.numeral} · ${c.rootName}`; lbl.title = `${c.numeral} · ${c.rootName} ${c.quality}`; }
     }));
 }
 

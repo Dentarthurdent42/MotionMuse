@@ -1014,10 +1014,28 @@ option { background: var(--panel); }
   margin-top: 4px;
 }
 .chord-assign .gesture-name { font-size: 9px; color: var(--dim); }
+/* The chord's name leads the row: the list is of chords in the key, and the
+   handshape is what you attach to one. Tabular figures so the numerals line
+   up down the column instead of drifting with the width of "vii°". */
+.chord-degree {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Keeps the RELEASE row's select the same width as the chords' — it has no
+   7th button, and without a placeholder its select would stretch over that
+   column and stop lining up. */
+.ch-sev-gap { display: block; }
 /* Key selector for the whole chord mode: root · mode · octave · FOLLOW. */
 .chord-key {
   display: grid;
-  grid-template-columns: auto 0.75fr 1.5fr 0.5fr 0.85fr;
+  /* minmax on the octave, not a bare fr: at this column width the mode names
+     ("major (ionian)") pushed it down to a few pixels showing nothing but the
+     dropdown arrow. A fraction can always be squeezed to zero; a floor cannot. */
+  grid-template-columns: auto minmax(52px, 0.75fr) 1.5fr minmax(46px, 0.5fr) 0.85fr;
   gap: 4px; align-items: center;
   margin: 2px 0 6px;
   padding-bottom: 6px;
