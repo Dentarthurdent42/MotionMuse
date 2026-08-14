@@ -19,13 +19,14 @@ import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
-import { initTutorial }                     from './ui/tutorial.js';
+import { initTutorial, maybeOfferTour }     from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { enhanceSections, colorSections }   from './ui/sections.js';
 import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
 import { initTheme }                        from './ui/theme.js';
 import { initSettings }                     from './ui/settings.js';
-import { initShare, consumeSharedLink, announceSharedLink } from './ui/share.js';
+import { initShare, consumeSharedLink, announceSharedLink, isConsumingShare } from './ui/share.js';
+import { shouldOfferStart, openStartPicker } from './ui/firstrun.js';
 import * as preset                          from './preset.js';
 
 // ── A shared setup, if this page was opened from a QR code / link ────────
@@ -392,8 +393,29 @@ initSettings();           // ⚙ theme + hotkeys: how the tool looks and is driv
 initShare();              // SHARE → a QR code of this setup
 initModelPanel();         // dev-mode pose model comparison panel
 initTutorial();           // guided tour (? button; auto-offers on first visit)
-preset.restoreLocal();    // bring back the last session's mappings + settings
+const hadSession = preset.restoreLocal();   // last session's mappings + settings
 announceSharedLink();     // …which may have just come from a scanned QR code
+
+// First visit: ask what to play rather than opening on one oscillator with
+// nothing wired to it. The tour waits its turn — two modals at once is not a
+// welcome. Automation skips the picker for the same reason it skips the tour:
+// every headless suite starts with empty storage, and a modal over the app
+// would break all of them. The dedicated check overrides navigator.webdriver
+// so the real path is still exercised.
+if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() })
+    && !navigator.webdriver) {
+  openStartPicker({
+    applyTrackers,
+    onDone: s => {
+      refreshFromState();
+      preset.saveLocal();
+      toast(`${s.name} — ${s.hint}`);
+      maybeOfferTour();
+    },
+  });
+} else {
+  maybeOfferTour();
+}
 renderMapper();
 // Shader controls belong with the patchbay — the shader reads signals and
 // mappings, so it sits beside the wiring rather than among synth parameters.

@@ -150,6 +150,34 @@ The **Parameters** section groups its sliders under the same headings the
 patchbay's output picker uses, from the same table — so a parameter is in the
 same place whichever way you go looking for it, and the two cannot drift apart.
 
+## First run: pick a starting point
+
+A fresh install opened as one oscillator at 220 Hz with nothing wired to it —
+unmute and you get a static sine. That is not a starting point, it is the
+absence of one, and it made the first thirty seconds a hunt for where the
+instrument was.
+
+The first visit now asks. Every mapping preset is offered (**Hands**, the two
+**Face** patches, **Gaze**, **Pose**), plus:
+
+- **Chord Mode** — handshapes play chords in a key, no wiring. It also switches
+  **DEV** on, because chord mode is dev-gated; offering it and then leaving it
+  invisible would be worse than not offering it. No lead oscillator, since a
+  drone under the chords is not what anyone picked this for.
+- **Blank** — nothing wired, no trackers, and **no oscillator**. Genuinely
+  nothing, not a quiet something.
+
+Choosing applies the patch *and* the trackers it needs, saves the session, then
+lets the guided tour offer itself — two modals at once is not a welcome.
+Dismissing with Escape is the same as choosing Blank: a fresh app has nothing
+wired anyway, so the state after Escape is one of the listed options rather than
+a seventh, undescribed one. The question is asked once and never again.
+
+Automation never sees it, for the same reason it never sees the tour: every
+headless suite starts with empty storage and a modal over the app would break
+all of them. `tests/layout` therefore overrides `navigator.webdriver` to
+exercise the real path rather than a stand-in for it.
+
 ## Share: a QR code of your setup
 
 **SHARE** (beside SAVE and LOAD) shows a QR code of everything you have set up.
@@ -809,6 +837,7 @@ src/
   bus.js            Signal registry (adaptive calibration + One-Euro smoothing)
   filter.js         One-Euro low-latency jitter filter
   qr.js             QR encoder (byte mode, no dependencies)
+  ui/firstrun.js    First-run starting-point picker
   share.js          Setup <-> shareable link
   math.js           Geometry helpers (dist3, angles, openness, extension,
                     thumb-out and thumb-to-fingertip contact)

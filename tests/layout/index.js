@@ -425,6 +425,75 @@ const hud = await (async () => {
   return { nodev, dev, faceOnly, poseOnly, viaToggle, params, share, chords, errs };
 })();
 
+// First run: the app asks what to play instead of opening on one oscillator
+// with nothing wired to it. Every headless suite starts with empty storage, so
+// the picker is skipped under automation for the same reason the tour is — and
+// that means the real path is only exercised by pretending not to be
+// automation, which is what the override below does.
+const firstrun = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.addInitScript(() =>
+    Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  const url = `http://127.0.0.1:${port}/index.html`;
+
+  await page.goto(url, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const shown = await page.evaluate(() => {
+    const el = document.getElementById('start-pop');
+    return {
+      open: !!el,
+      onTop: el ? +getComputedStyle(el).zIndex : 0,
+      choices: [...(el?.querySelectorAll('.start-item') ?? [])].map(b => b.dataset.start),
+    };
+  });
+
+  const state = () => page.evaluate(async () => {
+    const { mapper }    = await import('/src/mapper.js');
+    const { engine }    = await import('/src/engine.js');
+    const { cvSource }  = await import('/src/cv.js');
+    const { chordmode } = await import('/src/chordmode.js');
+    return { cables: mapper.mappings.length, oscs: engine.getOscCount(),
+             hands: cvSource.handsOn, pose: cvSource.poseOn,
+             chord: chordmode.enabled, dev: document.body.classList.contains('dev'),
+             modal: !!document.getElementById('start-pop') };
+  });
+
+  await page.click('.start-item[data-start="blank"]');
+  await page.waitForTimeout(400);
+  const blank = await state();
+
+  // Asked once. A reload has a saved session now, so the question is settled.
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  const again = await state();
+  await ctx.close();
+
+  // …and a second fresh visit picking chord mode.
+  const ctx2 = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx2.addInitScript(() =>
+    Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+  const p2 = await ctx2.newPage();
+  p2.on('pageerror', e => errs.push(String(e)));
+  await p2.goto(url, { waitUntil: 'networkidle' });
+  await p2.waitForTimeout(600);
+  await p2.click('.start-item[data-start="chords"]');
+  await p2.waitForTimeout(500);
+  const chords = await p2.evaluate(async () => {
+    const { mapper }    = await import('/src/mapper.js');
+    const { engine }    = await import('/src/engine.js');
+    const { cvSource }  = await import('/src/cv.js');
+    const { chordmode } = await import('/src/chordmode.js');
+    return { cables: mapper.mappings.length, oscs: engine.getOscCount(),
+             hands: cvSource.handsOn, pose: cvSource.poseOn,
+             chord: chordmode.enabled, dev: document.body.classList.contains('dev') };
+  });
+  await ctx2.close();
+  return { shown, blank, again, chords, errs };
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -582,6 +651,29 @@ console.log('\nInference HUD\n');
     'the tracking toggles drive the rows, not only the internal sync',
     JSON.stringify(viaToggle));
   check(errs.length === 0, 'no page errors while driving the HUD', errs.join(' | '));
+}
+
+// ── First run ──
+console.log('\nFirst run\n');
+{
+  const { shown, blank, again, chords, errs } = firstrun;
+  check(shown.open, 'a fresh visit is asked how to play');
+  check(shown.onTop >= 200, 'the picker is above every panel and popover', String(shown.onTop));
+  check(shown.choices.includes('chords') && shown.choices.includes('blank'),
+    'chord mode and blank are among the choices', shown.choices.join(','));
+  check(shown.choices.length >= 7, 'every mapping preset is offered too', `${shown.choices.length}`);
+
+  check(blank.modal === false, 'choosing dismisses it');
+  check(blank.cables === 0 && blank.oscs === 0,
+    'blank leaves nothing wired and no oscillator', `${blank.cables} cables, ${blank.oscs} osc`);
+  check(!blank.hands && !blank.pose, 'blank leaves the trackers off');
+  check(again.modal === false, 'a returning visit is not asked again');
+
+  check(chords.chord, 'chord mode is switched on');
+  check(chords.dev, 'and DEV with it, since chord mode is dev-gated');
+  check(chords.oscs === 0, 'with no lead oscillator droning under the chords', `${chords.oscs}`);
+  check(chords.hands && !chords.pose, 'hands tracked, pose not');
+  check(errs.length === 0, 'no page errors on the first-run path', errs.join(' | '));
 }
 
 // ── Chord mode: one handshape, one job ──

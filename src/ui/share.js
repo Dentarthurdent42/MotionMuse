@@ -107,9 +107,18 @@ export function initShare() {
 // import time (theme, hotkeys, section layout), so applying afterwards would
 // leave half the app on the old values. Restarting once with everything already
 // in place is the only way it is uniformly correct.
+// Set synchronously the moment a link is recognised, and read by the first-run
+// picker. The fragment is stripped immediately below — before the rest of
+// startup runs — so by the time anything else looks at the URL there is nothing
+// there to see, and the picker would open for the half-second before the
+// reload.
+let consuming = false;
+export const isConsumingShare = () => consuming;
+
 export async function consumeSharedLink() {
   const payload = readShareUrl(location.href);
   if (!payload) return false;
+  consuming = true;
   // Strip it first, whatever happens next: a bad link that stays in the URL
   // would fail again on every reload.
   history.replaceState(null, '', location.pathname + location.search);
@@ -121,6 +130,9 @@ export async function consumeSharedLink() {
     location.reload();
     return true;
   } catch (err) {
+    // The link is not going to open, so nothing is arriving to replace the
+    // app's state — a first-time visitor should still be asked what to play.
+    consuming = false;
     toast(`Could not open that shared setup: ${err.message}`);
     return false;
   }

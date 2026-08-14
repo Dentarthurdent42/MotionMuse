@@ -338,9 +338,16 @@ export function initTutorial() {
   document.getElementById('tour-btn')?.addEventListener('click', () =>
     tour.open ? tour.close() : tour.start());
   tour.syncButton();
-  // First visit: offer the tour after the app has settled. Skipping marks it
-  // offered — it never auto-opens twice. Automation (navigator.webdriver:
-  // the ui-ux screenshot harness, the tutorial test itself) never gets the
-  // auto-offer; tests drive tour.start() explicitly.
+}
+
+// First visit: offer the tour after the app has settled. Skipping marks it
+// offered — it never auto-opens twice. Automation (navigator.webdriver: the
+// ui-ux screenshot harness, the tutorial test itself) never gets the
+// auto-offer; tests drive tour.start() explicitly.
+//
+// Called by main.js rather than from initTutorial, because on a first visit the
+// starting-point picker comes first and two modals racing each other is not a
+// welcome.
+export function maybeOfferTour() {
   if (!loadState().done && !navigator.webdriver) setTimeout(() => tour.start(), 700);
 }

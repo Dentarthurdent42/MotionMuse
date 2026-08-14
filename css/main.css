@@ -860,6 +860,58 @@ option { background: var(--panel); }
   margin-bottom: 5px;
 }
 
+/* ── First-run starting-point picker ─────────────────────
+   A real modal, unlike the popovers: it is the first thing anyone sees and
+   there is nothing behind it worth interacting with yet. */
+#start-pop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: oklch(0 0 0 / 0.62);
+  overflow-y: auto;
+}
+.start-card {
+  width: min(96vw, 420px);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: var(--shadow-lg);
+}
+.start-title {
+  font-size: 11px; letter-spacing: 2px; color: var(--cyan);
+  text-transform: uppercase;
+}
+.start-sub {
+  margin: 4px 0 10px;
+  font-size: 9px; letter-spacing: 1px; color: var(--dim);
+}
+.start-list { display: flex; flex-direction: column; gap: 5px; overflow-y: auto; min-height: 0; }
+.start-item {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px 10px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  background: var(--faint);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+}
+.start-item:hover, .start-item:focus-visible {
+  border-color: var(--cyan);
+  outline: none;
+}
+.start-name { font-size: 11px; letter-spacing: 1px; }
+.start-hint { font-size: 9px; letter-spacing: 0.5px; color: var(--dim); }
+
 /* ── Share popover ───────────────────────────────────────
    Anchored to the middle of the screen rather than the button: it holds a QR
    code that has to be big enough for another phone's camera, which is not a

@@ -1,4 +1,4 @@
-const CACHE = 'motionmuse-v9';
+const CACHE = 'motionmuse-v10';
 
 // MediaPipe wasm + .task model files live at versioned/immutable URLs, so
 // cache-first is safe and saves ~10-25MB of re-download on every cold load
@@ -57,6 +57,7 @@ const STATIC = [
   '/src/ui/donate.js',
   '/src/ui/hotkeys.js',
   '/src/ui/share.js',
+  '/src/ui/firstrun.js',
   '/src/ui/sections.js',
   '/src/ui/theme.js',
   '/src/ui/tutorial.js',
