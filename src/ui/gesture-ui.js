@@ -3,7 +3,7 @@
 // audio-ui.js stays focused on the synth panel.
 
 import { gesture, gestureLabel } from '../gesture.js';
-import { chordmode, DEGREES } from '../chordmode.js';
+import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS } from '../chordmode.js';
 import { diatonicChord, DIATONIC_SCALES } from '../chords.js';
 import { NOTE_NAMES } from '../scale.js';
 import { cvSource }   from '../cv.js';
@@ -112,11 +112,51 @@ export function gestureSectionsHTML() {
     </div>`;
   };
 
+  const ex = chordmode.expression();
+  const MODE_LABEL = {
+    gesture: 'Handshape holds it',
+    hand:    'Other hand — openness',
+    brow:    'Eyebrows',
+  };
+  const CONTROL_LABEL = { gate: 'ATTACK / RELEASE', volume: 'VOLUME' };
+  const exprRow = !on ? '' : `
+    <div class="chord-expr">
+      <span class="chord-key-lbl">PLAY WITH</span>
+      <select id="ck-expr-mode" aria-label="What makes the chord sound"
+              title="What sounds the chord once a handshape has named it. Two-handed play frees the shape from doing two jobs at once.">
+        ${EXPRESSION_MODES.map(m => `<option value="${m}"${m === ex.mode ? ' selected' : ''}>${MODE_LABEL[m]}</option>`).join('')}
+      </select>
+      <select id="ck-expr-hand" aria-label="Which hand expresses"
+              ${ex.mode === 'hand' ? '' : 'disabled'}
+              title="The hand that plays; the other names the chord.">
+        ${[['L', 'LEFT plays'], ['R', 'RIGHT plays']].map(([v, l]) =>
+          `<option value="${v}"${v === ex.hand ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+      <select id="ck-expr-control" aria-label="How the signal is read"
+              ${ex.mode === 'gesture' ? 'disabled' : ''}
+              title="ATTACK / RELEASE runs the envelope past a threshold. VOLUME makes the signal the level itself — there is no envelope to run, you are the envelope.">
+        ${EXPRESSION_CONTROLS.map(c => `<option value="${c}"${c === ex.control ? ' selected' : ''}>${CONTROL_LABEL[c]}</option>`).join('')}
+      </select>
+    </div>
+    ${ex.mode === 'gesture' ? '' : `
+    <div class="chord-expr-cal">
+      <label class="ctrl-lbl">OFF AT<input type="range" id="ck-expr-lo" min="0" max="1" step="0.01" value="${ex.lo}"></label>
+      <label class="ctrl-lbl">FULL AT<input type="range" id="ck-expr-hi" min="0" max="1" step="0.01" value="${ex.hi}"></label>
+      <div class="expr-meter" id="ck-expr-meter" title="Live: the raw signal, and where it lands after the range above. If the bar never empties, raise OFF AT.">
+        <div class="expr-fill" id="ck-expr-fill"></div>
+        <span class="expr-read" id="ck-expr-read">—</span>
+      </div>
+    </div>`}`;
+
   const assignRows = !on ? '' :
     Array.from({ length: DEGREES }, (_, i) => chordRow(i)).join('') + `
-    <div class="chord-assign" data-degree="release">
-      <span class="chord-degree" title="Holding this shape lets a held chord go">RELEASE</span>
-      <select class="ch-shape" data-degree="release" aria-label="Handshape that releases a held chord"
+    <div class="chord-assign${ex.mode === 'gesture' ? '' : ' dimmed'}" data-degree="release">
+      <span class="chord-degree" title="${ex.mode === 'gesture'
+        ? 'Holding this shape lets a held chord go'
+        : 'Only used when a handshape holds the chord — here the signal above does the releasing'}"
+        >RELEASE</span>
+      <select class="ch-shape" data-degree="release" ${ex.mode === 'gesture' ? '' : 'disabled'}
+              aria-label="Handshape that releases a held chord"
         >${shapeOptions(relId)}</select>
       <span class="ch-sev-gap"></span>
     </div>`;
@@ -140,6 +180,7 @@ export function gestureSectionsHTML() {
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</button>
       </div>
       ${keyRow}
+      ${exprRow}
       <div id="chord-assigns">${assignRows}</div>
       <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;">
         ${['attack', 'decay', 'sustain', 'release'].map(k => `
@@ -286,6 +327,21 @@ export function wireGestureSections(rerender) {
       : { follow: true });
   });
 
+  // Expression: every one of these changes which other controls are live (the
+  // hand select only matters in two-handed play, the control select not at all
+  // in gesture mode), so they all re-render.
+  const setExpr = partial => { chordmode.setExpression(partial); rerender?.(); };
+  document.getElementById('ck-expr-mode')?.addEventListener('change', e => setExpr({ mode: e.target.value }));
+  document.getElementById('ck-expr-hand')?.addEventListener('change', e => setExpr({ hand: e.target.value }));
+  document.getElementById('ck-expr-control')?.addEventListener('change', e => setExpr({ control: e.target.value }));
+  // The range sliders mutate in place — a re-render mid-drag drops the pointer
+  // capture, and these are exactly the controls you want to adjust while
+  // watching the meter move.
+  document.getElementById('ck-expr-lo')?.addEventListener('input', e =>
+    chordmode.setExpression({ lo: +e.target.value }));
+  document.getElementById('ck-expr-hi')?.addEventListener('input', e =>
+    chordmode.setExpression({ hi: +e.target.value }));
+
   // Choosing a handshape for a chord (or for RELEASE) always re-renders:
   // the shape is taken off whatever it was doing, so at least one other row
   // changes too. Updating only the row that was touched is what would let the
@@ -327,6 +383,19 @@ export function updateGesturePanel() {
     if (el) {
       const txt = chordmode.currentLabel() || '—';
       if (el.textContent !== txt) el.textContent = txt;
+    }
+    // Live expression meter. Without it, calibrating the range is guesswork:
+    // you cannot see that a closed fist still reads 0.38 and so never reaches
+    // silence, which is the whole reason the range exists.
+    const fill = document.getElementById('ck-expr-fill');
+    if (fill) {
+      const { raw, level, gateOpen } = chordmode.expressionLevel();
+      const pct = `${Math.round(level * 100)}%`;
+      if (fill.style.width !== pct) fill.style.width = pct;
+      fill.classList.toggle('on', gateOpen);
+      const read = document.getElementById('ck-expr-read');
+      const txt = `${raw.toFixed(2)} → ${Math.round(level * 100)}%`;
+      if (read && read.textContent !== txt) read.textContent = txt;
     }
   }
 }

@@ -493,7 +493,11 @@ export const engine = (() => {
   // Sustains a chord while a gesture is held. Voices ride the same timbre
   // as oscillator 1 and run through the filter/reverb/main chain, so the sound
   // kit and gesture-driven filter sweeps shape chords too.
-  function playChord(freqs, { gain = 0.18 } = {}) {
+  // Point the voice bank at a chord without touching its level. Split out of
+  // playChord because continuous expression (a hand's openness driving the
+  // chord's loudness) needs the notes sounding while something other than the
+  // envelope owns the gain.
+  function setChordVoices(freqs) {
     if (!started || !freqs?.length) return;
     const t = ctx.currentTime, sm = 0.02;
     chordOscs.forEach((o, i) => {
@@ -501,6 +505,28 @@ export const engine = (() => {
       if (audible) o.frequency.linearRampToValueAtTime(freqs[i], t + sm);
       chordVGains[i].gain.linearRampToValueAtTime(audible ? 1 / Math.max(3, freqs.length) : 0, t + sm);
     });
+  }
+
+  // Continuous level, for expression-driven play. The ADSR and this are two
+  // owners of the same AudioParam, so exactly one is in charge at a time —
+  // chordmode picks by its `control` setting and never mixes them. Ramped
+  // rather than set, because a per-frame step on a running oscillator is the
+  // click the rest of the dynamics work exists to remove.
+  const CHORD_PEAK = 0.18;
+  function setChordLevel(x) {
+    if (!started) return;
+    const v = Math.max(0, Math.min(1, Number(x) || 0)) * CHORD_PEAK;
+    const t = ctx.currentTime;
+    chordGain.gain.cancelScheduledValues(t);
+    chordGain.gain.setValueAtTime(chordGain.gain.value, t);
+    chordGain.gain.linearRampToValueAtTime(v, t + 0.03);
+    chordOn = v > 0;
+  }
+
+  function playChord(freqs, { gain = CHORD_PEAK } = {}) {
+    if (!started || !freqs?.length) return;
+    const t = ctx.currentTime;
+    setChordVoices(freqs);
     // Attack to peak, then decay to the sustain level, both anchored at the
     // gain we are actually at — retriggering mid-release has to start from the
     // dying value, not snap to zero first, or fast chord changes click.
@@ -596,7 +622,7 @@ export const engine = (() => {
     setChordFilterType, getChordFilterType,
     snapshot, restore,
     defineWave, playTone, now,
-    playChord, releaseChord, chordActive,
+    playChord, releaseChord, chordActive, setChordVoices, setChordLevel,
     setChordEnv, getChordEnv, CHORD_ENV_RANGE,
     getWaveform,
     setMuted, toggleMuted, resume,

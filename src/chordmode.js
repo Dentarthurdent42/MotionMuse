@@ -8,6 +8,7 @@
 // old root/octave/quality trio — which is what makes a long gesture list
 // (e.g. the ASL numbers) manageable.
 
+import { bus }                        from './bus.js';
 import { engine }                     from './engine.js';
 import { gesture, gestureLabel }      from './gesture.js';
 import { diatonicChord, isDiatonic }  from './chords.js';
@@ -49,6 +50,55 @@ const DEFAULT_SEVENTHS = [false, false, true, false, true, false, false];
 
 export const DEGREES = 7;
 
+// ── Expression ────────────────────────────────────────────────────────────
+//
+// What makes the chord sound, once a handshape has said WHICH chord.
+//
+//   'gesture'  hold the shape, hear the chord; a release shape stops it. One
+//              hand does everything, and the shape is doing two jobs.
+//   'hand'     two-handed: one hand names the chord, the other's OPENNESS
+//              plays it. The chord latches, so the naming hand can relax.
+//   'brow'     one-handed: the hand names the chord, your eyebrows play it.
+//
+// and how that signal is read:
+//
+//   'gate'     past the threshold attacks, below it releases — the ADSR runs.
+//   'volume'   the signal IS the level, continuously. There is no envelope to
+//              run; you are the envelope.
+//
+// `lo`/`hi` map the raw signal onto 0..1 travel, and they matter more than
+// they look. Hand openness does NOT reach 0 with a closed fist — it bottoms
+// out near 0.38 — so feeding it straight in would mean the quietest thing you
+// can do is "fairly loud", and silence would be unreachable. Mapping the range
+// the signal actually occupies is what makes fully-off a place your hand can
+// get to. `deadzone` then rounds the bottom of that travel down to true
+// silence, so it does not need to be hit exactly.
+export const EXPRESSION_MODES = ['gesture', 'hand', 'brow'];
+export const EXPRESSION_CONTROLS = ['gate', 'volume'];
+
+// Per-mode defaults for the raw range, measured from the signals themselves:
+// hand openness runs ~0.38 (fist) to ~0.92 (open palm); browInnerUp rests near
+// zero and a comfortable raise is about half scale, so asking for a full 1.0
+// would mean straining.
+export const EXPRESSION_RANGE = {
+  hand: { lo: 0.42, hi: 0.90 },
+  brow: { lo: 0.06, hi: 0.55 },
+};
+
+const DEFAULT_EXPRESSION = {
+  mode: 'gesture',
+  hand: 'L',        // the hand that EXPRESSES; the other names the chord
+  control: 'gate',
+  lo: EXPRESSION_RANGE.hand.lo,
+  hi: EXPRESSION_RANGE.hand.hi,
+  deadzone: 0.12,   // share of travel at the bottom that reads as silence
+  trigger: 0.45,    // gate control: where along the travel it attacks
+};
+
+// Hysteresis on the gate, so a hand hovering at the threshold does not
+// re-attack the chord several times a second.
+const TRIGGER_HYST = 0.07;
+
 // Old-format assignments stored an absolute { root, octave, quality }. Map the
 // root onto the nearest degree of the current key so an existing user's setup
 // keeps playing something recognisable instead of silently resetting.
@@ -75,6 +125,25 @@ export const chordmode = (() => {
   let assignments = { ...DEFAULT_ASSIGNMENTS };   // gestureId → degree
   let sevenths = [...DEFAULT_SEVENTHS];
   let playing = null;   // gestureId currently sounding
+  let expr = { ...DEFAULT_EXPRESSION };
+  let latched = null;   // chord handshape held over, in hand/brow modes
+  let gateOpen = false; // gate control: is the envelope currently attacked
+  let voiced = null;    // what the voice bank is currently pointed at
+  let exprRaw = 0, exprLevel = 0;   // last read, for the panel's readout
+
+  // Raw signal → 0..1 travel, with the bottom rounded down to silence.
+  const readExpression = () => {
+    const key = expr.mode === 'brow' ? 'brow_raise' : `hand_${expr.hand}_open`;
+    exprRaw = bus.signals.get(key)?.value ?? 0;
+    const span = Math.max(0.01, expr.hi - expr.lo);
+    const t = Math.max(0, Math.min(1, (exprRaw - expr.lo) / span));
+    exprLevel = t <= expr.deadzone ? 0 : (t - expr.deadzone) / (1 - expr.deadzone);
+    return exprLevel;
+  };
+
+  // Which hand names the chord: the one that is not expressing. In brow mode
+  // both hands are free to, since the eyebrows are doing the expressing.
+  const chordHand = () => (expr.hand === 'L' ? 'R' : 'L');
 
   // The key actually used to build chords. With `follow` on, Pitch Quantize
   // drives it so chords land in the same key the melody snaps to — but only
@@ -106,7 +175,7 @@ export const chordmode = (() => {
     get enabled() { return enabled; },
     setEnabled(on) {
       enabled = !!on;
-      if (!enabled) { engine.releaseChord(); playing = null; }
+      if (!enabled) { engine.releaseChord(); playing = null; latched = null; gateOpen = false; voiced = null; }
     },
 
     key: () => ({ ...key }),
@@ -179,10 +248,18 @@ export const chordmode = (() => {
 
     tick() {
       // Chord mode is an under-construction feature — only active in dev mode.
-      if (!enabled || !engine.started || !devmode.enabled) {
+      //
+      // Deliberately NOT gated on engine.started: every engine call below is a
+      // no-op until the context exists, and gating the whole state machine on
+      // it meant the recognition and expression logic could only be exercised
+      // with real audio. The engine starts with the page anyway, so this costs
+      // a few bus reads in the window before it does.
+      if (!enabled || !devmode.enabled) {
         if (playing) { engine.releaseChord(); playing = null; }
         return;
       }
+      if (expr.mode !== 'gesture') return this._tickExpressed();
+
       const held = gesture.current();
 
       // A dedicated release gesture: hold it and the chord lets go, so a chord
@@ -206,6 +283,73 @@ export const chordmode = (() => {
       playing = id;
     },
 
+    // hand / brow modes. The handshape names the chord and LATCHES — dropping
+    // it does not stop the sound, because the sound is not what it controls.
+    // That separation is the point: one hand chooses, the other plays.
+    _tickExpressed() {
+      const named = expr.mode === 'brow'
+        ? (gesture.activeOn('R') ?? gesture.activeOn('L'))
+        : gesture.activeOn(chordHand());
+      if (named !== null && assignments[named] !== undefined && named !== latched) {
+        latched = named;
+        voiced = null;                 // the new chord has not been sounded yet
+      }
+      const level = readExpression();
+      playing = latched;
+      if (!latched) return;
+
+      if (expr.control === 'volume') {
+        // Only re-point the voices when the chord actually changes. Ramping
+        // four oscillator frequencies every frame is the same never-settling
+        // glide that made continuous volume unplayable in the first place.
+        const sig = `${latched}|${assignments[latched]}|${sevenths[assignments[latched]]}|${JSON.stringify(effectiveKey())}`;
+        if (sig !== voiced) { engine.setChordVoices(chordFor(latched)?.freqs); voiced = sig; }
+        engine.setChordLevel(level);
+        gateOpen = level > 0;
+        return;
+      }
+      // Gate: one attack on the way up, one release on the way down, with a
+      // band between them so a hand resting near the threshold does not
+      // machine-gun the envelope.
+      const on = gateOpen ? level > expr.trigger - TRIGGER_HYST
+                          : level > expr.trigger + TRIGGER_HYST;
+      // A chord swapped while the gate is already open re-attacks on the new
+      // one, which is what playing a progression through a held note means.
+      const changed = on && gateOpen && voiced !== latched;
+      if (on === gateOpen && !changed) return;
+      gateOpen = on;
+      if (on) { this._sound(latched); voiced = latched; }
+      else { engine.releaseChord(); voiced = null; }
+    },
+
+    expression: () => ({ ...expr }),
+    // Live values for the panel's meter — the only way to see whether your
+    // range actually reaches both ends without guessing.
+    expressionLevel: () => ({ raw: exprRaw, level: exprLevel, gateOpen, latched }),
+    setExpression(partial) {
+      const next = { ...expr, ...partial };
+      if (!EXPRESSION_MODES.includes(next.mode)) next.mode = 'gesture';
+      if (!EXPRESSION_CONTROLS.includes(next.control)) next.control = 'gate';
+      next.hand = next.hand === 'R' ? 'R' : 'L';
+      // Changing mode re-seeds the range: a span measured for hand openness is
+      // meaningless for eyebrows, and leaving it would make the new mode look
+      // broken. An explicit lo/hi in the same call still wins.
+      if (partial.mode && partial.mode !== expr.mode && EXPRESSION_RANGE[partial.mode]) {
+        Object.assign(next, EXPRESSION_RANGE[partial.mode], partial);
+      }
+      for (const k of ['lo', 'hi', 'deadzone', 'trigger']) {
+        const v = Number(next[k]);
+        next[k] = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : DEFAULT_EXPRESSION[k];
+      }
+      if (next.hi <= next.lo) next.hi = Math.min(1, next.lo + 0.05);
+      expr = next;
+      // Leaving an expressed chord ringing after switching away from it would
+      // be a note nothing can now stop.
+      engine.releaseChord();
+      latched = null; gateOpen = false; playing = null; voiced = null;
+      return { ...expr };
+    },
+
     getReleaseGesture() { return releaseGesture; },
     // Taking a shape for the release takes it off whatever chord it played —
     // the same bijection, from the other side.
@@ -217,7 +361,7 @@ export const chordmode = (() => {
 
     serialize() {
       return { enabled, key: { ...key }, assignments: { ...assignments },
-               sevenths: sevenths.slice(), releaseGesture };
+               sevenths: sevenths.slice(), releaseGesture, expression: { ...expr } };
     },
 
     load(data) {
@@ -245,6 +389,9 @@ export const chordmode = (() => {
         assignments = merged;
       }
       if (data.releaseGesture !== undefined) releaseGesture = data.releaseGesture || null;
+      // Absent in setups saved before expression existed, which were all
+      // gesture-driven — so the default is the old behaviour exactly.
+      this.setExpression({ ...DEFAULT_EXPRESSION, ...(data.expression ?? {}) });
 
       // Enforce the bijection on the way in. Loaded data predates it — the same
       // shape could be a chord and the release, and two shapes could share a

@@ -357,6 +357,24 @@ const hud = await (async () => {
         hasSelect: !!r.querySelector('.ch-shape'),
       })));
     const initial = await read();
+    // Expression: what sounds the chord. Switching modes must enable exactly
+    // the controls that apply, and re-seed the range for the new signal — a
+    // hand's span is meaningless for eyebrows.
+    const expr = [];
+    for (const mode of ['gesture', 'hand', 'brow']) {
+      await page.selectOption('#ck-expr-mode', mode);
+      await page.waitForTimeout(200);
+      expr.push(await page.evaluate(async () => {
+        const { chordmode } = await import('/src/chordmode.js');
+        const d = id => document.getElementById(id)?.disabled ?? null;
+        return { ...chordmode.expression(),
+                 handOff: d('ck-expr-hand'), ctlOff: d('ck-expr-control'),
+                 relOff: document.querySelector('.ch-shape[data-degree="release"]')?.disabled ?? null,
+                 meter: !!document.getElementById('ck-expr-meter') };
+      }));
+    }
+    await page.selectOption('#ck-expr-mode', 'gesture');
+    await page.waitForTimeout(200);
     // Hand the release the shape that plays the first chord.
     const taken = initial.find(r => r.d === '0')?.shape;
     if (taken) {
@@ -373,7 +391,7 @@ const hud = await (async () => {
     });
     await page.evaluate(() => document.getElementById('dev-btn').click());
     await page.waitForTimeout(120);
-    return { initial, after, taken, state };
+    return { initial, after, taken, state, expr };
   })();
 
   // Share: the QR has to be a real, scannable code of a real link. Decoding is
@@ -694,6 +712,30 @@ console.log('\nChord mode\n');
     'no chord is claimed by two handshapes', state.degrees.join(','));
   check(new Set(state.ids).size === state.ids.length,
     'no handshape claims two chords', state.ids.join(','));
+}
+
+// ── Chord expression ──
+console.log('\nChord expression\n');
+{
+  const [byShape, byHand, byBrow] = hud.chords.expr;
+  check(byShape.mode === 'gesture' && byShape.handOff && byShape.ctlOff,
+    'handshape mode: the hand and control pickers do not apply', JSON.stringify(byShape));
+  check(!byShape.meter, 'and there is no range to calibrate');
+  check(byHand.mode === 'hand' && !byHand.handOff && !byHand.ctlOff,
+    'two-handed mode: both pickers live', JSON.stringify(byHand));
+  check(byHand.meter, 'and a live meter to calibrate the range against');
+  check(byBrow.mode === 'brow' && byBrow.handOff && !byBrow.ctlOff,
+    'eyebrow mode: no hand to choose, but still a control', JSON.stringify(byBrow));
+  check(byBrow.hi < byHand.hi && byBrow.lo < byHand.lo,
+    "eyebrows get their own range, not the hand's",
+    `hand ${byHand.lo}..${byHand.hi} vs brow ${byBrow.lo}..${byBrow.hi}`);
+  // Openness bottoms out near 0.38 with a closed fist, so a range starting at
+  // zero would put silence out of reach entirely.
+  check(byHand.lo > 0.3, 'the hand range starts above a closed fist', String(byHand.lo));
+  check(byHand.deadzone > 0, 'and the bottom of the travel rounds down to silence');
+  check(byBrow.relOff === true && byShape.relOff === false,
+    'RELEASE applies to handshape mode only',
+    `gesture ${byShape.relOff}, brow ${byBrow.relOff}`);
 }
 
 // ── Share ──

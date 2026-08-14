@@ -1094,6 +1094,56 @@ option { background: var(--panel); }
   border-bottom: 1px solid var(--border);
 }
 .chord-key-lbl { font-size: 8px; letter-spacing: 1px; color: var(--dim); }
+/* What sounds the chord: mode, which hand, and how the signal is read. */
+.chord-expr {
+  display: grid;
+  grid-template-columns: auto 1.6fr minmax(74px, 0.9fr) minmax(74px, 0.9fr);
+  gap: 4px; align-items: center;
+  margin: 4px 0 5px;
+}
+.chord-expr select:disabled { opacity: 0.45; cursor: not-allowed; }
+/* A row whose control does not apply in the current mode — present, so the
+   setting is not mysteriously missing, but visibly not in play. */
+.chord-assign.dimmed { opacity: 0.45; }
+.chord-assign.dimmed select { cursor: not-allowed; }
+/* Range calibration + the live meter, which is what makes the range legible:
+   hand openness never reaches 0, so you have to be able to SEE where your
+   fist actually lands. */
+.chord-expr-cal {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  margin-bottom: 6px;
+}
+.chord-expr-cal .ctrl-lbl {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 8px; letter-spacing: 1px; color: var(--dim);
+}
+.chord-expr-cal input[type=range] { flex: 1 1 auto; min-width: 0; }
+.expr-meter {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 14px;
+  background: var(--faint);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.expr-fill {
+  position: absolute; inset: 0 auto 0 0;
+  width: 0;
+  background: var(--dim);
+  transition: width .06s linear;
+}
+.expr-fill.on { background: oklch(var(--accent-l) var(--accent-c) 200); }
+.expr-read {
+  position: relative;
+  display: block;
+  text-align: center;
+  font-size: 8px; letter-spacing: 1px;
+  line-height: 14px;
+  color: var(--text);
+}
 .chord-key select:disabled { opacity: 0.55; cursor: not-allowed; }
 .wave-btn {
   flex: 1;

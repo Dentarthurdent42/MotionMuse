@@ -416,6 +416,11 @@ export const gesture = (() => {
       return ids;
     },
 
+    // The gesture held on ONE hand. current() dedupes across both, which is
+    // right for "is this shape being made" and useless for two-handed play,
+    // where which hand is making it is the whole point.
+    activeOn(side) { return state[side]?.active ?? null; },
+
     // Begin recording; resolves via callback once ~10 frames are captured.
     // Caller is responsible for checking that the camera is running.
     // Pass `target` to overwrite an existing gesture's template instead of

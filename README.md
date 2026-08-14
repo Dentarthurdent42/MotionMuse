@@ -653,10 +653,43 @@ its intervals), so one envelope is what a player means by "the chord's attack".
 Retriggering mid-release starts from the dying value rather than snapping to
 zero, so fast chord changes don't click.
 
-The **RELEASE** row — **open palm** by default — lets a held chord go
-deliberately, which matters once the release is long enough to hear. It is a
-setting, not a reservation: pick any shape, or none. Giving it a shape that was
-playing a chord takes that shape off the chord, exactly as moving a shape
+### What sounds the chord
+
+**PLAY WITH** picks what actually plays a chord once a handshape has named it:
+
+- **Handshape holds it** (the default) — hold the shape, hear the chord, and a
+  **RELEASE** shape stops it. One hand does everything, which means the shape is
+  doing two jobs and the release shape a third.
+- **Other hand — openness** — two-handed. One hand names the chord, the other's
+  openness plays it, and **the chord latches**: the naming hand can relax, drop
+  out of frame, or go and pick the next chord while the note keeps sounding.
+  Which hand plays is switchable.
+- **Eyebrows** — one-handed. The hand names chords with either side; your
+  eyebrows play them.
+
+and how that signal is read:
+
+- **ATTACK / RELEASE** — past a threshold it attacks, below it releases, and the
+  ADSR runs. Hysteresis keeps a hand hovering at the threshold from
+  machine-gunning the envelope.
+- **VOLUME** — the signal *is* the level, continuously. There is no envelope to
+  run: you are the envelope.
+
+**OFF AT / FULL AT** map the raw signal onto that travel, and they matter more
+than they look. Hand openness does **not** reach 0 with a closed fist — it
+bottoms out near 0.38 — so feeding it in raw would mean the quietest thing you
+can do is "fairly loud" and silence is physically unreachable. Mapping the range
+the signal actually occupies is what puts fully-off somewhere your hand can get
+to, and the bottom 12% of the travel then rounds down to true silence so it does
+not have to be hit exactly. Eyebrows get their own defaults (a comfortable raise
+is about half scale; asking for 1.0 would mean straining). The live meter beside
+them shows the raw value and where it lands, because otherwise calibrating the
+range is guesswork.
+
+The **RELEASE** row — **open palm** by default — applies to the handshape mode
+only, and dims in the others, where the expression signal does the releasing. It
+is a setting, not a reservation: pick any shape, or none. Giving it a shape that
+was playing a chord takes that shape off the chord, exactly as moving a shape
 between two chords does; the default set still puts **IV** on `asl4` so nothing
 has to be displaced out of the box. Chords play through a dedicated 4-voice bank with **its own
 filter and level** — `Chord Cutoff` / `Chord Q` / `Chord Vol`, plus a **Chord
