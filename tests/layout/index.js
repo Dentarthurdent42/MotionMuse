@@ -165,6 +165,20 @@ const sections = await page.evaluate(() => {
     // ships at every zoom level rather than a per-container guess.
     textSizeAdjust: getComputedStyle(document.documentElement).webkitTextSizeAdjust
                  ?? getComputedStyle(document.documentElement).textSizeAdjust,
+    // The oscilloscope is a section like any other: it folds, and it can be
+    // dragged to another column. It has to live OUTSIDE #audio-panel to do so —
+    // that panel rebuilds its innerHTML, which would recreate the canvas and
+    // drop the click-to-mute handler.
+    viz: (() => {
+      const v = document.querySelector('.sec[data-sec-id="visualizer"]');
+      return {
+        exists: !!v,
+        inRebuiltPanel: !!v?.closest('#audio-panel'),
+        foldable: !!v?.querySelector('.sec-fold'),
+        movable: v?.dataset.reorder === '1',
+        hasCanvas: !!v?.querySelector('#viz-canvas'),
+      };
+    })(),
     // The collapse caret is drawn from borders rather than typed as a glyph, so
     // it looks the same on every platform. Empty content + a real border is the
     // signature of that; a character caret would show up as content text.
@@ -357,6 +371,14 @@ const hud = await (async () => {
         hasSelect: !!r.querySelector('.ch-shape'),
       })));
     const initial = await read();
+    // Live state: a dot per chord row (the same indicator the gestures list
+    // uses) and a volume bar showing the chord's real loudness.
+    const live = await page.evaluate(() => ({
+      dots: document.querySelectorAll('#chord-assigns .gesture-dot').length,
+      rows: document.querySelectorAll('#chord-assigns .chord-assign').length,
+      vol: !!document.getElementById('chord-vol-fill'),
+      readout: !!document.getElementById('chord-readout'),
+    }));
     // Expression: what sounds the chord. Switching modes must enable exactly
     // the controls that apply, and re-seed the range for the new signal — a
     // hand's span is meaningless for eyebrows.
@@ -391,7 +413,7 @@ const hud = await (async () => {
     });
     await page.evaluate(() => document.getElementById('dev-btn').click());
     await page.waitForTimeout(120);
-    return { initial, after, taken, state, expr };
+    return { initial, after, taken, state, expr, live };
   })();
 
   // Share: the QR has to be a real, scannable code of a real link. Decoding is
@@ -535,8 +557,11 @@ for (const { width, off, on, sections, camSticky } of results) {
     `${w}: no section is taller than its contents`, sections.tallerThanContent.join(' '));
 
   // ── Cross-column moves ──
-  check(sections.hosts.join(',') === 'audio,cam,map,sig',
-    `${w}: one drop host per column`, sections.hosts.join(','));
+  // Every column can receive a dropped section. The audio column has two: the
+  // synth list (which renderAudioPanel rebuilds) and the panel around it, which
+  // is where the oscilloscope lives so its canvas survives that rebuild.
+  check(sections.hosts.join(',') === 'aud,audio,cam,map,sig',
+    `${w}: every column can receive a section`, sections.hosts.join(','));
   check(sections.inHost.length >= 12, `${w}: sections live in hosts`, `${sections.inHost.length}`);
   check(sections.noBirth.length === 0,
     `${w}: every movable section records its birth column`, sections.noBirth.join(' '));
@@ -551,6 +576,11 @@ for (const { width, off, on, sections, camSticky } of results) {
     hStyles.map(k => `${k} → ${sections.headerStyles[k].join(',')}`).join(' | '));
   check(sections.textSizeAdjust === '100%',
     `${w}: text auto-inflation is off`, String(sections.textSizeAdjust));
+  const v = sections.viz;
+  check(v.exists && v.hasCanvas, `${w}: the oscilloscope is its own section`);
+  check(!v.inRebuiltPanel, `${w}: and sits outside the panel that rebuilds itself`);
+  check(v.foldable, `${w}: it can be minimized`);
+  check(v.movable, `${w}: and moved to another column`);
   check(sections.camExtras === (width < 769 ? 'main' : 'panel-cam'),
     `${w}: the camera column's extra sections are ${width < 769 ? 'outside' : 'inside'} the sticky panel`,
     String(sections.camExtras));
@@ -712,6 +742,15 @@ console.log('\nChord mode\n');
     'no chord is claimed by two handshapes', state.degrees.join(','));
   check(new Set(state.ids).size === state.ids.length,
     'no handshape claims two chords', state.ids.join(','));
+}
+
+// ── Chord mode: live state ──
+console.log('\nChord live state\n');
+{
+  const l = hud.chords.live;
+  check(l.dots === l.rows, 'every chord row has an indicator', `${l.dots} dots / ${l.rows} rows`);
+  check(l.vol, 'the chord volume is shown');
+  check(l.readout, 'and which chord is sounding');
 }
 
 // ── Chord expression ──

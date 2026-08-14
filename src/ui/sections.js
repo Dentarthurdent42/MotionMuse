@@ -28,15 +28,30 @@ const FOLD_KEY  = 'motionmuse-sec-folded';
 const HOME_KEY  = 'motionmuse-sec-home';
 const MIN_H = 56;              // below this a section is unreadable, not compact
 
-// The containers a section is allowed to live in — one per column, so a drop
-// always lands somewhere that can hold it. Landscape and portrait differ in
-// where these boxes sit on screen, not in what they contain, which is what lets
-// one drag mean the same thing in both.
+// The containers a section is allowed to live in, so a drop always lands
+// somewhere that can hold it. Landscape and portrait differ in where these
+// boxes sit on screen, not in what they contain, which is what lets one drag
+// mean the same thing in both.
+//
+// A host is the PANEL, not its collapsible body.
+//
+// It was the body, and that made a dropped section a child of the thing the
+// fold button hides: collapse SIGNALS and a MODELS panel someone had dragged
+// into that column vanished with it. A section moved into a column is a
+// NEIGHBOUR of that column's content, not part of it — so it goes beside the
+// body, and only the body folds away.
+//
+// The audio column has two: #audio-panel holds the synth sections (it is what
+// renderAudioPanel rebuilds), and .panel-aud holds the oscilloscope, which has
+// to live outside that rebuild to keep its canvas and its click handler.
+// hostUnder picks the smallest box containing the pointer, so aiming at the
+// synth list targets the inner one and aiming at the scope targets the outer.
 const HOSTS = [
   ['audio', '#audio-panel'],
+  ['aud',   '.panel-aud'],
   ['cam',   '#cam-extras'],
-  ['sig',   '.panel-sig > .sec-body'],
-  ['map',   '.panel-map > .sec-body'],
+  ['sig',   '.panel-sig'],
+  ['map',   '.panel-map'],
 ];
 
 // Sections whose content is an open-ended list get a default height, because
@@ -388,6 +403,13 @@ function recordBirth() {
   }
 }
 
+// A panel that is itself a section owns a resize grip as its last child;
+// appending past it would leave the grip floating above whatever was dropped.
+const addTo = (host, el) => {
+  const grip = [...host.children].find(c => c.classList.contains('sec-grip'));
+  if (grip) host.insertBefore(el, grip); else host.appendChild(el);
+};
+
 export function applyPlacement() {
   for (const el of document.querySelectorAll('.sec[data-sec-id]')) {
     const want = home[el.dataset.secId];
@@ -395,7 +417,7 @@ export function applyPlacement() {
     const host = document.querySelector(`[data-sec-host="${want}"]`);
     if (!host || el.parentElement === host) continue;
     el.dataset.secMoved = '1';
-    host.appendChild(el);
+    addTo(host, el);
   }
 }
 
@@ -513,7 +535,7 @@ function wireDrag(sec, head) {
       clearMark();
       if (!dragging || !target) return;
       const { host, before } = target;
-      if (before) host.insertBefore(sec, before); else host.appendChild(sec);
+      if (before) host.insertBefore(sec, before); else addTo(host, sec);
       const hostId = host.dataset.secHost;
       if (hostId === sec.dataset.secBirth) {
         delete home[sec.dataset.secId];

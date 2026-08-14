@@ -102,6 +102,7 @@ export function gestureSectionsHTML() {
     const gid = chordmode.gestureFor(i);
     return `
     <div class="chord-assign" data-degree="${i}">
+      <span class="gesture-dot" id="cdot-${i}"></span>
       <span class="chord-degree" title="${c.numeral} · ${c.rootName} ${c.quality}"
         >${c.numeral} · ${c.rootName}</span>
       <select class="ch-shape" data-degree="${i}"
@@ -151,6 +152,7 @@ export function gestureSectionsHTML() {
   const assignRows = !on ? '' :
     Array.from({ length: DEGREES }, (_, i) => chordRow(i)).join('') + `
     <div class="chord-assign${ex.mode === 'gesture' ? '' : ' dimmed'}" data-degree="release">
+      <span class="gesture-dot" id="cdot-release"></span>
       <span class="chord-degree" title="${ex.mode === 'gesture'
         ? 'Holding this shape lets a held chord go'
         : 'Only used when a handshape holds the chord — here the signal above does the releasing'}"
@@ -192,7 +194,14 @@ export function gestureSectionsHTML() {
             <span class="ctrl-val" id="ck-env-${k}">${k === 'sustain' ? Math.round(env[k] * 100) + '%' : env[k].toFixed(2) + 's'}</span>
           </label>`).join('')}
       </div>
-      <div id="chord-readout" class="quant-notes">${on ? '—' : 'hold a gesture to play its chord'}</div>
+      <div class="chord-live" id="chord-live" style="display:${on ? 'grid' : 'none'}">
+        <div id="chord-readout" class="quant-notes">—</div>
+        <div class="chord-vol" title="How loud the chord is right now">
+          <div class="chord-vol-fill" id="chord-vol-fill"></div>
+          <span class="chord-vol-read" id="chord-vol-read">—</span>
+        </div>
+      </div>
+      ${on ? '' : '<div class="quant-notes">hold a gesture to play its chord</div>'}
     </div>`;
 }
 
@@ -384,6 +393,37 @@ export function updateGesturePanel() {
       const txt = chordmode.currentLabel() || '—';
       if (el.textContent !== txt) el.textContent = txt;
     }
+    // Which chord is sounding, lit on its own row — the same dot the gestures
+    // list uses, because it answers the same question ("is this the one?") and
+    // a second visual language for it would be noise.
+    // Two states, because latched-but-silent is a real one: in volume mode a
+    // chord stays selected while your hand is closed. A single lit dot at 0%
+    // volume would read as "this is playing" and be wrong.
+    const sounding = chordmode.soundingDegree();
+    const audible = chordmode.chordLevel() > 0.001;
+    for (let i = 0; i < DEGREES; i++) {
+      const d = document.getElementById(`cdot-${i}`);
+      if (!d) continue;
+      d.classList.toggle('on',  i === sounding && audible);
+      d.classList.toggle('sel', i === sounding && !audible);
+    }
+    const rel = document.getElementById('cdot-release');
+    if (rel) rel.classList.toggle('on', chordmode.releaseHeld());
+
+    // …and how loud it actually is. The expression meter above shows the input;
+    // this shows the result, which is not the same number once an ADSR is in
+    // between — during a release the input is already at zero and the chord is
+    // still sounding.
+    const lvl = audible ? chordmode.chordLevel() : 0;
+    const fillV = document.getElementById('chord-vol-fill');
+    if (fillV) {
+      const pct = `${Math.round(lvl * 100)}%`;
+      if (fillV.style.width !== pct) fillV.style.width = pct;
+      fillV.classList.toggle('on', lvl > 0.001);
+      const r = document.getElementById('chord-vol-read');
+      if (r && r.textContent !== pct) r.textContent = pct;
+    }
+
     // Live expression meter. Without it, calibrating the range is guesswork:
     // you cannot see that a closed fist still reads 0.38 and so never reaches
     // silence, which is the whole reason the range exists.

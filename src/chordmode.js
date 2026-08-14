@@ -322,6 +322,22 @@ export const chordmode = (() => {
       else { engine.releaseChord(); voiced = null; }
     },
 
+    // Which degree is sounding, or -1 — for the row indicators. `playing` is a
+    // gesture id; the panel lists chords, so it needs the degree.
+    soundingDegree() {
+      if (!playing) return -1;
+      const d = assignments[playing];
+      return d === undefined ? -1 : d;
+    },
+    // Is the release shape being held right now (gesture mode only).
+    releaseHeld() {
+      return expr.mode === 'gesture' && !!releaseGesture
+        && gesture.current().includes(releaseGesture);
+    },
+    // The chord's real loudness, straight off the audio graph — not the input
+    // signal, which differs from it whenever an envelope is in between.
+    chordLevel: () => engine.chordLevel?.() ?? 0,
+
     expression: () => ({ ...expr }),
     // Live values for the panel's meter — the only way to see whether your
     // range actually reaches both ends without guessing.

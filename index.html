@@ -225,12 +225,19 @@
            screen that already *shows* mute state, so it is where a thumb goes
            first. The header button and the hotkey remain the accessible
            paths — this is a third, redundant one, so it is not focusable. -->
-      <div class="viz-wrap" id="viz-wrap" title="Tap to mute / unmute">
-        <canvas id="viz-canvas"></canvas>
-        <!-- The waveform keeps moving while muted (the mute gain sits after
-             the analyser), so without this banner a silent-but-live engine
-             looks like a broken one. -->
-        <div id="viz-muted" hidden>🔇 MUTED · PRESS <b id="mute-key-hint">SPACE</b></div>
+      <!-- Its own section, so it folds and moves like everything else. It sits
+           OUTSIDE #audio-panel deliberately: that panel rebuilds its innerHTML
+           on every structural change, which would recreate the canvas and drop
+           the click-to-mute handler with it. -->
+      <div class="audio-section" data-sec="visualizer">
+        <div class="audio-section-label">Oscilloscope</div>
+        <div class="viz-wrap" id="viz-wrap" title="Tap to mute / unmute">
+          <canvas id="viz-canvas"></canvas>
+          <!-- The waveform keeps moving while muted (the mute gain sits after
+               the analyser), so without this banner a silent-but-live engine
+               looks like a broken one. -->
+          <div id="viz-muted" hidden>🔇 MUTED · PRESS <b id="mute-key-hint">SPACE</b></div>
+        </div>
       </div>
       <div class="pb" id="audio-panel">
         <div style="padding:16px 10px;color:var(--dim);font-size:10px;text-align:center;">

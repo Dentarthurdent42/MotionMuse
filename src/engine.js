@@ -569,6 +569,16 @@ export const engine = (() => {
 
   function chordActive() { return chordOn; }
 
+  // How loud the chord bank is RIGHT NOW, as a share of its peak. Read off the
+  // live AudioParam rather than tracked alongside it, so it is the truth even
+  // mid-envelope: during a release the input signal is already at zero and the
+  // chord is still sounding, and a mirrored variable would say the wrong thing
+  // for exactly as long as that takes.
+  function chordLevel() {
+    if (!started) return 0;
+    return Math.max(0, Math.min(1, chordGain.gain.value / CHORD_PEAK));
+  }
+
   function getWaveform() {
     if (!analyser) return null;
     const buf = new Float32Array(analyser.frequencyBinCount);
@@ -622,7 +632,7 @@ export const engine = (() => {
     setChordFilterType, getChordFilterType,
     snapshot, restore,
     defineWave, playTone, now,
-    playChord, releaseChord, chordActive, setChordVoices, setChordLevel,
+    playChord, releaseChord, chordActive, setChordVoices, setChordLevel, chordLevel,
     setChordEnv, getChordEnv, CHORD_ENV_RANGE,
     getWaveform,
     setMuted, toggleMuted, resume,

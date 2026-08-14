@@ -135,12 +135,13 @@ Two behaviours worth knowing:
 - **Added oscillators arrive at half level.** Everything downstream — the volume
   ladder's headroom, the reverb send, the main-gain default — is tuned around one
   voice at unity, and two unity sawtooths into that clip.
-- **A patch grows the bank to fit it.** Most sound kits and mapping presets are
-  voiced for two oscillators, so applying one resizes the bank rather than
-  silently discarding the cables it can't host. Loading a *smaller* patch never
-  shrinks the bank — that would delete slots you added. Shrinking by hand does
-  prune the cables that pointed at the removed slots, since a mapping to a
-  parameter that no longer exists is a patchbay node with nothing behind it.
+- **A patch grows the bank to fit it.** Mapping presets are voiced for up to two
+  oscillators, so applying one resizes the bank rather than silently discarding
+  the cables it can't host. Loading a *smaller* patch never shrinks the bank —
+  that would delete slots you added. Shrinking by hand does prune the cables
+  that pointed at the removed slots, since a mapping to a parameter that no
+  longer exists is a patchbay node with nothing behind it. **Sound kits are not
+  patches** and never resize anything — see below.
 
 A slot's values and waveform survive its removal, so shrinking to hear one voice
 and growing back returns the sound you had instead of resetting the slot you were
@@ -216,6 +217,11 @@ picture on a screen being read seconds later. If a setup is too large to fit
 any version, the popover says so and offers **COPY LINK**; the link always
 works, only the picture of it does not.
 
+The **oscilloscope** at the top of the audio column is a section like any
+other: it folds away with its caret and can be dragged to another column. It
+lives *outside* the panel that `renderAudioPanel` rebuilds, because that rebuild
+would recreate its canvas and drop the click-to-mute handler with it.
+
 ## Sections: containers, scrolling and resizing
 
 Every section — camera view, signals, models, patchbay, gestures, chord mode,
@@ -250,6 +256,12 @@ explicit cell and a stray child would land in whatever cell was free. It is a
 DOM move because there is no CSS for "opt out of an ancestor's stickiness":
 `position: sticky` pins the element's whole box, and this content's only problem
 was which box it was in.
+
+A **drop host is the panel, not its collapsible body.** It was the body, which
+made a dropped section a child of the thing the fold button hides: collapse
+SIGNALS and a MODELS panel someone had dragged into that column vanished with
+it. A section moved into a column is a *neighbour* of that column's content, not
+part of it, so it sits beside the body and only the body folds away.
 
 **Drag a section's header to move it** — up and down within its column, or
 across into another one. Each column offers a single drop host, outlined while
@@ -408,7 +420,18 @@ from custom harmonic waveforms, filter and effect settings on the synth engine
 (synthesized approximations, not samples; zero downloads, works offline).
 A kit sets where the timbre parameters *rest*; gesture mappings keep modulating
 on top. Tweaking any waveform, filter or timbre slider flips the selector to
-"Custom". The chosen kit is saved with presets. Kits live in `src/soundkit.js`;
+"Custom".
+
+**A kit changes tone and nothing else.** It used to resize the oscillator bank
+and set every level too, so picking "Strings" switched on an oscillator you had
+deliberately removed and overwrote the balance you had dialled in. How many
+voices you play and how loud each is, is your arrangement; a kit describes the
+timbre. Waveforms cycle if the bank is bigger than the kit describes — four
+oscillators on a two-voice kit repeat slots 1 and 2, rather than falling back to
+a default belonging to no instrument — and with one oscillator you get the kit's
+lead wave, which is what the name is really about. Slot 1's waveform also sets
+the chord voices' tone, so chords follow the kit without it touching their level
+either; a chord-only setup with an empty bank still responds to it. The chosen kit is saved with presets. Kits live in `src/soundkit.js`;
 custom waveforms are registered through `engine.defineWave()`.
 
 ## Guided tour (in-app tutorial)
