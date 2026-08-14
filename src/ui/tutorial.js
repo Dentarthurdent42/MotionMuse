@@ -24,6 +24,7 @@
 // ═════════════════════════════════════════════════════════════════════════
 
 import { lsGet, lsSet } from '../storage.js';
+import { chordmode }    from '../chordmode.js';
 
 // Each step:
 //   id      stable unique key (drives "seen"/"new" tracking — never reuse)
@@ -37,14 +38,22 @@ import { lsGet, lsSet } from '../storage.js';
 //           shows up when the user re-runs the tour with that state active.
 //           `needs` is for tests/tutorial/index.js, which enables those
 //           states and then asserts the target really resolves.
+//   modes   which way of playing this step is about: 'osc' (signals wired to
+//           oscillator parameters) or 'chords' (handshapes play chords). Absent
+//           = shown in both, i.e. it is about the app rather than a mode.
+//
+// One tour covering everything meant a first-timer who picked chord mode sat
+// through the patchbay, the cable editor and the play-along game before
+// reaching the one panel they were going to use. The tour is now scoped to the
+// mode you chose, and the mode is what the starting-point picker sets.
 export const TOUR_STEPS = [
   {
     id: 'welcome', target: null, title: 'Welcome to MotionMuse',
     body: 'MotionMuse turns your webcam into an instrument: hand position, ' +
           'gestures and body pose become sound, live in the browser. Nothing ' +
           'is uploaded — all processing happens on your machine.<br><br>' +
-          'This tour points at everything once. Re-open it any time with the ' +
-          '<b>?</b> button up top.',
+          'This tour covers the way of playing you just picked. Re-open it any ' +
+          'time with the <b>?</b> button up top.',
   },
   {
     id: 'camera', target: '#cv-btn', title: 'Start the camera',
@@ -65,21 +74,21 @@ export const TOUR_STEPS = [
           'signal once the camera runs. Anything in this list can drive sound.',
   },
   {
-    id: 'patchbay', target: '.panel-map', title: 'The patchbay',
+    id: 'patchbay', modes: ['osc'], target: '.panel-map', title: 'The patchbay',
     body: 'This is where the instrument is built: <b>inputs</b> (signals) on ' +
           'the left wire to <b>outputs</b> (sound parameters) on the right. ' +
           'Drag from one socket ● to another to connect them — one signal can ' +
           'fan out to as many parameters as you like.',
   },
   {
-    id: 'cable-editor', target: '.panel-map', title: 'Shaping a connection',
+    id: 'cable-editor', modes: ['osc'], target: '.panel-map', title: 'Shaping a connection',
     body: 'Tap a cable or node to open its editor: set the output range, bend ' +
           'the response curve, or quantise it into discrete steps. ' +
           'Oscillator-frequency cables get a piano keyboard for picking exact ' +
           'note ranges.',
   },
   {
-    id: 'preset', target: '#preset-btn', title: 'Instant instrument',
+    id: 'preset', modes: ['osc'], target: '#preset-btn', title: 'Instant instrument',
     body: 'No need to wire everything yourself — <b>PRESET</b> applies a ' +
           'ready-made mapping so you can play immediately: right hand height ' +
           'is pitch, pinch controls volume.',
@@ -117,7 +126,7 @@ export const TOUR_STEPS = [
           'is remembered.',
   },
   {
-    id: 'playalong', target: '#audio-panel', needs: ['audio'], title: 'Play along',
+    id: 'playalong', modes: ['osc'], target: '#audio-panel', needs: ['audio'], title: 'Play along',
     body: 'The <b>Play Along</b> section is a falling-note game: pick a song ' +
           'and difficulty, and hit the notes with whatever gesture controls ' +
           'pitch. Timing is scored — PERFECT beats GOOD — and best scores stick.',
@@ -125,23 +134,52 @@ export const TOUR_STEPS = [
   {
     id: 'dev', target: '#dev-btn', title: 'Under construction',
     body: 'MotionMuse is in active development. <b>DEV</b> reveals the ' +
-          'experimental features — gesture recognition, chord mode, pose-model ' +
-          'comparison, the shader visualiser — all marked 🚧. They work, but ' +
-          'expect rough edges and frequent change.',
+          'still-experimental parts — pose-model comparison, the shader ' +
+          'visualiser, the planned EEG/EMG inputs, and the inference timings ' +
+          'under the camera — all marked 🚧. Everything else, gestures and ' +
+          'chord mode included, is here without it.',
   },
   {
-    id: 'gestures', target: '#gesture-list', needs: ['audio', 'dev'], title: 'Gestures',
-    body: 'Hand poses become discrete triggers: six classics plus the ASL ' +
-          'number handshapes. Templates marked <b>est</b> are estimates — ' +
+    id: 'gestures', target: '#gesture-list', needs: ['audio'], title: 'Gestures',
+    body: 'Hand poses become discrete triggers: fist, point, peace, thumbs up ' +
+          'and down, open palm, rock horns, finger gun, I-love-you, plus the ' +
+          'ASL number handshapes. Templates marked <b>est</b> are estimates — ' +
           'run <b>CALIBRATE</b> once to record each from your own hand, which ' +
           'makes recognition dramatically more reliable.',
   },
   {
-    id: 'chords', target: '#chord-assigns', needs: ['audio', 'dev', 'chord'], title: 'Chord mode',
-    body: 'Hold a gesture, sustain a chord. Chords are named by <b>scale ' +
-          'degree</b> (I–vii) in a key you pick once — change the key and every ' +
-          'assignment transposes together. FOLLOW keeps chords in the same key ' +
-          'your melody is quantised to.',
+    id: 'chords-key', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    title: 'Chords by degree, not by note',
+    body: 'Pick a <b>key</b> once — root, mode, octave — and the panel lists the ' +
+          'seven chords in it (<b>I ii iii IV V vi vii°</b>). Change the key and ' +
+          'every chord transposes together; nothing can land outside it. ' +
+          '<b>FOLLOW</b> keeps them in the same key your melody is quantised to.',
+  },
+  {
+    id: 'chords-assign', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    title: 'One handshape per chord',
+    body: 'Each row picks the handshape that plays that chord, and <b>7th</b> ' +
+          'adds the diatonic seventh. A shape does exactly one job: give it to ' +
+          'another chord and it swaps with whatever was there. The dot on the ' +
+          'left lights when that chord is sounding — hollow means it is chosen ' +
+          'but silent.',
+  },
+  {
+    id: 'chords-express', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    title: 'What plays the chord',
+    body: '<b>PLAY WITH</b> decides that. Hold the shape and hear it, or go ' +
+          'two-handed — one hand names the chord, the other\'s <b>openness</b> ' +
+          'plays it, and the chord latches so the naming hand can go and pick ' +
+          'the next one. Or use your <b>eyebrows</b> and keep a hand free. ' +
+          'Either drives an attack/release or the volume directly.',
+  },
+  {
+    id: 'chords-range', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    title: 'Reaching silence',
+    body: 'A closed fist does not read as zero — hand openness bottoms out ' +
+          'around 0.38 — so <b>OFF AT</b> and <b>FULL AT</b> map the range your ' +
+          'hand actually covers onto the full travel. Watch the meter while you ' +
+          'open and close: if the bar never empties, raise OFF AT.',
   },
   {
     id: 'donate', target: '#donate-btn', title: 'Support the project',
@@ -172,12 +210,27 @@ export const unseenSteps = () => {
   return TOUR_STEPS.map(t => t.id).filter(id => !s.seen.includes(id));
 };
 
+export const MODES = ['osc', 'chords'];
+// Steps for one way of playing: the untagged ones (about the app) plus the ones
+// tagged for this mode. Order is preserved, so the shared steps still frame the
+// mode-specific ones rather than being appended after them.
+export const stepsForMode = mode =>
+  TOUR_STEPS.filter(t => !t.modes || t.modes.includes(mode));
+
+// Which way of playing the app is currently set up for. Read from state rather
+// than remembered from the picker: a user who turned chord mode on afterwards
+// should get the chord tour from the ? button, not the one they first chose.
+const currentMode = () => chordmode.enabled ? 'chords' : 'osc';
+
 export const tour = (() => {
   let idx = -1;          // current step index, -1 = closed
   let els = null;        // { backdrop, ring, card } while open
   let seenThisRun = new Set();
+  // The steps this run walks. Scoped by mode, so picking chord mode does not
+  // march you through the patchbay and the falling-note game first.
+  let steps = TOUR_STEPS;
 
-  const step = () => TOUR_STEPS[idx];
+  const step = () => steps[idx];
   const resolve = t => (t ? document.querySelector(t) : null);
   // Present AND visible — a dev-gated section exists in the DOM at
   // display:none, and spotlighting a zero-size box helps nobody.
@@ -187,8 +240,8 @@ export const tour = (() => {
   // whose UI a redesign removed — or whose state isn't active — just skip;
   // the tour must never break because it lagged a release.
   const firstShowable = (from, dir) => {
-    for (let i = from; i >= 0 && i < TOUR_STEPS.length; i += dir) {
-      if (showable(TOUR_STEPS[i])) return i;
+    for (let i = from; i >= 0 && i < steps.length; i += dir) {
+      if (showable(steps[i])) return i;
     }
     return -1;
   };
@@ -272,7 +325,7 @@ export const tour = (() => {
     const last = firstShowable(idx + 1, 1) === -1;
     els.card.innerHTML = `
       <div class="tour-head">
-        <span class="tour-count">${idx + 1}/${TOUR_STEPS.length}</span>
+        <span class="tour-count">${idx + 1}/${steps.length}</span>
         <button class="rm-btn" id="tour-close" title="Close tour" aria-label="Close tour">×</button>
       </div>
       <div class="tour-title">${st.title}</div>
@@ -311,8 +364,12 @@ export const tour = (() => {
     syncButton();
   }
 
-  function start() {
+  // `mode` picks the step list; omitted, it follows what the app is actually
+  // set up for, so the ? button shows the tour for what you are playing rather
+  // than for whatever you first chose.
+  function start(mode) {
     if (els) return;                    // already open
+    steps = stepsForMode(mode ?? currentMode());
     seenThisRun = new Set();
     build();
     idx = Math.max(0, firstShowable(0, 1));
@@ -340,14 +397,27 @@ export function initTutorial() {
   tour.syncButton();
 }
 
-// First visit: offer the tour after the app has settled. Skipping marks it
-// offered — it never auto-opens twice. Automation (navigator.webdriver: the
-// ui-ux screenshot harness, the tutorial test itself) never gets the
-// auto-offer; tests drive tour.start() explicitly.
+// Offer the tour for a way of playing, after the app has settled. Skipping
+// marks it offered — it never auto-opens twice. Automation
+// (navigator.webdriver: the ui-ux screenshot harness, the tutorial test itself)
+// never gets the auto-offer; tests drive tour.start() explicitly.
 //
-// Called by main.js rather than from initTutorial, because on a first visit the
-// starting-point picker comes first and two modals racing each other is not a
-// welcome.
-export function maybeOfferTour() {
-  if (!loadState().done && !navigator.webdriver) setTimeout(() => tour.start(), 700);
+// Called by main.js rather than from initTutorial, because the starting-point
+// picker comes first: the tour is *for* the choice made there, and two modals
+// racing each other is not a welcome.
+export function maybeOfferTour(mode) {
+  if (!loadState().done && !navigator.webdriver) setTimeout(() => tour.start(mode), 700);
+}
+
+// Offer it again for a different mode. Picking a starting point is a statement
+// about what you are about to do, so the tour for THAT is worth offering even to
+// someone who has seen the other one — but only once per mode, tracked through
+// the same `seen` list the "updated" pulse uses.
+export function offerTourForMode(mode) {
+  if (navigator.webdriver) return false;
+  const seen = new Set(loadState().seen);
+  const fresh = stepsForMode(mode).filter(t => !seen.has(t.id));
+  if (!fresh.length) return false;
+  setTimeout(() => tour.start(mode), 700);
+  return true;
 }

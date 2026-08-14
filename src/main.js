@@ -19,7 +19,7 @@ import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
-import { initTutorial, maybeOfferTour }     from './ui/tutorial.js';
+import { initTutorial, maybeOfferTour, offerTourForMode } from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { enhanceSections, colorSections }   from './ui/sections.js';
 import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
@@ -272,6 +272,10 @@ startAudio();
 initPresetMenu({
   onApply: async (preset, missing) => {
     renderMapper();
+    // Choosing a patch from the menu is the same statement the first-run picker
+    // makes, so it earns the same tour — offered once per mode, and silently
+    // skipped for anyone who has already seen it.
+    offerTourForMode('osc');
     const changed = await applyTrackers(trackersFor(preset));
     const bits = [preset.hint];
     if (changed.length) bits.push(changed.join(', '));
@@ -410,7 +414,7 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
       refreshFromState();
       preset.saveLocal();
       toast(`${s.name} — ${s.hint}`);
-      maybeOfferTour();
+      maybeOfferTour(s.mode);          // the tour for the way of playing chosen
     },
   });
 } else {

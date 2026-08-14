@@ -165,6 +165,21 @@ const sections = await page.evaluate(() => {
     // ships at every zoom level rather than a per-container guess.
     textSizeAdjust: getComputedStyle(document.documentElement).webkitTextSizeAdjust
                  ?? getComputedStyle(document.documentElement).textSizeAdjust,
+    // Gestures and chord mode are visible without DEV. They were behind it,
+    // which meant the one way of playing that needs no wiring was the one
+    // nobody could find. What IS still dev-only is checked elsewhere in this
+    // suite (the inference HUD) — so this is not "nothing is gated any more".
+    playable: (() => {
+      const vis = id => {
+        const e = document.querySelector(`.sec[data-sec-id="${id}"]`);
+        return !!e && e.getClientRects().length > 0;
+      };
+      return { dev: document.body.classList.contains('dev'),
+               gestures: vis('gestures'), chords: vis('chord-mode'),
+               models: vis('models'),
+               badges: document.querySelectorAll(
+                 '.sec[data-sec-id="gestures"] .uc-badge, .sec[data-sec-id="chord-mode"] .uc-badge').length };
+    })(),
     // The oscilloscope is a section like any other: it folds, and it can be
     // dragged to another column. It has to live OUTSIDE #audio-panel to do so —
     // that panel rebuilds its innerHTML, which would recreate the canvas and
@@ -576,6 +591,13 @@ for (const { width, off, on, sections, camSticky } of results) {
     hStyles.map(k => `${k} → ${sections.headerStyles[k].join(',')}`).join(' | '));
   check(sections.textSizeAdjust === '100%',
     `${w}: text auto-inflation is off`, String(sections.textSizeAdjust));
+  const pl = sections.playable;
+  check(!pl.dev, `${w}: measured outside dev mode`);
+  check(pl.gestures && pl.chords, `${w}: gestures and chord mode need no DEV`,
+    `gestures ${pl.gestures}, chords ${pl.chords}`);
+  check(pl.badges === 0, `${w}: and carry no under-construction badge`, String(pl.badges));
+  check(!pl.models, `${w}: while MODELS is still dev-only`);
+
   const v = sections.viz;
   check(v.exists && v.hasCanvas, `${w}: the oscilloscope is its own section`);
   check(!v.inRebuiltPanel, `${w}: and sits outside the panel that rebuilds itself`);
@@ -718,7 +740,10 @@ console.log('\nFirst run\n');
   check(again.modal === false, 'a returning visit is not asked again');
 
   check(chords.chord, 'chord mode is switched on');
-  check(chords.dev, 'and DEV with it, since chord mode is dev-gated');
+  // It used to have to switch DEV on as well, because chord mode was hidden
+  // behind it. Asserting the opposite now: needing a developer toggle to reach
+  // the one starting point that requires no wiring was the bug.
+  check(!chords.dev, 'without needing DEV — chord mode is not an experiment');
   check(chords.oscs === 0, 'with no lead oscillator droning under the chords', `${chords.oscs}`);
   check(chords.hands && !chords.pose, 'hands tracked, pose not');
   check(errs.length === 0, 'no page errors on the first-run path', errs.join(' | '));

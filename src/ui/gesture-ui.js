@@ -164,9 +164,9 @@ export function gestureSectionsHTML() {
     </div>`;
 
   return `
-    <div class="audio-section uc-feature" data-sec="gestures">
+    <div class="audio-section" data-sec="gestures">
       <div class="audio-section-label">
-        Gestures <span class="uc-badge">under construction</span>
+        Gestures
         <div class="wave-btn" id="record-gesture-btn"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">● REC</div>
       </div>
@@ -175,9 +175,9 @@ export function gestureSectionsHTML() {
       ${calibrate}
       ${restore}
     </div>
-    <div class="audio-section uc-feature" data-sec="chord-mode">
+    <div class="audio-section" data-sec="chord-mode">
       <div class="audio-section-label">
-        Chord Mode <span class="uc-badge">under construction</span>
+        Chord Mode
         <button class="wave-btn${on ? ' on' : ''}" id="chord-toggle" aria-pressed="${on}"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</button>
       </div>

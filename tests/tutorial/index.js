@@ -47,8 +47,10 @@ await p.click('#chord-toggle');   // 'chord'
 await p.waitForTimeout(200);
 
 const r = await p.evaluate(async () => {
-  const { TOUR_STEPS, tour, unseenSteps } = await import('/src/ui/tutorial.js');
-  const out = { stale: [], dupIds: [], visited: [], total: TOUR_STEPS.length };
+  const { TOUR_STEPS, tour, unseenSteps, stepsForMode, MODES } =
+    await import('/src/ui/tutorial.js');
+  const out = { stale: [], dupIds: [], visited: [], total: TOUR_STEPS.length,
+                perMode: {}, orphans: [] };
 
   // ── Data integrity ──
   const ids = TOUR_STEPS.map(s => s.id);
@@ -64,20 +66,35 @@ const r = await p.evaluate(async () => {
     }
   }
 
-  // ── Drive the real engine through every step ──
+  // ── Every step belongs to at least one mode ──
+  // The tour is scoped per way of playing now, so the failure to guard against
+  // is a step that is tagged for a mode that does not exist and is therefore
+  // never shown to anyone.
+  const covered = new Set(MODES.flatMap(m => stepsForMode(m).map(t => t.id)));
+  out.orphans = TOUR_STEPS.filter(t => !covered.has(t.id)).map(t => t.id);
+
+  // ── Drive the real engine through EACH mode's tour ──
   out.freshBefore = unseenSteps().length;
-  tour.start();
-  for (let guard = 0; guard < TOUR_STEPS.length + 2; guard++) {
-    const title = document.querySelector('.tour-title')?.textContent;
-    const count = document.querySelector('.tour-count')?.textContent;
-    if (!title) break;
-    out.visited.push(`${count} ${title}`);
-    const nextBtn = document.getElementById('tour-next');
-    const done = nextBtn.textContent === 'DONE';
-    nextBtn.click();
-    if (done) break;
-    await new Promise(rq => requestAnimationFrame(rq));
-  }
+  const walk = async (mode) => {
+    const expected = stepsForMode(mode).length;
+    const seen = [];
+    tour.start(mode);
+    for (let guard = 0; guard < expected + 2; guard++) {
+      const title = document.querySelector('.tour-title')?.textContent;
+      const count = document.querySelector('.tour-count')?.textContent;
+      if (!title) break;
+      seen.push(`${count} ${title}`);
+      const nextBtn = document.getElementById('tour-next');
+      const done = nextBtn.textContent === 'DONE';
+      nextBtn.click();
+      if (done) break;
+      await new Promise(rq => requestAnimationFrame(rq));
+    }
+    return { expected, seen };
+  };
+  for (const m of MODES) out.perMode[m] = await walk(m);
+  out.visited = out.perMode[MODES[MODES.length - 1]].seen;
+
   out.closedCleanly = !document.getElementById('tour-card');
   out.ringGone = !document.getElementById('tour-ring');
   out.freshAfter = unseenSteps().length;
@@ -96,16 +113,25 @@ const check = (ok, label, detail = '') => {
   console.log(`  [${ok ? ' PASS ' : ' FAIL '}]  ${label}${detail ? '  — ' + detail : ''}`);
 };
 
-console.log(`\nTutorial staleness guard — ${r.total} steps\n`);
+console.log(`\nTutorial staleness guard — ${r.total} steps across ${Object.keys(r.perMode).length} modes\n`);
 check(r.stale.length === 0, 'every step targets visible UI',
   r.stale.length ? `stale: ${r.stale.join('; ')} (update TOUR_STEPS in src/ui/tutorial.js)` : '');
 check(r.dupIds.length === 0, 'step ids are unique', r.dupIds.join(', '));
 check(r.badShape.length === 0, 'every step has id/title/body', r.badShape.join(', '));
-check(r.visited.length === r.total, 'tour walks every step end-to-end',
-  `visited ${r.visited.length}/${r.total}`);
+check(r.orphans.length === 0, 'every step belongs to at least one mode',
+  r.orphans.join(' '));
+for (const [mode, m] of Object.entries(r.perMode)) {
+  check(m.seen.length === m.expected, `${mode} tour walks every one of its steps`,
+    `visited ${m.seen.length}/${m.expected}`);
+  check(m.expected < r.total, `${mode} tour is scoped, not the whole thing`,
+    `${m.expected} of ${r.total}`);
+}
 check(r.closedCleanly && r.ringGone, 'tour tears down after DONE');
 check(r.stateSaved, 'completion persists to localStorage');
-check(r.freshBefore === r.total && r.freshAfter === 0, '"new steps" tracking flips seen→0',
+// Between them the two tours show everything, so after walking both there is
+// nothing left unseen.
+check(r.freshBefore === r.total && r.freshAfter === 0,
+  '"new steps" tracking flips seen→0 once both tours have run',
   `${r.freshBefore}→${r.freshAfter}`);
 check(pageErrors.length === 0, 'no page errors', pageErrors.join('; '));
 

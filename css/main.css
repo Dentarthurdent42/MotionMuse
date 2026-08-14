@@ -894,6 +894,16 @@ option { background: var(--panel); }
   font-size: 9px; letter-spacing: 1px; color: var(--dim);
 }
 .start-list { display: flex; flex-direction: column; gap: 5px; overflow-y: auto; min-height: 0; }
+/* The two ways of playing are different instruments, not variations, so the
+   list says so rather than running them together. */
+.start-group {
+  margin-top: 6px;
+  font-size: 8px; letter-spacing: 2px;
+  color: var(--border2);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 3px;
+}
+.start-group:first-child { margin-top: 0; }
 .start-item {
   display: flex; flex-direction: column; gap: 2px;
   padding: 8px 10px;

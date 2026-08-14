@@ -13,7 +13,6 @@ import { engine }                     from './engine.js';
 import { gesture, gestureLabel }      from './gesture.js';
 import { diatonicChord, isDiatonic }  from './chords.js';
 import { NOTE_NAMES }                 from './scale.js';
-import { devmode }                    from './devmode.js';
 
 export const DEFAULT_KEY = {
   root: 'C',
@@ -247,14 +246,16 @@ export const chordmode = (() => {
     },
 
     tick() {
-      // Chord mode is an under-construction feature — only active in dev mode.
-      //
       // Deliberately NOT gated on engine.started: every engine call below is a
       // no-op until the context exists, and gating the whole state machine on
       // it meant the recognition and expression logic could only be exercised
       // with real audio. The engine starts with the page anyway, so this costs
       // a few bus reads in the window before it does.
-      if (!enabled || !devmode.enabled) {
+      //
+      // No longer gated on dev mode either: chord mode is a way of playing the
+      // instrument, not an experiment, and hiding it behind DEV meant the one
+      // starting point that needs no wiring was the one nobody could find.
+      if (!enabled) {
         if (playing) { engine.releaseChord(); playing = null; }
         return;
       }

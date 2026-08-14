@@ -158,18 +158,28 @@ unmute and you get a static sine. That is not a starting point, it is the
 absence of one, and it made the first thirty seconds a hunt for where the
 instrument was.
 
-The first visit now asks. Every mapping preset is offered (**Hands**, the two
-**Face** patches, **Gaze**, **Pose**), plus:
+The first visit now asks, and it separates the **two ways of playing** — they are
+different instruments, not variations of one, and the split is what tells the
+guided tour which tour to give you:
 
-- **Chord Mode** — handshapes play chords in a key, no wiring. It also switches
-  **DEV** on, because chord mode is dev-gated; offering it and then leaving it
-  invisible would be worse than not offering it. No lead oscillator, since a
-  drone under the chords is not what anyone picked this for.
+**Oscillator** — signals drive pitch and tone. Every mapping preset (**Hands**,
+the two **Face** patches, **Gaze**, **Pose**), plus **Blank**, which sits here
+because building from nothing means the patchbay.
+
+**Chords** — handshapes trigger harmony.
+
+In full:
+
+- **Chord Mode** — handshapes play chords in a key, no wiring. No lead
+  oscillator, since a drone under the chords is not what anyone picked this for.
+  (It used to switch **DEV** on too, because chord mode was dev-gated. It is not
+  any more — see Developer mode.)
 - **Blank** — nothing wired, no trackers, and **no oscillator**. Genuinely
   nothing, not a quiet something.
 
 Choosing applies the patch *and* the trackers it needs, saves the session, then
-lets the guided tour offer itself — two modals at once is not a welcome.
+starts the guided tour **for that mode** — two modals at once is not a welcome,
+so the tour waits its turn.
 Dismissing with Escape is the same as choosing Blank: a fresh app has nothing
 wired anyway, so the state after Escape is one of the listed options rather than
 a seventh, undescribed one. The question is asked once and never again.
@@ -436,12 +446,26 @@ custom waveforms are registered through `engine.defineWave()`.
 
 ## Guided tour (in-app tutorial)
 
-First visit auto-offers a step-by-step tour of the whole app — camera, signals,
-patchbay, presets, audio engine, quantisers, play-along, dev mode, gestures and
-chords — as spotlight coach-marks over the live UI. The **?** button in the
-header re-opens it any time; the app stays fully clickable during the tour, so
-"click it now" actually works. Esc closes, ←/→ navigate; on phones the card
-becomes a bottom sheet.
+Choosing a starting point starts the tour **for that way of playing**, as
+spotlight coach-marks over the live UI. The **?** button in the header re-opens
+it any time; the app stays fully clickable during the tour, so "click it now"
+actually works. Esc closes, ←/→ navigate; on phones the card becomes a bottom
+sheet.
+
+**The tour is scoped to a mode.** One tour covering everything meant a
+first-timer who picked chord mode sat through the patchbay, the cable editor and
+the falling-note game before reaching the one panel they were going to use. Each
+step declares which way of playing it is about — `modes: ['osc']`,
+`modes: ['chords']`, or neither, meaning it is about the app rather than a mode —
+and a run shows the shared steps *in place* around the mode-specific ones rather
+than appending them. The oscillator tour is 16 steps, the chord tour is 16, and
+between them every step is reachable; `npm run test:tutorial` walks both and
+fails if any step belongs to no mode at all.
+
+The **?** button gives the tour for what you are *currently* set up for, read
+from state rather than remembered from the picker — turn chord mode on later and
+it follows. Choosing a patch from the **PRESET** menu offers the oscillator tour
+the same way, once, to anyone who has not seen it.
 
 The tour is built for a project that changes weekly:
 
@@ -457,7 +481,7 @@ The tour is built for a project that changes weekly:
 - **Returning users see what's new.** Step ids are tracked per user; when a
   release ships steps you haven't seen, the **?** pulses ("tour updated — 2 new
   steps") instead of making you sit through the whole thing again.
-- Steps whose feature needs a particular state (audio on, dev mode) simply
+- Steps whose feature needs a particular state (audio on, chord mode on) simply
   don't show until the app is in it — the tour adapts to what's actually on
   screen.
 
@@ -465,12 +489,18 @@ The tour is built for a project that changes weekly:
 
 Most features are visible by default, but experimental / in-progress ones are
 tucked behind the **DEV** toggle in the header (persisted). With dev mode off,
-the **EEG/EMG** source tabs, the **◈ LiDAR** depth toggle, the **Gestures** and
-**Chord Mode** sections, and the **Shader** panel are hidden (and chord playback
-is disabled) — a deliberate
-*progressive-disclosure* choice so newcomers meet a simpler surface. Turn DEV
-on to reveal and use them. Lives in `src/devmode.js`; under-construction
-elements carry a `.uc-feature` class hidden by CSS unless `<body class="dev">`.
+the **EEG/EMG** source tabs, the **◈ LiDAR** depth toggle, the **MODELS** panel,
+the inference HUD under the camera and the **Shader** panel are hidden — a
+deliberate *progressive-disclosure* choice so newcomers meet a simpler surface.
+
+**Gestures and Chord Mode are not among them any more.** They were, and that was
+wrong: chord mode is a way of playing the instrument rather than an experiment,
+and hiding it behind DEV meant the one starting point that needs no wiring at all
+was the one nobody could find. Both sections are now visible by default and chord
+playback no longer checks the flag.
+
+Lives in `src/devmode.js`; under-construction elements carry a `.uc-feature`
+class hidden by CSS unless `<body class="dev">`.
 
 ## Shader — visual output
 

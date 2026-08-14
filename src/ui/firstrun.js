@@ -12,7 +12,6 @@
 import { mapper, PRESETS, trackersFor } from '../mapper.js';
 import { chordmode } from '../chordmode.js';
 import { engine } from '../engine.js';
-import { devmode } from '../devmode.js';
 import { lsGet, lsSet } from '../storage.js';
 import { readShareUrl } from '../share.js';
 
@@ -22,15 +21,27 @@ const KEY = 'motionmuse-started';
 // same table the PRESET menu uses, so a preset added later appears here too
 // without anyone remembering to add it.
 export const STARTERS = [
-  ...PRESETS.map(p => ({ id: p.id, kind: 'preset', name: p.name, hint: p.hint })),
+  ...PRESETS.map(p => ({ id: p.id, kind: 'preset', mode: 'osc',
+                         name: p.name, hint: p.hint })),
   {
-    id: 'chords', kind: 'chords', name: 'Chord Mode',
+    id: 'chords', kind: 'chords', mode: 'chords', name: 'Chord Mode',
     hint: 'Handshapes play chords in a key — no lead oscillator, no wiring',
   },
   {
-    id: 'blank', kind: 'blank', name: 'Blank',
+    id: 'blank', kind: 'blank', mode: 'osc', name: 'Blank',
     hint: 'Nothing wired, nothing tracked, no sound sources — build it yourself',
   },
+];
+
+// The two ways of playing, kept apart in the picker. They are different
+// instruments, not variations of one: an oscillator patch wires continuous
+// signals to pitch and timbre, chord mode triggers harmony from handshapes. The
+// guided tour follows whichever you choose, so the split is what tells it which
+// tour to give you. Blank sits with the oscillator group because building from
+// nothing means the patchbay.
+export const STARTER_GROUPS = [
+  { mode: 'osc',    label: 'OSCILLATOR — signals drive pitch and tone' },
+  { mode: 'chords', label: 'CHORDS — handshapes trigger harmony' },
 ];
 
 export const startChosen = () => lsGet(KEY) === '1';
@@ -61,10 +72,6 @@ export function applyStarter(id, { applyTrackers }) {
   mapper.load([]);
 
   if (s.kind === 'chords') {
-    // Chord mode is dev-gated (it is under construction), so choosing it here
-    // has to turn DEV on — offering it and then leaving it invisible would be
-    // worse than not offering it.
-    devmode.set(true);
     chordmode.setEnabled(true);
     // No lead oscillator: chord mode has its own voice bank, filter and level,
     // and a drone underneath the chords is not what anyone picked this for.
@@ -90,11 +97,13 @@ export function openStartPicker({ applyTrackers, onDone }) {
       <div class="start-title">HOW DO YOU WANT TO PLAY?</div>
       <div class="start-sub">Pick a starting point — you can change any of it later.</div>
       <div class="start-list">
-        ${STARTERS.map(s => `
-          <button class="start-item" data-start="${s.id}">
-            <span class="start-name">${s.name}</span>
-            <span class="start-hint">${s.hint}</span>
-          </button>`).join('')}
+        ${STARTER_GROUPS.map(g => `
+          <div class="start-group">${g.label}</div>
+          ${STARTERS.filter(s => s.mode === g.mode).map(s => `
+            <button class="start-item" data-start="${s.id}">
+              <span class="start-name">${s.name}</span>
+              <span class="start-hint">${s.hint}</span>
+            </button>`).join('')}`).join('')}
       </div>
     </div>`;
   document.body.appendChild(el);
