@@ -161,6 +161,7 @@ export function gestureSectionsHTML() {
 const HOW_TO = {
   palm:  'Open hand, all five fingers spread',
   horns: 'Index and pinky up, middle and ring down, thumb tucked',
+  gun:   'Index pointing forward, thumb up and clear of the palm — an L',
   asl3:  'Thumb, index and middle up — ring and pinky folded down',
   asl4:  'Four fingers up, thumb folded across the palm',
   asl6:  'Pinky tip touching the thumb, other three fingers up',

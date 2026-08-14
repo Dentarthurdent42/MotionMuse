@@ -110,6 +110,15 @@ const BUILTINS = [
     f: [0.40, 0.82, 0.90, 0.85, 0.80, 0.92, 0.84, 0.90, 0.00, 0.00, 0.00, 0.00] },
   { id: 'horns',  name: 'Rock Horns', est: true, m: care(CONTACTS),
     f: [0.40, 0.82, 0.24, 0.19, 0.80, 0.70, 0.54, 0.04, 0.00, 0.00, 0.00, 0.00] },
+  // Thumb and index extended, the rest curled — the ASL "L" handshape.
+  // Derived from `point` (same one extended finger) with the thumb carried
+  // clear, which is measured on `thumbs`: thumbOut 0.89 and spread 0.57 both
+  // come from there. Openness sits just above point's 0.50 because the thumb
+  // counts for less than a finger (thumbs, with no fingers extended, reads
+  // 0.35 against the 0.38 of a closed hand). thumbOut is what separates it
+  // from point, and the extended index is what separates it from thumbs.
+  { id: 'gun',    name: 'Finger Gun', asl: 'L', est: true, m: care(CONTACTS),
+    f: [0.45, 0.82, 0.24, 0.19, 0.16, 0.55, 0.55, 0.85, 0.00, 0.00, 0.00, 0.00] },
   // ASL numbers. 1, 2, 5 and 10 are the shapes above — one template each, with
   // both a descriptive name and the numeral, rather than duplicates that would
   // sit on top of each other and make the match a coin toss.

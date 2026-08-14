@@ -499,7 +499,8 @@ never been measured on a hand here, and an invented vector would be a false
 match waiting to happen. Record one with ✎ and it gains a template like any
 other.
 
-The classifier knows only those seven. The ASL number handshapes, rock horns and
+The classifier knows only those seven. The ASL number handshapes, rock horns,
+the finger gun and
 anything you record still come from the template matcher, and the two are
 arbitrated by `resolveGesture` (unit-tested in
 `tests/unit/gesture-canned.test.js`):
@@ -519,9 +520,10 @@ carry recognition exactly as before. Detection is per-instance at the call
 site, so nothing downstream knows which one it got.
 
 The **Gestures** section recognizes hand poses and turns them into discrete
-triggers. Thirteen built-in gestures ship ready to use — **fist, point, peace,
-thumbs-up, open palm, rock horns**, plus the **ASL number handshapes** in their
-own collapsed group — and **● REC** records your own: name it, hold the pose
+triggers. Sixteen built-in gestures ship ready to use — **fist, point, peace,
+thumbs-up, thumbs-down, open palm, rock horns, finger gun** (thumb and index
+extended, the ASL **L**) and **I love you**, plus the **ASL number handshapes**
+in their own collapsed group — and **● REC** records your own: name it, hold the pose
 during the 3-2-1 countdown, and it's captured (camera must be running).
 Any gesture, built-in included, can be removed with its × (removals persist;
 **RESTORE BUILT-IN GESTURES** brings the defaults back).
