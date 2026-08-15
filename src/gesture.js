@@ -98,18 +98,27 @@ const BUILTINS = [
   // tucked, and both must read as peace. The contact-defined numbers (0/6-9)
   // care about every contact; 3 and 4 are extension/thumb shapes like the
   // classics.
-  { id: 'fist',   name: 'Fist',       asl: 'S',  m: care(CONTACTS),
+  { id: 'fist',   name: 'Fist',       asl: 'S',  canned: 'Closed_Fist', m: care(CONTACTS),
     f: [0.36, 0.21, 0.19, 0.15, 0.13, 0.40, 0.23, 0.04, 0.95, 0.90, 0.19, 0.00] },
-  { id: 'point',  name: 'Point',      asl: '1',  m: care(CONTACTS),
+  { id: 'point',  name: 'Point',      asl: '1',  canned: 'Pointing_Up', m: care(CONTACTS),
     f: [0.36, 0.75, 0.27, 0.17, 0.15, 0.50, 0.25, 0.02, 0.00, 0.00, 0.00, 0.00] },
-  { id: 'peace',  name: 'Peace',      asl: '2',  m: care([...CONTACTS, 'thumbOut']),
+  { id: 'peace',  name: 'Peace',      asl: '2',  canned: 'Victory', m: care([...CONTACTS, 'thumbOut']),
     f: [0.45, 0.88, 0.94, 0.49, 0.39, 0.71, 0.19, 0.99, 0.00, 0.00, 0.52, 0.00] },
-  { id: 'thumbs', name: 'Thumbs Up',  asl: '10', m: care(CONTACTS),
+  { id: 'thumbs', name: 'Thumbs Up',  asl: '10', canned: 'Thumb_Up', m: care(CONTACTS),
     f: [0.40, 0.26, 0.27, 0.25, 0.20, 0.35, 0.57, 0.89, 0.00, 0.00, 0.00, 0.00] },
-  { id: 'palm',   name: 'Open Palm',  asl: '5', est: true, m: care(CONTACTS),
+  { id: 'palm',   name: 'Open Palm',  asl: '5', canned: 'Open_Palm', est: true, m: care(CONTACTS),
     f: [0.40, 0.82, 0.90, 0.85, 0.80, 0.92, 0.84, 0.90, 0.00, 0.00, 0.00, 0.00] },
   { id: 'horns',  name: 'Rock Horns', est: true, m: care(CONTACTS),
     f: [0.40, 0.82, 0.24, 0.19, 0.80, 0.70, 0.54, 0.04, 0.00, 0.00, 0.00, 0.00] },
+  // Thumb and index extended, the rest curled — the ASL "L" handshape.
+  // Derived from `point` (same one extended finger) with the thumb carried
+  // clear, which is measured on `thumbs`: thumbOut 0.89 and spread 0.57 both
+  // come from there. Openness sits just above point's 0.50 because the thumb
+  // counts for less than a finger (thumbs, with no fingers extended, reads
+  // 0.35 against the 0.38 of a closed hand). thumbOut is what separates it
+  // from point, and the extended index is what separates it from thumbs.
+  { id: 'gun',    name: 'Finger Gun', asl: 'L', est: true, m: care(CONTACTS),
+    f: [0.45, 0.82, 0.24, 0.19, 0.16, 0.55, 0.55, 0.85, 0.00, 0.00, 0.00, 0.00] },
   // ASL numbers. 1, 2, 5 and 10 are the shapes above — one template each, with
   // both a descriptive name and the numeral, rather than duplicates that would
   // sit on top of each other and make the match a coin toss.
@@ -127,10 +136,76 @@ const BUILTINS = [
     f: [0.40, 0.35, 0.90, 0.85, 0.80, 0.80, 0.56, 0.49, 1.00, 0.00, 0.00, 0.00] },
   { id: 'asl0',   name: 'Closed O',   asl: '0', est: true, m: care(),
     f: [0.40, 0.50, 0.52, 0.48, 0.45, 0.55, 0.14, 0.35, 0.93, 0.78, 0.56, 0.37] },
+  // Brought by the classifier. No template: these have never been measured on
+  // a hand here, and a made-up vector would be a false match waiting to happen
+  // — matchGesture skips a template with no `f`. Record one (the ✎ button) and
+  // it gains a template like any other, and then works with the classifier off.
+  { id: 'thumbsdown', name: 'Thumbs Down', canned: 'Thumb_Down' },
+  { id: 'iloveyou',   name: 'I Love You',  asl: 'ILY', canned: 'ILoveYou' },
 ].map(g => ({ ...g, builtin: true, hand: 'any', est: !!g.est }));
 
 // Display name including the ASL numeral, e.g. "Point · ASL 1".
 export const gestureLabel = g => g.asl ? `${g.name} · ASL ${g.asl}` : g.name;
+
+// ── MediaPipe canned gestures ─────────────────────────────────────────────
+//
+// The hand model is now MediaPipe's GestureRecognizer, which is the same hand
+// landmarker with a trained classifier head bundled alongside it (open the
+// .task and you find hand_landmarker.task and hand_gesture_recognizer.task
+// side by side). It classifies eight categories, verified from the bundle's
+// own labels.txt: None, Closed_Fist, Open_Palm, Pointing_Up, Thumb_Down,
+// Thumb_Up, Victory, ILoveYou.
+//
+// A trained classifier beats hand-measured templates on the shapes it knows —
+// that is the whole point of adopting it. But it knows only those seven, and
+// this app also recognizes the ASL number handshapes, rock horns, and whatever
+// the user records. So the two run together, arbitrated by resolveGesture
+// below rather than one replacing the other.
+export const CANNED_TO_ID = {
+  Closed_Fist: 'fist',
+  Open_Palm:   'palm',
+  Pointing_Up: 'point',
+  Thumb_Up:    'thumbs',
+  Thumb_Down:  'thumbsdown',
+  Victory:     'peace',
+  ILoveYou:    'iloveyou',
+};
+
+// Below this the classifier is guessing, and a guess should not outrank a
+// template match. MediaPipe's own default score threshold for the canned
+// classifier is 0.5; this is deliberately stricter, because a wrong confident
+// answer here silently steals a pose from the template that would have caught
+// it.
+export const CANNED_MIN_SCORE = 0.6;
+
+// Arbitration between the classifier and the template matcher. Pure, so the
+// policy is testable without a camera.
+//
+// The rule that matters is the third one: the classifier cannot express ASL 3,
+// 4, 6-9, 0, rock horns, or anything the user recorded. When the templates
+// pick one of those, the classifier's opinion is not evidence against it —
+// it was never offered that answer. "Open_Palm, 0.9" while the hand is making
+// ASL 4 is the classifier saying the nearest thing it knows, not that the hand
+// is open. So a template match the classifier can't name wins; a template
+// match it CAN name loses to it, because there it is the better instrument.
+export function resolveGesture(features, templates, canned, stickyId = null,
+                               threshold = MATCH_THRESHOLD) {
+  // No hand, no gesture — whatever the classifier last said. This lives here
+  // rather than only at the call site because this function IS the policy, and
+  // "the hand left but the last classification stuck" is precisely the kind of
+  // ghost the debounce below would then hold on to.
+  if (!features) return null;
+  const tmpl = matchGesture(features, templates, threshold, stickyId);
+  const cannedId = canned && canned.score >= CANNED_MIN_SCORE
+    ? CANNED_TO_ID[canned.name] : null;
+  // A canned id the user has hidden (or that no template list carries) is not
+  // an answer this app can give.
+  const known = cannedId && templates.some(t => t.id === cannedId) ? cannedId : null;
+  if (!known) return tmpl;
+  if (!tmpl) return { id: known, dist: 0, src: 'canned' };
+  const expressible = templates.some(t => t.id === tmpl.id && t.canned);
+  return expressible ? { id: known, dist: 0, src: 'canned' } : tmpl;
+}
 
 // The threshold is a *rejection* radius — "is this any of our gestures at
 // all" — not a separation guarantee; which gesture wins is decided by nearest
@@ -186,6 +261,7 @@ export const templateSeparation = (a, b) =>
 export function matchGesture(features, templates, threshold = MATCH_THRESHOLD, stickyId = null) {
   let best = null;
   for (const t of templates) {
+    if (!t.f) continue;          // classifier-only entry — nothing to match on
     const dist = templateDistance(features, t);
     if (!best || dist < best.dist) best = { id: t.id, dist };
   }
@@ -206,6 +282,12 @@ export const gesture = (() => {
     R: { active: null, cand: null, candFrames: 0, missFrames: 0 },
   };
   let recording = null;          // { name, hand, frames: [], onDone }
+  // Latest canned classification per hand, written by cv.js each time the hand
+  // model produces a frame. Stamped with the frame counter so a stale answer
+  // from a hand that has since left the picture expires instead of sticking.
+  const canned = { L: null, R: null };
+  let frameNo = 0;
+  const CANNED_TTL = 4;          // frames; the hand model runs every other one
 
   const all = () => [
     ...BUILTINS.filter(g => !hiddenBuiltins.has(g.id))
@@ -243,9 +325,16 @@ export const gesture = (() => {
       }));
     },
 
+    // Called by cv.js with the hand model's canned classification for a side.
+    // `name` is a MediaPipe category ("Open_Palm"); null clears it.
+    setCanned(side, name, score) {
+      canned[side] = name ? { name, score, at: frameNo } : null;
+    },
+
     // Called every RAF. Updates per-hand matches, debounce, bus signals,
     // and an in-progress recording.
     tick() {
+      frameNo++;
       // Recording captures raw features, bypassing recognition.
       if (recording) {
         const f = featuresFor(recording.hand === 'any' ? 'R' : recording.hand)
@@ -280,8 +369,12 @@ export const gesture = (() => {
       for (const side of ['L', 'R']) {
         const st = state[side];
         const f = featuresFor(side);
+        // The classifier only speaks for a hand that is actually in frame, and
+        // only for as long as its answer is fresh.
+        const c = f && canned[side] && frameNo - canned[side].at <= CANNED_TTL
+          ? canned[side] : null;
         // Hysteresis in matchGesture biases toward the currently-held gesture.
-        const m = f ? matchGesture(f, templates, MATCH_THRESHOLD, st.active) : null;
+        const m = resolveGesture(f, templates, c, st.active);
         if (m) {
           st.missFrames = 0;
           if (m.id === st.active) {
@@ -322,6 +415,11 @@ export const gesture = (() => {
       }
       return ids;
     },
+
+    // The gesture held on ONE hand. current() dedupes across both, which is
+    // right for "is this shape being made" and useless for two-handed play,
+    // where which hand is making it is the whole point.
+    activeOn(side) { return state[side]?.active ?? null; },
 
     // Begin recording; resolves via callback once ~10 frames are captured.
     // Caller is responsible for checking that the camera is running.

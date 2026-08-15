@@ -39,9 +39,15 @@ const STEP_SEL_OPTS = ['<option value="0">off</option>',
   ...STEP_OPTS.map(s => `<option value="${s}">${s}</option>`)].join('');
 
 // Output parameters grouped into meaningful categories for the picker.
-const PARAM_CATS = [
-  ['Oscillators', ['osc1_freq', 'osc1_detune', 'osc2_freq', 'osc2_detune', 'osc_mix']],
-  ['Filter',      ['filter_freq', 'filter_q']],
+// Exported for tests/unit/param-cats.test.js: a param key missing from this
+// table silently vanishes from the add-output picker.
+// A function, not a constant: the oscillator bank is resizable, so its keys are
+// only knowable at call time. Everything below the bank is fixed.
+export const PARAM_CATS = () => [
+  ['Oscillators', Array.from({ length: engine.getOscCount() }, (_, i) =>
+    [`osc${i + 1}_freq`, `osc${i + 1}_detune`, `osc${i + 1}_volume`]).flat()],
+  ['Filter',      ['filter_freq', 'filter_q', 'osc_volume']],
+  ['Chord Mode',  ['chord_filter_freq', 'chord_filter_q', 'chord_volume']],
   ['LFO',         ['lfo_rate', 'lfo_depth']],
   ['Output',      ['reverb_mix', 'volume']],
 ];
@@ -61,7 +67,7 @@ function groupedSignalOptions(exclude) {
 }
 function groupedParamOptions(exclude) {
   let o = '';
-  for (const [cat, keys] of PARAM_CATS) {
+  for (const [cat, keys] of PARAM_CATS()) {
     const av = keys.filter(k => !exclude.includes(k));
     if (av.length) o += `<optgroup label="${cat}">${av.map(k => `<option value="${k}">${engine.PARAMS[k].label}</option>`).join('')}</optgroup>`;
   }
@@ -83,7 +89,8 @@ let addedOutputs = new Set();   // output nodes with no cable yet (user-added)
 let wiring = null;              // in-progress connection { side, key, moved }
 
 // Musical default ranges for freshly-wired outputs (else the param's full range).
-const DEFAULT_RANGE = { osc1_freq: [220, 880], osc2_freq: [220, 880] };
+// Every oscillator's pitch gets the same octave-and-a-bit span.
+const defaultRange = key => (isFreqParam(key) ? [220, 880] : null);
 
 // Outputs remember how they were configured. Re-wiring a different input into
 // a parameter (or unplugging and re-plugging it) used to rebuild the mapping
@@ -101,7 +108,7 @@ const rememberSettings = m => {
 // Pick the min/max of the range as *tones*: click the labeled piano, play
 // QWERTY keys (A W S E D F T G Y H U J, Z/X octave), or type "A4" in the
 // fields. `fpArm` is which endpoint the next pick sets.
-const FREQ_PARAMS = new Set(['osc1_freq', 'osc2_freq']);
+const isFreqParam = k => /^osc\d+_freq$/.test(k);
 const clampFreq = f => Math.round(Math.max(40, Math.min(2000, f)) * 10) / 10;
 let fpArm = 'min';
 let fpOct = 4;
@@ -146,7 +153,7 @@ export function renderMapper() {
   }).join('');
 
   const sel = selectedId != null ? mapper.mappings.find(m => m.id === selectedId) : null;
-  const isFreq = sel && FREQ_PARAMS.has(sel.audioParam);
+  const isFreq = sel && isFreqParam(sel.audioParam);
   // Frequency cables use text inputs (they accept note names like "A4") plus
   // a click/QWERTY-playable labeled piano; everything else keeps number inputs.
   const editor = sel ? `
@@ -220,7 +227,7 @@ const fpKbdHeight = () =>
 
 function drawFreqKbd() {
   const s = selMapping(), c = document.getElementById('fp-kbd');
-  if (!s || !c || !FREQ_PARAMS.has(s.audioParam)) return;
+  if (!s || !c || !isFreqParam(s.audioParam)) return;
   // m1 (purple) marks the range MIN, m2 (cyan) the range MAX.
   drawKeyboard(c, { height: fpKbdHeight(), labels: true, scale: null,
                     m1: midiOf(s.outMin), m2: midiOf(s.outMax) });
@@ -245,7 +252,7 @@ function armEndpoint(which) {
 // until you explicitly press SET MAX.
 function pickMidi(m) {
   const s = selMapping();
-  if (!s || !FREQ_PARAMS.has(s.audioParam)) return;
+  if (!s || !isFreqParam(s.audioParam)) return;
   const f = clampFreq(mtof(m));
   const field = document.querySelector(fpArm === 'min' ? '#ng-editor .m-min' : '#ng-editor .m-max');
   if (fpArm === 'min') s.outMin = f; else s.outMax = f;
@@ -258,7 +265,7 @@ function pickMidi(m) {
 // approximate tap, which is what fingers land on a 5-octave keyboard.
 function nudgeArmed(delta) {
   const s = selMapping();
-  if (!s || !FREQ_PARAMS.has(s.audioParam)) return;
+  if (!s || !isFreqParam(s.audioParam)) return;
   pickMidi(midiOf(fpArm === 'min' ? s.outMin : s.outMax) + delta);
 }
 
@@ -369,7 +376,7 @@ function wireHandlers(rows) {
   const fieldHandler = which => e => {
     const s = sel();
     if (!s) return;
-    const isFreq = FREQ_PARAMS.has(s.audioParam);
+    const isFreq = isFreqParam(s.audioParam);
     const v = parseField(e.target.value, isFreq);
     if (v == null) { e.target.value = which === 'min' ? s.outMin : s.outMax; return; }
     if (which === 'min') s.outMin = v; else s.outMax = v;
@@ -514,7 +521,7 @@ function connect(sigKey, paramKey) {
   });
   const prev = lastSettings.get(paramKey);
   const [lo, hi] = prev ? [prev.outMin, prev.outMax]
-    : (DEFAULT_RANGE[paramKey] ?? [engine.PARAMS[paramKey].min, engine.PARAMS[paramKey].max]);
+    : (defaultRange(paramKey) ?? [engine.PARAMS[paramKey].min, engine.PARAMS[paramKey].max]);
   const id = mapper.add(paramKey, sigKey, lo, hi, prev?.curve ?? 'linear', prev?.steps ?? 0,
                         prev?.invert ?? false);
   addedInputs.delete(sigKey);

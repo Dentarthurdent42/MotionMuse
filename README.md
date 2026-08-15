@@ -4,12 +4,15 @@ A browser-based instrument that maps live webcam data — hand position, gesture
 
 ## Demo
 
-![MotionMuse screenshot](docs/screenshot.png)
+![MotionMuse: the camera panel, the patchbay wiring hand signals to synth parameters, and the audio engine — shown with the default Hands patch loaded and the output muted](docs/screenshot.png)
+
+<sub>Regenerate with `npm run screenshot` after a visible UI change.</sub>
 
 Open `index.html` (or the Netlify deploy) and:
 1. Click **START CAMERA** — MediaPipe loads and begins detecting hands and pose
-2. Click **AUDIO ON** — the Web Audio synthesiser starts
-3. Click **PRESET** — pick a starting patch (hands, face, gaze or whole-body); move and play
+2. Click **PRESET** — pick a starting patch (hands, face, gaze or whole-body)
+3. Press **Space** (or click **🔇 MUTED**) to unmute, then move and play — the synthesiser
+   is already running, it just starts silent
 
 ## Support
 
@@ -33,11 +36,287 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 ```
 
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1.
+- **Tracking toggles**: **✋ L**, **R ✋** and **🧍 POSE** in the header (once the camera is on) switch each model off outright. Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` plus a swappable **pose backend** (`src/posebackends.js` — MediaPipe lite/full/heavy or TF.js MoveNet), extracts ~30 signals per frame, and writes them into the bus. Hand and pose inference **alternate frames** (each still ≥15 Hz at a 30 fps camera) so per-frame cost stays half of running both, and every positional signal passes through a per-signal **One-Euro filter** (`src/filter.js`, applied in `bus.update`) — the standard low-latency jitter filter: heavy smoothing on a held pose, light smoothing on fast moves.
 - **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert, invert+ease), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **inverted** with its `⇅ INVERT` toggle — the input's high end then drives the output's low end, which composes with (rather than replaces) the curve, so any response shape can run either way round. A cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired. An output also *remembers* its range, curve, steps and invert flag, so re-wiring a different input into it (or unplugging and re-plugging) doesn't reset them. Each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
-- **Audio Engine** (`src/engine.js`): two oscillators through a BiquadFilter and a convolution reverb, all driven by the Web Audio API with 25 ms parameter smoothing. **Volume is the exception**: it snaps onto a perceptual step ladder and fires *one* envelope per level change instead of re-smoothing every frame — see Volume quantisation below. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
+- **Audio Engine** (`src/engine.js`): a **resizable oscillator bank** — one oscillator by default, up to eight, each with its own frequency, detune, waveform and **level** (`oscN_freq` / `oscN_detune` / `oscN_volume`) — through a BiquadFilter, and the chord-mode voice bank through a **second, independent filter and level** (`chord_filter_freq` / `chord_filter_q` / `chord_volume`, with `osc_volume` as the whole bank's level, the lead's counterpart to `chord_volume`). The two sources converge into a shared convolution reverb and main gain. All driven by the Web Audio API with 25 ms parameter smoothing. **Volume is the exception**: it snaps onto a perceptual step ladder and fires *one* envelope per level change instead of re-smoothing every frame — see Volume quantisation below. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
 - **Dynamics** (`src/dynamics.js`): the volume step ladder — equal-loudness (dB) levels, an exact-silence bottom rung, and the sticky rounding that keeps a jittery hand from chattering between levels.
+
+## Starting muted
+
+The synthesiser **starts with the page**, so every control in the audio panel is
+live from the first paint — you can build a patch, set ranges and audition
+nothing until you want to. The output is **muted on launch**, because a page
+that makes noise at you before you've asked is hostile on a phone, in a shared
+room, and most of all to someone who came to read about it.
+
+Muted is shown three ways, because a silent instrument and a broken one look
+identical otherwise:
+
+- the header button reads **🔇 MUTED** in amber (**🔊 SOUND ON** when live);
+- a **MUTED** banner sits over the visualiser;
+- the waveform **keeps moving** behind that banner. The mute gain is placed
+  *after* the analyser precisely so it does — you can see the instrument
+  responding to your hands while it is silent.
+
+Three ways to toggle it: the header button, **tapping the visualiser** (the
+biggest thing on screen already showing the state), and **Spacebar**. The key
+binding is shown, and changed, under **Mute Hotkey** in the audio panel: click
+it, press the key you want, Esc cancels.
+
+Two details worth knowing about the spacebar in particular. It's the key
+browsers use to activate whatever has focus, so the app claims it — a focused
+button keeps **Enter** but loses Space, which is the trade that makes the
+shortcut behave the same way regardless of invisible focus state. And it is
+never intercepted while you're typing in a field or working a `<select>`.
+
+Mute state is deliberately **not remembered** between visits: "you unmuted last
+time" isn't consent to make noise now, and it's one keypress to change.
+
+Because the page builds an `AudioContext` without a user gesture, browsers hand
+it back **suspended** — the graph exists and every control works, but the clock
+is frozen until you interact. The first click, key or tap resumes it. The
+gotcha, which cost one shipped bug: `AudioContext.resume()` does not *reject*
+when permission is being withheld, it returns a promise that never settles, so
+awaiting it before rendering leaves the audio panel permanently empty on every
+browser that enforces the policy — and headless Chromium doesn't, so it passes
+CI. `npm run test:launch` now forces the suspension and fails if that returns.
+
+## Themes
+
+Five: **Midnight** (default), **High Contrast**, **Ember** — dark; **Paper**
+and **Sepia** — light. Picked in the audio panel, persisted, and applied before
+first paint so there's no flash of the wrong palette.
+
+Themes are pure CSS. Each is a `[data-theme]` block overriding the same colour
+tokens; nothing else in the stylesheet knows a theme exists. The light themes
+are not the dark palette inverted — an accent tuned to read on near-black is
+invisible on near-white, so every accent is re-chosen rather than reused.
+
+`npm run test:contrast` parses **every** theme's block and checks all of them:
+75 pairs across 5 themes, worst 5.10:1 against a 4.5:1 threshold. Checking only
+`:root` would have verified the default palette and let the other four ship
+unreadable, which is exactly the trap a light theme sets.
+
+## The oscillator bank
+
+The **Oscillators** panel starts with **one** oscillator and a `− n +` stepper to
+add more, up to eight. Each one gets a row of waveform buttons, a colour that
+matches its marker on the pitch-quantise keyboard, and its **own level** —
+`Osc1 Vol`, `Osc2 Vol`, … under Parameters, mappable from the patchbay like
+anything else.
+
+This replaced a fixed pair of oscillators balanced by a single `Osc Mix 1↔2`
+crossfade. One oscillator was not expressible with that arrangement (the mix
+could lean but the second voice was always in the graph) and three were
+impossible. Per-oscillator level is a superset: mix *m* was exactly osc1 at
+`1-m` and osc2 at `m`, which is how saved presets are migrated on load rather
+than dropped.
+
+The stepper goes down to **zero**. Chord mode has its own voice bank, filter,
+level and envelope, so it is a complete instrument on its own, and leaving a
+lead oscillator running underneath it is a drone nobody asked for. With an empty
+bank the Oscillators rows and every `oscN_*` slider disappear — and so does the
+Oscillators group in the patchbay's output picker, since both read the same
+table. Starting Play Along puts one oscillator back, because the game scores the
+pitch of oscillator 1 and cannot judge anything without it.
+
+Chord mode is voiced well below the lead on purpose — it was always a bed
+beneath it — so **Chord Vol** now runs to 4 rather than 1. At unity, chords
+alone measure about −31 dBFS against a unity lead's −6; the extra 12 dB puts
+chord-only play at roughly −17 dBFS, a healthy standalone level. It is
+deliberately *not* enough to match the lead exactly, which would need a ceiling
+near 16 and would squash unity into the bottom 6% of the slider. The default is
+unchanged and 1 is a detent.
+
+Two behaviours worth knowing:
+
+- **Added oscillators arrive at half level.** Everything downstream — the volume
+  ladder's headroom, the reverb send, the main-gain default — is tuned around one
+  voice at unity, and two unity sawtooths into that clip.
+- **A patch grows the bank to fit it.** Mapping presets are voiced for up to two
+  oscillators, so applying one resizes the bank rather than silently discarding
+  the cables it can't host. Loading a *smaller* patch never shrinks the bank —
+  that would delete slots you added. Shrinking by hand does prune the cables
+  that pointed at the removed slots, since a mapping to a parameter that no
+  longer exists is a patchbay node with nothing behind it. **Sound kits are not
+  patches** and never resize anything — see below.
+
+A slot's values and waveform survive its removal, so shrinking to hear one voice
+and growing back returns the sound you had instead of resetting the slot you were
+part-way through dialling in.
+
+The **Parameters** section groups its sliders under the same headings the
+patchbay's output picker uses, from the same table — so a parameter is in the
+same place whichever way you go looking for it, and the two cannot drift apart.
+
+## First run: pick a starting point
+
+A fresh install opened as one oscillator at 220 Hz with nothing wired to it —
+unmute and you get a static sine. That is not a starting point, it is the
+absence of one, and it made the first thirty seconds a hunt for where the
+instrument was.
+
+The first visit now asks, and it separates the **two ways of playing** — they are
+different instruments, not variations of one, and the split is what tells the
+guided tour which tour to give you:
+
+**Oscillator** — signals drive pitch and tone. Every mapping preset (**Hands**,
+the two **Face** patches, **Gaze**, **Pose**), plus **Blank**, which sits here
+because building from nothing means the patchbay.
+
+**Chords** — handshapes trigger harmony.
+
+In full:
+
+- **Chord Mode** — handshapes play chords in a key, no wiring. No lead
+  oscillator, since a drone under the chords is not what anyone picked this for.
+  (It used to switch **DEV** on too, because chord mode was dev-gated. It is not
+  any more — see Developer mode.)
+- **Blank** — nothing wired, no trackers, and **no oscillator**. Genuinely
+  nothing, not a quiet something.
+
+Choosing applies the patch *and* the trackers it needs, saves the session, then
+starts the guided tour **for that mode** — two modals at once is not a welcome,
+so the tour waits its turn.
+Dismissing with Escape is the same as choosing Blank: a fresh app has nothing
+wired anyway, so the state after Escape is one of the listed options rather than
+a seventh, undescribed one. The question is asked once and never again.
+
+Automation never sees it, for the same reason it never sees the tour: every
+headless suite starts with empty storage and a modal over the app would break
+all of them. `tests/layout` therefore overrides `navigator.webdriver` to
+exercise the real path rather than a stand-in for it.
+
+## Share: a QR code of your setup
+
+**SHARE** (beside SAVE and LOAD) shows a QR code of everything you have set up.
+Point a phone at it and the app opens configured the same way — the point being
+that handing someone a patch should not require a file, an account or a server.
+
+The state is compressed and carried in the URL **fragment**, which is never sent
+to a server. There is no server; a shared setup stays between the two people
+holding the phones.
+
+What travels is the **instrument**, not the window. Panel widths, section
+heights, section order and which column you dragged something to describe the
+screen you arranged them on, and pushing a phone's layout onto a laptop is not
+"the same settings". The pose-model choice is left behind for the same reason: a
+MoveNet variant picked for one machine's GPU is not a recommendation for
+someone else's. Theme, tracking toggles and dev mode do travel, along with every
+mapping, gesture, chord assignment and audio parameter.
+
+Opening a shared link applies the state, saves it, and reloads the page without
+the fragment. The reload is not laziness — several modules read their state at
+import time, so applying afterwards would leave half the app on the old values.
+
+The encoder is `src/qr.js`: byte mode, all 40 versions, four error-correction
+levels, no dependencies. Written rather than pulled in because this is a
+build-less static PWA that has to work offline, so a CDN script would be a
+runtime dependency on a network the user may not have. A hand-written QR encoder
+is exactly the kind of code that looks right and is not, so nothing is asserted
+about the module pattern: `tests/unit/qr.test.js` encodes, renders to a bitmap
+and decodes it with **jsQR**, an independent decoder, then compares the text —
+including a 2900-byte version-40 payload and every ECC level. (jsQR is a
+devDependency; the app itself ships no dependencies.)
+
+Codes are drawn at error-correction level **L** — the most payload per module,
+and the tolerance it gives up, for a torn or dirty code, does not apply to a
+picture on a screen being read seconds later. If a setup is too large to fit
+any version, the popover says so and offers **COPY LINK**; the link always
+works, only the picture of it does not.
+
+The **oscilloscope** at the top of the audio column is a section like any
+other: it folds away with its caret and can be dragged to another column. It
+lives *outside* the panel that `renderAudioPanel` rebuilds, because that rebuild
+would recreate its canvas and drop the click-to-mute handler with it.
+
+## Sections: containers, scrolling and resizing
+
+Every section — camera view, signals, models, patchbay, gestures, chord mode,
+each audio block, the parameter sliders — is its own container: a bordered box
+with a header strip, a body that can scroll on its own, and a **grip along the
+bottom edge** to set its height. Drag the grip to resize, **double-click it to
+fit the content** again. Heights persist per section.
+
+So there are two levels of scrolling, which is the point: long lists (signals,
+gestures, output sliders) scroll *inside* their section, and the sections
+themselves scroll within their column. Pin the ones you're working with to the
+size you want and page through the rest.
+
+Sections start at their natural height with **no** scrollbar; only open-ended
+lists get a default height. Giving every section a scroller by default would
+trade one annoyance for a worse one. A section that *is* clipped fades at its
+bottom edge, and the fade lifts when you reach the end — a 3px scrollbar is not
+an affordance.
+
+**The content height is the ceiling.** Drag past it and the height is released
+rather than pinned there: a section taller than its contents is a box of empty
+space with its own scrollbar, and pinning it at exactly the content height would
+stop it growing the next time its list gained a row — it would just start
+hiding it.
+
+In **portrait**, the camera panel is pinned to the top of the page, and
+everything inside it is pinned with it. The dev-only **EEG / EMG / MODELS**
+sections therefore move *out* of that panel at that width and become its next
+sibling — in a single-column stack, exactly where they already appeared —
+returning inside it in landscape, where the grid places each panel in an
+explicit cell and a stray child would land in whatever cell was free. It is a
+DOM move because there is no CSS for "opt out of an ancestor's stickiness":
+`position: sticky` pins the element's whole box, and this content's only problem
+was which box it was in.
+
+A **drop host is the panel, not its collapsible body.** It was the body, which
+made a dropped section a child of the thing the fold button hides: collapse
+SIGNALS and a MODELS panel someone had dragged into that column vanished with
+it. A section moved into a column is a *neighbour* of that column's content, not
+part of it, so it sits beside the body and only the body folds away.
+
+**Drag a section's header to move it** — up and down within its column, or
+across into another one. Each column offers a single drop host, outlined while
+you drag, and an empty one (the camera column with its dev-only sections
+hidden, say) grows a target so it can still be aimed at. Placement moves the
+real DOM node, which is what makes one drag mean the same thing in both
+orientations: landscape puts the columns in explicit grid cells and portrait
+stacks them in source order, so a *stored* position has to name a container,
+not a coordinate. Both the host and the position within it are re-applied after
+every render, so a move survives the audio panel rebuilding its markup and a
+reload. Drag a section back to the column it started in and the override is
+dropped rather than pinned.
+
+Each container also carries a **hue drawn from where it is on screen** — column
+sets the base, vertical position walks it — so you can aim at a section without
+reading its title. It's derived from measured geometry rather than declared per
+section, because a hardcoded hue would lie the moment a section moved. It is
+decoration only: no state is carried by colour, and the accent's lightness is a
+per-theme token, because a stripe tuned for near-black grounds vanishes on
+near-white.
+
+This is applied at runtime (`src/ui/sections.js`) rather than baked into a
+dozen template strings: each section already had the same shape — a header
+followed by content — so a section added next week gets a container, a
+scroller and a grip without anyone remembering to add them. `npm run
+test:layout` fails the build if a section loses its body, its grip or its id,
+if a column stops offering a drop host, if a relocated section drifts back to
+its birth column across a render or a reload, or if a section ends up taller
+than its own contents.
+
+The collapse caret is **drawn from borders, not typed as a character**. The UI
+face is IBM Plex Mono, which has no chevron glyph, so a text caret falls back to
+whatever the platform substitutes — a different weight, size and baseline on
+every device, which is exactly the legibility problem it kept having.
+
+The camera view resizes with its own handle instead, directly beneath it: it
+has to keep an exact 4:3 box or the landmark overlay stops lining up with the
+video, so that handle drags vertically but writes a *width* and lets the aspect
+ratio set the height.
+
+In **portrait** the camera also **sticks to the top** of the scroll, so you can
+still see yourself — and the tracking overlay — while working the patchbay and
+audio controls below it. This is an instrument you play by moving in front of a
+camera; losing sight of the camera while reaching for a control is backwards.
+The handle is there for when the height gets in the way.
 
 ## Starting patches (PRESET)
 
@@ -90,7 +369,7 @@ target — and a hand never lands on exactly zero, so "quiet" is a persistent
 low-level tone rather than silence. Together they mean notes can't be separated
 or re-attacked.
 
-The **Volume Quantize** panel (under Pitch Quantize) snaps the master gain onto
+The **Volume Quantize** panel (under Pitch Quantize) snaps the main gain onto
 discrete levels, which is what fixes it *indirectly*: once the value is
 quantised, changes become rare events, so the engine can fire **one envelope per
 level change** and let it complete. The stepping is the enabler; the completed
@@ -101,7 +380,19 @@ envelope is the crisp attack you hear.
   of the range. The default 6 steps over −30 dB gives silence, −24, −18, −12,
   −6, 0 dB: exactly 6 dB apart.
 - **GATE** makes the bottom level *true* silence (gain exactly 0), which is what
-  makes a gap between notes possible at all.
+  makes a gap between notes possible at all. The select beside it says **where**
+  the gate switches, as a share of full volume (`< 18%` = silent below 18 %).
+  `·auto` is the ladder's own midpoint, which is a *derivation* rather than a
+  preference: with **2 steps** the midpoint lands at −15 dB, so a linear cable
+  flips off at 18 % of its travel when what an on/off control implies is
+  halfway. Raise it to move the switch later — at 2 steps the top setting puts
+  it at half of full scale. The dead band that stops chatter (2 dB) rides along
+  with it, and full volume always opens the gate at every setting.
+  The adjustment is deliberately bounded to the span between silence and the
+  first audible level, so it can only ever move the gate — never silence levels
+  that the slider's notches still advertise. That also means it does most of its
+  work at coarse step counts: at the default 6 steps the whole range is
+  3.8–5.5 %, because on a finer ladder the gate point *is* a fine detail.
 - **PLUCK / KEY / BOW** set the attack and release at a level change. Dropping to
   silence gets its own, slower time so it reads as a damped release rather than a
   chop.
@@ -139,33 +430,83 @@ from custom harmonic waveforms, filter and effect settings on the synth engine
 (synthesized approximations, not samples; zero downloads, works offline).
 A kit sets where the timbre parameters *rest*; gesture mappings keep modulating
 on top. Tweaking any waveform, filter or timbre slider flips the selector to
-"Custom". The chosen kit is saved with presets. Kits live in `src/soundkit.js`;
+"Custom".
+
+**A kit changes tone and nothing else.** It used to resize the oscillator bank
+and set every level too, so picking "Strings" switched on an oscillator you had
+deliberately removed and overwrote the balance you had dialled in. How many
+voices you play and how loud each is, is your arrangement; a kit describes the
+timbre. Waveforms cycle if the bank is bigger than the kit describes — four
+oscillators on a two-voice kit repeat slots 1 and 2, rather than falling back to
+a default belonging to no instrument — and with one oscillator you get the kit's
+lead wave, which is what the name is really about. Slot 1's waveform also sets
+the chord voices' tone, so chords follow the kit without it touching their level
+either; a chord-only setup with an empty bank still responds to it. The chosen kit is saved with presets. Kits live in `src/soundkit.js`;
 custom waveforms are registered through `engine.defineWave()`.
 
 ## Guided tour (in-app tutorial)
 
-First visit auto-offers a step-by-step tour of the whole app — camera, signals,
-patchbay, presets, audio engine, quantisers, play-along, dev mode, gestures and
-chords — as spotlight coach-marks over the live UI. The **?** button in the
-header re-opens it any time; the app stays fully clickable during the tour, so
-"click it now" actually works. Esc closes, ←/→ navigate; on phones the card
-becomes a bottom sheet.
+Choosing a starting point starts the tour **for that way of playing**, as
+spotlight coach-marks over the live UI. The app stays fully clickable during the
+tour, so "click it now" actually works. Esc closes, ←/→ navigate; on phones the
+card becomes a bottom sheet.
+
+**Every panel explains itself.** Each section header carries a **?** at its right
+end that runs just that panel's steps — Volume Quantize tells you what GATE does
+without walking you past the camera button and the welcome first. The buttons
+appear automatically: `src/ui/sections.js` gives one to any panel that has steps,
+the same way it gives every panel a fold caret and a resize grip, so a panel
+added later gets its **?** for free and a panel with nothing to say gets none.
+
+The header **?** is no longer "restart the whole tutorial". It keeps the steps
+that belong to no panel — the welcome, the camera and sound buttons, saving, the
+sign-off — and its "updated" pulse counts only those, rather than promising 23
+new steps and then showing nine.
+
+**The tour is scoped to a mode.** One tour covering everything meant a
+first-timer who picked chord mode sat through the patchbay, the cable editor and
+the falling-note game before reaching the one panel they were going to use. Each
+step declares which way of playing it is about — `modes: ['osc']`,
+`modes: ['chords']`, or neither, meaning it is about the app rather than a mode —
+and a run shows the shared steps *in place* around the mode-specific ones rather
+than appending them. The oscillator tour is 16 steps, the chord tour is 16, and
+between them every step is reachable; `npm run test:tutorial` walks both and
+fails if any step belongs to no mode at all.
+
+The **?** button gives the tour for what you are *currently* set up for, read
+from state rather than remembered from the picker — turn chord mode on later and
+it follows. Choosing a patch from the **PRESET** menu offers the oscillator tour
+the same way, once, to anyone who has not seen it.
 
 The tour is built for a project that changes weekly:
 
 - **It's data.** Every step is one entry in `TOUR_STEPS`
-  (`src/ui/tutorial.js`) — selector, title, two sentences. Adding, moving or
-  retiring a feature means editing one array entry; the file header documents
-  the exact workflow.
+  (`src/ui/tutorial.js`) — selector, title, two sentences, plus which `mode` and
+  which `section` it belongs to. Adding, moving or retiring a feature means
+  editing one array entry; the file header documents the exact workflow.
 - **It can't silently rot.** `npm run test:tutorial` (run in CI on every PR)
   boots the app, enables every state steps declare they need, and **fails the
-  build if any step points at UI that no longer exists**. At runtime a stale
+  build if any step points at UI that no longer exists** — or if a step is
+  tagged for a panel that does not exist (help written and unreachable), or a
+  panel's **?** opens nothing, or a **?** opens more than its own panel's steps. At runtime a stale
   step is skipped gracefully instead — the app never breaks because the tour
   lagged a release.
+- **The spotlight follows its target.** The ring tracks the target's rectangle
+  on a frame loop while the tour is open, rather than repositioning on `resize`
+  and `scroll`. Those two miss the cases that matter: a pinch moves only the
+  visual viewport and fires no `resize` at all, and a zoom change reflows
+  *after* the resize handler has run, stranding the ring against a layout that
+  moved out from under it — the symptom being a spotlight sitting in empty
+  space a few hundred pixels from the button it is describing. "The layout
+  changed" is not an event, so the ring watches the rect instead. The same pass
+  divides by any inherited page `zoom`, since a written length is read in the
+  element's own units while `getBoundingClientRect` answers in screen pixels.
+  `npm run test:tutorial` measures ring-against-target under browser zoom,
+  pinch zoom, page zoom and a silent reflow.
 - **Returning users see what's new.** Step ids are tracked per user; when a
   release ships steps you haven't seen, the **?** pulses ("tour updated — 2 new
   steps") instead of making you sit through the whole thing again.
-- Steps whose feature needs a particular state (audio on, dev mode) simply
+- Steps whose feature needs a particular state (audio on, chord mode on) simply
   don't show until the app is in it — the tour adapts to what's actually on
   screen.
 
@@ -173,16 +514,24 @@ The tour is built for a project that changes weekly:
 
 Most features are visible by default, but experimental / in-progress ones are
 tucked behind the **DEV** toggle in the header (persisted). With dev mode off,
-the **EEG/EMG** source tabs, the **◈ LiDAR** depth toggle, the **Gestures** and
-**Chord Mode** sections, and the **Shader** panel are hidden (and chord playback
-is disabled) — a deliberate
-*progressive-disclosure* choice so newcomers meet a simpler surface. Turn DEV
-on to reveal and use them. Lives in `src/devmode.js`; under-construction
-elements carry a `.uc-feature` class hidden by CSS unless `<body class="dev">`.
+the **EEG/EMG** source tabs, the **◈ LiDAR** depth toggle, the **MODELS** panel,
+the inference HUD under the camera and the **Shader** panel are hidden — a
+deliberate *progressive-disclosure* choice so newcomers meet a simpler surface.
+
+**Gestures and Chord Mode are not among them any more.** They were, and that was
+wrong: chord mode is a way of playing the instrument rather than an experiment,
+and hiding it behind DEV meant the one starting point that needs no wiring at all
+was the one nobody could find. Both sections are now visible by default and chord
+playback no longer checks the flag.
+
+Lives in `src/devmode.js`; under-construction elements carry a `.uc-feature`
+class hidden by CSS unless `<body class="dev">`.
 
 ## Shader — visual output
 
-The **Shader** panel renders a WebGL fragment shader (plasma / warp / bars)
+The **Shader** panel sits in the **patchbay** column, not the audio one: it is
+driven by signals and mappings, so it belongs beside the wiring that feeds it
+rather than among the synth's parameters. It renders a WebGL fragment shader (plasma / warp / bars)
 that reacts to the live audio level and two signals you pick (default
 `hand_R_x` / `hand_R_y`). It honors `prefers-reduced-motion` (freezes the time
 term). `src/shader.js` is the renderer (one program, `u_mode` branch);
@@ -203,10 +552,84 @@ labels, and icon **plus** text — never icon-only). Toggle controls expose
 
 ## Gestures & chord mode
 
+### One hand means one hand
+
+Enabling only the left hand used to mean "label whatever hand you find as the
+left one", which is why the hand resting in your lap could play the instrument.
+That came from asking the model for a single hand — `numHands: 1` caps how many
+times the landmark stage runs, so it looked like a saving. It is, but only when
+a **second hand is actually in frame**: with one hand up, asking for two costs
+exactly the same, because the palm detector finds one hand and the landmark
+model runs once. So the cap was confined to precisely the case it got wrong.
+
+Both hands are now landmarked and the one whose handedness matches is used. The
+label is a guess, so it is only trusted when the model is sure of it (score
+≥ 0.9): a confident match wins, an unsure hand is accepted anyway — that is what
+keeps a correctly-shown hand from dropping out on a shaky frame — and a hand the
+model is confident belongs to the other side is rejected. That last case is the
+bug, and it is the only one where a hand is discarded.
+`tests/unit/hand-side.test.js` pins all four.
+
+### Presets switch the models they need
+
+Choosing a preset now switches every tracker to what the patch actually uses,
+off as well as on: **Face · Brow & Mouth** turns face tracking on and hands,
+pose and gaze off. Loading a face patch with hands and pose still running costs
+two models' worth of frame budget for cables that do not exist.
+
+What a preset needs is **derived from its own signals**, not declared beside it:
+every bus signal knows its group (`hand l`, `pose`, `face`, `gaze`…), so the
+trackers fall straight out of the cables and cannot drift from them. Wire a face
+signal into a preset and the face model becomes required, because that is what
+the word means here.
+
+The camera is the one thing it will not switch on for you — turning someone's
+webcam on because they browsed a menu is not a decision the app should make — so
+that is all the menu's "needs" line reports now. A preset chosen before the
+camera starts has its face/gaze intent remembered and applied when the stream
+arrives.
+
+### Two recognizers, arbitrated
+
+Hand tracking runs MediaPipe's **GestureRecognizer** rather than the plain
+HandLandmarker. It is not a second model on top: open `gesture_recognizer.task`
+and you find `hand_landmarker.task` and `hand_gesture_recognizer.task` side by
+side, and the result carries the same landmarks / world landmarks / handedness
+fields plus `gestures`. The extra cost is a small classifier head and about
+550 KB of download (8.4 MB against 7.8 MB), and in exchange seven shapes are
+recognized by a trained model instead of hand-measured templates:
+`Closed_Fist`, `Open_Palm`, `Pointing_Up`, `Thumb_Up`, `Thumb_Down`, `Victory`,
+`ILoveYou` — mapping to **Fist, Open Palm, Point, Thumbs Up, Thumbs Down, Peace**
+and **I Love You**. The last two are new, and ship without templates: they have
+never been measured on a hand here, and an invented vector would be a false
+match waiting to happen. Record one with ✎ and it gains a template like any
+other.
+
+The classifier knows only those seven. The ASL number handshapes, rock horns,
+the finger gun and
+anything you record still come from the template matcher, and the two are
+arbitrated by `resolveGesture` (unit-tested in
+`tests/unit/gesture-canned.test.js`):
+
+- The classifier wins a shape it **can** name — that is the point of adopting it.
+- A template match it **cannot** name wins instead. ASL 4 is four fingers with
+  the thumb folded across the palm; the classifier has no such category, so its
+  nearest answer is `Open_Palm`. That is it naming the closest thing it knows,
+  not evidence the hand is open, so the template survives.
+- Below a confidence of 0.6 it is ignored (MediaPipe's own default is 0.5; this
+  is stricter because a wrong confident answer silently steals a pose).
+- No hand means no gesture, whatever it last said.
+
+If the recognizer bundle will not load — old cache, blocked host, unsupported
+delegate — hand tracking falls back to the plain landmarker and the templates
+carry recognition exactly as before. Detection is per-instance at the call
+site, so nothing downstream knows which one it got.
+
 The **Gestures** section recognizes hand poses and turns them into discrete
-triggers. Thirteen built-in gestures ship ready to use — **fist, point, peace,
-thumbs-up, open palm, rock horns**, plus the **ASL number handshapes** in their
-own collapsed group — and **● REC** records your own: name it, hold the pose
+triggers. Sixteen built-in gestures ship ready to use — **fist, point, peace,
+thumbs-up, thumbs-down, open palm, rock horns, finger gun** (thumb and index
+extended, the ASL **L**) and **I love you**, plus the **ASL number handshapes**
+in their own collapsed group — and **● REC** records your own: name it, hold the pose
 during the 3-2-1 countdown, and it's captured (camera must be running).
 Any gesture, built-in included, can be removed with its × (removals persist;
 **RESTORE BUILT-IN GESTURES** brings the defaults back).
@@ -272,11 +695,26 @@ that output is where the measured templates come from. (Needs
 
 ### Chord mode
 
-**Chord Mode** maps gestures to chords **by scale degree in a key**, not by
-absolute root. Pick a key once — root, mode, octave — and each gesture gets a
-degree (**I ii iii IV V vi vii°**) plus an optional diatonic **7th**. Changing
-the key transposes every assignment at once, and every chord is guaranteed to
-belong to the key. With **FOLLOW** on (the default) the key comes from Pitch
+**Chord Mode** maps handshapes to chords **by scale degree in a key**, not by
+absolute root. Pick a key once — root, mode, octave — and the panel lists the
+seven chords in it (**I ii iii IV V vi vii°**) plus **RELEASE**, each with a
+dropdown choosing which handshape plays it and an optional diatonic **7th**.
+Changing the key transposes every assignment at once, and every chord is
+guaranteed to belong to the key.
+
+The list is of **chords**, one handshape each, and that is the point. It ran the
+other way round — a row per handshape, with a chord dropdown — which let the
+same shape be a chord *and* the release. The panel would show that happily and
+the tick loop then broke the tie by fiat, so what you saw was not what you
+heard. Listing the chords makes the mapping a bijection by construction, and
+every writer enforces it: choosing a shape takes it off whatever it was doing,
+and the shape that was on that chord **swaps** into the one the newcomer just
+left rather than being dropped. Dropping it is the obvious reading of "one
+shape, one job" and worse to use — moving Peace from V to ii would silently
+leave V unplayable. Saved setups from the old format are repaired on load.
+
+The **7th** belongs to the chord, not to the handshape that plays it, so it
+survives unassigning the shape. With **FOLLOW** on (the default) the key comes from Pitch
 Quantize, so chords land in the same key the melody snaps to; it stands down
 automatically when quantise is off or its scale isn't one of the six seven-note
 modes, since roman numerals mean nothing over a pentatonic or whole-tone scale.
@@ -286,9 +724,60 @@ tone and read the intervals back. Harmonic minor therefore comes out
 **i ii° III+ iv V vi° vii°** — leading tone and all — with no special cases.
 
 Holding an assigned gesture sustains its chord; releasing it lets the chord go
-(hold-to-sound). Chords play through a dedicated 4-voice bank that rides the same
-filter, reverb and sound-kit timbre as the main oscillators — including the
-volume gate, so chords obey dynamics and go silent when it closes. Custom
+(hold-to-sound), shaped by a proper **ADSR** — attack, decay, sustain level and
+release, set in the Chord Mode section. The envelope sits on the shared chord
+gain rather than per voice: the whole chord is one note here (the voices are
+its intervals), so one envelope is what a player means by "the chord's attack".
+Retriggering mid-release starts from the dying value rather than snapping to
+zero, so fast chord changes don't click.
+
+### What sounds the chord
+
+**PLAY WITH** picks what actually plays a chord once a handshape has named it:
+
+- **Handshape holds it** (the default) — hold the shape, hear the chord, and a
+  **RELEASE** shape stops it. One hand does everything, which means the shape is
+  doing two jobs and the release shape a third.
+- **Other hand — openness** — two-handed. One hand names the chord, the other's
+  openness plays it, and **the chord latches**: the naming hand can relax, drop
+  out of frame, or go and pick the next chord while the note keeps sounding.
+  Which hand plays is switchable.
+- **Eyebrows** — one-handed. The hand names chords with either side; your
+  eyebrows play them.
+
+and how that signal is read:
+
+- **ATTACK / RELEASE** — past a threshold it attacks, below it releases, and the
+  ADSR runs. Hysteresis keeps a hand hovering at the threshold from
+  machine-gunning the envelope.
+- **VOLUME** — the signal *is* the level, continuously. There is no envelope to
+  run: you are the envelope.
+
+**OFF AT / FULL AT** map the raw signal onto that travel, and they matter more
+than they look. Hand openness does **not** reach 0 with a closed fist — it
+bottoms out near 0.38 — so feeding it in raw would mean the quietest thing you
+can do is "fairly loud" and silence is physically unreachable. Mapping the range
+the signal actually occupies is what puts fully-off somewhere your hand can get
+to, and the bottom 12% of the travel then rounds down to true silence so it does
+not have to be hit exactly. Eyebrows get their own defaults (a comfortable raise
+is about half scale; asking for 1.0 would mean straining). The live meter beside
+them shows the raw value and where it lands, because otherwise calibrating the
+range is guesswork.
+
+The **RELEASE** row — **open palm** by default — applies to the handshape mode
+only, and dims in the others, where the expression signal does the releasing. It
+is a setting, not a reservation: pick any shape, or none. Giving it a shape that
+was playing a chord takes that shape off the chord, exactly as moving a shape
+between two chords does; the default set still puts **IV** on `asl4` so nothing
+has to be displaced out of the box. Chords play through a dedicated 4-voice bank with **its own
+filter and level** — `Chord Cutoff` / `Chord Q` / `Chord Vol`, plus a **Chord
+Filter Type** row — so the chord bed can sit darker or quieter than the lead
+(or the other way round) without either touching the other. `Osc Vol` is the
+lead's own level on the same footing. Both sources then share the reverb and
+**Main Vol**, so the volume ladder and its silence gate still govern
+everything — chords obey dynamics and go silent when the gate closes. The LFO
+wobbles only the *lead* filter; for movement on the chord bed, map any signal
+to `chord_filter_freq` in the patchbay. Custom
 gestures, calibration and chord assignments are saved with presets. Logic:
 `src/gesture.js` (recognizer), `src/chords.js` (chord construction + `diatonic()`),
 `src/chordmode.js` (gesture→chord glue), with the voice bank in
@@ -458,6 +947,9 @@ css/
 src/
   bus.js            Signal registry (adaptive calibration + One-Euro smoothing)
   filter.js         One-Euro low-latency jitter filter
+  qr.js             QR encoder (byte mode, no dependencies)
+  ui/firstrun.js    First-run starting-point picker
+  share.js          Setup <-> shareable link
   math.js           Geometry helpers (dist3, angles, openness, extension,
                     thumb-out and thumb-to-fingertip contact)
   engine.js         Web Audio API synthesiser
@@ -475,7 +967,7 @@ src/
   chordmode.js      Gesture → scale-degree chord mapping (hold-to-sound)
   devmode.js        Developer-mode toggle (gates under-construction features)
   shader.js         WebGL visual-output shader (reacts to audio + signals)
-  cv.js             MediaPipe Hand + swappable pose source (latency HUD)
+  cv.js             MediaPipe Hand + swappable pose source (dev inference HUD)
   posebackends.js   Pose backends: MediaPipe lite/full/heavy + TF.js MoveNet
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
   face.js           Opt-in face landmark + gaze tracking (blendshape signals)
@@ -497,18 +989,24 @@ src/
     preset-menu.js  PRESET button → named starting-patch menu
     tutorial.js     Guided tour — TOUR_STEPS data + spotlight engine
     viz.js          Waveform oscilloscope canvas
+    hotkeys.js      Keyboard shortcuts (mute, default Space) — rebindable,
+                    persisted, and kept clear of typing
 scripts/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
+  screenshot.mjs    Regenerates docs/screenshot.png (npm run screenshot)
 sw.js               Service worker (network-first app shell, cached MediaPipe models)
 tests/
   unit/             node --test suites (chords, diatonic degrees, chord mode,
                     gesture matching + degradation robustness, judging, notes,
-                    filter, dynamics, stepped volume, mapper steps)
+                    filter, dynamics, stepped volume, mapper steps, hotkeys)
   contrast/         WCAG contrast checks over the OKLab palette
   gesture-img/      Gesture recognition over reference photos (MediaPipe);
                     --calibrate prints vectors + pairwise template distances
   tutorial/         Tour staleness guard — fails CI if a step targets dead UI
   sw-freshness/     Proves a redeploy is visible on the very next load
+  audio-launch/     Engine starts muted and usable against a *suspended*
+                    AudioContext — the state real browsers give you and
+                    headless Chromium does not
   pose-bench/       Synthetic 3D-mannequin pose-model benchmark
   audio-articulation/  Before/after articulation measurement (settling, gaps, attack)
   ui-ux/
@@ -569,6 +1067,20 @@ ANTHROPIC_API_KEY=sk-ant-… npm run test:ui
 
 Without `ANTHROPIC_API_KEY` the screenshots are still saved but LLM evaluation is skipped (CI exits 0).
 
+## Inference HUD (dev mode)
+
+The strip of timings across the bottom of the camera view — FPS, HAND, POSE,
+FACE, TOTAL, MODEL — is **dev-only**. They are numbers for tuning the vision
+pipeline, not something a player needs while performing.
+
+Each row appears only while the model behind it is actually running. HAND and
+POSE used to sit there whatever was enabled, so tracking the face alone showed
+two averages left over from models that had stopped — indistinguishable from
+live ones — and never showed the face model's own cost at all. FACE is measured
+on its own loop (`src/face.js`) and reports inference only, not the drawing and
+signal extraction around it; TOTAL covers the hand/pose loop, so it goes when
+both of those do, and MODEL names the pose backend, so it follows POSE.
+
 ## Pose model comparison (dev mode)
 
 With **DEV** on, a **MODELS** panel appears under the camera: pick the pose
@@ -576,10 +1088,19 @@ backend — **MediaPipe Lite / Full / Heavy** (plus a GPU/CPU delegate switch)
 or **TF.js MoveNet Lightning / Thunder** — and watch live detection FPS and
 per-model mean/p95 inference times while the camera runs, so variants can be
 A/B'd on the actual device. Switches happen live and persist in
-`localStorage`. MoveNet loads TensorFlow.js lazily (only when selected) and
-adapts its 17 COCO keypoints onto the BlazePose indices the pose signals
-read — all 12 pose signals survive; hands always stay MediaPipe. Backend
-abstraction: `src/posebackends.js`; panel: `src/ui/model-ui.js`.
+`localStorage`. The **DELEGATE** switch applies to *both* the pose and hand
+models, and **HANDS** is no longer set here: the header's ✋ L / R toggles own it, and the
+model is always asked for two hands so the one you enabled can be picked out
+from the one you did not (see "One hand means one hand").
+
+MoveNet loads TensorFlow.js lazily (only when selected) and adapts its 17 COCO
+keypoints onto the BlazePose indices the pose signals read — all 12 pose
+signals survive; hands always stay MediaPipe. It loads the **UMD** builds via
+script tags rather than jsdelivr's `+esm` modules: the `+esm` transform of
+these CommonJS packages produces cross-package imports that don't resolve
+against each other, and the browser rejects the module at link time with
+`SyntaxError: Importing binding name '…' is not found`. Backend abstraction:
+`src/posebackends.js`; panel: `src/ui/model-ui.js`.
 
 ## Pose model benchmark
 

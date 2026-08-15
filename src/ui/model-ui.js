@@ -34,14 +34,25 @@ export function initModelPanel() {
     const prev = cvSource.poseBackend?.id;
     try {
       if (cvSource.hand) {           // models are loaded — swap live
+        // The delegate is a property of BOTH models. It only ever reached the
+        // pose backend, so switching to CPU (or back) left hand inference —
+        // the more expensive of the two — untouched, and the panel's own
+        // latency readout made that look like the switch had done nothing.
+        // Delegate only — hand count belongs to the header L/R toggles.
+        await cvSource.setHandOptions({ delegate: delSel.value });
         await cvSource.setPoseBackend(poseSel.value, delSel.value);
-        toast(`Pose model: ${poseSel.value}`);
+        toast(`Pose ${poseSel.value} · ${delSel.value}`);
       } else {                       // camera not started yet — just persist
-        lsSet('motionmuse-posemodel',
-          JSON.stringify({ backend: poseSel.value, delegate: delSel.value }));
+        lsSet('motionmuse-posemodel', JSON.stringify(
+          { ...cvSource._savedModel(), backend: poseSel.value, delegate: delSel.value }));
       }
     } catch (e) {
-      toast(`Model switch failed: ${String(e).slice(0, 40)}`);
+      // The full text matters here: the previous 40-character truncation cut
+      // "SyntaxError: Importing binding name 'PoseDetector' is not found" down
+      // to "Syntax Error: Importing binding name 'Pos", which named neither
+      // the binding nor the module and made the cause unguessable.
+      console.error('[models] switch failed', e);
+      toast(`Model switch failed — ${String(e?.message || e).slice(0, 110)}`);
       if (prev) poseSel.value = prev;
     } finally {
       poseSel.disabled = false;

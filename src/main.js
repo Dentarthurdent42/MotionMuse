@@ -2,9 +2,9 @@ import { cvSource }                        from './cv.js';
 import { depthSource }                      from './depth.js';
 import { faceSource }                       from './face.js';
 import { engine }                           from './engine.js';
-import { mapper }                           from './mapper.js';
+import { mapper, trackersFor }              from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
-import { buildSigPanel, updateSigPanel }    from './ui/signals.js';
+import { buildSigPanel, updateSigPanel, syncSigGroups } from './ui/signals.js';
 import { renderMapper, updateMapperBars }   from './ui/mapper-ui.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
@@ -19,8 +19,20 @@ import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
-import { initTutorial }                     from './ui/tutorial.js';
+import { initTutorial, maybeOfferTour, offerTourForMode } from './ui/tutorial.js';
+import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
+import { enhanceSections, colorSections }   from './ui/sections.js';
+import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
+import { initTheme }                        from './ui/theme.js';
+import { initSettings }                     from './ui/settings.js';
+import { initShare, consumeSharedLink, announceSharedLink, isConsumingShare } from './ui/share.js';
+import { shouldOfferStart, openStartPicker } from './ui/firstrun.js';
 import * as preset                          from './preset.js';
+
+// ── A shared setup, if this page was opened from a QR code / link ────────
+// First thing: it applies the state, persists it and reloads without the
+// fragment, so the sooner it runs the less of the old setup flashes past.
+consumeSharedLink();
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
 function loop() {
@@ -80,6 +92,9 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
     document.body.classList.add('cam-on');
     document.getElementById('face-btn').disabled = false;
     document.getElementById('gaze-btn').disabled = false;
+    // A preset chosen while the camera was off asked for face or gaze; now
+    // there is a stream to run them on.
+    applyFaceIntent();
   } catch (err) {
     setStatus('error', 'ERROR: ' + err.message.slice(0, 30));
     setLabel(btn, 'RETRY');
@@ -97,6 +112,7 @@ const faceToggle = (btnId, key, setter, label) => {
     try {
       await setter(on);
       btn.classList.toggle('on', on);
+      syncSigGroups();   // face/gaze groups expand or fold away with their tracker
       toast(on ? `${label} tracking ON` : `${label} tracking off`);
     } catch (err) {
       toast(`Could not start ${label.toLowerCase()} tracking: ` + err.message);
@@ -107,6 +123,37 @@ const faceToggle = (btnId, key, setter, label) => {
 faceToggle('face-btn', 'faceOn', on => faceSource.setFace(on), 'Face');
 faceToggle('gaze-btn', 'gazeOn', on => faceSource.setGaze(on), 'Gaze');
 
+// ── Hand / pose tracking toggles ─────────────────────────────────────────
+// Unlike face and gaze these are on by default and cost nothing to switch —
+// no model to load, just whether the loop runs it.
+// `flag` is the cvSource property the button reflects; `key` is what
+// setTracking() expects. Left and right are separate so a one-handed player
+// can tell the model which hand it is, instead of letting it guess.
+const trackToggle = (btnId, flag, key, label) => {
+  const btn = document.getElementById(btnId);
+  const sync = () => btn.classList.toggle('on', cvSource[flag]);
+  btn.addEventListener('click', () => {
+    cvSource.setTracking({ [key]: !cvSource[flag] });
+    syncAllTracking();
+    const on = cvSource[flag];
+    const only = cvSource.handsL !== cvSource.handsR;
+    toast(on ? `${label} ON`
+             : key === 'pose' ? 'Pose off — hands now run every frame'
+             : cvSource.handsOn ? `${label} off — no handedness guessing, one hand tracked`
+             : 'Hands off — pose now runs every frame');
+    if (on && only && key !== 'pose') toast(`${label} ON — single hand, no handedness guessing`);
+  });
+  return sync;
+};
+cvSource._loadTracking();
+const syncers = [
+  trackToggle('hands-l-btn', 'handsL', 'handsL', 'Left hand'),
+  trackToggle('hands-r-btn', 'handsR', 'handsR', 'Right hand'),
+  trackToggle('pose-btn',    'poseOn', 'pose',   'Pose'),
+];
+function syncAllTracking() { syncers.forEach(fn => fn()); syncSigGroups(); }
+syncAllTracking();
+
 // ── Developer mode toggle (reveals under-construction features) ──────────
 const devBtn = document.getElementById('dev-btn');
 devmode.onChange(on => {
@@ -114,6 +161,10 @@ devmode.onChange(on => {
   devBtn.setAttribute('aria-pressed', String(on));
 });
 devBtn.addEventListener('click', () => devmode.toggle());
+// Dev mode reveals whole sections (MODELS, Gestures, Chord Mode, Shader).
+// Position hues are derived from measured geometry and skip hidden elements,
+// so anything revealed here has no hue until this recolours the set.
+devmode.onChange(() => colorSections());
 
 // ── LiDAR / optical depth toggle ─────────────────────────────────────────
 const depthBtn = document.getElementById('depth-btn');
@@ -135,38 +186,151 @@ depthBtn.addEventListener('click', async () => {
 // (a hidden, running XR session with no visible control would be confusing).
 devmode.onChange(on => { if (!on && depthSource.lidarActive) depthSource.stopLidar(); });
 
-// ── Audio button ─────────────────────────────────────────────────────────
-document.getElementById('audio-btn').addEventListener('click', async () => {
-  const btn = document.getElementById('audio-btn');
-  if (engine.started) {
-    playalong.stop();          // a running game can't outlive its audio clock
-    shader.setActive(false);   // panel (and its canvas) is about to be torn down
-    engine.stop();
-    setLabel(btn, 'AUDIO OFF');
-    btn.classList.remove('on');
-    document.getElementById('audio-panel').innerHTML = `
-      <div style="padding:16px 10px;color:var(--border2);font-size:10px;text-align:center;">
-        Enable audio to begin
-      </div>`;
-  } else {
-    await engine.start();
-    setLabel(btn, 'AUDIO ON');
-    btn.classList.add('on');
-    renderAudioPanel();
+// ── Audio: starts with the page, muted ───────────────────────────────────
+// The engine used to wait behind a button, which meant every control in the
+// audio panel was absent until you found it — you couldn't set up a patch and
+// then start playing, you had to start first and configure while it ran. Now
+// the graph is built at load so everything is manipulable immediately, and the
+// output is muted so building a patch stays silent until you ask for sound.
+//
+// The button is therefore a mute toggle, not a power switch.
+const audioBtn = document.getElementById('audio-btn');
+const vizMuted = document.getElementById('viz-muted');
+
+// One function owns every visible trace of mute state, so the button, the
+// banner and the assistive-tech state can't drift apart.
+function syncMuteUI() {
+  const m = engine.muted;
+  setLabel(audioBtn, m ? '🔇 MUTED' : '🔊 SOUND ON');
+  audioBtn.classList.toggle('muted', m);
+  audioBtn.classList.toggle('on', !m);
+  audioBtn.setAttribute('aria-pressed', String(m));
+  audioBtn.title = m
+    ? `Muted — the engine is running but silent. ${keyLabel(getBinding('mute'))} to unmute.`
+    : `Sound on. ${keyLabel(getBinding('mute'))} to mute.`;
+  vizMuted.hidden = !m;
+  document.getElementById('mute-key-hint').textContent = keyLabel(getBinding('mute'));
+}
+
+async function toggleMute() {
+  if (!engine.started) {            // auto-start failed — this click is the retry
+    await startAudio();
+    return;
   }
-});
+  // Unmuting is the user gesture the browser has been waiting for, so hand it
+  // over — but never await it (see startAudio). Scheduling the ramp against a
+  // frozen clock is safe: the AudioParam timeline is absolute, so it plays out
+  // normally once the clock starts.
+  engine.resume();
+  engine.setMuted(!engine.muted);
+  syncMuteUI();
+}
+
+async function startAudio() {
+  try {
+    await engine.start();
+  } catch (err) {
+    // Nothing else in the app depends on audio existing, so a failure here
+    // degrades to "press the button" rather than taking the page down.
+    console.warn('audio engine did not start', err);
+    audioBtn.title = 'Audio unavailable — click to retry';
+    return false;
+  }
+  renderAudioPanel();
+  syncMuteUI();
+  // Deliberately NOT awaited. `AudioContext.resume()` does not reject when the
+  // browser is withholding permission — it returns a promise that simply never
+  // settles until a gesture arrives. Awaiting it here left the audio panel
+  // unrendered on any browser that actually enforces the autoplay policy,
+  // which is every real one; the bug is invisible in headless Chromium,
+  // which doesn't.
+  engine.resume();
+  return true;
+}
+
+audioBtn.addEventListener('click', toggleMute);
+// The visualiser is the largest thing on screen already showing mute state,
+// so it doubles as the target for it. The banner over it is pointer-events:
+// none, so a tap anywhere in the box lands here.
+document.getElementById('viz-wrap').addEventListener('click', toggleMute);
+
+// Autoplay policy means the context starts suspended and its clock stays
+// frozen until a gesture. Resume on the first one, whatever it is, so the
+// instrument is already awake by the time the user unmutes.
+const wakeAudio = () => { engine.resume(); };
+['pointerdown', 'keydown'].forEach(ev =>
+  document.addEventListener(ev, wakeAudio, { once: true, capture: true }));
+
+initHotkeys({ mute: () => { toggleMute(); } });
+onBindingChange(syncMuteUI);    // rebinding the key relabels the button and banner
+syncMuteUI();                   // muted from the first paint, before the graph exists
+startAudio();
 
 // ── Mapper buttons ───────────────────────────────────────────────────────
 // PRESET opens a menu of starting patches; each reports what it still needs
 // switched on (camera / face / gaze) rather than loading silently.
 initPresetMenu({
-  onApply: () => renderMapper(),
+  onApply: async (preset, missing) => {
+    renderMapper();
+    // Choosing a patch from the menu is the same statement the first-run picker
+    // makes, so it earns the same tour — offered once per mode, and silently
+    // skipped for anyone who has already seen it.
+    offerTourForMode('osc');
+    const changed = await applyTrackers(trackersFor(preset));
+    const bits = [preset.hint];
+    if (changed.length) bits.push(changed.join(', '));
+    if (missing.length) bits.push(`switch on ${missing.join(' + ')}`);
+    toast(`${preset.name} — ${bits.join(' · ')}`);
+  },
   state: () => ({
     camera: cvSource.running,
     face:   faceSource.faceOn,
     gaze:   faceSource.gazeOn,
   }),
 });
+
+// Switch every tracker to what a patch actually uses. Loading a face patch with
+// hands and pose still running costs two models' worth of frame budget for
+// cables that do not exist, and leaves the signals panel full of numbers the
+// patch ignores — so this turns things OFF as well as on.
+//
+// The camera is deliberately not started here: that is the user's call, and
+// the menu says so. Face and gaze intent is remembered until it can be applied,
+// because their model needs a running stream.
+let pendingFace = null;
+async function applyTrackers(want) {
+  const changed = [];
+  const before = { handsL: cvSource.handsL, handsR: cvSource.handsR, pose: cvSource.poseOn };
+  cvSource.setTracking({ handsL: want.handsL, handsR: want.handsR, pose: want.pose });
+  syncAllTracking();
+  const hadHands = before.handsL || before.handsR;
+  const hasHands = want.handsL || want.handsR;
+  if (hadHands !== hasHands) changed.push(hasHands ? 'hands on' : 'hands off');
+  if (before.pose !== want.pose) changed.push(want.pose ? 'pose on' : 'pose off');
+
+  pendingFace = { face: want.face, gaze: want.gaze };
+  changed.push(...await applyFaceIntent());
+  return changed;
+}
+
+// Face and gaze need a running camera, so a preset chosen before the camera
+// starts leaves its intent here and the camera-start path applies it.
+async function applyFaceIntent() {
+  if (!pendingFace || !cvSource.running) return [];
+  const { face, gaze } = pendingFace;
+  pendingFace = null;
+  const changed = [];
+  try {
+    if (faceSource.faceOn !== face) { await faceSource.setFace(face); changed.push(face ? 'face on' : 'face off'); }
+    if (faceSource.gazeOn !== gaze) { await faceSource.setGaze(gaze); changed.push(gaze ? 'gaze on' : 'gaze off'); }
+  } catch (err) {
+    toast('Could not switch face tracking: ' + err.message);
+  }
+  document.getElementById('face-btn')?.classList.toggle('on', faceSource.faceOn);
+  document.getElementById('gaze-btn')?.classList.toggle('on', faceSource.gazeOn);
+  syncSigGroups();
+  return changed;
+}
 
 // ── Save / load settings + mappings ──────────────────────────────────────
 // Reflect a freshly loaded state everywhere: mapper rows always, and the audio
@@ -189,10 +353,19 @@ loadFile.addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    await preset.loadFromFile(file);
+    const { uiChanged } = await preset.loadFromFile(file);
     refreshFromState();
     preset.saveLocal();
-    toast('Settings loaded');
+    if (uiChanged) {
+      // Theme, panel sizes, section heights and tracker state are read once at
+      // startup by the modules that own them, so a reload is how they take
+      // effect — cheaper and more honest than a second apply path per module
+      // that would drift out of step with the real one.
+      toast('Full setup loaded — reloading');
+      setTimeout(() => location.reload(), 700);
+    } else {
+      toast('Settings loaded');
+    }
   } catch (err) {
     toast('Could not load: ' + err.message);
   }
@@ -205,6 +378,7 @@ window.addEventListener('beforeunload', persist);
 window.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
 
 // ── Init ─────────────────────────────────────────────────────────────────
+initTheme();              // before anything paints, so there is no flash of the default palette
 devmode.init();           // apply persisted dev-mode state to <body>
 depthSource.init();       // register depth signals so they appear in the panel
 // Register every source's signals up front, before any of them are running.
@@ -219,8 +393,38 @@ initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
+initSettings();           // ⚙ theme + hotkeys: how the tool looks and is driven
+initShare();              // SHARE → a QR code of this setup
 initModelPanel();         // dev-mode pose model comparison panel
 initTutorial();           // guided tour (? button; auto-offers on first visit)
-preset.restoreLocal();    // bring back the last session's mappings + settings
+const hadSession = preset.restoreLocal();   // last session's mappings + settings
+announceSharedLink();     // …which may have just come from a scanned QR code
+
+// First visit: ask what to play rather than opening on one oscillator with
+// nothing wired to it. The tour waits its turn — two modals at once is not a
+// welcome. Automation skips the picker for the same reason it skips the tour:
+// every headless suite starts with empty storage, and a modal over the app
+// would break all of them. The dedicated check overrides navigator.webdriver
+// so the real path is still exercised.
+if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() })
+    && !navigator.webdriver) {
+  openStartPicker({
+    applyTrackers,
+    onDone: s => {
+      refreshFromState();
+      preset.saveLocal();
+      toast(`${s.name} — ${s.hint}`);
+      maybeOfferTour(s.mode);          // the tour for the way of playing chosen
+    },
+  });
+} else {
+  maybeOfferTour();
+}
 renderMapper();
+// Shader controls belong with the patchbay — the shader reads signals and
+// mappings, so it sits beside the wiring rather than among synth parameters.
+// Rendered once: renderMapper() re-runs on every rewire.
+const shaderHost = document.getElementById('shader-host');
+if (shaderHost) { shaderHost.innerHTML = shaderSectionHTML(); wireShaderSection(); }
+enhanceSections();        // wrap every section: own container, scroller, resize grip
 loop();

@@ -40,12 +40,20 @@
         <span class="btn-sizer" aria-hidden="true">START CAMERA</span>
         <span class="btn-text">START CAMERA</span>
       </button>
-      <button class="btn purple btn-fixed" id="audio-btn">
-        <span class="btn-sizer" aria-hidden="true">AUDIO OFF</span>
-        <span class="btn-text">AUDIO OFF</span>
+      <!-- The engine starts with the page, so this is a mute toggle, not a
+           power switch. Muted is the launch state and must look like a state,
+           not a disabled control — hence the caption naming what you'd get,
+           the amber styling, and the banner over the visualiser. -->
+      <button class="btn purple btn-fixed muted" id="audio-btn" aria-pressed="true">
+        <!-- Sizer holds the LONGER of the two captions, not the initial one:
+             "🔊 SOUND ON" is 24px wider than "🔇 MUTED". -->
+        <span class="btn-sizer" aria-hidden="true">🔊 SOUND ON</span>
+        <span class="btn-text">🔇 MUTED</span>
       </button>
       <button class="btn" id="dev-btn" aria-pressed="false"
               title="Developer mode — reveals experimental, under-construction features">DEV</button>
+      <button class="btn" id="settings-btn" aria-haspopup="menu" aria-expanded="false"
+              title="Settings — theme, hotkeys and other controls for the tool rather than the sound">⚙</button>
       <button class="btn" id="tour-btn" title="Guided tour">?</button>
       <button class="btn" id="donate-btn" aria-haspopup="menu" aria-expanded="false"
               title="Support this project — donation links">♥</button>
@@ -53,6 +61,15 @@
     <!-- Camera-dependent toggles: hidden until the camera is running, then
          shown on their own row beneath the main controls. -->
     <div class="hcam">
+      <!-- Hand tracking costs about twice what pose does and is the usual
+           frame-rate bottleneck, so both are switchable outright. With one
+           off the other stops sharing frames and runs at the full rate. -->
+      <button class="btn on" id="hands-l-btn"
+              title="Track the left hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">✋ L</button>
+      <button class="btn on" id="hands-r-btn"
+              title="Track the right hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">R ✋</button>
+      <button class="btn on" id="pose-btn"
+              title="Body pose tracking. Turn it off to give hand tracking the whole frame budget.">🧍 POSE</button>
       <button class="btn" id="face-btn"
               title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears">☺ FACE</button>
       <button class="btn" id="gaze-btn"
@@ -63,12 +80,17 @@
   <!-- ── Main ───────────────────────────────────────────── -->
   <div id="main">
 
-    <!-- LEFT: Input source + Signals -->
-    <div class="panel panel-src">
+    <!-- Panels are in *source* order = the order they stack in portrait, which
+         is unchanged: camera, signals, patchbay, audio. Landscape places them
+         into grid cells explicitly (see the min-width:769px block in main.css),
+         giving SIGNALS | CAMERA over PATCHBAY | AUDIO. Keeping source order
+         portrait-shaped is what stops a landscape rearrangement from silently
+         reshuffling the phone layout. -->
+
+    <!-- Input source (camera) -->
+    <div class="panel panel-cam">
       <div class="src-tabs">
         <div class="src-tab active">CV</div>
-        <div class="src-tab future uc-feature" data-soon="EEG input — under construction">EEG<span class="src-tab-wip">🚧</span></div>
-        <div class="src-tab future uc-feature" data-soon="EMG input — under construction">EMG<span class="src-tab-wip">🚧</span></div>
       </div>
 
       <div id="video-wrap">
@@ -83,12 +105,21 @@
           <button id="fskbd-btn" class="depth-toggle fs-only"
                   title="Show the piano keyboard overlay">🎹 KEYS</button>
         </div>
-        <div id="latency-bar">
+        <!-- Inference timings. Dev-only: these are numbers for tuning the
+             vision pipeline, not something a player needs while performing.
+             `uc-feature` hides it outside DEV mode, and its rule carries
+             !important, so it wins over the inline display cv.js writes when
+             the camera starts.
+             Each row appears only while the model behind it is actually
+             running — a timing from a stopped model is a stale average that
+             reads exactly like a live one. -->
+        <div id="latency-bar" class="uc-feature">
           <span>FPS <b id="lat-fps">—</b></span>
-          <span>HAND <b id="lat-hand">—</b></span>
-          <span>POSE <b id="lat-pose">—</b></span>
-          <span>TOTAL <b id="lat-total">—</b></span>
-          <span class="uc-feature">MODEL <b id="lat-model">—</b></span>
+          <span id="lat-hand-wrap">HAND <b id="lat-hand">—</b></span>
+          <span id="lat-pose-wrap">POSE <b id="lat-pose">—</b></span>
+          <span id="lat-face-wrap" style="display:none">FACE <b id="lat-face">—</b></span>
+          <span id="lat-total-wrap">TOTAL <b id="lat-total">—</b></span>
+          <span id="lat-model-wrap">MODEL <b id="lat-model">—</b></span>
           <span id="lat-depth-wrap" style="display:none">DEPTH <b id="lat-depth">—</b></span>
         </div>
         <div id="cam-placeholder">
@@ -99,8 +130,36 @@
         </div>
         <canvas id="fs-kbd"></canvas>
       </div>
+      <!-- Portrait dev mode pins the camera to the top of the scroll, which
+           makes its height precious — this drags it smaller. Shown only there
+           (see the mobile block in main.css). -->
+      <div id="cam-handle" title="Drag to resize the camera view — double-click to reset"></div>
 
-      <div class="panel uc-feature" id="model-panel" style="border-top:1px solid var(--border);">
+      <!-- Everything in the camera column that is not the picture lives in one
+           box, and that box is a drop host for sections dragged in from other
+           columns (see src/ui/sections.js). Keeping it separate from
+           #video-wrap is what leaves the sticky-camera and aspect-ratio logic
+           above untouched — a section dropped in here scrolls inside this box
+           instead of growing the panel that is pinned to the top of a phone
+           screen. -->
+      <div id="cam-extras">
+
+      <!-- EEG and EMG were tabs in the CV strip, which promised a switchable
+           input that does not exist yet — clicking them did nothing. As their
+           own sections they read as what they are: planned inputs, listed
+           beside the one that works. -->
+      <div class="audio-section uc-feature" data-sec="eeg">
+        <div class="audio-section-label">EEG Input <span class="uc-badge">under construction</span></div>
+        <div class="quant-notes">Electroencephalography — not yet implemented. Will register its
+          own bus signals, mappable in the patchbay exactly like the camera's.</div>
+      </div>
+      <div class="audio-section uc-feature" data-sec="emg">
+        <div class="audio-section-label">EMG Input <span class="uc-badge">under construction</span></div>
+        <div class="quant-notes">Electromyography — not yet implemented. Muscle activation as
+          continuous signals, mappable in the patchbay exactly like the camera's.</div>
+      </div>
+
+      <div class="panel uc-feature" data-sec="models" id="model-panel" style="border-top:1px solid var(--border);">
         <div class="ph">MODELS <span class="uc-badge">dev</span></div>
         <div class="pb" id="model-body">
           <label class="model-row">POSE
@@ -111,47 +170,80 @@
               <option>GPU</option><option>CPU</option>
             </select>
           </label>
+          <!-- Hand COUNT is no longer set here: the header's ✋ L / R toggles
+               own it, since asking for one hand and naming which hand are the
+               same decision. Two controls writing numHands would disagree. -->
           <div id="model-stats">start camera for live stats</div>
         </div>
       </div>
 
-      <div class="panel" style="border-top:1px solid var(--border);">
-        <div class="ph">
-          SIGNALS
-          <span style="margin-left:auto;font-size:8px;color:var(--dim);">CLICK TO COPY KEY</span>
-        </div>
-        <div class="pb" id="sig-list">
-          <div style="padding:20px 10px;color:var(--dim);font-size:10px;text-align:center;">
-            Start camera to see signals
-          </div>
+      </div><!-- /#cam-extras -->
+    </div>
+
+    <!-- Signals — its own full-height column in landscape -->
+    <div class="panel panel-sig" data-sec="signals">
+      <div class="ph">
+        SIGNALS
+        <span style="margin-left:auto;font-size:8px;color:var(--dim);">CLICK TO COPY KEY</span>
+      </div>
+      <div class="pb" id="sig-list">
+        <div style="padding:20px 10px;color:var(--dim);font-size:10px;text-align:center;">
+          Start camera to see signals
         </div>
       </div>
     </div>
 
     <div class="splitter" id="split-l" title="Drag to resize — double-click to reset"></div>
 
-    <!-- MIDDLE: Mapper -->
-    <div class="panel panel-map">
+    <!-- Mapper — beneath the camera in landscape -->
+    <div class="panel panel-map" data-sec="patchbay">
       <div class="ph">PATCHBAY · INPUTS → OUTPUTS</div>
       <div class="mapper-toolbar">
         <span class="mapper-hint" style="flex:1">Drag a socket ● → ● to wire an input to an output</span>
         <button class="btn" id="preset-btn">PRESET</button>
         <button class="btn" id="save-btn" title="Download all mappings, audio settings and tuning as a file">SAVE</button>
         <button class="btn" id="load-btn" title="Load mappings and settings from a saved file">LOAD</button>
+        <button class="btn" id="share-btn" aria-haspopup="dialog" aria-expanded="false"
+                title="Show a QR code of this setup — someone can scan it to open the app configured the same way">SHARE</button>
         <input type="file" id="load-file" accept="application/json,.json" hidden>
       </div>
       <div id="mapper-rows"></div>
+      <!-- Shader controls live here rather than in the audio column: the
+           shader is driven by signals and mappings, so it belongs beside the
+           wiring that feeds it, not among the synth's parameters. Filled by
+           main.js once at startup — renderMapper() runs on every rewire and
+           re-rendering the section each time would reset its controls. -->
+      <div id="shader-host"></div>
     </div>
 
     <div class="splitter" id="split-r" title="Drag to resize — double-click to reset"></div>
 
     <!-- RIGHT: Audio engine -->
-    <div class="panel">
+    <div class="panel panel-aud">
       <div class="ph">AUDIO ENGINE</div>
-      <canvas id="viz-canvas"></canvas>
+      <!-- Tapping the visualiser toggles mute: it is the biggest thing on
+           screen that already *shows* mute state, so it is where a thumb goes
+           first. The header button and the hotkey remain the accessible
+           paths — this is a third, redundant one, so it is not focusable. -->
+      <!-- Its own section, so it folds and moves like everything else. It sits
+           OUTSIDE #audio-panel deliberately: that panel rebuilds its innerHTML
+           on every structural change, which would recreate the canvas and drop
+           the click-to-mute handler with it. -->
+      <div class="audio-section" data-sec="visualizer">
+        <div class="audio-section-label">Oscilloscope</div>
+        <div class="viz-wrap" id="viz-wrap" title="Tap to mute / unmute">
+          <canvas id="viz-canvas"></canvas>
+          <!-- The waveform keeps moving while muted (the mute gain sits after
+               the analyser), so without this banner a silent-but-live engine
+               looks like a broken one. -->
+          <div id="viz-muted" hidden>🔇 MUTED · PRESS <b id="mute-key-hint">SPACE</b></div>
+        </div>
+      </div>
       <div class="pb" id="audio-panel">
         <div style="padding:16px 10px;color:var(--dim);font-size:10px;text-align:center;">
-          Enable audio to begin
+          <!-- Replaced by the real panel as soon as the engine starts, which
+               happens on load. Only stays visible if audio is unavailable. -->
+          Starting audio engine…
         </div>
       </div>
     </div>

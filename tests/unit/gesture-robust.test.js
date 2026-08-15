@@ -56,7 +56,10 @@ const nonGesture = () => FEATURES.map((n, i) => {
   return rnd() * 0.5;
 });
 
-const T = gesture.list();
+// Only entries that carry a template: Thumbs Down and I Love You come from
+// MediaPipe's classifier and deliberately ship without one, so there is nothing
+// here to degrade or to steal a pose with.
+const T = gesture.list().filter(g => g.f);
 const CLASSICS = ['fist', 'point', 'peace', 'thumbs', 'palm', 'horns'];
 const N = 500;
 

@@ -62,8 +62,16 @@ test('hysteresis keeps the currently-held gesture but does not create matches', 
 });
 
 // ── Template set ──
+//
+// These assertions are about the TEMPLATE set, so they consider only entries
+// that carry one. Two built-ins (Thumbs Down, I Love You) are recognized by
+// MediaPipe's classifier and have never been measured on a hand here; shipping
+// an invented vector for them would be a false match waiting to happen, so
+// they have no `f` and matchGesture skips them.
+const withTemplates = () => gesture.list().filter(g => g.f);
+
 test('no two shipped templates sit closer than the separation floor', () => {
-  const T = gesture.list();
+  const T = withTemplates();
   let worst = { d: Infinity };
   for (let i = 0; i < T.length; i++)
     for (let j = i + 1; j < T.length; j++) {
@@ -80,7 +88,7 @@ test('no two shipped templates sit closer than the separation floor', () => {
 });
 
 test('every template is full length and in range', () => {
-  for (const g of gesture.list()) {
+  for (const g of withTemplates()) {
     assert.equal(g.f.length, FEATURES.length, `${g.id} wrong length`);
     for (const [i, v] of g.f.entries())
       assert.ok(Number.isFinite(v) && v >= 0 && v <= 1, `${g.id}.${FEATURES[i]} = ${v}`);
@@ -88,7 +96,7 @@ test('every template is full length and in range', () => {
 });
 
 test('each template is its own nearest neighbour', () => {
-  const T = gesture.list();
+  const T = withTemplates();
   for (const g of T) assert.equal(matchGesture(g.f, T).id, g.id);
 });
 

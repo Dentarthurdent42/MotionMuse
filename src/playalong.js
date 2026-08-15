@@ -95,7 +95,9 @@ export const playalong = {
 
   start(songId, dId) {
     if (state !== 'idle') this.stop();
-    if (!engine.started) { toast('Enable audio first'); return false; }
+    // The engine starts with the page, so this is an unavailable-audio path
+    // now, not a "you forgot to switch it on" one.
+    if (!engine.started) { toast('Audio engine unavailable'); return false; }
     song = SONGS.find(s => s.id === songId) ?? SONGS[0];
     cfg = DIFF[dId] ?? DIFF.medium;
     diffId = DIFF[dId] ? dId : 'medium';
@@ -112,7 +114,12 @@ export const playalong = {
     savedTuning = engine.getTuning();
     engine.setTuning({ enabled: true, root: song.root, scale: song.scale, system: 'equal (12-TET)' });
 
-    // The game is played through osc1 pitch — make sure something drives it.
+    // The game is played through oscillator 1's pitch — so it needs one to
+    // exist. The bank can be emptied (chord mode alone), and the game is not a
+    // reason to refuse that; it just has to put a lead voice back before it can
+    // score anything.
+    if (!engine.PARAMS.osc1_freq) engine.setOscCount(1);
+    // …and make sure something drives it.
     if (!mapper.mappings.some(m => m.audioParam === 'osc1_freq' && m.signal)) {
       mapper.add('osc1_freq', 'hand_L_y', 80, 880, 'quad');
       renderMapper();
@@ -157,7 +164,9 @@ export const playalong = {
       });
     }
 
-    // Judge notes around the hit line.
+    // Judge notes around the hit line. No lead oscillator means no pitch to
+    // judge — the bank can be emptied mid-song from the panel.
+    if (!engine.PARAMS.osc1_freq) return;
     const pm = midiOf(engine.PARAMS.osc1_freq.val);
     for (const n of notes) {
       if (n.status !== 'upcoming') continue;
@@ -196,7 +205,8 @@ export const playalong = {
       nowMs: state === 'idle' ? 0 : nowMs(),
       countdown: state === 'countdown' ? Math.max(1, Math.ceil(-nowMs() / 1000)) : 0,
       notes,
-      playerMidi: engine.started ? midiOf(engine.PARAMS.osc1_freq.val) : null,
+      playerMidi: engine.started && engine.PARAMS.osc1_freq
+        ? midiOf(engine.PARAMS.osc1_freq.val) : null,
       root: song?.root, scale: song?.scale,
       score, streak, bestStreak, hits, judged,
       perfects, goods,

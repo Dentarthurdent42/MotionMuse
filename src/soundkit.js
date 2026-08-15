@@ -1,6 +1,7 @@
 // Instrument sound kit — synthesized timbre presets for the continuous
-// two-oscillator engine. Each kit is a resting timbre: waveforms (including
-// custom harmonic tables), filter type, and values for the timbre parameters.
+// oscillator bank. Each kit is a resting timbre: how many oscillators it wants,
+// their waveforms (including custom harmonic tables) and levels, the filter
+// type, and values for the shared timbre parameters.
 // Gesture mappings keep modulating on top — the kit sets where a parameter
 // rests, not a ceiling. Names are honest approximations: "Piano" ≈ tine
 // e-piano, "Trumpet" ≈ bright brass — synthesis, not samples.
@@ -18,41 +19,62 @@ const WAVES = {
 };
 for (const [name, w] of Object.entries(WAVES)) engine.defineWave(name, w);
 
-// Kits may only set timbre keys — never osc*_freq or volume (those belong to
-// the player's gestures and the master volume).
+// Kits may only set timbre keys — never osc*_freq or the main volume (those
+// belong to the player's gestures and to the player). Per-oscillator detune and
+// level ARE timbre, but they are declared per slot in `oscs` below rather than
+// listed here, since which slots exist is now a runtime value.
 export const KIT_PARAM_KEYS = new Set([
-  'osc_mix', 'osc1_detune', 'osc2_detune',
   'filter_freq', 'filter_q', 'lfo_rate', 'lfo_depth', 'reverb_mix',
 ]);
 
+// A kit's oscillator slots. Each kit names two, because each is voiced as a
+// pair — but applying one no longer resizes the bank or sets levels: see
+// applyKit. `level` is kept in the table as the intended balance, and is what
+// a future "apply kit as a full patch" would use; nothing reads it today.
+const KIT_OSC_DEFAULT = { detune: 0, level: 1 };
+
 export const KITS = {
   synth: {
-    label: 'Synth', osc1: 'sine', osc2: 'triangle', filter: 'lowpass',
-    params: { osc_mix: 0, osc1_detune: 0, osc2_detune: 0, filter_freq: 3000, filter_q: 1, lfo_rate: 1, lfo_depth: 0, reverb_mix: 0.12 },
+    label: 'Synth', filter: 'lowpass',
+    oscs: [{ wave: 'sine', detune: 0, level: 1.0 },
+           { wave: 'triangle', detune: 0, level: 0.0 }],
+    params: { filter_freq: 3000, filter_q: 1, lfo_rate: 1, lfo_depth: 0, reverb_mix: 0.12 },
   },
   piano: {
-    label: 'Piano', osc1: 'custom:piano', osc2: 'sine', filter: 'lowpass',
-    params: { osc_mix: 0.25, osc1_detune: 0, osc2_detune: 4, filter_freq: 2400, filter_q: 0.8, lfo_rate: 1, lfo_depth: 0, reverb_mix: 0.25 },
+    label: 'Piano', filter: 'lowpass',
+    oscs: [{ wave: 'custom:piano', detune: 0, level: 0.75 },
+           { wave: 'sine', detune: 4, level: 0.25 }],
+    params: { filter_freq: 2400, filter_q: 0.8, lfo_rate: 1, lfo_depth: 0, reverb_mix: 0.25 },
   },
   organ: {
-    label: 'Organ', osc1: 'custom:organ', osc2: 'sine', filter: 'lowpass',
-    params: { osc_mix: 0.25, osc1_detune: 0, osc2_detune: 0, filter_freq: 6000, filter_q: 0.7, lfo_rate: 5.5, lfo_depth: 0.06, reverb_mix: 0.2 },
+    label: 'Organ', filter: 'lowpass',
+    oscs: [{ wave: 'custom:organ', detune: 0, level: 0.75 },
+           { wave: 'sine', detune: 0, level: 0.25 }],
+    params: { filter_freq: 6000, filter_q: 0.7, lfo_rate: 5.5, lfo_depth: 0.06, reverb_mix: 0.2 },
   },
   trumpet: {
-    label: 'Trumpet', osc1: 'custom:trumpet', osc2: 'sawtooth', filter: 'lowpass',
-    params: { osc_mix: 0.35, osc1_detune: 0, osc2_detune: -8, filter_freq: 1800, filter_q: 2.5, lfo_rate: 5, lfo_depth: 0.05, reverb_mix: 0.15 },
+    label: 'Trumpet', filter: 'lowpass',
+    oscs: [{ wave: 'custom:trumpet', detune: 0, level: 0.65 },
+           { wave: 'sawtooth', detune: -8, level: 0.35 }],
+    params: { filter_freq: 1800, filter_q: 2.5, lfo_rate: 5, lfo_depth: 0.05, reverb_mix: 0.15 },
   },
   strings: {
-    label: 'Strings', osc1: 'custom:strings', osc2: 'sawtooth', filter: 'lowpass',
-    params: { osc_mix: 0.45, osc1_detune: -7, osc2_detune: 7, filter_freq: 2600, filter_q: 0.6, lfo_rate: 0.3, lfo_depth: 0.12, reverb_mix: 0.45 },
+    label: 'Strings', filter: 'lowpass',
+    oscs: [{ wave: 'custom:strings', detune: -7, level: 0.55 },
+           { wave: 'sawtooth', detune: 7, level: 0.45 }],
+    params: { filter_freq: 2600, filter_q: 0.6, lfo_rate: 0.3, lfo_depth: 0.12, reverb_mix: 0.45 },
   },
   flute: {
-    label: 'Flute', osc1: 'custom:flute', osc2: 'sine', filter: 'lowpass',
-    params: { osc_mix: 0.2, osc1_detune: 0, osc2_detune: 0, filter_freq: 3500, filter_q: 0.5, lfo_rate: 5.5, lfo_depth: 0.08, reverb_mix: 0.35 },
+    label: 'Flute', filter: 'lowpass',
+    oscs: [{ wave: 'custom:flute', detune: 0, level: 0.8 },
+           { wave: 'sine', detune: 0, level: 0.2 }],
+    params: { filter_freq: 3500, filter_q: 0.5, lfo_rate: 5.5, lfo_depth: 0.08, reverb_mix: 0.35 },
   },
   bass: {
-    label: 'Bass', osc1: 'custom:bass', osc2: 'square', filter: 'lowpass',
-    params: { osc_mix: 0.3, osc1_detune: 0, osc2_detune: 0, filter_freq: 600, filter_q: 1.4, lfo_rate: 1, lfo_depth: 0, reverb_mix: 0.08 },
+    label: 'Bass', filter: 'lowpass',
+    oscs: [{ wave: 'custom:bass', detune: 0, level: 0.7 },
+           { wave: 'square', detune: 0, level: 0.3 }],
+    params: { filter_freq: 600, filter_q: 1.4, lfo_rate: 1, lfo_depth: 0, reverb_mix: 0.08 },
   },
 };
 
@@ -61,8 +83,29 @@ let current = 'synth';
 export function applyKit(id) {
   const kit = KITS[id];
   if (!kit) return false;
-  engine.setOsc1Type(kit.osc1);
-  engine.setOsc2Type(kit.osc2);
+
+  // TIMBRE ONLY. A kit used to resize the bank and set every level too, so
+  // picking "Strings" switched on an oscillator you had deliberately removed
+  // and overwrote the balance you had dialled in. How many voices you play and
+  // how loud each one is, is your arrangement; a kit describes the tone.
+  //
+  // Waveforms cycle if the bank is bigger than the kit describes — with four
+  // oscillators and a two-voice kit, slots 3 and 4 repeat slots 1 and 2 rather
+  // than falling back to a default that belongs to no instrument. With ONE
+  // oscillator you get the kit's lead wave, which is the timbre the name is
+  // really about. Slot 1's wave also sets the chord voices' tone (see
+  // engine.setOscType), so chords follow the kit without it touching their
+  // level either.
+  const n = engine.getOscCount();
+  for (let i = 0; i < n; i++) {
+    const spec = { ...KIT_OSC_DEFAULT, ...kit.oscs[i % kit.oscs.length] };
+    engine.setOscType(i, spec.wave);
+    engine.set(`osc${i + 1}_detune`, spec.detune);
+  }
+  // A bank of zero still has chord voices to tone, and setOscType(0) is what
+  // carries the waveform to them.
+  if (n === 0) engine.setOscType(0, { ...KIT_OSC_DEFAULT, ...kit.oscs[0] }.wave);
+
   engine.setFilterType(kit.filter);
   for (const [k, v] of Object.entries(kit.params)) {
     if (KIT_PARAM_KEYS.has(k)) engine.set(k, v);

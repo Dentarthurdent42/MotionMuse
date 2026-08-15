@@ -5,6 +5,12 @@ import { setStatus }                                        from './ui/status.js
 import { depthSource }                                      from './depth.js';
 import { createPoseBackend }                                from './posebackends.js';
 import { lsGet, lsSet }                                     from './storage.js';
+import { gesture }                                          from './gesture.js';
+
+// How sure the handedness guess has to be before it is allowed to REJECT a
+// hand. MediaPipe reports a score per detection; below this the label is a coin
+// toss and rejecting on it would cost dropouts on a correctly-shown hand.
+const HANDEDNESS_SURE = 0.9;
 
 
 // Hand skeleton connections (MediaPipe 21-landmark topology)
@@ -32,6 +38,80 @@ export const cvSource = {
   running:  false,
   lastTime: -1,
   _lat:     null,
+
+  // Which models run. Hand tracking is normally the frame-rate bottleneck —
+  // it costs roughly twice what pose does — so being able to switch either
+  // off outright is the bluntest and most effective control there is. Both
+  // default on; the choice persists.
+  //
+  // Left and right are separate because handedness is a *guess*: MediaPipe
+  // infers it from the hand's appearance, and a single hand at an odd angle
+  // gets mislabelled, which silently swaps every signal it drives. Telling it
+  // you are only using your right hand removes the guess — anything detected
+  // is that hand — and, with only one side wanted, halves the landmark work.
+  handsL: true,
+  handsR: true,
+  poseOn: true,
+
+  // `handsOn` stays the question the render loop asks: is the hand model
+  // needed at all? Derived, so there is one source of truth rather than a
+  // third flag to keep in step.
+  get handsOn() { return this.handsL || this.handsR; },
+
+  setTracking({ hands, handsL, handsR, pose } = {}) {
+    // `hands` sets both, so existing callers and saved state keep working.
+    if (hands  !== undefined) { this.handsL = !!hands; this.handsR = !!hands; }
+    if (handsL !== undefined) this.handsL = !!handsL;
+    if (handsR !== undefined) this.handsR = !!handsR;
+    if (pose   !== undefined) this.poseOn = !!pose;
+    // Drop the cached result of anything switched off, or the overlay would
+    // keep drawing the last landmarks it saw as though they were live.
+    if (!this.handsOn) this._hr = null;
+    if (!this.poseOn)  this._pr = null;
+    // Drop the timings too, so switching a model back on reports what it is
+    // doing now rather than the average it left behind.
+    if (!this.handsOn) this._lat?.hand.splice(0);
+    if (!this.poseOn)  this._lat?.pose.splice(0);
+    this._syncLatRows();
+    lsSet('motionmuse-tracking', JSON.stringify(
+      { handsL: this.handsL, handsR: this.handsR, pose: this.poseOn }));
+    this._applyHandCount();
+    return { hands: this.handsOn, handsL: this.handsL, handsR: this.handsR, pose: this.poseOn };
+  },
+
+  // Always ask for two hands, even when only one side is enabled.
+  //
+  // This used to ask for one, on the reasoning that numHands caps how many
+  // times the landmark stage runs. It does — but only when a second hand is
+  // ACTUALLY IN FRAME. With one hand up, asking for two costs exactly the
+  // same, because the palm detector finds one hand and the landmark model runs
+  // once. So the saving was confined to precisely the situation the cap got
+  // wrong: with two hands visible and numHands 1, the model returns whichever
+  // palm scored highest — often the hand resting in your lap — and that hand
+  // then drove the enabled side's signals. Enabling only the left hand did not
+  // stop the right one playing.
+  //
+  // With two, both are landmarked and processHands picks the one whose
+  // handedness matches. Paying for a second landmark pass only when there is a
+  // second hand to tell apart is the right trade.
+  _applyHandCount() {
+    if (!this.hand || !this.handsOn) return;
+    if (this._handCount === 2) return;
+    this._handCount = 2;
+    this.setHandOptions({ hands: 2 });
+  },
+
+  _loadTracking() {
+    try {
+      const s = JSON.parse(lsGet('motionmuse-tracking') || '{}');
+      // Migrate the older single `hands` flag.
+      const both = s.hands !== false;
+      this.handsL = s.handsL ?? both;
+      this.handsR = s.handsR ?? both;
+      this.poseOn = s.pose !== false;
+    } catch { /* defaults stand */ }
+    return { hands: this.handsOn, handsL: this.handsL, handsR: this.handsR, pose: this.poseOn };
+  },
 
   // ── Register all CV signals into the bus ────────────────────────────
   registerSignals() {
@@ -94,7 +174,7 @@ export const cvSource = {
     this.registerSignals();
     setStatus('loading', 'LOADING MODELS…');
 
-    const { FilesetResolver, HandLandmarker } = await import(
+    const { FilesetResolver, HandLandmarker, GestureRecognizer } = await import(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs'
     );
 
@@ -102,27 +182,91 @@ export const cvSource = {
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
     );
 
-    this.hand = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-        delegate: 'GPU',
-      },
-      numHands: 2,
-      runningMode: 'VIDEO',
-    });
+    this._vision = vision;                 // kept so the hand model can be rebuilt
+    this._HandLandmarker = HandLandmarker;
+    this._GestureRecognizer = GestureRecognizer;
+    const saved = this._savedModel();
+    this.hand = await this._makeHand(saved.delegate, saved.hands);
 
     // Pose runs behind a swappable backend (dev Models panel).
-    const saved = this._savedModel();
     this.poseBackend = createPoseBackend(saved.backend, { delegate: saved.delegate });
     await this.poseBackend.init();
     this._setLatModel();
   },
 
   _savedModel() {
+    const dflt = { backend: 'mp-lite', delegate: 'GPU' };
+    let s;
+    try { s = { ...dflt, ...JSON.parse(lsGet('motionmuse-posemodel') || '{}') }; }
+    catch { s = { ...dflt }; }
+    // Hand count is derived from which sides are wanted — one owner, so the
+    // header toggles and the model can't disagree about it.
+    this._loadTracking();
+    s.hands = 2;
+    return s;
+  },
+
+  // The hand model is the usual frame-rate bottleneck — it costs roughly twice
+  // what pose does, and `numHands: 2` runs the landmark stage per detected
+  // hand, so tracking one hand is close to half the work. Both that and the
+  // delegate were hardcoded, which meant the Models panel's DELEGATE switch
+  // silently applied to pose only while hands stayed on whatever the browser
+  // gave it.
+  //
+  // GestureRecognizer rather than HandLandmarker. It is not a second model on
+  // top: the .task bundle contains hand_landmarker.task and
+  // hand_gesture_recognizer.task side by side, and its result carries the same
+  // landmarks / worldLandmarks / handedness fields plus `gestures`. So the
+  // extra cost is a small classifier head, and in exchange the seven shapes it
+  // knows are recognized by a trained model instead of hand-measured
+  // templates. Everything else — ASL numbers, rock horns, user recordings —
+  // still comes from the templates (see resolveGesture in gesture.js).
+  async _makeHand(delegate = 'GPU', numHands = 2) {
+    const base = { numHands, runningMode: 'VIDEO' };
     try {
-      return { backend: 'mp-lite', delegate: 'GPU',
-               ...JSON.parse(lsGet('motionmuse-posemodel') || '{}') };
-    } catch { return { backend: 'mp-lite', delegate: 'GPU' }; }
+      return await this._GestureRecognizer.createFromOptions(this._vision, {
+        ...base,
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task',
+          delegate,
+        },
+      });
+    } catch (e) {
+      // Never lose hand tracking over the classifier. If the bundle will not
+      // load — old cache, blocked host, unsupported delegate — fall back to the
+      // plain landmarker and let the templates carry recognition exactly as
+      // they did before. Detected per-instance at the call site, so nothing
+      // downstream has to know which one it got.
+      console.warn('[cv] gesture recognizer unavailable, using hand landmarker:', e);
+      return this._HandLandmarker.createFromOptions(this._vision, {
+        ...base,
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+          delegate,
+        },
+      });
+    }
+  },
+
+  // Rebuild the hand model live (camera keeps running; hand frames reuse the
+  // previous result until the replacement is ready).
+  async setHandOptions({ delegate, hands } = {}) {
+    if (this._switching || !this._vision) return false;
+    this._switching = true;
+    try {
+      const saved = this._savedModel();
+      const d = delegate ?? saved.delegate;
+      const n = hands ?? saved.hands;
+      const next = await this._makeHand(d, n);
+      const old = this.hand;
+      this.hand = next;
+      old?.close?.();
+      this._lat?.hand.splice(0);
+      lsSet('motionmuse-posemodel', JSON.stringify({ ...saved, delegate: d, hands: n }));
+      return true;
+    } finally {
+      this._switching = false;
+    }
   },
 
   _setLatModel() {
@@ -142,7 +286,10 @@ export const cvSource = {
       this.poseBackend = next;
       old?.dispose?.();
       this._lat?.pose.splice(0);   // stats restart for the new model
-      lsSet('motionmuse-posemodel', JSON.stringify({ backend: id, delegate }));
+      // Merge, don't replace: this used to drop the hand settings stored
+      // alongside, so changing the pose model reset hands to the default.
+      lsSet('motionmuse-posemodel',
+        JSON.stringify({ ...this._savedModel(), backend: id, delegate }));
       this._setLatModel();
       return true;
     } finally {
@@ -173,6 +320,7 @@ export const cvSource = {
 
     this._lat = { hand: [], pose: [], total: [], interval: [], lastT: 0, frame: 0 };
     document.getElementById('latency-bar').style.display = 'flex';
+    this._syncLatRows();
 
     this.running = true;
     this.loop();
@@ -213,11 +361,20 @@ export const cvSource = {
       lat.lastT = now;
       try {
         const t0 = performance.now();
-        if ((lat.frame & 1) === 0) {
-          this._hr = this.hand.detectForVideo(this.video, now);
+        // With both enabled the two models alternate. With one disabled the
+        // other runs EVERY frame rather than idling on its turn: switching
+        // pose off is meant to buy hand tracking the whole frame budget, and
+        // keeping the alternation would have thrown half of it away.
+        const both = this.handsOn && this.poseOn;
+        const runHand = both ? (lat.frame & 1) === 0 : this.handsOn;
+        const runPose = both ? !runHand : this.poseOn;
+        if (runHand) {
+          this._hr = this.hand.recognizeForVideo
+            ? this.hand.recognizeForVideo(this.video, now)
+            : this.hand.detectForVideo(this.video, now);
           push30(lat.hand, performance.now() - t0);
           this.processHands(this._hr);
-        } else {
+        } else if (runPose) {
           this._pr = this.poseBackend.detect(this.video, now);
           push30(lat.pose, performance.now() - t0);
           this.processPose(this._pr);
@@ -232,6 +389,23 @@ export const cvSource = {
     requestAnimationFrame(() => this.loop());
   },
 
+  // Show a timing row only while the model behind it is running. HAND and POSE
+  // used to sit there whatever was enabled, so tracking the face alone showed
+  // two averages from models that had stopped — numbers indistinguishable from
+  // live ones. TOTAL covers this loop's inference, so it goes when both do.
+  // (FACE has its own loop and owns its own row; see face.js.)
+  _syncLatRows() {
+    const show = (id, on) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = on ? '' : 'none';
+    };
+    show('lat-hand-wrap',  this.handsOn);
+    show('lat-pose-wrap',  this.poseOn);
+    show('lat-total-wrap', this.handsOn || this.poseOn);
+    // MODEL names the POSE backend, so it belongs to the pose row.
+    show('lat-model-wrap', this.poseOn);
+  },
+
   _updateLatency() {
     const { hand, pose, total, interval } = this._lat;
     const ms  = a => a.length ? (a.reduce((s, v) => s + v, 0) / a.length).toFixed(1) + 'ms' : '—';
@@ -244,17 +418,67 @@ export const cvSource = {
     document.getElementById('lat-total').textContent = ms(total);
   },
 
+  // Which detection to treat as `side`, or -1 for none. Exported shape kept
+  // simple (indices into the result) so the choice is one place and testable.
+  _pickSide(r, side) {
+    let unsure = -1;
+    for (let i = 0; i < r.landmarks.length; i++) {
+      const h = r.handednesses[i]?.[0];
+      const guess = h?.categoryName === 'Left' ? 'L' : 'R';
+      const score = h?.score ?? 0;
+      if (score < HANDEDNESS_SURE) { if (unsure < 0) unsure = i; continue; }
+      if (guess === side) return i;            // confident, and it's the one
+    }
+    return unsure;                             // no confident match; take a maybe
+  },
+
   // ── Signal extraction: hands ─────────────────────────────────────────
   processHands(r) {
-    const found      = { L: null, R: null };
-    const foundWorld = { L: null, R: null };
+    const found       = { L: null, R: null };
+    const foundWorld  = { L: null, R: null };
+    const foundCanned = { L: null, R: null };   // MediaPipe canned category
+    // With exactly one side enabled, pick the detection whose handedness
+    // matches — but only trust that guess when the model is sure of it.
+    //
+    // Both extremes are wrong. Trusting the guess outright is what made
+    // single-hand play unreliable in the first place: one bad frame relabels
+    // the hand and every signal it drives jumps to the other side's keys.
+    // Ignoring it entirely — which is what shipped instead — means whatever
+    // hand the model happens to return drives the enabled side, so a hand
+    // resting in your lap plays the instrument.
+    //
+    // So: prefer a confident match; fall back to a hand the model is unsure
+    // about (that is the old lenient behaviour, and it keeps a correctly-shown
+    // hand from dropping out on a shaky frame); and reject a hand it is
+    // confident belongs to the other side. That last case is the bug being
+    // fixed, and it is the only one where a hand is thrown away.
+    const onlySide = this.handsL !== this.handsR ? (this.handsL ? 'L' : 'R') : null;
     if (r.handednesses && r.landmarks) {
-      r.handednesses.forEach((h, i) => {
-        // MediaPipe Tasks API reports handedness from the subject's perspective
-        const side = h[0].categoryName === 'Left' ? 'L' : 'R';
-        found[side]      = r.landmarks[i];
-        foundWorld[side] = r.worldLandmarks?.[i] ?? null;
-      });
+      if (onlySide && r.landmarks.length) {
+        const i = this._pickSide(r, onlySide);
+        if (i >= 0) {
+          found[onlySide]       = r.landmarks[i];
+          foundWorld[onlySide]  = r.worldLandmarks?.[i] ?? null;
+          foundCanned[onlySide] = r.gestures?.[i]?.[0] ?? null;
+        }
+      } else {
+        r.handednesses.forEach((h, i) => {
+          // MediaPipe Tasks API reports handedness from the subject's perspective
+          const side = h[0].categoryName === 'Left' ? 'L' : 'R';
+          if (side === 'L' ? !this.handsL : !this.handsR) return;
+          found[side]      = r.landmarks[i];
+          foundWorld[side] = r.worldLandmarks?.[i] ?? null;
+          // Same index, same side resolution — so the classification and the
+          // landmarks can never end up describing different hands.
+          foundCanned[side] = r.gestures?.[i]?.[0] ?? null;
+        });
+      }
+    }
+    // 'None' is the classifier saying it has no opinion, not a gesture.
+    for (const side of ['L', 'R']) {
+      const c = foundCanned[side];
+      gesture.setCanned(side, c && c.categoryName !== 'None' ? c.categoryName : null,
+                        c?.score ?? 0);
     }
 
     ['L', 'R'].forEach(s => {

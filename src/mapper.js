@@ -19,6 +19,18 @@ export const mapper = (() => {
     invquad: t => (1 - t) * (1 - t),
   };
 
+  // A patch can name oscillator params the current bank does not have: a preset
+  // voiced for two oscillators loaded while one is running, or a file saved from
+  // a bigger setup. Grow the bank to fit rather than dropping those cables — a
+  // mapping whose parameter does not exist is a node the patchbay draws and
+  // nothing drives. Never shrinks: a patch that happens to use fewer
+  // oscillators is not a request to delete the rest.
+  const oscSlotOf = key => +(/^osc(\d+)_/.exec(key ?? '')?.[1] ?? 0);
+  const growBankFor = keys => {
+    const want = keys.reduce((n, k) => Math.max(n, oscSlotOf(k)), 0);
+    if (want > engine.getOscCount()) engine.setOscCount(want);
+  };
+
   return {
     mappings,
 
@@ -57,6 +69,7 @@ export const mapper = (() => {
     load(arr) {
       mappings.length = 0;   // keep the exported array reference intact
       nextId = 0;
+      growBankFor((arr || []).map(m => m?.audioParam));
       (arr || []).forEach(m =>
         this.add(m.audioParam, m.signal, m.outMin, m.outMax, m.curve, m.steps, m.invert));
     },
@@ -91,6 +104,7 @@ export const mapper = (() => {
       const preset = PRESETS.find(p => p.id === id) ?? PRESETS[0];
       mappings.length = 0;
       nextId = 0;
+      growBankFor(preset.mappings.map(a => a[0]));
       // [audioParam, signal, outMin, outMax, curve, steps, invert]
       preset.mappings.forEach(a => this.add(...a));
       return preset;
@@ -113,7 +127,7 @@ export const PRESETS = [
       ['osc1_freq',   'hand_L_y',    80,    880, 'quad'],
       ['osc2_freq',   'hand_R_y',    80,   1320, 'quad'],
       ['filter_freq', 'hand_L_open', 300,  8000, 'quad'],
-      ['osc_mix',     'hand_R_open',   0,     1, 'linear'],
+      ['osc2_volume', 'hand_R_open',   0,     1, 'linear'],
       ['lfo_depth',   'elbow_L',       0,     1, 'linear'],
       ['reverb_mix',  'hand_R_z',      0,   0.6, 'linear'],
       // pinch_R is 1 when the fingers are together, so volume has to fall as it
@@ -140,8 +154,8 @@ export const PRESETS = [
       ['filter_freq',  'smile',       400, 7000, 'quad'],
       ['osc2_detune',  'pucker',      -30,   30, 'linear'],
       ['reverb_mix',   'cheek_puff',    0,  0.7, 'linear'],
-      // Tilting your head trades one oscillator for the other.
-      ['osc_mix',      'head_roll',     0,    1, 'linear'],
+      // Tilting your head fades the second oscillator in against the first.
+      ['osc2_volume',  'head_roll',     0,    1, 'linear'],
     ],
   },
   {
@@ -171,3 +185,37 @@ export const PRESETS = [
 ];
 
 export const DEFAULT_PRESET = 'hands';
+
+// ── What a preset actually needs switched on ───────────────────────────────
+//
+// Derived from the preset's own signals rather than declared beside it. Each
+// bus signal already knows its group ('hand l', 'pose', 'face', 'gaze', …), so
+// the trackers a patch requires fall straight out of the cables it wires — and
+// cannot drift from them the way a hand-maintained list would. Wire a face
+// signal into a preset and the face model is required, because that is what
+// the word "required" means here.
+const GROUP_TRACKERS = {
+  'hand l': ['handsL'],
+  'hand r': ['handsR'],
+  // A gesture is matched on whichever hand is up; the patch does not say which,
+  // so it asks for both rather than silently picking one.
+  gesture:  ['handsL', 'handsR'],
+  pose:     ['pose'],
+  depth:    ['pose'],       // hand_*_z is derived from the pose/depth pipeline
+  face:     ['face'],
+  gaze:     ['gaze'],
+};
+
+// { handsL, handsR, pose, face, gaze } — every tracker, so this is a complete
+// statement of the patch's needs and can be applied as-is. A tracker no cable
+// touches is `false`: loading "Face · Brow & Mouth" should leave hands and pose
+// OFF, not merely not-required, or the patch arrives with three models running
+// for nothing.
+export function trackersFor(preset) {
+  const want = { handsL: false, handsR: false, pose: false, face: false, gaze: false };
+  for (const [, signal] of preset?.mappings ?? []) {
+    const g = bus.signals.get(signal)?.group;
+    for (const t of GROUP_TRACKERS[g] ?? []) want[t] = true;
+  }
+  return want;
+}

@@ -115,7 +115,7 @@ export function updateFsOverlay() {
   fsKbd.draw({
     root: t.root,
     scale: t.enabled ? t.scale : null,   // untinted keys when quantise is off
-    m1: midiOf(engine.PARAMS.osc1_freq.val),
-    m2: midiOf(engine.PARAMS.osc2_freq.val),
+    markers: Array.from({ length: engine.getOscCount() },
+      (_, i) => midiOf(engine.PARAMS[`osc${i + 1}_freq`].val)),
   });
 }

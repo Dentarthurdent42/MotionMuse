@@ -38,7 +38,8 @@ await p.setViewportSize({ width: 1440, height: 950 });
 await p.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
 
 // Put the app in every state a step can declare via `needs`. Playwright
-// clicks count as user gestures, so AUDIO ON genuinely starts the engine.
+// clicks count as user gestures, so this genuinely resumes the audio context
+// (the engine itself now starts with the page, muted).
 await p.click('#dev-btn');        // 'dev'
 await p.click('#audio-btn');      // 'audio' — builds the audio panel sections
 await p.waitForTimeout(400);
@@ -46,8 +47,11 @@ await p.click('#chord-toggle');   // 'chord'
 await p.waitForTimeout(200);
 
 const r = await p.evaluate(async () => {
-  const { TOUR_STEPS, tour, unseenSteps } = await import('/src/ui/tutorial.js');
-  const out = { stale: [], dupIds: [], visited: [], total: TOUR_STEPS.length };
+  const { TOUR_STEPS, tour, unseenSteps, stepsForMode, MODES,
+          stepsForSection, sectionsWithHelp, appSteps } =
+    await import('/src/ui/tutorial.js');
+  const out = { stale: [], dupIds: [], visited: [], total: TOUR_STEPS.length,
+                perMode: {}, orphans: [] };
 
   // ── Data integrity ──
   const ids = TOUR_STEPS.map(s => s.id);
@@ -63,20 +67,64 @@ const r = await p.evaluate(async () => {
     }
   }
 
-  // ── Drive the real engine through every step ──
+  // ── Every step belongs to at least one mode ──
+  // The tour is scoped per way of playing now, so the failure to guard against
+  // is a step that is tagged for a mode that does not exist and is therefore
+  // never shown to anyone.
+  const covered = new Set(MODES.flatMap(m => stepsForMode(m).map(t => t.id)));
+  out.orphans = TOUR_STEPS.filter(t => !covered.has(t.id)).map(t => t.id);
+
+  // Captured before ANY tour runs: every run below marks its steps seen, and
+  // the per-panel runs alone would eat a third of them before the baseline.
   out.freshBefore = unseenSteps().length;
-  tour.start();
-  for (let guard = 0; guard < TOUR_STEPS.length + 2; guard++) {
-    const title = document.querySelector('.tour-title')?.textContent;
-    const count = document.querySelector('.tour-count')?.textContent;
-    if (!title) break;
-    out.visited.push(`${count} ${title}`);
-    const nextBtn = document.getElementById('tour-next');
-    const done = nextBtn.textContent === 'DONE';
-    nextBtn.click();
-    if (done) break;
-    await new Promise(rq => requestAnimationFrame(rq));
+
+  // ── Per-panel help ──
+  // A step tagged for a panel that does not exist is a `?` that never appears,
+  // so the help is written and unreachable. And a panel whose `?` opens nothing
+  // is worse than no `?` at all.
+  out.sectionsWanted = sectionsWithHelp();
+  out.sectionsMissingPanel = out.sectionsWanted.filter(id =>
+    !document.querySelector(`.sec[data-sec-id="${id}"]`));
+  out.sectionsMissingButton = out.sectionsWanted.filter(id =>
+    !document.querySelector(`.sec[data-sec-id="${id}"] .sec-help`));
+  out.emptyHelpButtons = [...document.querySelectorAll('.sec .sec-help')]
+    .map(b => b.closest('.sec').dataset.secId)
+    .filter(id => stepsForSection(id).length === 0);
+  out.appStepCount = appSteps().length;
+
+  // Each panel's `?` opens only that panel's steps.
+  out.sectionRuns = {};
+  for (const id of out.sectionsWanted) {
+    document.querySelector(`.sec[data-sec-id="${id}"] .sec-help`)?.click();
+    out.sectionRuns[id] = {
+      want: stepsForSection(id).length,
+      shown: document.querySelector('.tour-count')?.textContent ?? '(none)',
+      title: document.querySelector('.tour-title')?.textContent ?? '',
+    };
+    tour.close();
   }
+
+  // ── Drive the real engine through EACH mode's tour ──
+  const walk = async (mode) => {
+    const expected = stepsForMode(mode).length;
+    const seen = [];
+    tour.start(mode);
+    for (let guard = 0; guard < expected + 2; guard++) {
+      const title = document.querySelector('.tour-title')?.textContent;
+      const count = document.querySelector('.tour-count')?.textContent;
+      if (!title) break;
+      seen.push(`${count} ${title}`);
+      const nextBtn = document.getElementById('tour-next');
+      const done = nextBtn.textContent === 'DONE';
+      nextBtn.click();
+      if (done) break;
+      await new Promise(rq => requestAnimationFrame(rq));
+    }
+    return { expected, seen };
+  };
+  for (const m of MODES) out.perMode[m] = await walk(m);
+  out.visited = out.perMode[MODES[MODES.length - 1]].seen;
+
   out.closedCleanly = !document.getElementById('tour-card');
   out.ringGone = !document.getElementById('tour-ring');
   out.freshAfter = unseenSteps().length;
@@ -87,6 +135,87 @@ const r = await p.evaluate(async () => {
   return out;
 });
 
+// ── The spotlight must stay on its target when the zoom level changes ──
+// It used to reposition only on `resize` and `scroll`, which left the ring
+// stranded whenever the layout moved without firing one of those. Each case
+// below moves the target in a way that misses a different trigger: a pinch
+// touches the visual viewport only, a zoom change reflows *after* resize has
+// been and gone, and a page zoom puts written lengths in different units from
+// the rect they were measured from.
+// Which step is tested matters. A header button barely moves when the page
+// reflows, so it stays aligned even with the tracking removed and proves
+// nothing; the bug shows on a target far down a scrolled column, where a
+// reflow above it drags it hundreds of pixels. So: spotlight the deepest
+// target on the page, on its own, and hold the tour there.
+const target = await p.evaluate(async () => {
+  const { TOUR_STEPS, tour } = await import('/src/ui/tutorial.js');
+  const deepest = TOUR_STEPS
+    .filter(s => s.target && document.querySelector(s.target)?.getClientRects().length)
+    .map(s => ({ s, y: document.querySelector(s.target).getBoundingClientRect().top + scrollY }))
+    .sort((a, b) => b.y - a.y)[0];
+  if (!deepest) return null;
+  tour.start({ steps: [deepest.s] });      // a one-step tour parks the ring there
+  return deepest.s.target;
+});
+// The ring is drawn 6px outside its target on every side, so a correct ring
+// sits at exactly -6; anything past a rounding pixel or two is a real miss.
+const offBy = sel => p.evaluate(s => {
+  const ring = document.getElementById('tour-ring'), t = document.querySelector(s);
+  if (!ring || !t) return 999;
+  const R = ring.getBoundingClientRect(), T = t.getBoundingClientRect();
+  return +Math.max(Math.abs(R.left - T.left + 6), Math.abs(R.top - T.top + 6)).toFixed(1);
+}, sel);
+
+const zoom = [];
+if (target) {
+  const cdp = await p.context().newCDPSession(p);
+  await p.waitForTimeout(1200);            // let scrollIntoView and the ring transition settle
+  zoom.push(['unzoomed', await offBy(target)]);
+
+  // The mechanism underneath every case below: the target moved and the DOM
+  // said nothing. No resize, no scroll — just a reflow, which is what a zoom
+  // change actually produces once panels re-measure themselves. Growing a
+  // sibling above the target reproduces it in one step. It runs first, on a
+  // freshly parked tour: once the cases below have shuffled the scroll
+  // position around, inserting content can nudge a scrolled container and fire
+  // the scroll event that would have covered for the missing tracking.
+  await p.evaluate(sel => {
+    const t = document.querySelector(sel);
+    const spacer = document.createElement('div');
+    spacer.id = '__reflow-spacer';
+    spacer.style.cssText = 'height:160px;flex:0 0 auto';
+    t.parentNode.insertBefore(spacer, t);
+  }, target);
+  await p.waitForTimeout(700);
+  zoom.push(['a silent reflow moved it', await offBy(target)]);
+  await p.evaluate(() => document.getElementById('__reflow-spacer')?.remove());
+  await p.waitForTimeout(700);
+
+  for (const z of [1.5, 2]) {               // Ctrl +/−: viewport shrinks, DPR rises
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: Math.round(1440 / z), height: Math.round(950 / z), deviceScaleFactor: z, mobile: false });
+    await p.waitForTimeout(700);
+    zoom.push([`browser zoom ${z * 100}%`, await offBy(target)]);
+  }
+  await cdp.send('Emulation.clearDeviceMetricsOverride');
+  await p.waitForTimeout(700);
+  zoom.push(['back to 100%', await offBy(target)]);
+
+  for (const z of [1.5, 2]) {               // pinch: no resize event at all
+    await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: z });
+    await p.waitForTimeout(700);
+    zoom.push([`pinch ${z * 100}%`, await offBy(target)]);
+  }
+  await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 });
+
+  for (const z of [1.5, 0.67]) {            // page zoom: a second set of units
+    await p.evaluate(v => { document.documentElement.style.zoom = v; }, z);
+    await p.waitForTimeout(700);
+    zoom.push([`page zoom ${z}`, await offBy(target)]);
+  }
+  await p.evaluate(() => { document.documentElement.style.zoom = ''; });
+}
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -95,17 +224,46 @@ const check = (ok, label, detail = '') => {
   console.log(`  [${ok ? ' PASS ' : ' FAIL '}]  ${label}${detail ? '  — ' + detail : ''}`);
 };
 
-console.log(`\nTutorial staleness guard — ${r.total} steps\n`);
+console.log(`\nTutorial staleness guard — ${r.total} steps across ${Object.keys(r.perMode).length} modes\n`);
 check(r.stale.length === 0, 'every step targets visible UI',
   r.stale.length ? `stale: ${r.stale.join('; ')} (update TOUR_STEPS in src/ui/tutorial.js)` : '');
 check(r.dupIds.length === 0, 'step ids are unique', r.dupIds.join(', '));
 check(r.badShape.length === 0, 'every step has id/title/body', r.badShape.join(', '));
-check(r.visited.length === r.total, 'tour walks every step end-to-end',
-  `visited ${r.visited.length}/${r.total}`);
+check(r.orphans.length === 0, 'every step belongs to at least one mode',
+  r.orphans.join(' '));
+
+// ── Per-panel help ──
+check(r.sectionsMissingPanel.length === 0,
+  'every step tagged for a panel targets a panel that exists',
+  r.sectionsMissingPanel.join(' '));
+check(r.sectionsMissingButton.length === 0,
+  'and every one of those panels grew a ?', r.sectionsMissingButton.join(' '));
+check(r.emptyHelpButtons.length === 0,
+  'no ? opens an empty tour', r.emptyHelpButtons.join(' '));
+check(r.appStepCount > 0 && r.appStepCount < r.total,
+  'the header ? keeps the steps that belong to no panel',
+  `${r.appStepCount} of ${r.total}`);
+for (const [id, run] of Object.entries(r.sectionRuns)) {
+  check(run.shown === `1/${run.want}`, `${id}: its ? opens only its own steps`,
+    `${run.shown} (want 1/${run.want}) — ${run.title}`);
+}
+for (const [mode, m] of Object.entries(r.perMode)) {
+  check(m.seen.length === m.expected, `${mode} tour walks every one of its steps`,
+    `visited ${m.seen.length}/${m.expected}`);
+  check(m.expected < r.total, `${mode} tour is scoped, not the whole thing`,
+    `${m.expected} of ${r.total}`);
+}
 check(r.closedCleanly && r.ringGone, 'tour tears down after DONE');
 check(r.stateSaved, 'completion persists to localStorage');
-check(r.freshBefore === r.total && r.freshAfter === 0, '"new steps" tracking flips seen→0',
+// Between them the two tours show everything, so after walking both there is
+// nothing left unseen.
+check(r.freshBefore === r.total && r.freshAfter === 0,
+  '"new steps" tracking flips seen→0 once both tours have run',
   `${r.freshBefore}→${r.freshAfter}`);
+check(target !== null, 'a spotlit step was found to test zoom against', target ?? '');
+for (const [label, off] of zoom) {
+  check(off <= 2, `the spotlight holds its target — ${label}`, `off by ${off}px`);
+}
 check(pageErrors.length === 0, 'no page errors', pageErrors.join('; '));
 
 for (const v of r.visited) console.log(`      ${v}`);

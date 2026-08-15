@@ -3,10 +3,11 @@
 // audio-ui.js stays focused on the synth panel.
 
 import { gesture, gestureLabel } from '../gesture.js';
-import { chordmode }  from '../chordmode.js';
+import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS } from '../chordmode.js';
 import { diatonicChord, DIATONIC_SCALES } from '../chords.js';
 import { NOTE_NAMES } from '../scale.js';
 import { cvSource }   from '../cv.js';
+import { engine }     from '../engine.js';
 import { toast }      from './status.js';
 import { buildSigPanel } from './signals.js';
 
@@ -22,8 +23,9 @@ const MODE_LABELS = {
 
 export function gestureSectionsHTML() {
   const gestures = gesture.list();
+  const relId = chordmode.getReleaseGesture();
+  const env = engine.getChordEnv();
   const on = chordmode.enabled;
-  const asg = chordmode.assignments();
 
   const row = g => {
     const label = gestureLabel(g);
@@ -65,14 +67,8 @@ export function gestureSectionsHTML() {
 
   const key  = chordmode.key();
   const eff  = chordmode.effectiveKey();
+  const sevenths = chordmode.sevenths();
   const flw  = chordmode.isFollowing();   // armed *and* actually overriding
-  // Degree options are labelled with the numeral *and* the chord it currently
-  // spells ("V · G"), so the abstraction stays legible while you pick.
-  const degOptions = sel => Array.from({ length: 7 }, (_, i) => {
-    const c = diatonicChord(eff.root, eff.octave, eff.mode, i);
-    return `<option value="${i}"${i === sel ? ' selected' : ''}>${c.numeral} · ${c.rootName}</option>`;
-  }).join('');
-
   const keyRow = on ? `
     <div class="chord-key">
       <span class="chord-key-lbl">KEY</span>
@@ -89,29 +85,88 @@ export function gestureSectionsHTML() {
                 : 'Take the key from Pitch Quantize, so chords match the melody'}">FOLLOW</button>
     </div>` : '';
 
-  const assignRow = g => {
-    const a = asg[g.id] ?? { degree: 0, seventh: false };
+  // One row per CHORD, not per handshape.
+  //
+  // It was the other way round, and that let the same shape be a chord *and*
+  // the release — a configuration the panel would happily show and the tick
+  // loop then had to break by fiat, so what you saw was not what you heard.
+  // Listing the chords instead makes the mapping a function by construction:
+  // seven degrees plus RELEASE, one handshape each, and choosing a shape takes
+  // it off whatever it was doing before.
+  const shapeOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
+    + gesture.list().map(g =>
+        `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>${gestureLabel(g)}</option>`).join('');
+
+  const chordRow = i => {
+    const c = diatonicChord(eff.root, eff.octave, eff.mode, i, sevenths[i]);
+    const gid = chordmode.gestureFor(i);
     return `
-    <div class="chord-assign" data-gid="${g.id}">
-      <span class="gesture-name" title="${gestureLabel(g)}">${g.name + (g.asl ? ` · ${g.asl}` : '')}</span>
-      <select class="ch-deg" data-gid="${g.id}" aria-label="Scale degree for ${gestureLabel(g)}"
-        >${degOptions(a.degree)}</select>
-      <button class="wave-btn ch-sev${a.seventh ? ' on' : ''}" data-gid="${g.id}"
-              aria-pressed="${a.seventh}" title="Add the diatonic 7th">7th</button>
+    <div class="chord-assign" data-degree="${i}">
+      <span class="gesture-dot" id="cdot-${i}"></span>
+      <span class="chord-degree" title="${c.numeral} · ${c.rootName} ${c.quality}"
+        >${c.numeral} · ${c.rootName}</span>
+      <select class="ch-shape" data-degree="${i}"
+              aria-label="Handshape that plays ${c.numeral}"
+        >${shapeOptions(gid)}</select>
+      <button class="wave-btn ch-sev${sevenths[i] ? ' on' : ''}" data-degree="${i}"
+              aria-pressed="${sevenths[i]}" title="Add the diatonic 7th">7th</button>
     </div>`;
   };
+
+  const ex = chordmode.expression();
+  const MODE_LABEL = {
+    gesture: 'Handshape holds it',
+    hand:    'Other hand — openness',
+    brow:    'Eyebrows',
+  };
+  const CONTROL_LABEL = { gate: 'ATTACK / RELEASE', volume: 'VOLUME' };
+  const exprRow = !on ? '' : `
+    <div class="chord-expr">
+      <span class="chord-key-lbl">PLAY WITH</span>
+      <select id="ck-expr-mode" aria-label="What makes the chord sound"
+              title="What sounds the chord once a handshape has named it. Two-handed play frees the shape from doing two jobs at once.">
+        ${EXPRESSION_MODES.map(m => `<option value="${m}"${m === ex.mode ? ' selected' : ''}>${MODE_LABEL[m]}</option>`).join('')}
+      </select>
+      <select id="ck-expr-hand" aria-label="Which hand expresses"
+              ${ex.mode === 'hand' ? '' : 'disabled'}
+              title="The hand that plays; the other names the chord.">
+        ${[['L', 'LEFT plays'], ['R', 'RIGHT plays']].map(([v, l]) =>
+          `<option value="${v}"${v === ex.hand ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+      <select id="ck-expr-control" aria-label="How the signal is read"
+              ${ex.mode === 'gesture' ? 'disabled' : ''}
+              title="ATTACK / RELEASE runs the envelope past a threshold. VOLUME makes the signal the level itself — there is no envelope to run, you are the envelope.">
+        ${EXPRESSION_CONTROLS.map(c => `<option value="${c}"${c === ex.control ? ' selected' : ''}>${CONTROL_LABEL[c]}</option>`).join('')}
+      </select>
+    </div>
+    ${ex.mode === 'gesture' ? '' : `
+    <div class="chord-expr-cal">
+      <label class="ctrl-lbl">OFF AT<input type="range" id="ck-expr-lo" min="0" max="1" step="0.01" value="${ex.lo}"></label>
+      <label class="ctrl-lbl">FULL AT<input type="range" id="ck-expr-hi" min="0" max="1" step="0.01" value="${ex.hi}"></label>
+      <div class="expr-meter" id="ck-expr-meter" title="Live: the raw signal, and where it lands after the range above. If the bar never empties, raise OFF AT.">
+        <div class="expr-fill" id="ck-expr-fill"></div>
+        <span class="expr-read" id="ck-expr-read">—</span>
+      </div>
+    </div>`}`;
+
   const assignRows = !on ? '' :
-    gestures.filter(g => !isNum(g)).map(assignRow).join('')
-    + (nums.length ? `
-    <details class="gesture-group">
-      <summary>ASL NUMBERS <span class="gesture-tag">${nums.length}</span></summary>
-      ${nums.map(assignRow).join('')}
-    </details>` : '');
+    Array.from({ length: DEGREES }, (_, i) => chordRow(i)).join('') + `
+    <div class="chord-assign${ex.mode === 'gesture' ? '' : ' dimmed'}" data-degree="release">
+      <span class="gesture-dot" id="cdot-release"></span>
+      <span class="chord-degree" title="${ex.mode === 'gesture'
+        ? 'Holding this shape lets a held chord go'
+        : 'Only used when a handshape holds the chord — here the signal above does the releasing'}"
+        >RELEASE</span>
+      <select class="ch-shape" data-degree="release" ${ex.mode === 'gesture' ? '' : 'disabled'}
+              aria-label="Handshape that releases a held chord"
+        >${shapeOptions(relId)}</select>
+      <span class="ch-sev-gap"></span>
+    </div>`;
 
   return `
-    <div class="audio-section uc-feature">
-      <div class="audio-section-label" style="display:flex;align-items:center;">
-        Gestures <span class="uc-badge">under construction</span>
+    <div class="audio-section" data-sec="gestures">
+      <div class="audio-section-label">
+        Gestures
         <div class="wave-btn" id="record-gesture-btn"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">● REC</div>
       </div>
@@ -120,15 +175,33 @@ export function gestureSectionsHTML() {
       ${calibrate}
       ${restore}
     </div>
-    <div class="audio-section uc-feature">
-      <div class="audio-section-label" style="display:flex;align-items:center;">
-        Chord Mode <span class="uc-badge">under construction</span>
+    <div class="audio-section" data-sec="chord-mode">
+      <div class="audio-section-label">
+        Chord Mode
         <button class="wave-btn${on ? ' on' : ''}" id="chord-toggle" aria-pressed="${on}"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</button>
       </div>
       ${keyRow}
+      ${exprRow}
       <div id="chord-assigns">${assignRows}</div>
-      <div id="chord-readout" class="quant-notes">${on ? '—' : 'hold a gesture to play its chord'}</div>
+      <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;">
+        ${['attack', 'decay', 'sustain', 'release'].map(k => `
+          <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
+            ${k.slice(0, 3).toUpperCase()}
+            <input type="range" class="ck-env" data-env="${k}"
+              min="${engine.CHORD_ENV_RANGE[k][0]}" max="${engine.CHORD_ENV_RANGE[k][1]}"
+              step="0.005" value="${env[k]}">
+            <span class="ctrl-val" id="ck-env-${k}">${k === 'sustain' ? Math.round(env[k] * 100) + '%' : env[k].toFixed(2) + 's'}</span>
+          </label>`).join('')}
+      </div>
+      <div class="chord-live" id="chord-live" style="display:${on ? 'grid' : 'none'}">
+        <div id="chord-readout" class="quant-notes">—</div>
+        <div class="chord-vol" title="How loud the chord is right now">
+          <div class="chord-vol-fill" id="chord-vol-fill"></div>
+          <span class="chord-vol-read" id="chord-vol-read">—</span>
+        </div>
+      </div>
+      ${on ? '' : '<div class="quant-notes">hold a gesture to play its chord</div>'}
     </div>`;
 }
 
@@ -138,6 +211,7 @@ export function gestureSectionsHTML() {
 const HOW_TO = {
   palm:  'Open hand, all five fingers spread',
   horns: 'Index and pinky up, middle and ring down, thumb tucked',
+  gun:   'Index pointing forward, thumb up and clear of the palm — an L',
   asl3:  'Thumb, index and middle up — ring and pinky folded down',
   asl4:  'Four fingers up, thumb folded across the palm',
   asl6:  'Pinky tip touching the thumb, other three fingers up',
@@ -242,6 +316,17 @@ export function wireGestureSections(rerender) {
   document.getElementById('ck-root')?.addEventListener('change', e => setKey({ root: e.target.value }));
   document.getElementById('ck-mode')?.addEventListener('change', e => setKey({ mode: e.target.value }));
   document.getElementById('ck-oct') ?.addEventListener('change', e => setKey({ octave: Number(e.target.value) }));
+  // ADSR sliders mutate in place: a re-render mid-drag would drop the pointer
+  // capture and the slider would stop following the finger.
+  document.querySelectorAll('.ck-env').forEach(el => {
+    el.addEventListener('input', e => {
+      const k = e.target.dataset.env;
+      const v = engine.setChordEnv({ [k]: +e.target.value })[k];
+      const out = document.getElementById(`ck-env-${k}`);
+      if (out) out.textContent = k === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`;
+    });
+  });
+
   document.getElementById('ck-follow')?.addEventListener('click', () => {
     // Turning follow off keeps whatever key was being followed, so the sound
     // doesn't jump the moment you take manual control.
@@ -251,16 +336,46 @@ export function wireGestureSections(rerender) {
       : { follow: true });
   });
 
-  document.querySelectorAll('.ch-deg').forEach(sel =>
-    sel.addEventListener('change', e =>
-      chordmode.assign(e.target.dataset.gid, { degree: Number(e.target.value) })));
+  // Expression: every one of these changes which other controls are live (the
+  // hand select only matters in two-handed play, the control select not at all
+  // in gesture mode), so they all re-render.
+  const setExpr = partial => { chordmode.setExpression(partial); rerender?.(); };
+  document.getElementById('ck-expr-mode')?.addEventListener('change', e => setExpr({ mode: e.target.value }));
+  document.getElementById('ck-expr-hand')?.addEventListener('change', e => setExpr({ hand: e.target.value }));
+  document.getElementById('ck-expr-control')?.addEventListener('change', e => setExpr({ control: e.target.value }));
+  // The range sliders mutate in place — a re-render mid-drag drops the pointer
+  // capture, and these are exactly the controls you want to adjust while
+  // watching the meter move.
+  document.getElementById('ck-expr-lo')?.addEventListener('input', e =>
+    chordmode.setExpression({ lo: +e.target.value }));
+  document.getElementById('ck-expr-hi')?.addEventListener('input', e =>
+    chordmode.setExpression({ hi: +e.target.value }));
 
+  // Choosing a handshape for a chord (or for RELEASE) always re-renders:
+  // the shape is taken off whatever it was doing, so at least one other row
+  // changes too. Updating only the row that was touched is what would let the
+  // panel disagree with the state again.
+  document.querySelectorAll('.ch-shape').forEach(sel =>
+    sel.addEventListener('change', e => {
+      const where = e.target.dataset.degree;
+      const id = e.target.value || null;
+      if (where === 'release') chordmode.setReleaseGesture(id);
+      else chordmode.setDegreeGesture(Number(where), id);
+      rerender?.();
+    }));
+
+  // The 7th belongs to the chord, so it needs no re-render — nothing else moves.
   document.querySelectorAll('.ch-sev').forEach(btn =>
     btn.addEventListener('click', () => {
-      const on = !(chordmode.assignments()[btn.dataset.gid]?.seventh);
-      chordmode.assign(btn.dataset.gid, { seventh: on });
+      const d = Number(btn.dataset.degree);
+      const on = !chordmode.sevenths()[d];
+      chordmode.setSeventh(d, on);
       btn.classList.toggle('on', on);
       btn.setAttribute('aria-pressed', String(on));
+      // The row label carries the quality ("V" vs "V7"), so it moves with it.
+      const lbl = btn.parentElement?.querySelector('.chord-degree');
+      const c = chordmode.chordAt(d);
+      if (lbl && c) { lbl.textContent = `${c.numeral} · ${c.rootName}`; lbl.title = `${c.numeral} · ${c.rootName} ${c.quality}`; }
     }));
 }
 
@@ -277,6 +392,50 @@ export function updateGesturePanel() {
     if (el) {
       const txt = chordmode.currentLabel() || '—';
       if (el.textContent !== txt) el.textContent = txt;
+    }
+    // Which chord is sounding, lit on its own row — the same dot the gestures
+    // list uses, because it answers the same question ("is this the one?") and
+    // a second visual language for it would be noise.
+    // Two states, because latched-but-silent is a real one: in volume mode a
+    // chord stays selected while your hand is closed. A single lit dot at 0%
+    // volume would read as "this is playing" and be wrong.
+    const sounding = chordmode.soundingDegree();
+    const audible = chordmode.chordLevel() > 0.001;
+    for (let i = 0; i < DEGREES; i++) {
+      const d = document.getElementById(`cdot-${i}`);
+      if (!d) continue;
+      d.classList.toggle('on',  i === sounding && audible);
+      d.classList.toggle('sel', i === sounding && !audible);
+    }
+    const rel = document.getElementById('cdot-release');
+    if (rel) rel.classList.toggle('on', chordmode.releaseHeld());
+
+    // …and how loud it actually is. The expression meter above shows the input;
+    // this shows the result, which is not the same number once an ADSR is in
+    // between — during a release the input is already at zero and the chord is
+    // still sounding.
+    const lvl = audible ? chordmode.chordLevel() : 0;
+    const fillV = document.getElementById('chord-vol-fill');
+    if (fillV) {
+      const pct = `${Math.round(lvl * 100)}%`;
+      if (fillV.style.width !== pct) fillV.style.width = pct;
+      fillV.classList.toggle('on', lvl > 0.001);
+      const r = document.getElementById('chord-vol-read');
+      if (r && r.textContent !== pct) r.textContent = pct;
+    }
+
+    // Live expression meter. Without it, calibrating the range is guesswork:
+    // you cannot see that a closed fist still reads 0.38 and so never reaches
+    // silence, which is the whole reason the range exists.
+    const fill = document.getElementById('ck-expr-fill');
+    if (fill) {
+      const { raw, level, gateOpen } = chordmode.expressionLevel();
+      const pct = `${Math.round(level * 100)}%`;
+      if (fill.style.width !== pct) fill.style.width = pct;
+      fill.classList.toggle('on', gateOpen);
+      const read = document.getElementById('ck-expr-read');
+      const txt = `${raw.toFixed(2)} → ${Math.round(level * 100)}%`;
+      if (read && read.textContent !== txt) read.textContent = txt;
     }
   }
 }

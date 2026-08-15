@@ -1,17 +1,31 @@
 import { engine }                    from '../engine.js';
 import { mapper }                    from '../mapper.js';
+import { renderMapper, PARAM_CATS }  from './mapper-ui.js';
 import { SCALES, TUNINGS, NOTE_NAMES } from '../scale.js';
-import { makeKbdView, midiOf, OSC1_COL, OSC2_COL } from './keyboard.js';
+import { makeKbdView, midiOf, OSC_COLS } from './keyboard.js';
 import { isDesktop } from './viewport.js';
-import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS } from '../dynamics.js';
+import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS, GATE_AT_OPTS, GATE_AT_DEFAULT,
+         makeDynamics } from '../dynamics.js';
+import { enhanceSections } from './sections.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
 import { gestureSectionsHTML, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
-import { shaderSectionHTML, wireShaderSection } from './shader-ui.js';
 
 const opts = (arr, sel) =>
   arr.map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`).join('');
+
+// Gate threshold options, labelled with the value the player actually reads off
+// a cable ("silent below 18%") rather than the internal rung position. The
+// percentage is obtained by asking the real quantiser, not by re-deriving the
+// ladder here, so a label can never drift from the behaviour it describes — and
+// it has to be rebuilt whenever steps or floor change, since both move it.
+const gateAtOpts = vq => GATE_AT_OPTS.map(p => {
+  const pct = makeDynamics({ ...vq, gateAt: p }).gateGain * 100;
+  return `<option value="${p}"${p === vq.gateAt ? ' selected' : ''}>`
+       + `&lt; ${pct < 10 ? pct.toFixed(1) : Math.round(pct)}%`
+       + `${p === GATE_AT_DEFAULT ? ' ·auto' : ''}</option>`;
+}).join('');
 
 // The panel's pitch-quantise keyboard (canvas #quant-kbd, recreated with the
 // panel; the view looks it up by id on every draw).
@@ -25,13 +39,13 @@ const bestLine = () => {
   const b = playalong.bestFor(song, diff);
   return b ? `BEST ${b.score} · ${b.grade} · ${Math.round(b.acc * 100)}%` : '—';
 };
+// One marker per live oscillator, so the picker keeps telling the truth as the
+// bank is resized rather than showing a fixed pair of dots.
+const oscMidis = () => Array.from({ length: engine.getOscCount() },
+  (_, i) => midiOf(engine.PARAMS[`osc${i + 1}_freq`].val));
 const kbdOpts = () => {
   const t = engine.getTuning();
-  return {
-    root: t.root, scale: t.scale,
-    m1: midiOf(engine.PARAMS.osc1_freq.val),
-    m2: midiOf(engine.PARAMS.osc2_freq.val),
-  };
+  return { root: t.root, scale: t.scale, markers: oscMidis() };
 };
 
 // Tick marks at the snap values, drawn on the track as background gradients
@@ -45,6 +59,7 @@ const tickCss = p => !p.snaps?.length ? '' : p.snaps.map(s => {
 
 export function renderAudioPanel() {
   const panel = document.getElementById('audio-panel');
+  const nOsc = engine.getOscCount();
 
   const tickBg = p => tickCss(p) ? ` style="background-image:${tickCss(p)}"` : '';
 
@@ -101,9 +116,8 @@ export function renderAudioPanel() {
       <div id="game-score" class="quant-notes">${gv.state === 'idle' ? bestLine() : '—'}</div>
     </div>
     ${gestureSectionsHTML()}
-    ${shaderSectionHTML()}
     <div class="audio-section">
-      <div class="audio-section-label" style="display:flex;align-items:center;">
+      <div class="audio-section-label">
         Pitch Quantize
         <div class="wave-btn${t.enabled ? ' on' : ''}" id="quant-toggle"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${t.enabled ? 'ON' : 'OFF'}</div>
@@ -117,7 +131,7 @@ export function renderAudioPanel() {
       <div id="quant-notes" class="quant-notes">${t.enabled ? '' : '—'}</div>
     </div>
     <div class="audio-section">
-      <div class="audio-section-label" style="display:flex;align-items:center;">
+      <div class="audio-section-label">
         Volume Quantize
         <div class="wave-btn${vq.enabled ? ' on' : ''}" id="vq-toggle"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${vq.enabled ? 'ON' : 'OFF'}</div>
@@ -130,22 +144,35 @@ export function renderAudioPanel() {
       <div class="wave-btns" style="margin-top:4px;">
         <div class="wave-btn${vq.gate ? ' on' : ''}" id="vq-gate"
              title="Make the bottom level true silence, so notes can be separated and re-attacked">GATE</div>
+        <select id="vq-gate-at" style="flex:1 1 auto;min-width:0;"
+                ${vq.gate ? '' : 'disabled'}
+                title="Where the gate switches off, as a share of full volume. The ladder's own midpoint (·auto) is not always where you want the switch: with 2 steps it lands at 18%, so an on/off control flips very early. Raise it to move the switch later in the gesture.">${gateAtOpts(vq)}</select>
       </div>
       <div id="vq-level" class="quant-notes">${vq.enabled ? '' : '—'}</div>
     </div>
-    <div class="audio-section">
-      <div class="audio-section-label">Osc 1 Waveform</div>
-      <div class="wave-btns" id="osc1-waves">
-        ${waveBtn('sine','SIN','1')}${waveBtn('triangle','TRI','1')}
-        ${waveBtn('sawtooth','SAW','1')}${waveBtn('square','SQR','1')}
+    <div class="audio-section" data-sec="oscillators">
+      <div class="audio-section-label">Oscillators
+        <div class="num-step" style="margin-left:auto;">
+          <button class="wave-btn" id="osc-minus" type="button" aria-label="Remove an oscillator"
+                  title="Remove the last oscillator"${nOsc <= 0 ? ' disabled' : ''}>−</button>
+          <input type="number" id="osc-count" min="0" max="${engine.MAX_OSCS}" step="1"
+                 value="${nOsc}" inputmode="numeric" aria-label="Number of oscillators"
+                 title="How many oscillators the lead voice runs. Each gets its own pitch, detune, waveform and level. Zero leaves chord mode playing on its own.">
+          <button class="wave-btn" id="osc-plus" type="button" aria-label="Add an oscillator"
+                  title="Add an oscillator"${nOsc >= engine.MAX_OSCS ? ' disabled' : ''}>+</button>
+        </div>
       </div>
-    </div>
-    <div class="audio-section">
-      <div class="audio-section-label">Osc 2 Waveform</div>
-      <div class="wave-btns" id="osc2-waves">
-        ${waveBtn('sine','SIN','2')}${waveBtn('triangle','TRI','2')}
-        ${waveBtn('sawtooth','SAW','2')}${waveBtn('square','SQR','2')}
-      </div>
+      ${Array.from({ length: nOsc }, (_, i) => `
+        <div class="osc-row">
+          <span class="osc-row-n" style="color:${OSC_COLS[i % OSC_COLS.length]}">${i + 1}</span>
+          <div class="wave-btns" data-osc="${i}">
+            ${waveBtn('sine','SIN',i)}${waveBtn('triangle','TRI',i)}
+            ${waveBtn('sawtooth','SAW',i)}${waveBtn('square','SQR',i)}
+          </div>
+        </div>`).join('')}
+      <div class="osc-hint">${nOsc
+        ? 'Each has its own level: Osc1 Vol… under Parameters'
+        : 'No lead oscillators — chord mode plays on its own'}</div>
     </div>
     <div class="audio-section">
       <div class="audio-section-label">Filter Type</div>
@@ -155,9 +182,47 @@ export function renderAudioPanel() {
         ).join('')}
       </div>
     </div>
-    <div class="audio-section" style="border-bottom:none;">
-      ${Object.entries(engine.PARAMS).map(([k, p]) => rangeRow(k, p)).join('')}
+    <div class="audio-section">
+      <div class="audio-section-label">Chord Filter Type</div>
+      <div class="wave-btns" id="cfilt-types">
+        ${['lowpass','highpass','bandpass','notch'].map(t =>
+          `<div class="wave-btn" data-ftype="${t}">${t.slice(0, 3).toUpperCase()}</div>`
+        ).join('')}
+      </div>
+    </div>
+    <div class="audio-section" data-sec="sliders" style="border-bottom:none;">
+      <div class="audio-section-label">Parameters</div>
+      ${(() => {
+        // Grouped by the SAME table the patchbay's add-output picker uses, so a
+        // parameter is in the same place whichever way you go looking for it.
+        // Sharing the table also means the two cannot drift: a new param has to
+        // be categorised once, and tests/unit/param-cats.test.js already fails
+        // the build if it is missing from that table.
+        const listed = new Set();
+        const groups = PARAM_CATS().map(([cat, keys]) => {
+          const rows = keys.filter(k => engine.PARAMS[k]);
+          rows.forEach(k => listed.add(k));
+          return !rows.length ? '' : `
+            <div class="param-group">
+              <div class="param-group-name">${cat}</div>
+              ${rows.map(k => rangeRow(k, engine.PARAMS[k])).join('')}
+            </div>`;
+        }).join('');
+        // A param the table forgot still gets a slider — being uncategorised
+        // should cost it a heading, not its control.
+        const orphans = Object.entries(engine.PARAMS).filter(([k]) => !listed.has(k));
+        return groups + (!orphans.length ? '' : `
+          <div class="param-group">
+            <div class="param-group-name">Other</div>
+            ${orphans.map(([k, p]) => rangeRow(k, p)).join('')}
+          </div>`);
+      })()}
     </div>`;
+
+  // Re-wrap: innerHTML above discarded the section containers, grips and
+  // stored heights. Runs before the wiring below, so every handler attaches to
+  // nodes that are already in their final place.
+  enhanceSections(panel);
 
   const activateWave = (group, type) =>
     group.querySelectorAll('.wave-btn').forEach(b =>
@@ -202,25 +267,56 @@ export function renderAudioPanel() {
     sel.value = 'custom';
   };
 
-  document.getElementById('osc1-waves').querySelectorAll('.wave-btn').forEach(b => {
-    b.addEventListener('click', () => {
-      engine.setOsc1Type(b.dataset.type);
-      activateWave(b.parentElement, b.dataset.type);
-      syncKitToCustom();
+  // One handler for every slot's waveform buttons — the row count is a runtime
+  // value, so the group's own data-osc says which oscillator it drives.
+  document.querySelectorAll('.wave-btns[data-osc]').forEach(group => {
+    group.querySelectorAll('.wave-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        engine.setOscType(+group.dataset.osc, b.dataset.type);
+        activateWave(group, b.dataset.type);
+        syncKitToCustom();
+      });
     });
   });
-  document.getElementById('osc2-waves').querySelectorAll('.wave-btn').forEach(b => {
-    b.addEventListener('click', () => {
-      engine.setOsc2Type(b.dataset.type);
-      activateWave(b.parentElement, b.dataset.type);
-      syncKitToCustom();
-    });
-  });
+
+  // Bank size. Shrinking orphans any cable wired to a slot that no longer
+  // exists — engine.set() ignores an unknown key, so it would go quiet rather
+  // than break, but the patchbay would keep drawing a node for a parameter that
+  // is gone. Prune those cables instead of leaving them to confuse.
+  const setCount = n => {
+    const before = engine.getOscCount();
+    const after = engine.setOscCount(n);
+    if (after === before) return;
+    if (after < before) {
+      mapper.mappings
+        .filter(m => !engine.PARAMS[m.audioParam])
+        .map(m => m.id)
+        .forEach(id => mapper.remove(id));
+      renderMapper();     // the pruned cables' nodes have to leave the canvas too
+    }
+    syncKitToCustom();
+    renderAudioPanel();
+  };
+  document.getElementById('osc-minus').addEventListener('click', () => setCount(engine.getOscCount() - 1));
+  document.getElementById('osc-plus') .addEventListener('click', () => setCount(engine.getOscCount() + 1));
+  const oscCountInput = document.getElementById('osc-count');
+  // `change`, not `input`: typing "12" passes through "1", and re-rendering the
+  // panel on every keystroke would tear the field out from under the caret.
+  oscCountInput.addEventListener('change', e => setCount(e.target.value));
   document.getElementById('filt-types').querySelectorAll('.wave-btn').forEach(b => {
     b.addEventListener('click', () => {
       engine.setFilterType(b.dataset.ftype);
       activateWave(b.parentElement, b.dataset.ftype);
       syncKitToCustom();
+    });
+  });
+  // Chord filter type — deliberately NOT part of kit matching: kits describe
+  // the lead voice, and repainting the kit select because the chord bed went
+  // bandpass would be noise.
+  document.getElementById('cfilt-types').querySelectorAll('.wave-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      engine.setChordFilterType(b.dataset.ftype);
+      activateWave(b.parentElement, b.dataset.ftype);
     });
   });
 
@@ -232,7 +328,10 @@ export function renderAudioPanel() {
     for (const s of p.snaps) if (Math.abs(v - s) <= tol) return s;
     return v;
   };
-  panel.querySelectorAll('.apr').forEach(el => {
+  // Scoped to the document, not the panel: enhanceSections() above may have
+  // relocated a section to another column, so the sliders this render just
+  // created are no longer guaranteed to be inside `panel`.
+  document.querySelectorAll('.apr').forEach(el => {
     el.addEventListener('input', e => {
       const key = e.target.dataset.key;
       const p   = engine.PARAMS[key];
@@ -284,34 +383,49 @@ export function renderAudioPanel() {
     refreshVolTicks();
     if (!on) document.getElementById('vq-level').textContent = '—';
   });
+  // The gate threshold's labels are percentages of full volume, so changing the
+  // step count or the floor moves every one of them. Rebuilding the options
+  // (rather than only the selection) keeps the numbers true; without this the
+  // menu would keep advertising the thresholds of the previous ladder.
+  const vqGateAt = document.getElementById('vq-gate-at');
+  const refreshGateAt = () => { vqGateAt.innerHTML = gateAtOpts(engine.getVolStep()); };
   vqGate.addEventListener('click', () => {
     const on = !engine.getVolStep().gate;
     engine.setVolStep({ gate: on });
     vqGate.classList.toggle('on', on);
+    vqGateAt.disabled = !on;      // nothing to place when there's no silence rung
     refreshVolTicks();
   });
   document.getElementById('vq-steps')
-    .addEventListener('change', e => { engine.setVolStep({ steps: +e.target.value }); refreshVolTicks(); });
+    .addEventListener('change', e => {
+      engine.setVolStep({ steps: +e.target.value }); refreshVolTicks(); refreshGateAt();
+    });
   document.getElementById('vq-floor')
-    .addEventListener('change', e => { engine.setVolStep({ floorDb: +e.target.value }); refreshVolTicks(); });
+    .addEventListener('change', e => {
+      engine.setVolStep({ floorDb: +e.target.value }); refreshVolTicks(); refreshGateAt();
+    });
+  vqGateAt.addEventListener('change', e => { engine.setVolStep({ gateAt: +e.target.value }); });
+
   document.getElementById('vq-edge')
     .addEventListener('change', e => { engine.setVolStep({ edge: e.target.value }); });
 
   // Reflect the engine's actual waveform / filter selections (they may have
   // just been restored from a saved preset, not the factory defaults).
-  document.getElementById('osc1-waves').querySelector(`[data-type="${engine.getOsc1Type()}"]`)?.classList.add('on');
-  document.getElementById('osc2-waves').querySelector(`[data-type="${engine.getOsc2Type()}"]`)?.classList.add('on');
+  // A kit's custom harmonic table ('custom:piano') matches none of the four
+  // buttons, so a row can legitimately show nothing selected.
+  document.querySelectorAll('.wave-btns[data-osc]').forEach(group =>
+    group.querySelector(`[data-type="${engine.getOscType(+group.dataset.osc)}"]`)?.classList.add('on'));
   document.getElementById('filt-types').querySelector(`[data-ftype="${engine.getFilterType()}"]`)?.classList.add('on');
+  document.getElementById('cfilt-types').querySelector(`[data-ftype="${engine.getChordFilterType()}"]`)?.classList.add('on');
 
   if (t.enabled) redrawKbd();
 
   wireGestureSections(renderAudioPanel);
-  wireShaderSection();
 
   // Cache slider/readout refs — updateAudioSliders runs every frame and
   // shouldn't pay for per-mapping querySelector calls.
   sliderRefs.clear();
-  panel.querySelectorAll('.apr').forEach(el =>
+  document.querySelectorAll('.apr').forEach(el =>
     sliderRefs.set(el.dataset.key, { slider: el, valEl: document.getElementById(`av-${el.dataset.key}`) }));
 }
 
@@ -330,8 +444,9 @@ export function updateAudioSliders() {
   if (engine.getTuning().enabled) {
     const notesEl = document.getElementById('quant-notes');
     if (notesEl) {
-      const html = `OSC1 <b style="color:${OSC1_COL}">${engine.noteFor('osc1_freq')}</b>`
-                 + `  ·  OSC2 <b style="color:${OSC2_COL}">${engine.noteFor('osc2_freq')}</b>`;
+      const html = Array.from({ length: engine.getOscCount() }, (_, i) =>
+        `OSC${i + 1} <b style="color:${OSC_COLS[i % OSC_COLS.length]}">`
+        + `${engine.noteFor(`osc${i + 1}_freq`)}</b>`).join('  ·  ') || '—';
       if (notesEl.innerHTML !== html) notesEl.innerHTML = html;
     }
     panelKbd.draw(kbdOpts());

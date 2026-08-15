@@ -10,14 +10,25 @@ import { dirname, join } from 'path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
 // ── Parse CSS variables ───────────────────────────────────────────────────────
-function parseCssVars(cssPath) {
-  const src  = readFileSync(cssPath, 'utf8');
-  const vars = {};
-  // Capture the full colour value — hex (#rrggbb) or oklch(...) — for each var.
-  for (const [, name, val] of src.matchAll(/--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6}|oklch\([^)]*\))\s*;/g)) {
-    vars[`--${name}`] = val.trim();
+// Parse each theme's token block separately. Checking only `:root` would have
+// verified the default palette and let every other theme ship unread: a light
+// theme reusing a dark theme's accents is the exact failure mode, and it looks
+// fine right up until someone selects it.
+function parseThemes(cssPath) {
+  const src = readFileSync(cssPath, 'utf8');
+  const themes = new Map();
+  const declRe = /--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6}|oklch\([^)]*\))\s*;/g;
+  // Each block is `<selector-list> { ... }` where the selector mentions :root.
+  const blockRe = /(:root[^{]*)\{([^}]*)\}/g;
+  for (const [, selector, body] of src.matchAll(blockRe)) {
+    const ids = [...selector.matchAll(/\[data-theme="([a-z-]+)"\]/g)].map(m => m[1]);
+    const names = ids.length ? ids : ['(default)'];
+    const vars = {};
+    for (const [, name, val] of body.matchAll(declRe)) vars[`--${name}`] = val.trim();
+    if (!Object.keys(vars).length) continue;
+    for (const n of names) themes.set(n, { ...(themes.get(n) || {}), ...vars });
   }
-  return vars;
+  return themes;
 }
 
 // ── Colour → linear-light sRGB ────────────────────────────────────────────────
@@ -80,6 +91,7 @@ const PAIRS = [
   ['--cyan',    '--surface', 'Cyan text on header (logo)'],
   ['--purple',  '--panel',   'Purple text on panel (ctrl-val, btn.purple.on)'],
   ['--amber',   '--panel',   'Amber text on panel (note-badge, wave-btn.on)'],
+  ['--amber',   '--surface', 'Amber text on header (audio-btn while muted)'],
   ['--green',   '--panel',   'Green status dot label on panel'],
   ['--red',     '--panel',   'Red text on panel'],
 ];
@@ -87,9 +99,17 @@ const PAIRS = [
 const THRESHOLD = 4.5; // WCAG AA normal text
 
 // ── Run ───────────────────────────────────────────────────────────────────────
-const vars  = parseCssVars(join(ROOT, 'css/main.css'));
+const themes = parseThemes(join(ROOT, 'css/main.css'));
 
 let failures = 0;
+let checked  = 0;
+
+for (const [themeName, vars] of themes) {
+  console.log(`\nTheme: ${themeName}`);
+  runTheme(themeName, vars);
+}
+
+function runTheme(themeName, vars) {
 const rows   = PAIRS.map(([fg, bg, usage]) => {
   const fgHex = vars[fg];
   const bgHex = vars[bg];
@@ -103,18 +123,19 @@ const rows   = PAIRS.map(([fg, bg, usage]) => {
   return { fg, bg, fgHex, bgHex, ratio, passes, usage };
 }).filter(Boolean);
 
-// ── Report ────────────────────────────────────────────────────────────────────
-const maxUsage = Math.max(...rows.map(r => r.usage.length));
-console.log(`\nWCAG AA contrast check (threshold ${THRESHOLD}:1)\n`);
-
-for (const r of rows) {
-  const status = r.passes ? ' PASS ' : ' FAIL ';
-  const ratio  = r.ratio.toFixed(2).padStart(5);
-  console.log(`  [${status}]  ${ratio}:1  ${r.fg} on ${r.bg.padEnd(11)}  ${r.usage}`);
+  // Only the failures and the worst survivor are printed per theme: with six
+  // themes a full table is 90 lines of PASS nobody reads, and the one number
+  // that matters is how close the weakest pair sits to the threshold.
+  checked += rows.length;
+  const worst = rows.reduce((a, r) => (a && a.ratio <= r.ratio ? a : r), null);
+  for (const r of rows.filter(r => !r.passes))
+    console.log(`  [ FAIL ]  ${r.ratio.toFixed(2).padStart(5)}:1  ${r.fg} on ${r.bg.padEnd(11)}  ${r.usage}`);
+  if (worst)
+    console.log(`  ${rows.length} pairs · worst ${worst.ratio.toFixed(2)}:1 ` +
+                `(${worst.fg} on ${worst.bg})${rows.every(r => r.passes) ? ' — all pass' : ''}`);
 }
 
-console.log(`\n${rows.length} pairs checked — ${failures} failure(s)\n`);
+console.log(`\nWCAG AA (threshold ${THRESHOLD}:1) — ${themes.size} themes, ` +
+            `${checked} pairs checked — ${failures} failure(s)\n`);
 
-if (failures > 0) {
-  process.exit(1);
-}
+if (failures > 0) process.exit(1);
