@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServer } from 'http';
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join, extname } from 'path';
 import { generateReport } from './report.js';
@@ -9,6 +9,8 @@ import { generateReport } from './report.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '../..');
 const OUT = join(ROOT, 'test-results');
+const CHROME = process.env.CHROME
+  ?? ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find(existsSync);
 
 // ── Local HTTP server ─────────────────────────────────────────────────────────
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
@@ -58,6 +60,7 @@ const STATES = [
 // ── Screenshot capture ─────────────────────────────────────────────────────────
 async function captureAll(port) {
   const browser = await chromium.launch({
+    ...(CHROME ? { executablePath: CHROME } : {}),
     args: [
       '--use-fake-device-for-media-stream',
       '--use-fake-ui-for-media-stream',
