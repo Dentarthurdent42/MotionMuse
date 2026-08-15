@@ -283,6 +283,8 @@ const currentMode = () => chordmode.enabled ? 'chords' : 'osc';
 export const tour = (() => {
   let idx = -1;          // current step index, -1 = closed
   let els = null;        // { backdrop, ring, card } while open
+  let raf = 0;           // rect-tracking loop, alive only while open
+  let lastBox = '';      // last target rect the ring was drawn against
   let seenThisRun = new Set();
   // The steps this run walks. Scoped by mode, so picking chord mode does not
   // march you through the patchbay and the falling-note game first.
@@ -315,8 +317,8 @@ export const tour = (() => {
     card.setAttribute('aria-label', 'Guided tour');
     document.body.append(backdrop, ring, card);
     els = { backdrop, ring, card };
-    window.addEventListener('resize', position);
-    window.addEventListener('scroll', position, true);
+    lastBox = '';
+    raf = requestAnimationFrame(track);
     document.addEventListener('keydown', onKey);
   }
 
@@ -324,9 +326,34 @@ export const tour = (() => {
     if (!els) return;
     Object.values(els).forEach(e => e.remove());
     els = null;
-    window.removeEventListener('resize', position);
-    window.removeEventListener('scroll', position, true);
+    cancelAnimationFrame(raf);
+    raf = 0;
     document.removeEventListener('keydown', onKey);
+  }
+
+  // Follow the target instead of guessing when it might have moved. `resize`
+  // plus `scroll` was not enough, and zoom is where it showed:
+  //   • a pinch moves only the visual viewport, so no resize event ever fires
+  //     and the ring simply stays where it was;
+  //   • a zoom change (or a font swap, or a panel re-measuring itself) reflows
+  //     *after* the resize handler has already run, so the ring is placed
+  //     against a layout that then shifts out from under it — and nothing
+  //     fires again to correct it.
+  // Both are the same mistake: treating "the layout changed" as an event.
+  // It isn't one, so watch the rect. This is one getBoundingClientRect per
+  // frame for a single element while the tour is open — nothing beside the CV
+  // pipeline — and it re-queries the selector, so a panel rebuilt underneath
+  // the spotlight is picked up too.
+  function track() {
+    raf = requestAnimationFrame(track);
+    if (!els || idx < 0) return;
+    const r = resolve(step().target)?.getBoundingClientRect();
+    // Card placement reads the viewport as well, so fold that into the key.
+    const box = `${r ? `${r.left},${r.top},${r.width},${r.height}` : 'none'}` +
+                `|${window.innerWidth},${window.innerHeight}`;
+    if (box === lastBox) return;
+    lastBox = box;
+    position();
   }
 
   function onKey(e) {
@@ -346,14 +373,22 @@ export const tour = (() => {
     // The ring's oversized box-shadow doubles as the dimmer when a target is
     // spotlit; the plain backdrop covers the targetless (welcome/finish) cards.
     backdrop.style.display = t ? 'none' : 'block';
+    // getBoundingClientRect answers in real screen pixels, but a length we
+    // write back is read in the element's own zoomed units. Under a page zoom
+    // (a browser extension, a user stylesheet — not Ctrl+/−, which resizes the
+    // viewport instead) those differ, and the ring lands scaled-squared away
+    // from its target. Dividing by the zoom the ring itself inherits puts both
+    // sides in the same units; it is 1 wherever no zoom applies, and undefined
+    // on browsers without the property, hence the fallback.
+    const z = ring.currentCSSZoom || 1;
     if (t) {
       const r = t.getBoundingClientRect();
       const pad = 6;
       ring.style.display = 'block';
-      ring.style.left   = (r.left - pad) + 'px';
-      ring.style.top    = (r.top - pad) + 'px';
-      ring.style.width  = (r.width + 2 * pad) + 'px';
-      ring.style.height = (r.height + 2 * pad) + 'px';
+      ring.style.left   = (r.left - pad) / z + 'px';
+      ring.style.top    = (r.top - pad) / z + 'px';
+      ring.style.width  = (r.width + 2 * pad) / z + 'px';
+      ring.style.height = (r.height + 2 * pad) / z + 'px';
     } else {
       ring.style.display = 'none';
     }
@@ -368,11 +403,13 @@ export const tour = (() => {
     card.classList.remove('centered');
     const r = t.getBoundingClientRect();
     const cw = Math.min(340, window.innerWidth - 24);
-    card.style.width = cw + 'px';
-    const ch = card.offsetHeight || 180;
+    card.style.width = cw / z + 'px';
+    // offsetHeight is in the card's own units; the rect it is measured against
+    // is in screen pixels, so scale it up before comparing the two.
+    const ch = (card.offsetHeight || 180) * z;
     const below = r.bottom + 14 + ch < window.innerHeight;
-    card.style.top  = (below ? r.bottom + 14 : Math.max(12, r.top - 14 - ch)) + 'px';
-    card.style.left = Math.max(12, Math.min(r.left, window.innerWidth - cw - 12)) + 'px';
+    card.style.top  = (below ? r.bottom + 14 : Math.max(12, r.top - 14 - ch)) / z + 'px';
+    card.style.left = Math.max(12, Math.min(r.left, window.innerWidth - cw - 12)) / z + 'px';
   }
 
   function render() {

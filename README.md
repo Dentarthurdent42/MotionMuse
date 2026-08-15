@@ -491,6 +491,18 @@ The tour is built for a project that changes weekly:
   panel's **?** opens nothing, or a **?** opens more than its own panel's steps. At runtime a stale
   step is skipped gracefully instead — the app never breaks because the tour
   lagged a release.
+- **The spotlight follows its target.** The ring tracks the target's rectangle
+  on a frame loop while the tour is open, rather than repositioning on `resize`
+  and `scroll`. Those two miss the cases that matter: a pinch moves only the
+  visual viewport and fires no `resize` at all, and a zoom change reflows
+  *after* the resize handler has run, stranding the ring against a layout that
+  moved out from under it — the symptom being a spotlight sitting in empty
+  space a few hundred pixels from the button it is describing. "The layout
+  changed" is not an event, so the ring watches the rect instead. The same pass
+  divides by any inherited page `zoom`, since a written length is read in the
+  element's own units while `getBoundingClientRect` answers in screen pixels.
+  `npm run test:tutorial` measures ring-against-target under browser zoom,
+  pinch zoom, page zoom and a silent reflow.
 - **Returning users see what's new.** Step ids are tracked per user; when a
   release ships steps you haven't seen, the **?** pulses ("tour updated — 2 new
   steps") instead of making you sit through the whole thing again.

@@ -135,6 +135,87 @@ const r = await p.evaluate(async () => {
   return out;
 });
 
+// ── The spotlight must stay on its target when the zoom level changes ──
+// It used to reposition only on `resize` and `scroll`, which left the ring
+// stranded whenever the layout moved without firing one of those. Each case
+// below moves the target in a way that misses a different trigger: a pinch
+// touches the visual viewport only, a zoom change reflows *after* resize has
+// been and gone, and a page zoom puts written lengths in different units from
+// the rect they were measured from.
+// Which step is tested matters. A header button barely moves when the page
+// reflows, so it stays aligned even with the tracking removed and proves
+// nothing; the bug shows on a target far down a scrolled column, where a
+// reflow above it drags it hundreds of pixels. So: spotlight the deepest
+// target on the page, on its own, and hold the tour there.
+const target = await p.evaluate(async () => {
+  const { TOUR_STEPS, tour } = await import('/src/ui/tutorial.js');
+  const deepest = TOUR_STEPS
+    .filter(s => s.target && document.querySelector(s.target)?.getClientRects().length)
+    .map(s => ({ s, y: document.querySelector(s.target).getBoundingClientRect().top + scrollY }))
+    .sort((a, b) => b.y - a.y)[0];
+  if (!deepest) return null;
+  tour.start({ steps: [deepest.s] });      // a one-step tour parks the ring there
+  return deepest.s.target;
+});
+// The ring is drawn 6px outside its target on every side, so a correct ring
+// sits at exactly -6; anything past a rounding pixel or two is a real miss.
+const offBy = sel => p.evaluate(s => {
+  const ring = document.getElementById('tour-ring'), t = document.querySelector(s);
+  if (!ring || !t) return 999;
+  const R = ring.getBoundingClientRect(), T = t.getBoundingClientRect();
+  return +Math.max(Math.abs(R.left - T.left + 6), Math.abs(R.top - T.top + 6)).toFixed(1);
+}, sel);
+
+const zoom = [];
+if (target) {
+  const cdp = await p.context().newCDPSession(p);
+  await p.waitForTimeout(1200);            // let scrollIntoView and the ring transition settle
+  zoom.push(['unzoomed', await offBy(target)]);
+
+  // The mechanism underneath every case below: the target moved and the DOM
+  // said nothing. No resize, no scroll — just a reflow, which is what a zoom
+  // change actually produces once panels re-measure themselves. Growing a
+  // sibling above the target reproduces it in one step. It runs first, on a
+  // freshly parked tour: once the cases below have shuffled the scroll
+  // position around, inserting content can nudge a scrolled container and fire
+  // the scroll event that would have covered for the missing tracking.
+  await p.evaluate(sel => {
+    const t = document.querySelector(sel);
+    const spacer = document.createElement('div');
+    spacer.id = '__reflow-spacer';
+    spacer.style.cssText = 'height:160px;flex:0 0 auto';
+    t.parentNode.insertBefore(spacer, t);
+  }, target);
+  await p.waitForTimeout(700);
+  zoom.push(['a silent reflow moved it', await offBy(target)]);
+  await p.evaluate(() => document.getElementById('__reflow-spacer')?.remove());
+  await p.waitForTimeout(700);
+
+  for (const z of [1.5, 2]) {               // Ctrl +/−: viewport shrinks, DPR rises
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: Math.round(1440 / z), height: Math.round(950 / z), deviceScaleFactor: z, mobile: false });
+    await p.waitForTimeout(700);
+    zoom.push([`browser zoom ${z * 100}%`, await offBy(target)]);
+  }
+  await cdp.send('Emulation.clearDeviceMetricsOverride');
+  await p.waitForTimeout(700);
+  zoom.push(['back to 100%', await offBy(target)]);
+
+  for (const z of [1.5, 2]) {               // pinch: no resize event at all
+    await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: z });
+    await p.waitForTimeout(700);
+    zoom.push([`pinch ${z * 100}%`, await offBy(target)]);
+  }
+  await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 });
+
+  for (const z of [1.5, 0.67]) {            // page zoom: a second set of units
+    await p.evaluate(v => { document.documentElement.style.zoom = v; }, z);
+    await p.waitForTimeout(700);
+    zoom.push([`page zoom ${z}`, await offBy(target)]);
+  }
+  await p.evaluate(() => { document.documentElement.style.zoom = ''; });
+}
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -179,6 +260,10 @@ check(r.stateSaved, 'completion persists to localStorage');
 check(r.freshBefore === r.total && r.freshAfter === 0,
   '"new steps" tracking flips seen→0 once both tours have run',
   `${r.freshBefore}→${r.freshAfter}`);
+check(target !== null, 'a spotlit step was found to test zoom against', target ?? '');
+for (const [label, off] of zoom) {
+  check(off <= 2, `the spotlight holds its target — ${label}`, `off by ${off}px`);
+}
 check(pageErrors.length === 0, 'no page errors', pageErrors.join('; '));
 
 for (const v of r.visited) console.log(`      ${v}`);
