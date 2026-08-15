@@ -447,10 +447,21 @@ custom waveforms are registered through `engine.defineWave()`.
 ## Guided tour (in-app tutorial)
 
 Choosing a starting point starts the tour **for that way of playing**, as
-spotlight coach-marks over the live UI. The **?** button in the header re-opens
-it any time; the app stays fully clickable during the tour, so "click it now"
-actually works. Esc closes, ←/→ navigate; on phones the card becomes a bottom
-sheet.
+spotlight coach-marks over the live UI. The app stays fully clickable during the
+tour, so "click it now" actually works. Esc closes, ←/→ navigate; on phones the
+card becomes a bottom sheet.
+
+**Every panel explains itself.** Each section header carries a **?** at its right
+end that runs just that panel's steps — Volume Quantize tells you what GATE does
+without walking you past the camera button and the welcome first. The buttons
+appear automatically: `src/ui/sections.js` gives one to any panel that has steps,
+the same way it gives every panel a fold caret and a resize grip, so a panel
+added later gets its **?** for free and a panel with nothing to say gets none.
+
+The header **?** is no longer "restart the whole tutorial". It keeps the steps
+that belong to no panel — the welcome, the camera and sound buttons, saving, the
+sign-off — and its "updated" pulse counts only those, rather than promising 23
+new steps and then showing nine.
 
 **The tour is scoped to a mode.** One tour covering everything meant a
 first-timer who picked chord mode sat through the patchbay, the cable editor and
@@ -470,12 +481,14 @@ the same way, once, to anyone who has not seen it.
 The tour is built for a project that changes weekly:
 
 - **It's data.** Every step is one entry in `TOUR_STEPS`
-  (`src/ui/tutorial.js`) — selector, title, two sentences. Adding, moving or
-  retiring a feature means editing one array entry; the file header documents
-  the exact workflow.
+  (`src/ui/tutorial.js`) — selector, title, two sentences, plus which `mode` and
+  which `section` it belongs to. Adding, moving or retiring a feature means
+  editing one array entry; the file header documents the exact workflow.
 - **It can't silently rot.** `npm run test:tutorial` (run in CI on every PR)
   boots the app, enables every state steps declare they need, and **fails the
-  build if any step points at UI that no longer exists**. At runtime a stale
+  build if any step points at UI that no longer exists** — or if a step is
+  tagged for a panel that does not exist (help written and unreachable), or a
+  panel's **?** opens nothing, or a **?** opens more than its own panel's steps. At runtime a stale
   step is skipped gracefully instead — the app never breaks because the tour
   lagged a release.
 - **Returning users see what's new.** Step ids are tracked per user; when a

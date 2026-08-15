@@ -47,7 +47,8 @@ await p.click('#chord-toggle');   // 'chord'
 await p.waitForTimeout(200);
 
 const r = await p.evaluate(async () => {
-  const { TOUR_STEPS, tour, unseenSteps, stepsForMode, MODES } =
+  const { TOUR_STEPS, tour, unseenSteps, stepsForMode, MODES,
+          stepsForSection, sectionsWithHelp, appSteps } =
     await import('/src/ui/tutorial.js');
   const out = { stale: [], dupIds: [], visited: [], total: TOUR_STEPS.length,
                 perMode: {}, orphans: [] };
@@ -73,8 +74,37 @@ const r = await p.evaluate(async () => {
   const covered = new Set(MODES.flatMap(m => stepsForMode(m).map(t => t.id)));
   out.orphans = TOUR_STEPS.filter(t => !covered.has(t.id)).map(t => t.id);
 
-  // ── Drive the real engine through EACH mode's tour ──
+  // Captured before ANY tour runs: every run below marks its steps seen, and
+  // the per-panel runs alone would eat a third of them before the baseline.
   out.freshBefore = unseenSteps().length;
+
+  // ── Per-panel help ──
+  // A step tagged for a panel that does not exist is a `?` that never appears,
+  // so the help is written and unreachable. And a panel whose `?` opens nothing
+  // is worse than no `?` at all.
+  out.sectionsWanted = sectionsWithHelp();
+  out.sectionsMissingPanel = out.sectionsWanted.filter(id =>
+    !document.querySelector(`.sec[data-sec-id="${id}"]`));
+  out.sectionsMissingButton = out.sectionsWanted.filter(id =>
+    !document.querySelector(`.sec[data-sec-id="${id}"] .sec-help`));
+  out.emptyHelpButtons = [...document.querySelectorAll('.sec .sec-help')]
+    .map(b => b.closest('.sec').dataset.secId)
+    .filter(id => stepsForSection(id).length === 0);
+  out.appStepCount = appSteps().length;
+
+  // Each panel's `?` opens only that panel's steps.
+  out.sectionRuns = {};
+  for (const id of out.sectionsWanted) {
+    document.querySelector(`.sec[data-sec-id="${id}"] .sec-help`)?.click();
+    out.sectionRuns[id] = {
+      want: stepsForSection(id).length,
+      shown: document.querySelector('.tour-count')?.textContent ?? '(none)',
+      title: document.querySelector('.tour-title')?.textContent ?? '',
+    };
+    tour.close();
+  }
+
+  // ── Drive the real engine through EACH mode's tour ──
   const walk = async (mode) => {
     const expected = stepsForMode(mode).length;
     const seen = [];
@@ -120,6 +150,22 @@ check(r.dupIds.length === 0, 'step ids are unique', r.dupIds.join(', '));
 check(r.badShape.length === 0, 'every step has id/title/body', r.badShape.join(', '));
 check(r.orphans.length === 0, 'every step belongs to at least one mode',
   r.orphans.join(' '));
+
+// ── Per-panel help ──
+check(r.sectionsMissingPanel.length === 0,
+  'every step tagged for a panel targets a panel that exists',
+  r.sectionsMissingPanel.join(' '));
+check(r.sectionsMissingButton.length === 0,
+  'and every one of those panels grew a ?', r.sectionsMissingButton.join(' '));
+check(r.emptyHelpButtons.length === 0,
+  'no ? opens an empty tour', r.emptyHelpButtons.join(' '));
+check(r.appStepCount > 0 && r.appStepCount < r.total,
+  'the header ? keeps the steps that belong to no panel',
+  `${r.appStepCount} of ${r.total}`);
+for (const [id, run] of Object.entries(r.sectionRuns)) {
+  check(run.shown === `1/${run.want}`, `${id}: its ? opens only its own steps`,
+    `${run.shown} (want 1/${run.want}) — ${run.title}`);
+}
 for (const [mode, m] of Object.entries(r.perMode)) {
   check(m.seen.length === m.expected, `${mode} tour walks every one of its steps`,
     `visited ${m.seen.length}/${m.expected}`);

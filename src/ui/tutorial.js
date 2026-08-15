@@ -41,6 +41,11 @@ import { chordmode }    from '../chordmode.js';
 //   modes   which way of playing this step is about: 'osc' (signals wired to
 //           oscillator parameters) or 'chords' (handshapes play chords). Absent
 //           = shown in both, i.e. it is about the app rather than a mode.
+//   section which panel this step explains, by its `data-sec` id. That panel
+//           grows a `?` in its header which runs just its own steps. Absent =
+//           the step is about the app rather than one panel (the header
+//           buttons, the welcome and the sign-off), and it belongs to the
+//           header's own `?` instead.
 //
 // One tour covering everything meant a first-timer who picked chord mode sat
 // through the patchbay, the cable editor and the play-along game before
@@ -68,33 +73,33 @@ export const TOUR_STEPS = [
           'trackers — face, gaze — and ⛶ makes the view fullscreen.',
   },
   {
-    id: 'signals', target: '#sig-list', title: 'Signals',
+    id: 'signals', section: 'signals', target: '#sig-list', title: 'Signals',
     body: 'Every measurement MotionMuse extracts — wrist height, pinch, finger ' +
           'curl, elbow angle, thumb-to-finger touches — appears here as a live ' +
           'signal once the camera runs. Anything in this list can drive sound.',
   },
   {
-    id: 'patchbay', modes: ['osc'], target: '.panel-map', title: 'The patchbay',
+    id: 'patchbay', section: 'patchbay', modes: ['osc'], target: '.panel-map', title: 'The patchbay',
     body: 'This is where the instrument is built: <b>inputs</b> (signals) on ' +
           'the left wire to <b>outputs</b> (sound parameters) on the right. ' +
           'Drag from one socket ● to another to connect them — one signal can ' +
           'fan out to as many parameters as you like.',
   },
   {
-    id: 'cable-editor', modes: ['osc'], target: '.panel-map', title: 'Shaping a connection',
+    id: 'cable-editor', section: 'patchbay', modes: ['osc'], target: '.panel-map', title: 'Shaping a connection',
     body: 'Tap a cable or node to open its editor: set the output range, bend ' +
           'the response curve, or quantise it into discrete steps. ' +
           'Oscillator-frequency cables get a piano keyboard for picking exact ' +
           'note ranges.',
   },
   {
-    id: 'preset', modes: ['osc'], target: '#preset-btn', title: 'Instant instrument',
+    id: 'preset', section: 'patchbay', modes: ['osc'], target: '#preset-btn', title: 'Instant instrument',
     body: 'No need to wire everything yourself — <b>PRESET</b> applies a ' +
           'ready-made mapping so you can play immediately: right hand height ' +
           'is pitch, pinch controls volume.',
   },
   {
-    id: 'save-load', target: '#save-btn', title: 'Save your setup',
+    id: 'save-load', section: 'patchbay', target: '#save-btn', title: 'Save your setup',
     body: '<b>SAVE</b> downloads the entire instrument — wiring, tuning, ' +
           'gestures, everything — as one file; <b>LOAD</b> restores it. Your ' +
           'session also auto-saves locally, so a reload picks up where you left off.',
@@ -109,11 +114,54 @@ export const TOUR_STEPS = [
   },
   {
     id: 'audio-panel', target: '#audio-panel', needs: ['audio'], title: 'The audio engine',
-    body: 'Oscillators, filter, reverb — and the two quantisers: <b>Pitch ' +
-          'Quantize</b> snaps notes onto a scale so gestures play in key, and ' +
-          '<b>Volume Quantize</b> steps loudness so notes articulate cleanly ' +
-          'instead of smearing. Every slider here can also be driven from the ' +
-          'patchbay.',
+    body: 'Oscillators, filter, reverb and the two quantisers live here. Every ' +
+          'slider can also be driven from the patchbay, and every panel has its ' +
+          'own <b>?</b> explaining just that panel.',
+  },
+  {
+    id: 'sec-visualizer', section: 'visualizer', target: '#viz-wrap', needs: ['audio'],
+    title: 'Oscilloscope',
+    body: 'The output waveform, live. It keeps moving while muted — the mute ' +
+          'sits after the analyser — which is how you can tell the engine is ' +
+          'silent rather than stuck. Tap it to mute or unmute.',
+  },
+  {
+    id: 'sec-soundkit', section: 'sound-kit', target: '#kit-select', needs: ['audio'],
+    title: 'Sound Kit',
+    body: 'Instrument timbres built from harmonic waveforms and filter ' +
+          'settings — synthesised, not sampled, so nothing downloads. A kit ' +
+          'changes <b>tone only</b>: it never adds oscillators or touches your ' +
+          'levels. Editing any of those flips the selector to Custom.',
+  },
+  {
+    id: 'sec-oscillators', section: 'oscillators', target: '#osc-count', needs: ['audio'],
+    title: 'Oscillators',
+    body: 'The lead voice. <b>− n +</b> sets how many oscillators run, from ' +
+          'none (chord mode alone) up to eight, and each gets its own ' +
+          'waveform here plus its own pitch, detune and level under ' +
+          'Parameters. Added ones arrive at half level so they do not clip.',
+  },
+  {
+    id: 'sec-pitch-quant', section: 'pitch-quantize', target: '#quant-toggle', needs: ['audio'],
+    title: 'Pitch Quantize',
+    body: 'Snaps oscillator pitch onto a scale, so a continuous gesture plays ' +
+          'in key instead of sliding between notes. Pick root, scale and ' +
+          'tuning system; the keyboard below shows where you are.',
+  },
+  {
+    id: 'sec-vol-quant', section: 'volume-quantize', target: '#vq-toggle', needs: ['audio'],
+    title: 'Volume Quantize',
+    body: 'Loudness in steps rather than a continuous slide, so notes ' +
+          'articulate instead of smearing into each other. <b>GATE</b> makes ' +
+          'the bottom step true silence — that is what lets you re-attack a ' +
+          'note rather than only swell it.',
+  },
+  {
+    id: 'sec-sliders', section: 'sliders', target: '.sec[data-sec-id="sliders"]', needs: ['audio'],
+    title: 'Parameters',
+    body: 'Every audio parameter, grouped the same way the patchbay groups its ' +
+          'outputs. Drag one to set where it rests; a mapped parameter is ' +
+          'driven from the patchbay and its slider follows along live.',
   },
   {
     // Rearranging is invisible until someone tries it — there is no button for
@@ -126,7 +174,7 @@ export const TOUR_STEPS = [
           'is remembered.',
   },
   {
-    id: 'playalong', modes: ['osc'], target: '#audio-panel', needs: ['audio'], title: 'Play along',
+    id: 'playalong', section: 'play-along', modes: ['osc'], target: '#audio-panel', needs: ['audio'], title: 'Play along',
     body: 'The <b>Play Along</b> section is a falling-note game: pick a song ' +
           'and difficulty, and hit the notes with whatever gesture controls ' +
           'pitch. Timing is scored — PERFECT beats GOOD — and best scores stick.',
@@ -140,7 +188,7 @@ export const TOUR_STEPS = [
           'chord mode included, is here without it.',
   },
   {
-    id: 'gestures', target: '#gesture-list', needs: ['audio'], title: 'Gestures',
+    id: 'gestures', section: 'gestures', target: '#gesture-list', needs: ['audio'], title: 'Gestures',
     body: 'Hand poses become discrete triggers: fist, point, peace, thumbs up ' +
           'and down, open palm, rock horns, finger gun, I-love-you, plus the ' +
           'ASL number handshapes. Templates marked <b>est</b> are estimates — ' +
@@ -148,7 +196,7 @@ export const TOUR_STEPS = [
           'makes recognition dramatically more reliable.',
   },
   {
-    id: 'chords-key', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    id: 'chords-key', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
     title: 'Chords by degree, not by note',
     body: 'Pick a <b>key</b> once — root, mode, octave — and the panel lists the ' +
           'seven chords in it (<b>I ii iii IV V vi vii°</b>). Change the key and ' +
@@ -156,7 +204,7 @@ export const TOUR_STEPS = [
           '<b>FOLLOW</b> keeps them in the same key your melody is quantised to.',
   },
   {
-    id: 'chords-assign', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    id: 'chords-assign', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
     title: 'One handshape per chord',
     body: 'Each row picks the handshape that plays that chord, and <b>7th</b> ' +
           'adds the diatonic seventh. A shape does exactly one job: give it to ' +
@@ -165,7 +213,7 @@ export const TOUR_STEPS = [
           'but silent.',
   },
   {
-    id: 'chords-express', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    id: 'chords-express', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
     title: 'What plays the chord',
     body: '<b>PLAY WITH</b> decides that. Hold the shape and hear it, or go ' +
           'two-handed — one hand names the chord, the other\'s <b>openness</b> ' +
@@ -174,7 +222,7 @@ export const TOUR_STEPS = [
           'Either drives an attack/release or the volume directly.',
   },
   {
-    id: 'chords-range', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    id: 'chords-range', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
     title: 'Reaching silence',
     body: 'A closed fist does not read as zero — hand openness bottoms out ' +
           'around 0.38 — so <b>OFF AT</b> and <b>FULL AT</b> map the range your ' +
@@ -211,6 +259,16 @@ export const unseenSteps = () => {
 };
 
 export const MODES = ['osc', 'chords'];
+
+// Steps belonging to one panel, and the panels that have any. A `?` in a
+// panel's header runs just these — which is the whole point: re-reading the
+// welcome and the camera button to find out what GATE does is not help.
+export const stepsForSection = id => TOUR_STEPS.filter(t => t.section === id);
+export const sectionsWithHelp = () =>
+  [...new Set(TOUR_STEPS.map(t => t.section).filter(Boolean))];
+// The rest: the header buttons, the welcome, the sign-off. These belong to no
+// panel, so the header's own `?` keeps them.
+export const appSteps = () => TOUR_STEPS.filter(t => !t.section);
 // Steps for one way of playing: the untagged ones (about the app) plus the ones
 // tagged for this mode. Order is preserved, so the shared steps still frame the
 // mode-specific ones rather than being appended after them.
@@ -364,12 +422,15 @@ export const tour = (() => {
     syncButton();
   }
 
-  // `mode` picks the step list; omitted, it follows what the app is actually
-  // set up for, so the ? button shows the tour for what you are playing rather
-  // than for whatever you first chose.
-  function start(mode) {
+  // Either a mode name, or `{ steps }` for an explicit list (a panel's own
+  // help). Omitted, it follows what the app is actually set up for, so the
+  // header button shows the tour for what you are playing rather than for
+  // whatever you first chose.
+  function start(what) {
     if (els) return;                    // already open
-    steps = stepsForMode(mode ?? currentMode());
+    steps = Array.isArray(what?.steps) ? what.steps
+          : stepsForMode(typeof what === 'string' ? what : currentMode());
+    if (!steps.length) return;
     seenThisRun = new Set();
     build();
     idx = Math.max(0, firstShowable(0, 1));
@@ -379,7 +440,11 @@ export const tour = (() => {
   function syncButton() {
     const btn = document.getElementById('tour-btn');
     if (!btn) return;
-    const fresh = unseenSteps();
+    // Only the steps THIS button runs. It used to count every unseen step,
+    // which now includes every panel's own help — so it would promise "23 new
+    // steps" and then show nine.
+    const seen = new Set(loadState().seen);
+    const fresh = appSteps().filter(t => !seen.has(t.id)).map(t => t.id);
     const s = loadState();
     const updated = s.done && fresh.length > 0;
     btn.classList.toggle('tour-new', updated);
@@ -392,9 +457,25 @@ export const tour = (() => {
 })();
 
 export function initTutorial() {
+  // The header `?` is no longer "restart the whole tutorial". Every panel
+  // explains itself now, so this one keeps what belongs to no panel: the
+  // welcome, the header buttons, the sign-off.
   document.getElementById('tour-btn')?.addEventListener('click', () =>
-    tour.open ? tour.close() : tour.start());
+    tour.open ? tour.close() : tour.start({ steps: appSteps() }));
+  const btn = document.getElementById('tour-btn');
+  if (btn) btn.title = 'Getting started — the camera, sound, and saving. Each panel has its own ?';
   tour.syncButton();
+}
+
+// Run one panel's help. Exported for sections.js, which owns the header button
+// it hangs off; keeping the wiring there means a panel added later gets a `?`
+// for free, the same way it gets a fold caret and a grip.
+export function startSectionHelp(sectionId) {
+  const steps = stepsForSection(sectionId);
+  if (!steps.length) return false;
+  if (tour.open) tour.close();
+  tour.start({ steps });
+  return true;
 }
 
 // Offer the tour for a way of playing, after the app has settled. Skipping

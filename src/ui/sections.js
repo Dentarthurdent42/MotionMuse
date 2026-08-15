@@ -21,6 +21,7 @@
 // every section by default would trade one annoyance for a worse one.
 
 import { lsGet, lsSet } from '../storage.js';
+import { stepsForSection, startSectionHelp } from './tutorial.js';
 
 const KEY = 'motionmuse-sections';
 const ORDER_KEY = 'motionmuse-sec-order';
@@ -187,6 +188,24 @@ function enhance(sec) {
     // Content can change height without any scrolling (a list grows, a toggle
     // reveals a row), which changes whether anything is hidden.
     new ResizeObserver(() => syncEnd(body)).observe(body);
+
+    // Per-panel help, on the RIGHT of the header. Appended, so it lands after
+    // whatever the header already carries (an ON/OFF pill, a count) rather than
+    // shoving it along. Only where there is something to say — a `?` that opens
+    // nothing is worse than no `?`.
+    if (stepsForSection(id).length) {
+      const help = document.createElement('button');
+      help.className = 'sec-help';
+      help.type = 'button';
+      help.textContent = '?';
+      help.title = 'What this panel does';
+      help.setAttribute('aria-label', `Help for ${id}`);
+      head.appendChild(help);
+      help.addEventListener('click', e => {
+        e.stopPropagation();            // not a fold, not the start of a drag
+        startSectionHelp(id);
+      });
+    }
 
     // Collapse control. Its click must not read as a drag start — wireDrag
     // ignores presses that land on a button, so order here is incidental.
