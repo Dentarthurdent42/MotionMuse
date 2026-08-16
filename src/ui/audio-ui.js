@@ -10,7 +10,7 @@ import { enhanceSections } from './sections.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
-import { gestureSectionsHTML, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
+import { gestureSections, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
 
 const opts = (arr, sel) =>
   arr.map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`).join('');
@@ -93,7 +93,14 @@ export function renderAudioPanel() {
   const gv = playalong.view;
   const gameActive = gv.state === 'countdown' || gv.state === 'playing';
 
+  // Chord Mode leads the panel: it is a way of playing rather than a setting,
+  // so someone who came to play chords should not have to scroll past the
+  // timbre picker and the note game to reach it. A section the user has
+  // dragged keeps the position they gave it — sections.js only falls back to
+  // this markup order for hosts nobody has rearranged.
+  const secs = gestureSections();
   panel.innerHTML = `
+    ${secs.chordMode}
     <div class="audio-section">
       <div class="audio-section-label">Sound Kit</div>
       <select id="kit-select" title="Instrument timbre preset (synthesized)">${kitOpts}</select>
@@ -115,7 +122,7 @@ export function renderAudioPanel() {
       <canvas id="game-canvas" class="game-canvas" style="display:${gv.state !== 'idle' ? 'block' : 'none'}"></canvas>
       <div id="game-score" class="quant-notes">${gv.state === 'idle' ? bestLine() : '—'}</div>
     </div>
-    ${gestureSectionsHTML()}
+    ${secs.gestures}
     <div class="audio-section">
       <div class="audio-section-label">
         Pitch Quantize

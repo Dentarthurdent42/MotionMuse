@@ -21,7 +21,8 @@ const MODE_LABELS = {
   'harmonic minor': 'harm min',
 };
 
-export function gestureSectionsHTML() {
+// Returns the two sections separately — see the note beside the templates.
+export function gestureSections() {
   const gestures = gesture.list();
   const relId = chordmode.getReleaseGesture();
   const env = engine.getChordEnv();
@@ -163,7 +164,10 @@ export function gestureSectionsHTML() {
       <span class="ch-sev-gap"></span>
     </div>`;
 
-  return `
+  // Returned separately rather than as one blob: the two sections are built
+  // from the same handshape data, but the panel places them apart — Chord Mode
+  // leads the panel, Gestures sits further down with the rest of the setup.
+  const gesturesHTML = `
     <div class="audio-section" data-sec="gestures">
       <div class="audio-section-label">
         Gestures
@@ -174,7 +178,9 @@ export function gestureSectionsHTML() {
       <div id="gesture-cal-status" class="quant-notes"></div>
       ${calibrate}
       ${restore}
-    </div>
+    </div>`;
+
+  const chordModeHTML = `
     <div class="audio-section" data-sec="chord-mode">
       <div class="audio-section-label">
         Chord Mode
@@ -203,6 +209,8 @@ export function gestureSectionsHTML() {
       </div>
       ${on ? '' : '<div class="quant-notes">hold a gesture to play its chord</div>'}
     </div>`;
+
+  return { gestures: gesturesHTML, chordMode: chordModeHTML };
 }
 
 // How to make each shape, shown during calibration. A template recorded from
