@@ -38,9 +38,18 @@ export function gestureSections() {
     const tag = g.est
       ? `<span class="gesture-tag est" title="Estimated template — calibrate it on your own hand">est</span>`
       : (g.builtin ? '' : `<span class="gesture-tag">custom</span>`);
+    // Illustration, where one exists. Rendered from this template's own feature
+    // vector (scripts/handshapes.mjs), so it shows the shape the matcher is
+    // actually looking for rather than an artist's idea of it. A custom shape
+    // the user recorded has no render and simply shows none — the row still
+    // reads, and an approximate stand-in would be a lie about which shape it is.
+    const pic = g.builtin && g.f
+      ? `<img class="gesture-pic" src="icons/handshapes/${g.id}.png" alt="" width="34" height="34" loading="lazy">`
+      : '<span class="gesture-pic gesture-pic-none" aria-hidden="true"></span>';
     return `
     <div class="gesture-row" data-gid="${g.id}" title="${label}${g.builtin ? ' (built-in)' : ''}">
       <span class="gesture-dot" id="gdot-${g.id}"></span>
+      ${pic}
       <span class="gesture-name">${short}</span>
       ${tag}
       <button class="rm-btn gesture-cal" data-gid="${g.id}"
