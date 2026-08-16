@@ -52,195 +52,174 @@ import { chordmode }    from '../chordmode.js';
 // reaching the one panel they were going to use. The tour is now scoped to the
 // mode you chose, and the mode is what the starting-point picker sets.
 export const TOUR_STEPS = [
+  // Welcome, then the split: Chord Mode and Tone Mode are the two output
+  // types, so each mode's block comes first in its own tour and the shared
+  // app steps follow. stepsForMode() keeps array order, which is what makes
+  // this ordering BE the structure.
   {
     id: 'welcome', target: null, title: 'Welcome to MotionMuse',
-    body: 'MotionMuse turns your webcam into an instrument: hand position, ' +
-          'gestures and body pose become sound, live in the browser. Nothing ' +
-          'is uploaded — all processing happens on your machine.<br><br>' +
-          'This tour covers the way of playing you just picked. Re-open it any ' +
-          'time with the <b>?</b> button up top.',
+    body: 'Your webcam is the instrument. Two ways to play: <b>Chord Mode</b> ' +
+          '— handshapes play chords — and <b>Tone Mode</b> — movement drives ' +
+          'the synth continuously. Nothing is uploaded; everything runs on ' +
+          'your machine.<br><br>This tour follows the mode you picked. ' +
+          'Re-open it any time with the <b>?</b> button.',
   },
+
+  // ── Chord Mode ──
   {
     id: 'chords-key', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
-    title: 'Chords by degree, not by note',
-    body: 'Pick a <b>key</b> once — root, mode, octave — and the panel lists the ' +
-          'seven chords in it (<b>I ii iii IV V vi vii°</b>). Change the key and ' +
-          'every chord transposes together; nothing can land outside it. ' +
-          '<b>FOLLOW</b> keeps them in the same key your melody is quantised to.',
+    title: 'Chord Mode',
+    body: 'Handshapes play chords, always in key. Set <b>root, mode and ' +
+          'octave</b>; the panel lists the seven chords in that key ' +
+          '(<b>I ii iii IV V vi vii°</b>). Change the key and they all ' +
+          'transpose. <b>FOLLOW</b> uses the melody’s key.',
   },
   {
     id: 'chords-assign', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
-    title: 'One handshape per chord',
-    body: 'Each row picks the handshape that plays that chord, and <b>7th</b> ' +
-          'adds the diatonic seventh. A shape does exactly one job: give it to ' +
-          'another chord and it swaps with whatever was there. The dot on the ' +
-          'left lights when that chord is sounding — hollow means it is chosen ' +
-          'but silent.',
+    title: 'Assign handshapes',
+    body: 'By default the degree is the ASL number: <b>I</b> is a 1, <b>ii</b> ' +
+          'a 2, up to <b>vii°</b> as a 7. A closed fist releases. Reassign any ' +
+          'row you like — a shape already in use swaps. <b>7th</b> adds the ' +
+          'seventh; the dot lights while the chord sounds.',
   },
   {
     id: 'chords-express', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
-    title: 'What plays the chord',
-    body: '<b>PLAY WITH</b> decides that. Hold the shape and hear it, or go ' +
-          'two-handed — one hand names the chord, the other\'s <b>openness</b> ' +
-          'plays it, and the chord latches so the naming hand can go and pick ' +
-          'the next one. Or use your <b>eyebrows</b> and keep a hand free. ' +
-          'Either drives an attack/release or the volume directly.',
+    title: 'Play it',
+    body: '<b>PLAY WITH</b> sets what sounds the chord: hold the handshape, ' +
+          'open and close the <b>other hand</b> (the chord latches while you ' +
+          'pick the next one), or raise your <b>eyebrows</b>.',
   },
   {
     id: 'chords-range', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
-    title: 'Reaching silence',
-    body: 'A closed fist does not read as zero — hand openness bottoms out ' +
-          'around 0.38 — so <b>OFF AT</b> and <b>FULL AT</b> map the range your ' +
-          'hand actually covers onto the full travel. Watch the meter while you ' +
-          'open and close: if the bar never empties, raise OFF AT.',
+    title: 'Set your range',
+    body: '<b>OFF AT</b> and <b>FULL AT</b> map your hand’s real travel onto ' +
+          'silence-to-full. Open and close while watching the meter; if it ' +
+          'never empties, raise OFF AT.',
+  },
+
+  // ── Tone Mode ──
+  {
+    id: 'patchbay', section: 'patchbay', modes: ['osc'], target: '.panel-map', title: 'Tone Mode',
+    body: 'Signals drive the synth continuously; the patchbay wires them. ' +
+          '<b>Inputs</b> left, <b>outputs</b> right — drag socket ● to ' +
+          'socket ● to connect. One signal can drive several parameters.',
   },
   {
+    id: 'cable-editor', section: 'patchbay', modes: ['osc'], target: '.panel-map', title: 'Edit a cable',
+    body: 'Tap a cable: range, curve, steps, invert. Oscillator-frequency ' +
+          'cables add a piano keyboard for picking note ranges.',
+  },
+  {
+    id: 'preset', section: 'patchbay', modes: ['osc'], target: '#preset-btn', title: 'Presets',
+    body: '<b>PRESET</b> loads a complete patch: right hand height plays ' +
+          'pitch, pinch controls volume.',
+  },
+
+  // ── The app around both ──
+  {
     id: 'camera', target: '#cv-btn', title: 'Start the camera',
-    body: 'Everything begins here. The first start downloads the vision ' +
-          'models (a few MB — they cache for next time), then hand and pose ' +
-          'tracking run locally. Feel free to click it now; the tour will wait.',
+    body: 'The first start downloads the vision models (a few MB, cached ' +
+          'after that); tracking then runs locally. Click it now if you like ' +
+          '— the tour waits.',
   },
   {
     id: 'video', target: '#video-wrap', title: 'Camera view',
-    body: 'Your mirrored camera feed, with the detected hand and body ' +
-          'skeleton drawn on top. The buttons in the corner add optional ' +
-          'trackers — face, gaze — and ⛶ makes the view fullscreen.',
+    body: 'Your mirrored feed, tracking drawn on top. The corner buttons add ' +
+          'face and gaze tracking; ⛶ goes fullscreen.',
   },
   {
     id: 'signals', section: 'signals', target: '#sig-list', title: 'Signals',
-    body: 'Every measurement MotionMuse extracts — wrist height, pinch, finger ' +
-          'curl, elbow angle, thumb-to-finger touches — appears here as a live ' +
-          'signal once the camera runs. Anything in this list can drive sound.',
+    body: 'Everything the camera measures, live: wrist height, pinch, finger ' +
+          'curl, elbow angle, fingertip touches. Any signal can drive any ' +
+          'sound parameter. Click one to copy its key.',
   },
   {
-    id: 'patchbay', section: 'patchbay', modes: ['osc'], target: '.panel-map', title: 'The patchbay',
-    body: 'This is where the instrument is built: <b>inputs</b> (signals) on ' +
-          'the left wire to <b>outputs</b> (sound parameters) on the right. ' +
-          'Drag from one socket ● to another to connect them — one signal can ' +
-          'fan out to as many parameters as you like.',
+    id: 'save-load', section: 'patchbay', target: '#save-btn', title: 'Save and load',
+    body: '<b>SAVE</b> downloads the whole setup as one file; <b>LOAD</b> ' +
+          'restores it. The session also auto-saves locally.',
   },
   {
-    id: 'cable-editor', section: 'patchbay', modes: ['osc'], target: '.panel-map', title: 'Shaping a connection',
-    body: 'Tap a cable or node to open its editor: set the output range, bend ' +
-          'the response curve, or quantise it into discrete steps. ' +
-          'Oscillator-frequency cables get a piano keyboard for picking exact ' +
-          'note ranges.',
-  },
-  {
-    id: 'preset', section: 'patchbay', modes: ['osc'], target: '#preset-btn', title: 'Instant instrument',
-    body: 'No need to wire everything yourself — <b>PRESET</b> applies a ' +
-          'ready-made mapping so you can play immediately: right hand height ' +
-          'is pitch, pinch controls volume.',
-  },
-  {
-    id: 'save-load', section: 'patchbay', target: '#save-btn', title: 'Save your setup',
-    body: '<b>SAVE</b> downloads the entire instrument — wiring, tuning, ' +
-          'gestures, everything — as one file; <b>LOAD</b> restores it. Your ' +
-          'session also auto-saves locally, so a reload picks up where you left off.',
-  },
-  {
-    id: 'audio', target: '#audio-btn', title: 'Muted, but running',
-    body: 'The synthesiser starts with the page, so every control is live from ' +
-          'the moment you arrive — but the output is muted, so setting up a ' +
-          'patch stays silent until you ask for sound. This unmutes it, and so ' +
-          'does the spacebar. The waveform keeps moving while muted, which is ' +
-          'how you can tell it is silent rather than stuck.',
+    id: 'audio', target: '#audio-btn', title: 'Sound',
+    body: 'The synth runs from page load, muted. Click here or press ' +
+          '<b>Space</b> to unmute.',
   },
   {
     id: 'audio-panel', target: '#audio-panel', needs: ['audio'], title: 'The audio engine',
-    body: 'Oscillators, filter, reverb and the two quantisers live here. Every ' +
-          'slider can also be driven from the patchbay, and every panel has its ' +
-          'own <b>?</b> explaining just that panel.',
+    body: 'Oscillators, filter, reverb, both quantizers. Every control here ' +
+          'can also be driven from the patchbay. Each panel’s <b>?</b> ' +
+          'explains that panel.',
   },
   {
     id: 'sec-visualizer', section: 'visualizer', target: '#viz-wrap', needs: ['audio'],
     title: 'Oscilloscope',
-    body: 'The output waveform, live. It keeps moving while muted — the mute ' +
-          'sits after the analyser — which is how you can tell the engine is ' +
-          'silent rather than stuck. Tap it to mute or unmute.',
+    body: 'The output waveform. It keeps moving while muted. Tap it to mute ' +
+          'or unmute.',
   },
   {
     id: 'sec-soundkit', section: 'sound-kit', target: '#kit-select', needs: ['audio'],
     title: 'Sound Kit',
-    body: 'Instrument timbres built from harmonic waveforms and filter ' +
-          'settings — synthesised, not sampled, so nothing downloads. A kit ' +
-          'changes <b>tone only</b>: it never adds oscillators or touches your ' +
-          'levels. Editing any of those flips the selector to Custom.',
+    body: 'Synthesized instrument timbres. A kit sets tone only — oscillator ' +
+          'count and levels stay yours. Editing tone switches the selector ' +
+          'to Custom.',
   },
   {
     id: 'sec-oscillators', section: 'oscillators', target: '#osc-count', needs: ['audio'],
     title: 'Oscillators',
-    body: 'The lead voice. <b>− n +</b> sets how many oscillators run, from ' +
-          'none (chord mode alone) up to eight, and each gets its own ' +
-          'waveform here plus its own pitch, detune and level under ' +
-          'Parameters. Added ones arrive at half level so they do not clip.',
+    body: '<b>− n +</b> sets how many oscillators run, zero to eight. Each ' +
+          'picks its waveform here; pitch, detune and level are under ' +
+          'Parameters.',
   },
   {
     id: 'sec-pitch-quant', section: 'pitch-quantize', target: '#quant-toggle', needs: ['audio'],
     title: 'Pitch Quantize',
-    body: 'Snaps oscillator pitch onto a scale, so a continuous gesture plays ' +
-          'in key instead of sliding between notes. Pick root, scale and ' +
-          'tuning system; the keyboard below shows where you are.',
+    body: 'Snaps pitch to a scale. Pick root, scale and tuning; the keyboard ' +
+          'shows which notes are in play.',
   },
   {
     id: 'sec-vol-quant', section: 'volume-quantize', target: '#vq-toggle', needs: ['audio'],
     title: 'Volume Quantize',
-    body: 'Loudness in steps rather than a continuous slide, so notes ' +
-          'articulate instead of smearing into each other. <b>GATE</b> makes ' +
-          'the bottom step true silence — that is what lets you re-attack a ' +
-          'note rather than only swell it.',
+    body: 'Steps the volume instead of sliding it. <b>GATE</b> makes the ' +
+          'bottom step true silence; <b>PLUCK / KEY / BOW</b> set the attack.',
   },
   {
     id: 'sec-sliders', section: 'sliders', target: '.sec[data-sec-id="sliders"]', needs: ['audio'],
     title: 'Parameters',
-    body: 'Every audio parameter, grouped the same way the patchbay groups its ' +
-          'outputs. Drag one to set where it rests; a mapped parameter is ' +
-          'driven from the patchbay and its slider follows along live.',
+    body: 'Every audio parameter, grouped like the patchbay’s outputs. Drag ' +
+          'to set a value; a mapped parameter follows its signal.',
   },
   {
     // Rearranging is invisible until someone tries it — there is no button for
     // it — so the tour is the only place a user finds out it exists.
-    id: 'layout', target: '#audio-panel', needs: ['audio'], title: 'Make it yours',
-    body: 'Every section is a container you can rearrange. <b>Drag its ' +
-          'header</b> to move it up, down, or into another column; drag the ' +
-          '<b>grip along its bottom edge</b> to set a height (double-click to ' +
-          'fit); click the <b>caret</b> to collapse it. Where you leave things ' +
-          'is remembered.',
+    id: 'layout', target: '#audio-panel', needs: ['audio'], title: 'Rearrange anything',
+    body: 'Drag a section’s <b>header</b> to move it, its bottom <b>grip</b> ' +
+          'to resize (double-click to fit), the <b>caret</b> to collapse. ' +
+          'The layout is remembered.',
   },
   {
     id: 'playalong', section: 'play-along', modes: ['osc'], target: '#audio-panel', needs: ['audio'], title: 'Play along',
-    body: 'The <b>Play Along</b> section is a falling-note game: pick a song ' +
-          'and difficulty, and hit the notes with whatever gesture controls ' +
-          'pitch. Timing is scored — PERFECT beats GOOD — and best scores stick.',
+    body: 'A falling-note game. Pick a song and difficulty; hit the notes ' +
+          'with whatever plays pitch. Best scores are kept.',
   },
   {
-    id: 'dev', target: '#dev-btn', title: 'Under construction',
-    body: 'MotionMuse is in active development. <b>DEV</b> reveals the ' +
-          'still-experimental parts — pose-model comparison, the shader ' +
-          'visualiser, the planned EEG/EMG inputs, and the inference timings ' +
-          'under the camera — all marked 🚧. Everything else, gestures and ' +
-          'chord mode included, is here without it.',
+    id: 'dev', target: '#dev-btn', title: 'DEV',
+    body: '<b>DEV</b> shows the experimental parts, marked 🚧: pose-model ' +
+          'comparison, the shader, EEG/EMG, inference timings.',
   },
   {
     id: 'gestures', section: 'gestures', target: '#gesture-list', needs: ['audio'], title: 'Gestures',
-    body: 'Hand poses become discrete triggers: fist, point, peace, thumbs up ' +
-          'and down, open palm, rock horns, finger gun, I-love-you, plus the ' +
-          'ASL number handshapes. Templates marked <b>est</b> are estimates — ' +
-          'run <b>CALIBRATE</b> once to record each from your own hand, which ' +
-          'makes recognition dramatically more reliable.',
+    body: 'Hold a handshape to trigger it — each row shows its shape. ' +
+          '<b>est</b> marks an estimated template; <b>CALIBRATE</b> records ' +
+          'the shape from your own hand and sharpens recognition.',
   },
   {
     id: 'donate', target: '#donate-btn', title: 'Support the project',
-    body: 'If MotionMuse is useful or fun, the ♥ lists ways to support ' +
-          'development. Entirely optional, always will be.',
+    body: 'The ♥ lists ways to support development. Optional.',
   },
   {
     id: 'finish', target: null, title: 'That’s the tour',
-    body: 'Quick start: <b>START CAMERA → PRESET → Space</b> to unmute, then ' +
-          'move your right hand up and down and pinch to shape notes.<br><br>' +
-          'MotionMuse updates often — when new features land, the <b>?</b> ' +
-          'button pulses and the tour gains steps. The README covers ' +
-          'everything here in depth.',
+    body: 'Quick start: <b>START CAMERA → PRESET → Space</b>, then right ' +
+          'hand up and down for pitch, pinch for volume.<br><br>When new ' +
+          'features land, the <b>?</b> pulses and the tour gains steps.',
   },
 ];
 
