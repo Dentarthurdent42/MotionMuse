@@ -47,9 +47,23 @@ const MIN_H = 56;              // below this a section is unreadable, not compac
 // to live outside that rebuild to keep its canvas and its click handler.
 // hostUnder picks the smallest box containing the pointer, so aiming at the
 // synth list targets the inner one and aiming at the scope targets the outer.
+// The three columns come first: they are the outermost hosts, and everything
+// else nests inside one of them. They exist so that SIGNALS, the camera and the
+// AUDIO ENGINE can be moved at all — those panels used to BE the columns, which
+// made them the only sections in the app that could not go anywhere. hostUnder
+// picks the smallest box under the pointer, so aiming at a panel's own list
+// still targets that panel rather than the column holding it.
 const HOSTS = [
+  ['col-l', '.col-l'],
+  ['col-c', '.col-c'],
+  ['col-r', '.col-r'],
   ['audio', '#audio-panel'],
-  ['aud',   '.panel-aud'],
+  // The audio panel is now a section itself, and enhance() wraps a section's
+  // content into its collapsible body — so the oscilloscope and the synth list
+  // moved one level down and `.panel-aud` stopped being their parent. The body
+  // is the host here for that reason, unlike the panels above: folding AUDIO
+  // ENGINE *should* hide what is inside it, which is exactly what the body is.
+  ['aud',   '.panel-aud > .sec-body'],
   ['cam',   '#cam-extras'],
   ['sig',   '.panel-sig'],
   ['map',   '.panel-map'],

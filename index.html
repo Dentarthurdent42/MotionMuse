@@ -80,15 +80,39 @@
   <!-- ── Main ───────────────────────────────────────────── -->
   <div id="main">
 
-    <!-- Panels are in *source* order = the order they stack in portrait, which
-         is unchanged: camera, signals, patchbay, audio. Landscape places them
-         into grid cells explicitly (see the min-width:769px block in main.css),
-         giving SIGNALS | CAMERA over PATCHBAY | AUDIO. Keeping source order
-         portrait-shaped is what stops a landscape rearrangement from silently
-         reshuffling the phone layout. -->
+    <!-- Three generic columns, and nothing else. The panels used to BE the
+         columns — each one placed into a named grid cell by its own class —
+         which meant SIGNALS, the camera and the AUDIO ENGINE could never be
+         moved: they were the furniture, not the things standing on it. A
+         column is now an empty drop host (src/ui/sections.js), every panel is
+         an ordinary section inside one, and any section can be dragged into
+         any column.
+
+         Landscape lays the columns out left-to-right; portrait stacks them,
+         with the camera's column pulled first (see main.css) so the phone
+         order stays camera, signals, patchbay, audio as before. -->
+
+    <div class="col col-l" data-sec-host="col-l">
+      <!-- Signals -->
+      <div class="panel panel-sig" data-sec="signals">
+        <div class="ph">
+          SIGNALS
+          <span style="margin-left:auto;font-size:8px;color:var(--dim);">CLICK TO COPY KEY</span>
+        </div>
+        <div class="pb" id="sig-list">
+          <div style="padding:20px 10px;color:var(--dim);font-size:10px;text-align:center;">
+            Start camera to see signals
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="splitter" id="split-l" title="Drag to resize — double-click to reset"></div>
+
+    <div class="col col-c" data-sec-host="col-c">
 
     <!-- Input source (camera) -->
-    <div class="panel panel-cam">
+    <div class="panel panel-cam" data-sec="camera">
       <div class="src-tabs">
         <div class="src-tab active">CV</div>
       </div>
@@ -180,21 +204,6 @@
       </div><!-- /#cam-extras -->
     </div>
 
-    <!-- Signals — its own full-height column in landscape -->
-    <div class="panel panel-sig" data-sec="signals">
-      <div class="ph">
-        SIGNALS
-        <span style="margin-left:auto;font-size:8px;color:var(--dim);">CLICK TO COPY KEY</span>
-      </div>
-      <div class="pb" id="sig-list">
-        <div style="padding:20px 10px;color:var(--dim);font-size:10px;text-align:center;">
-          Start camera to see signals
-        </div>
-      </div>
-    </div>
-
-    <div class="splitter" id="split-l" title="Drag to resize — double-click to reset"></div>
-
     <!-- Mapper — beneath the camera in landscape -->
     <div class="panel panel-map" data-sec="patchbay">
       <div class="ph">PATCHBAY · INPUTS → OUTPUTS</div>
@@ -216,10 +225,14 @@
       <div id="shader-host"></div>
     </div>
 
+    </div><!-- /.col-c -->
+
     <div class="splitter" id="split-r" title="Drag to resize — double-click to reset"></div>
 
+    <div class="col col-r" data-sec-host="col-r">
+
     <!-- RIGHT: Audio engine -->
-    <div class="panel panel-aud">
+    <div class="panel panel-aud" data-sec="audio-engine">
       <div class="ph">AUDIO ENGINE</div>
       <!-- Tapping the visualiser toggles mute: it is the biggest thing on
            screen that already *shows* mute state, so it is where a thumb goes
@@ -247,6 +260,8 @@
         </div>
       </div>
     </div>
+
+    </div><!-- /.col-r -->
 
   </div>
 </div>
