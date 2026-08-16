@@ -99,7 +99,7 @@ test('a closed fist reaches true silence — the whole point of the range', () =
   reset();
   chordmode.setExpression({ mode: 'hand', hand: 'L', control: 'volume' });
   // Right hand names a chord; left hand expresses.
-  feed('R', tmpl('fist'));
+  feed('R', tmpl('point'));
   setOpen('L', 0.38);            // measured openness of a closed fist
   settle();
   assert.equal(chordmode.expressionLevel().level, 0,
@@ -114,7 +114,7 @@ test('a closed fist reaches true silence — the whole point of the range', () =
 test('the deadzone makes silence a region, not a knife edge', () => {
   reset();
   chordmode.setExpression({ mode: 'hand', hand: 'L', control: 'volume' });
-  feed('R', tmpl('fist'));
+  feed('R', tmpl('point'));
   // Just inside the mapped travel, but within the bottom deadzone.
   setOpen('L', 0.45);
   settle();
@@ -129,9 +129,9 @@ test('two-handed: one hand names the chord, the other plays it', () => {
   reset();
   chordmode.setExpression({ mode: 'hand', hand: 'L', control: 'volume' });
   setOpen('L', 0.38);
-  feed('R', tmpl('fist'));       // fist is I by default
+  feed('R', tmpl('point'));       // fist is I by default
   settle();
-  assert.equal(chordmode.expressionLevel().latched, 'fist', 'the right hand named it');
+  assert.equal(chordmode.expressionLevel().latched, 'point', 'the right hand named it');
   assert.equal(chordmode.currentLabel().includes('I · C'), true);
 
   // …and it LATCHES: dropping the naming hand does not stop the sound, because
@@ -139,7 +139,7 @@ test('two-handed: one hand names the chord, the other plays it', () => {
   clearHand('R');
   setOpen('L', 0.9);
   settle();
-  assert.equal(chordmode.expressionLevel().latched, 'fist', 'the chord held');
+  assert.equal(chordmode.expressionLevel().latched, 'point', 'the chord held');
   assert.ok(chordmode.expressionLevel().level > 0.9);
 });
 
@@ -147,9 +147,9 @@ test('handedness is switchable', () => {
   reset();
   chordmode.setExpression({ mode: 'hand', hand: 'R', control: 'volume' });
   setOpen('R', 0.38);
-  feed('L', tmpl('fist'));       // now the LEFT hand names it
+  feed('L', tmpl('point'));       // now the LEFT hand names it
   settle();
-  assert.equal(chordmode.expressionLevel().latched, 'fist');
+  assert.equal(chordmode.expressionLevel().latched, 'point');
   setOpen('R', 0.9);
   settle(2);
   assert.ok(chordmode.expressionLevel().level > 0.9, 'the right hand now plays');
@@ -158,7 +158,7 @@ test('handedness is switchable', () => {
 test('gate control attacks once on the way up and releases on the way down', () => {
   reset();
   chordmode.setExpression({ mode: 'hand', hand: 'L', control: 'gate' });
-  feed('R', tmpl('fist'));
+  feed('R', tmpl('point'));
   setOpen('L', 0.42);
   settle();
   assert.equal(chordmode.expressionLevel().gateOpen, false);
@@ -185,9 +185,9 @@ test('one-handed: eyebrows play what the hand names', () => {
   reset();
   chordmode.setExpression({ mode: 'brow', control: 'volume' });
   setBrow(0.0);
-  feed('R', tmpl('fist'));
+  feed('R', tmpl('point'));
   settle();
-  assert.equal(chordmode.expressionLevel().latched, 'fist');
+  assert.equal(chordmode.expressionLevel().latched, 'point');
   assert.equal(chordmode.expressionLevel().level, 0, 'a resting brow is silent');
   setBrow(0.55);
   settle(2);
@@ -195,15 +195,15 @@ test('one-handed: eyebrows play what the hand names', () => {
   // The hand is free to name chords with either side, since the eyebrows are
   // doing the expressing.
   clearHand('R');
-  feed('L', tmpl('peace'));
+  feed('L', tmpl('palm'));
   settle();
-  assert.equal(chordmode.expressionLevel().latched, 'peace');
+  assert.equal(chordmode.expressionLevel().latched, 'palm');
 });
 
 test('switching expression mode does not leave a chord ringing', () => {
   reset();
   chordmode.setExpression({ mode: 'hand', hand: 'L', control: 'volume' });
-  feed('R', tmpl('fist'));
+  feed('R', tmpl('point'));
   setOpen('L', 0.9);
   settle();
   assert.ok(chordmode.expressionLevel().level > 0);

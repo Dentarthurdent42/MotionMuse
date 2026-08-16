@@ -30,16 +30,21 @@ export const DEFAULT_KEY = {
 // be a chord *and* the release — which is not a configuration, it is a
 // contradiction the tick loop had to break by fiat.
 //
-// `palm` is absent because it is the default RELEASE shape. IV moves to `asl4`
-// (four fingers up) rather than being dropped: losing the subdominant from the
-// default set would be a musical regression, not a tidy-up.
+// Degree N is the ASL handshape for N: I is a 1, ii is a 2, up to vii° as a 7.
+// The scale degrees are already numbered and the handshapes already are numbers
+// — the previous set (fist, thumbs, horns…) made you memorise seven arbitrary
+// pairings, when a mapping nobody has to learn was sitting right there.
+//
+// This is why `fist` is the RELEASE shape rather than a chord: ASL S is not a
+// numeral, so it is the one classic shape the numbering does not claim.
 const DEFAULT_ASSIGNMENTS = {
-  fist:   0,   // I
-  thumbs: 1,   // ii
-  horns:  2,   // iii7
-  asl4:   3,   // IV
-  peace:  4,   // V7
-  point:  5,   // vi
+  point:  0,   // I    · ASL 1
+  peace:  1,   // ii   · ASL 2
+  asl3:   2,   // iii7 · ASL 3
+  asl4:   3,   // IV   · ASL 4
+  palm:   4,   // V7   · ASL 5
+  asl6:   5,   // vi   · ASL 6
+  asl7:   6,   // vii° · ASL 7
 };
 
 // Whether each degree adds its diatonic 7th. A property of the CHORD, not of
@@ -115,9 +120,11 @@ export function degreeFromRoot(root, keyRoot, mode, quality) {
 const normDegree = d => Math.min(DEGREES - 1, Math.max(0, Math.round(Number(d) || 0)));
 
 export const chordmode = (() => {
-  // Gesture that releases a held chord. Defaults to the open palm — the
-  // natural "let go" shape — but is a setting, not a reservation: see tick().
-  const DEFAULT_RELEASE_GESTURE = 'palm';
+  // Gesture that releases a held chord. The closed fist: the numbering above
+  // gives every ASL numeral to a degree, and ASL S is the one classic shape it
+  // does not claim. Closing your hand to stop is also the obvious reading.
+  // Still a setting, not a reservation: see tick().
+  const DEFAULT_RELEASE_GESTURE = 'fist';
   let releaseGesture = DEFAULT_RELEASE_GESTURE;
   let enabled = false;
   let key = { ...DEFAULT_KEY };
@@ -415,8 +422,17 @@ export const chordmode = (() => {
       // degree — and leaving that to the tick loop is what produced a panel
       // that showed one thing and played another. First writer of a degree
       // wins; the release shape always gives up its chord.
+      // What the user SAVED outranks what we merged in underneath it. Plain key
+      // order would decide it instead, and that is not a rule — it is an
+      // accident: a saved gesture that happens to be a default key updates in
+      // place and wins, while a genuinely new one is appended last and loses
+      // the chord it was saved with. Same file, different outcome depending on
+      // which shape you picked.
+      const loaded = new Set(Object.keys(data.assignments ?? {}));
+      const byPrecedence = Object.keys(assignments)
+        .sort((a, b) => (loaded.has(b) ? 1 : 0) - (loaded.has(a) ? 1 : 0));
       const seen = new Set();
-      for (const id of Object.keys(assignments)) {
+      for (const id of byPrecedence) {
         const d = assignments[id];
         if (id === releaseGesture || seen.has(d)) delete assignments[id];
         else seen.add(d);
