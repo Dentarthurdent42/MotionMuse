@@ -84,6 +84,10 @@ const DEFAULT_H = {
 let heights = load();
 let order   = loadMap(ORDER_KEY);
 let home    = loadMap(HOME_KEY);
+// Section ids that have already been given their DEFAULT_H this page load, so a
+// re-render cannot re-impose it. Deliberately not persisted: the default is
+// about the first sight of a section, and a fresh page should get it again.
+const defaulted = new Set();
 
 function loadMap(key) {
   try {
@@ -244,7 +248,20 @@ function enhance(sec) {
   sec.dataset.secId = id;
 
   const stored = heights[id];
-  applyHeight(sec, stored === undefined ? DEFAULT_H[id] ?? null : stored);
+  if (stored !== undefined) applyHeight(sec, stored);
+  else if (!defaulted.has(id)) {
+    // A default height is a STARTING size, applied once. It used to be
+    // re-applied on every enhance pass, and every re-render goes through one —
+    // so picking a handshape from a dropdown rebuilt the audio panel and
+    // snapped Chord Mode back to 220px, which read as "the container resets
+    // when I use it". Worse, whether it snapped depended on how much content
+    // the section happened to have the first time it was measured: applyHeight
+    // releases a height that exceeds the content, so a section that was short
+    // at first paint (chord mode off) went natural, grew when you switched the
+    // mode on, and then got clamped by the next unrelated re-render.
+    defaulted.add(id);
+    applyHeight(sec, DEFAULT_H[id] ?? null);
+  }
   if (folded.has(id)) setFolded(sec, true);
 }
 
