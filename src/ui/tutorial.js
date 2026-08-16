@@ -61,6 +61,40 @@ export const TOUR_STEPS = [
           'time with the <b>?</b> button up top.',
   },
   {
+    id: 'chords-key', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    title: 'Chords by degree, not by note',
+    body: 'Pick a <b>key</b> once — root, mode, octave — and the panel lists the ' +
+          'seven chords in it (<b>I ii iii IV V vi vii°</b>). Change the key and ' +
+          'every chord transposes together; nothing can land outside it. ' +
+          '<b>FOLLOW</b> keeps them in the same key your melody is quantised to.',
+  },
+  {
+    id: 'chords-assign', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    title: 'One handshape per chord',
+    body: 'Each row picks the handshape that plays that chord, and <b>7th</b> ' +
+          'adds the diatonic seventh. A shape does exactly one job: give it to ' +
+          'another chord and it swaps with whatever was there. The dot on the ' +
+          'left lights when that chord is sounding — hollow means it is chosen ' +
+          'but silent.',
+  },
+  {
+    id: 'chords-express', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    title: 'What plays the chord',
+    body: '<b>PLAY WITH</b> decides that. Hold the shape and hear it, or go ' +
+          'two-handed — one hand names the chord, the other\'s <b>openness</b> ' +
+          'plays it, and the chord latches so the naming hand can go and pick ' +
+          'the next one. Or use your <b>eyebrows</b> and keep a hand free. ' +
+          'Either drives an attack/release or the volume directly.',
+  },
+  {
+    id: 'chords-range', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    title: 'Reaching silence',
+    body: 'A closed fist does not read as zero — hand openness bottoms out ' +
+          'around 0.38 — so <b>OFF AT</b> and <b>FULL AT</b> map the range your ' +
+          'hand actually covers onto the full travel. Watch the meter while you ' +
+          'open and close: if the bar never empties, raise OFF AT.',
+  },
+  {
     id: 'camera', target: '#cv-btn', title: 'Start the camera',
     body: 'Everything begins here. The first start downloads the vision ' +
           'models (a few MB — they cache for next time), then hand and pose ' +
@@ -194,40 +228,6 @@ export const TOUR_STEPS = [
           'ASL number handshapes. Templates marked <b>est</b> are estimates — ' +
           'run <b>CALIBRATE</b> once to record each from your own hand, which ' +
           'makes recognition dramatically more reliable.',
-  },
-  {
-    id: 'chords-key', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
-    title: 'Chords by degree, not by note',
-    body: 'Pick a <b>key</b> once — root, mode, octave — and the panel lists the ' +
-          'seven chords in it (<b>I ii iii IV V vi vii°</b>). Change the key and ' +
-          'every chord transposes together; nothing can land outside it. ' +
-          '<b>FOLLOW</b> keeps them in the same key your melody is quantised to.',
-  },
-  {
-    id: 'chords-assign', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
-    title: 'One handshape per chord',
-    body: 'Each row picks the handshape that plays that chord, and <b>7th</b> ' +
-          'adds the diatonic seventh. A shape does exactly one job: give it to ' +
-          'another chord and it swaps with whatever was there. The dot on the ' +
-          'left lights when that chord is sounding — hollow means it is chosen ' +
-          'but silent.',
-  },
-  {
-    id: 'chords-express', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
-    title: 'What plays the chord',
-    body: '<b>PLAY WITH</b> decides that. Hold the shape and hear it, or go ' +
-          'two-handed — one hand names the chord, the other\'s <b>openness</b> ' +
-          'plays it, and the chord latches so the naming hand can go and pick ' +
-          'the next one. Or use your <b>eyebrows</b> and keep a hand free. ' +
-          'Either drives an attack/release or the volume directly.',
-  },
-  {
-    id: 'chords-range', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
-    title: 'Reaching silence',
-    body: 'A closed fist does not read as zero — hand openness bottoms out ' +
-          'around 0.38 — so <b>OFF AT</b> and <b>FULL AT</b> map the range your ' +
-          'hand actually covers onto the full travel. Watch the meter while you ' +
-          'open and close: if the bar never empties, raise OFF AT.',
   },
   {
     id: 'donate', target: '#donate-btn', title: 'Support the project',
