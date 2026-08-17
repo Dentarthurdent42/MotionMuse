@@ -39,9 +39,12 @@ export const STARTERS = [
 // guided tour follows whichever you choose, so the split is what tells it which
 // tour to give you. Blank sits with the oscillator group because building from
 // nothing means the patchbay.
+// Chords lead. It is the one entry that plays music the moment you make a
+// shape, so it is the best first thing to hand someone who has just arrived —
+// and it was bottom of a six-item list, below a scroll on a phone.
 export const STARTER_GROUPS = [
-  { mode: 'osc',    label: 'OSCILLATOR — signals drive pitch and tone' },
   { mode: 'chords', label: 'CHORDS — handshapes trigger harmony' },
+  { mode: 'osc',    label: 'OSCILLATOR — signals drive pitch and tone' },
 ];
 
 export const startChosen = () => lsGet(KEY) === '1';

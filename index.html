@@ -113,8 +113,13 @@
 
     <!-- Input source (camera) -->
     <div class="panel panel-cam" data-sec="camera">
+      <!-- Reads as a section label, like EEG Input and EMG Input beneath it:
+           these are three input sources and "CV" named one of them in jargon
+           while the other two spelled themselves out. The .src-tabs element
+           stays because resize.js measures it into --src-tabs-h, which is the
+           offset the portrait sticky camera pins itself by. -->
       <div class="src-tabs">
-        <div class="src-tab active">CV</div>
+        <div class="src-tab active">Camera Input</div>
       </div>
 
       <div id="video-wrap">

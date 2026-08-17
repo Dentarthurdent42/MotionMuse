@@ -424,11 +424,14 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+/* Matched to .audio-section-label: same size, tracking and left-aligned
+   padding, so the camera's header sits in the same visual row as EEG Input and
+   EMG Input rather than looking like a tab strip from another design. */
 .src-tab {
   flex: 1;
-  padding: 5px 0;
-  text-align: center;
-  font-size: 9px;
+  padding: 5px 10px;
+  text-align: left;
+  font-size: 10px;
   letter-spacing: 2px;
   color: var(--dim);
   border-right: 1px solid var(--border);
