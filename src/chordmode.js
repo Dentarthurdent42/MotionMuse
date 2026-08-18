@@ -247,6 +247,10 @@ export const chordmode = (() => {
       return `${g ? gestureLabel(g) : playing} → ${c.numeral} · ${c.rootName} ${c.quality}`;
     },
 
+    // The chord sounding right now, for anything that wants to DRAW it rather
+    // than name it (the fullscreen keyboard overlay). Null when nothing is held.
+    currentChord() { return playing ? chordFor(playing) : null; },
+
     _sound(id) {
       const c = chordFor(id);
       if (c) engine.playChord(c.freqs);

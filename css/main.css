@@ -1060,6 +1060,33 @@ option { background: var(--panel); }
   background: color-mix(in oklab, var(--faint) 70%, transparent);
 }
 .gesture-pic-none { background: none; }
+/* What a handshape plays in Chord Mode, shown on the row that defines it.
+   Reads as a chip rather than more text so it does not compete with the name,
+   and RELEASE is amber because it is the one that stops sound rather than
+   making it — the distinction matters mid-performance. */
+.gesture-chord {
+  flex-shrink: 0;
+  font-size: 9px;
+  letter-spacing: 1px;
+  padding: 1px 5px;
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  border-radius: 2px;
+  background: var(--cyan-dim);
+}
+.mic-meter {
+  height: 6px;
+  margin: 5px 0 3px;
+  background: var(--faint);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.mic-meter-fill {
+  height: 100%; width: 0%;
+  background: var(--cyan);
+  transition: width 0.06s linear;
+}
+.gesture-chord.rel { border-color: var(--amber); color: var(--amber); background: #f0a50022; }
 .gesture-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--border2); flex-shrink: 0;

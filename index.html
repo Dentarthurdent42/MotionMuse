@@ -27,7 +27,7 @@
       <div class="logo">MOTION<span>MUSE</span></div>
       <div class="hstatus">
         <div class="dot" id="cv-dot"></div>
-        <span id="status-lbl">READY</span>
+        <span id="status-lbl" role="status" aria-live="polite">READY</span>
       </div>
     </div>
     <div class="hsep"></div>
@@ -177,6 +177,20 @@
            input that does not exist yet — clicking them did nothing. As their
            own sections they read as what they are: planned inputs, listed
            beside the one that works. -->
+      <!-- The mic is a working input, so unlike EEG/EMG it carries no
+           uc-feature gate and no badge — it sits above them because a source
+           you can use outranks two you cannot. -->
+      <div class="audio-section" data-sec="mic">
+        <div class="audio-section-label">
+          Microphone Input
+          <button type="button" class="wave-btn" id="mic-btn" aria-pressed="false"
+                  style="flex:0 0 auto;margin-left:auto;padding:2px 9px;"
+                  title="Use the microphone as a signal source. Analysed in the browser and never recorded or uploaded.">OFF</button>
+        </div>
+        <div class="mic-meter" title="Input level"><div class="mic-meter-fill" id="mic-meter-fill"></div></div>
+        <div class="quant-notes" id="mic-note">Level, pitch, clarity and brightness become signals you can wire like any other.</div>
+      </div>
+
       <div class="audio-section uc-feature" data-sec="eeg">
         <div class="audio-section-label">EEG Input <span class="uc-badge">under construction</span></div>
         <div class="quant-notes">Electroencephalography — not yet implemented. Will register its
@@ -271,7 +285,12 @@
   </div>
 </div>
 
-<div id="toast"></div>
+<!-- Every failure the app reports — camera denied, models unavailable, audio
+     blocked — arrives here and nowhere else, so without a live region those
+     errors simply do not exist for a screen reader. `alert` rather than
+     `polite`: a toast is gone in 1.4s, and a polite announcement can be queued
+     behind whatever is speaking until after it has vanished. -->
+<div id="toast" role="alert" aria-live="assertive" aria-atomic="true"></div>
 
 <script type="module" src="src/main.js"></script>
 <script>
