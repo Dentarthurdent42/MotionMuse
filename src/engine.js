@@ -1,6 +1,8 @@
 import { makeQuantizer } from './scale.js';
 import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 
+import { shepardPartials, SHEP_PARTIALS, SHEP_FMIN } from './shepard.js';
+
 export const engine = (() => {
   let ctx, analyser, filt, oscVol, lfo, lfog,
       cfilt, chordVol, revb, revgain, drygain, maing, outg;
@@ -18,6 +20,15 @@ export const engine = (() => {
   // shared gain, feeding the same filter/reverb chain as the main oscillators.
   const CHORD_VOICES = 4;
   let chordOscs = [], chordVGains = [], chordGain = null, chordOn = false;
+  // Shepard mode, per voice group. Separate flags because they are separate
+  // instruments: an endless-rising lead over static chords is a usable sound,
+  // and so is the reverse.
+  let shepLead = false, shepChord = false;
+  // Lead ADSR. Off by default — the EDGES presets (PLUCK/KEY/BOW) are what the
+  // instrument has always done at a rung change, and silently replacing them
+  // would change every existing patch.
+  let leadEnv = { attack: 0.01, decay: 0.12, sustain: 0.75, release: 0.25 };
+  let leadEnvOn = false;
 
   // Chord ADSR. Seconds, except `sustain`, which is the fraction of peak the
   // note settles to while the gesture is held — the one ADSR value that is a
@@ -242,16 +253,15 @@ export const engine = (() => {
     chordVol.connect(drygain); chordVol.connect(revb);
     chordOscs = []; chordVGains = []; chordOn = false;
     for (let i = 0; i < CHORD_VOICES; i++) {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      applyType(o, oscTypes[0]);
-      o.frequency.value = 220;
+      const g = ctx.createGain();
       g.gain.value = 0;
-      o.connect(g); g.connect(chordGain);
-      chordOscs.push(o); chordVGains.push(g);
+      g.connect(chordGain);
+      const v = makeVoice(g, oscTypes[0], shepChord);
+      v.setFreq(220, ctx.currentTime, 0);
+      chordOscs.push(v); chordVGains.push(g);
     }
 
     lfo.start();
-    chordOscs.forEach(o => o.start());
     // The bank last, so `started` is already meaningful to addOsc() and the
     // node it builds reads its values from PARAMS like any other resize.
     started = true;
@@ -259,25 +269,95 @@ export const engine = (() => {
     for (let i = 0; i < oscCount; i++) addOsc(i);
   }
 
+  // ── Voices ───────────────────────────────────────────────────────────
+  //
+  // A tone source that is EITHER one oscillator or a Shepard stack pretending
+  // to be one. Same small interface both ways, so addOsc(), set(), setOscType()
+  // and setChordVoices() never branch on which kind they are holding.
+  //
+  // The subtle part is which physical oscillator plays which partial. The
+  // spectrum is a set — {octave θ, θ+1, … θ+N-1} — and as θ sweeps past 1 the
+  // whole set shifts down one slot. Assign partial i to oscillator i and every
+  // oscillator's frequency drops an OCTAVE at that instant, which is a very
+  // audible glitch, because the partial that should be fading out at the top is
+  // still carrying real level when it is asked to become the bottom one.
+  //
+  // Rotating the assignment fixes it: track the wrap and play partial i on
+  // oscillator (i + rot) % N. Then at the wrap, the oscillator being recycled
+  // is exactly the one whose gain has reached zero at the top of the window,
+  // and it reappears at the bottom where the window is also zero. Every other
+  // oscillator's frequency moves continuously across the boundary. Silent swap.
+  function makeVoice(dest, type, shepard) {
+    if (!shepard) {
+      const o = ctx.createOscillator();
+      applyType(o, type);
+      o.connect(dest);
+      o.start();
+      return {
+        shepard: false,
+        setFreq: (hz, t, sm) => o.frequency.linearRampToValueAtTime(hz, t + sm),
+        setDetune: (c, t, sm) => o.detune.linearRampToValueAtTime(c, t + sm),
+        setType: ty => applyType(o, ty),
+        stop() { try { o.stop(); } catch { /* already stopped */ } o.disconnect(); },
+      };
+    }
+
+    const parts = [], pg = [];
+    for (let i = 0; i < SHEP_PARTIALS; i++) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      applyType(o, type);
+      g.gain.value = 0;                 // silent until the first setFreq
+      o.connect(g); g.connect(dest);
+      o.start();
+      parts.push(o); pg.push(g);
+    }
+    let rot = 0, prevTheta = null;
+    return {
+      shepard: true,
+      setFreq(hz, t, sm) {
+        const spec = shepardPartials(hz);
+        if (!spec.length) return;
+        const theta = ((Math.log2(hz / SHEP_FMIN) % 1) + 1) % 1;
+        // A wrap is a big jump in θ between consecutive frames; the direction
+        // tells us which way the stack rotated.
+        if (prevTheta !== null) {
+          if (prevTheta > 0.75 && theta < 0.25)      rot = (rot + 1) % SHEP_PARTIALS;
+          else if (prevTheta < 0.25 && theta > 0.75) rot = (rot - 1 + SHEP_PARTIALS) % SHEP_PARTIALS;
+        }
+        prevTheta = theta;
+        spec.forEach((p, i) => {
+          const k = (i + rot) % SHEP_PARTIALS;
+          parts[k].frequency.linearRampToValueAtTime(p.hz, t + sm);
+          pg[k].gain.linearRampToValueAtTime(p.gain, t + sm);
+        });
+      },
+      setDetune(c, t, sm) { parts.forEach(o => o.detune.linearRampToValueAtTime(c, t + sm)); },
+      setType(ty) { parts.forEach(o => applyType(o, ty)); },
+      stop() {
+        parts.forEach(o => { try { o.stop(); } catch { /* already stopped */ } o.disconnect(); });
+        pg.forEach(g => g.disconnect());
+      },
+    };
+  }
+
   // One oscillator slot: node, its level gain, into the shared lead filter.
   function addOsc(i) {
     const n = i + 1;
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    applyType(o, oscTypes[i]);
-    o.frequency.value = PARAMS[`osc${n}_freq`].val;
-    o.detune.value    = PARAMS[`osc${n}_detune`].val;
-    g.gain.value      = PARAMS[`osc${n}_volume`].val;
-    o.connect(g); g.connect(filt);
-    o.start();
-    oscs[i] = o; oscGains[i] = g;
+    const g = ctx.createGain();
+    g.gain.value = PARAMS[`osc${n}_volume`].val;
+    g.connect(filt);
+    const v = makeVoice(g, oscTypes[i], shepLead);
+    const t = ctx.currentTime;
+    v.setFreq(PARAMS[`osc${n}_freq`].val, t, 0);
+    v.setDetune(PARAMS[`osc${n}_detune`].val, t, 0);
+    oscs[i] = v; oscGains[i] = g;
   }
 
   // Drop every slot from `from` up. Stopped as well as disconnected: a running
   // OscillatorNode with no outputs is still a node the context keeps alive.
   function dropOscs(from) {
     for (let i = from; i < oscs.length; i++) {
-      try { oscs[i].stop(); } catch { /* already stopped */ }
-      oscs[i].disconnect();
+      oscs[i].stop();          // the voice owns its nodes, stacked or not
       oscGains[i].disconnect();
     }
     oscs.length = Math.max(0, from);
@@ -323,8 +403,8 @@ export const engine = (() => {
       const i = +om[1] - 1;
       const o = oscs[i], g = oscGains[i];
       if (!o) return;                       // slot removed while a cable still drove it
-      if (om[2] === 'freq')   o.frequency.linearRampToValueAtTime(p.val, t + sm);
-      if (om[2] === 'detune') o.detune.linearRampToValueAtTime(p.val, t + sm);
+      if (om[2] === 'freq')   o.setFreq(p.val, t, sm);
+      if (om[2] === 'detune') o.setDetune(p.val, t, sm);
       if (om[2] === 'volume') g.gain.linearRampToValueAtTime(p.val, t + sm);
       return;
     }
@@ -360,15 +440,42 @@ export const engine = (() => {
     p.val = Math.max(p.min, Math.min(p.max, q.gain));
     volEdges++;
     if (!started) return;
+    const t = ctx.currentTime;
+    const cur = maing.gain.value;                  // read before cancelling
+    maing.gain.cancelScheduledValues(t);
+    maing.gain.setValueAtTime(cur, t);              // anchor where we actually are
+
+    if (leadEnvOn) {
+      // A real envelope, triggered by the gate the volume ladder already
+      // provides: crossing UP out of silence is a note-on, and dropping to the
+      // bottom rung is a note-off. That is what makes ADSR meaningful for an
+      // instrument with no keys — the rung change IS the key press.
+      //
+      // Mid-note rung changes are neither: they just track the new level, or a
+      // held note would re-attack every time your hand drifted a step.
+      const onset   = (prev === null || prev === 0) && q.gain > 0;
+      const noteOff = q.gain === 0;
+      if (onset) {
+        const a = Math.max(LEAD_ENV_MIN, leadEnv.attack);
+        const d = Math.max(0, leadEnv.decay);
+        maing.gain.linearRampToValueAtTime(p.val, t + a);
+        if (d > 0) {
+          const sus = p.val * Math.max(0, Math.min(1, leadEnv.sustain));
+          maing.gain.linearRampToValueAtTime(sus, t + a + d);
+        }
+      } else if (noteOff) {
+        maing.gain.linearRampToValueAtTime(0, t + Math.max(LEAD_ENV_MIN, leadEnv.release));
+      } else {
+        maing.gain.linearRampToValueAtTime(p.val, t + 0.02);
+      }
+      return;
+    }
+
     const e = EDGES[volStep.edge] ?? EDGES.key;
     // Fixed duration regardless of how many rungs are crossed, so a fast
     // crescendo doesn't take longer than a small step.
     const ms = (prev === null || q.idx > prev) ? e.attackMs
              : (q.gain === 0 ? e.gateMs : e.releaseMs);
-    const t = ctx.currentTime;
-    const cur = maing.gain.value;                  // read before cancelling
-    maing.gain.cancelScheduledValues(t);
-    maing.gain.setValueAtTime(cur, t);              // anchor where we actually are
     maing.gain.linearRampToValueAtTime(p.val, t + Math.max(0.005, ms / 1000));
   }
 
@@ -412,8 +519,8 @@ export const engine = (() => {
   function setOscType(i, t) {
     if (!(i >= 0 && i < MAX_OSCS) || !t) return;
     oscTypes[i] = t;
-    if (oscs[i]) applyType(oscs[i], t);
-    if (i === 0 && started) chordOscs.forEach(o => applyType(o, t));
+    if (oscs[i]) oscs[i].setType(t);
+    if (i === 0 && started) chordOscs.forEach(v => v.setType(t));
   }
   const getOscType  = i => oscTypes[i];
   const getOscTypes = () => oscTypes.slice(0, oscCount);
@@ -502,7 +609,7 @@ export const engine = (() => {
     const t = ctx.currentTime, sm = 0.02;
     chordOscs.forEach((o, i) => {
       const audible = i < freqs.length;
-      if (audible) o.frequency.linearRampToValueAtTime(freqs[i], t + sm);
+      if (audible) o.setFreq(freqs[i], t, sm);
       chordVGains[i].gain.linearRampToValueAtTime(audible ? 1 / Math.max(3, freqs.length) : 0, t + sm);
     });
   }
@@ -554,6 +661,53 @@ export const engine = (() => {
   // Times are clamped to a sane musical span rather than the full float range:
   // a 30-second attack on a gesture-held chord is not a setting, it is a way
   // to make the instrument look broken.
+  // Same clamps as the chord envelope, and the same reason: a 30-second attack
+  // is not a setting, it is a way to make the instrument look broken.
+  const LEAD_ENV_MIN = 0.001;
+  const LEAD_ENV_RANGE = { attack: [0, 2], decay: [0, 3], sustain: [0, 1], release: [0.005, 5] };
+  function setLeadEnv(partial = {}) {
+    const next = { ...leadEnv };
+    for (const [k, [lo, hi]] of Object.entries(LEAD_ENV_RANGE)) {
+      if (partial[k] === undefined) continue;
+      const v = Number(partial[k]);
+      if (Number.isFinite(v)) next[k] = Math.max(lo, Math.min(hi, v));
+    }
+    if (partial.enabled !== undefined) leadEnvOn = !!partial.enabled;
+    leadEnv = next;
+    return { ...leadEnv, enabled: leadEnvOn };
+  }
+  const getLeadEnv = () => ({ ...leadEnv, enabled: leadEnvOn });
+
+  // Shepard mode. Rebuilds the affected bank, because a Shepard voice is a
+  // different node graph rather than a setting on the existing one.
+  function setShepard({ lead, chord } = {}) {
+    if (lead !== undefined && !!lead !== shepLead) {
+      shepLead = !!lead;
+      if (started) { const n = oscCount; dropOscs(0); for (let i = 0; i < n; i++) addOsc(i); }
+    }
+    if (chord !== undefined && !!chord !== shepChord) {
+      shepChord = !!chord;
+      if (started) rebuildChordBank();
+    }
+    return { lead: shepLead, chord: shepChord };
+  }
+  const getShepard = () => ({ lead: shepLead, chord: shepChord });
+
+  function rebuildChordBank() {
+    chordOscs.forEach(v => v.stop());
+    chordVGains.forEach(g => g.disconnect());
+    chordOscs = []; chordVGains = [];
+    for (let i = 0; i < CHORD_VOICES; i++) {
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      g.connect(chordGain);
+      const v = makeVoice(g, oscTypes[0], shepChord);
+      v.setFreq(220, ctx.currentTime, 0);
+      chordOscs.push(v); chordVGains.push(g);
+    }
+    chordOn = false;
+  }
+
   const CHORD_ENV_RANGE = { attack: [0, 2], decay: [0, 3], sustain: [0, 1], release: [0.005, 5] };
   function setChordEnv(partial = {}) {
     const next = { ...chordEnv };
@@ -634,6 +788,8 @@ export const engine = (() => {
     defineWave, playTone, now,
     playChord, releaseChord, chordActive, setChordVoices, setChordLevel, chordLevel,
     setChordEnv, getChordEnv, CHORD_ENV_RANGE,
+    setLeadEnv, getLeadEnv, LEAD_ENV_RANGE,
+    setShepard, getShepard,
     getWaveform,
     setMuted, toggleMuted, resume,
     get started() { return started; },

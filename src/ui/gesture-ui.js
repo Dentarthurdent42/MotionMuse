@@ -239,6 +239,11 @@ export function gestureSections() {
             <span class="ctrl-val" id="ck-env-${k}">${k === 'sustain' ? Math.round(env[k] * 100) + '%' : env[k].toFixed(2) + 's'}</span>
           </label>`).join('')}
       </div>
+      <div class="wave-btns" style="margin-top:4px;">
+        <button type="button" class="wave-btn${engine.getShepard().chord ? ' on' : ''}" id="shep-chord"
+             aria-pressed="${engine.getShepard().chord}"
+             title="Shepard tones: every chord note becomes a stack of octaves under a fixed loudness curve, so a progression can climb without ever running out of register.">SHEPARD</button>
+      </div>
       <div class="chord-live" id="chord-live" style="display:${on ? 'grid' : 'none'}">
         <div id="chord-readout" class="quant-notes" role="status" aria-live="polite">—</div>
         <div class="chord-vol" title="How loud the chord is right now">
@@ -365,6 +370,10 @@ export function wireGestureSections(rerender) {
   document.getElementById('ck-oct') ?.addEventListener('change', e => setKey({ octave: Number(e.target.value) }));
   // ADSR sliders mutate in place: a re-render mid-drag would drop the pointer
   // capture and the slider would stop following the finger.
+  document.getElementById('shep-chord')?.addEventListener('click', () => {
+    engine.setShepard({ chord: !engine.getShepard().chord });
+    rerender();
+  });
   document.querySelectorAll('.ck-env').forEach(el => {
     el.addEventListener('input', e => {
       const k = e.target.dataset.env;
