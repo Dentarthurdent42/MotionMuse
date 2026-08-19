@@ -111,77 +111,109 @@
 
     <div class="col col-c" data-sec-host="col-c">
 
-    <!-- Input source (camera) -->
-    <div class="panel panel-cam" data-sec="camera">
-      <!-- Reads as a section label, like EEG Input and EMG Input beneath it:
-           these are three input sources and "CV" named one of them in jargon
-           while the other two spelled themselves out. The .src-tabs element
-           stays because resize.js measures it into --src-tabs-h, which is the
-           offset the portrait sticky camera pins itself by. -->
-      <div class="src-tabs">
-        <div class="src-tab active">Camera Input</div>
-      </div>
+    <!-- ── Inputs ────────────────────────────────────────────────────────
+         Four sources, one section, one container type. The camera used to be a
+         top-level .panel owning the middle column while the microphone, EEG
+         and EMG sat nested in a box beneath it — so the source that actually
+         works read as a different KIND of thing from the three beside it, and
+         "put the inputs together" had no place to put them. They are siblings
+         now, each a plain section with the same header.
 
-      <div id="video-wrap">
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="overlay"></canvas>
-        <canvas id="face-overlay"></canvas>
-        <div class="cam-toggles">
-          <button id="depth-btn" class="depth-toggle uc-feature"
-                  title="Under construction — use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth (DEV mode feature)"><span id="depth-btn-lbl">◈ LiDAR</span><span class="src-tab-wip">🚧</span></button>
-          <button id="fs-btn" class="depth-toggle"
-                  title="Fullscreen camera view">⛶ FULL</button>
-          <button id="uic-btn" class="depth-toggle"
-                  title="Hand cursor — clap, then hold up a hand to arm it">🖐 CURSOR</button>
-          <button id="stage-btn" class="depth-toggle uc-feature"
-                  title="Under construction — the fullscreen gesture stage: glass panels you grab, throw and force-pull (DEV mode feature)">◭ STAGE<span class="src-tab-wip">🚧</span></button>
-          <button id="fskbd-btn" class="depth-toggle fs-only"
-                  title="Show the piano keyboard overlay">🎹 KEYS</button>
-        </div>
-        <!-- Inference timings. Dev-only: these are numbers for tuning the
-             vision pipeline, not something a player needs while performing.
-             `uc-feature` hides it outside DEV mode, and its rule carries
-             !important, so it wins over the inline display cv.js writes when
-             the camera starts.
-             Each row appears only while the model behind it is actually
-             running — a timing from a stopped model is a stale average that
-             reads exactly like a live one. -->
-        <div id="latency-bar" class="uc-feature">
-          <span>FPS <b id="lat-fps">—</b></span>
-          <span id="lat-hand-wrap">HAND <b id="lat-hand">—</b></span>
-          <span id="lat-pose-wrap">POSE <b id="lat-pose">—</b></span>
-          <span id="lat-face-wrap" style="display:none">FACE <b id="lat-face">—</b></span>
-          <span id="lat-total-wrap">TOTAL <b id="lat-total">—</b></span>
-          <span id="lat-model-wrap">MODEL <b id="lat-model">—</b></span>
-          <span id="lat-depth-wrap" style="display:none">DEPTH <b id="lat-depth">—</b></span>
-        </div>
-        <div id="cam-placeholder">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-            <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
-          </svg>
-          <span>START CAMERA</span>
-        </div>
-        <canvas id="fs-kbd"></canvas>
-        <div id="stage-layer"></div>
-      </div>
-      <!-- Portrait dev mode pins the camera to the top of the scroll, which
-           makes its height precious — this drags it smaller. Shown only there
-           (see the mobile block in main.css). -->
-      <div id="cam-handle" title="Drag to resize the camera view — double-click to reset"></div>
+         MODELS stays inside Camera Input: which pose model runs, and on which
+         delegate, is a property of that one source, not of the group. -->
+    <div class="panel panel-inputs" data-sec="inputs">
+      <div class="audio-section-label">Inputs</div>
+      <!-- The drop host is this box rather than .panel-inputs itself, because
+           sections.js wraps everything after a header into .sec-body and a
+           section dropped on the panel would land outside the thing the fold
+           button hides. -->
+      <div id="input-list" data-sec-host="inputs">
 
-      <!-- Everything in the camera column that is not the picture lives in one
-           box, and that box is a drop host for sections dragged in from other
-           columns (see src/ui/sections.js). Keeping it separate from
-           #video-wrap is what leaves the sticky-camera and aspect-ratio logic
-           above untouched — a section dropped in here scrolls inside this box
-           instead of growing the panel that is pinned to the top of a phone
-           screen. -->
-      <div id="cam-extras">
+      <div class="audio-section panel-cam" data-sec="camera">
+        <!-- The SAME element the three inputs below use. This was a one-tab
+             .src-tabs strip left over from when EEG and EMG were tabs here:
+             renaming "CV" to "Camera Input" made the words match while the box
+             still read as a tab strip from another design — cyan fill, title
+             case, edge to edge — next to three plain section labels.
+             resize.js measures this into --cam-label-h, the offset the
+             portrait sticky camera pins itself by. -->
+        <div class="audio-section-label cam-label">Camera Input</div>
+        <div id="video-wrap">
+          <video id="video" autoplay playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <canvas id="face-overlay"></canvas>
+          <div class="cam-toggles">
+            <button id="depth-btn" class="depth-toggle uc-feature"
+                    title="Under construction — use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth (DEV mode feature)"><span id="depth-btn-lbl">◈ LiDAR</span><span class="src-tab-wip">🚧</span></button>
+            <button id="fs-btn" class="depth-toggle"
+                    title="Fullscreen camera view">⛶ FULL</button>
+            <button id="uic-btn" class="depth-toggle"
+                    title="Hand cursor — clap, then hold up a hand to arm it">🖐 CURSOR</button>
+            <button id="stage-btn" class="depth-toggle uc-feature"
+                    title="Under construction — the fullscreen gesture stage: glass panels you grab, throw and force-pull (DEV mode feature)">◭ STAGE<span class="src-tab-wip">🚧</span></button>
+            <button id="fskbd-btn" class="depth-toggle fs-only"
+                    title="Show the piano keyboard overlay">🎹 KEYS</button>
+          </div>
+          <!-- Inference timings. Dev-only: these are numbers for tuning the
+               vision pipeline, not something a player needs while performing.
+               `uc-feature` hides it outside DEV mode, and its rule carries
+               !important, so it wins over the inline display cv.js writes when
+               the camera starts.
+               Each row appears only while the model behind it is actually
+               running — a timing from a stopped model is a stale average that
+               reads exactly like a live one. -->
+          <div id="latency-bar" class="uc-feature">
+            <span>FPS <b id="lat-fps">—</b></span>
+            <span id="lat-hand-wrap">HAND <b id="lat-hand">—</b></span>
+            <span id="lat-pose-wrap">POSE <b id="lat-pose">—</b></span>
+            <span id="lat-face-wrap" style="display:none">FACE <b id="lat-face">—</b></span>
+            <span id="lat-total-wrap">TOTAL <b id="lat-total">—</b></span>
+            <span id="lat-model-wrap">MODEL <b id="lat-model">—</b></span>
+            <span id="lat-depth-wrap" style="display:none">DEPTH <b id="lat-depth">—</b></span>
+          </div>
+          <div id="cam-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+            </svg>
+            <span>START CAMERA</span>
+          </div>
+          <canvas id="fs-kbd"></canvas>
+          <div id="stage-layer"></div>
+        </div>
+        <!-- Portrait dev mode pins the camera to the top of the scroll, which
+             makes its height precious — this drags it smaller. Shown only there
+             (see the mobile block in main.css). -->
+        <div id="cam-handle" title="Drag to resize the camera view — double-click to reset"></div>
+        <!-- Everything in Camera Input that is not the picture lives in one
+             box, and that box is a drop host (see src/ui/sections.js). Keeping
+             it separate from #video-wrap is what leaves the sticky-camera and
+             aspect-ratio logic above untouched — a section dropped in here
+             scrolls inside this box instead of growing the section that is
+             pinned to the top of a phone screen. -->
+        <div id="cam-extras" data-sec-host="cam">
+          <!-- .audio-section, not .panel: as a subsection of Camera Input it is the
+               same kind of container as its neighbours, and `.panel.sec` strips the
+               border, margin and radius that make a section read as a card. -->
+          <div class="audio-section uc-feature" data-sec="models" id="model-panel">
+            <div class="ph">MODELS <span class="uc-badge">dev</span></div>
+            <div class="pb" id="model-body">
+              <label class="model-row">POSE
+                <select id="model-pose" aria-label="Pose estimation model"></select>
+              </label>
+              <label class="model-row">DELEGATE
+                <select id="model-delegate" aria-label="Inference delegate (MediaPipe models)">
+                  <option>GPU</option><option>CPU</option>
+                </select>
+              </label>
+              <!-- Hand COUNT is no longer set here: the header's ✋ L / R toggles
+                   own it, since asking for one hand and naming which hand are the
+                   same decision. Two controls writing numHands would disagree. -->
+              <div id="model-stats">start camera for live stats</div>
+            </div>
+          </div>
+        </div><!-- /#cam-extras -->
+      </div><!-- /Camera Input -->
 
-      <!-- EEG and EMG were tabs in the CV strip, which promised a switchable
-           input that does not exist yet — clicking them did nothing. As their
-           own sections they read as what they are: planned inputs, listed
-           beside the one that works. -->
       <!-- The mic is a working input, so unlike EEG/EMG it carries no
            uc-feature gate and no badge — it sits above them because a source
            you can use outranks two you cannot. -->
@@ -196,6 +228,10 @@
         <div class="quant-notes" id="mic-note">Level, pitch, clarity and brightness become signals you can wire like any other.</div>
       </div>
 
+      <!-- EEG and EMG were tabs in the CV strip, which promised a switchable
+           input that does not exist yet — clicking them did nothing. As their
+           own sections they read as what they are: planned inputs, listed
+           beside the ones that work. -->
       <div class="audio-section uc-feature" data-sec="eeg">
         <div class="audio-section-label">EEG Input <span class="uc-badge">under construction</span></div>
         <div class="quant-notes">Electroencephalography — not yet implemented. Will register its
@@ -207,26 +243,8 @@
           continuous signals, mappable in the patchbay exactly like the camera's.</div>
       </div>
 
-      <div class="panel uc-feature" data-sec="models" id="model-panel" style="border-top:1px solid var(--border);">
-        <div class="ph">MODELS <span class="uc-badge">dev</span></div>
-        <div class="pb" id="model-body">
-          <label class="model-row">POSE
-            <select id="model-pose" aria-label="Pose estimation model"></select>
-          </label>
-          <label class="model-row">DELEGATE
-            <select id="model-delegate" aria-label="Inference delegate (MediaPipe models)">
-              <option>GPU</option><option>CPU</option>
-            </select>
-          </label>
-          <!-- Hand COUNT is no longer set here: the header's ✋ L / R toggles
-               own it, since asking for one hand and naming which hand are the
-               same decision. Two controls writing numHands would disagree. -->
-          <div id="model-stats">start camera for live stats</div>
-        </div>
-      </div>
-
-      </div><!-- /#cam-extras -->
-    </div>
+      </div><!-- /#input-list -->
+    </div><!-- /Inputs -->
 
     <!-- Mapper — beneath the camera in landscape -->
     <div class="panel panel-map" data-sec="patchbay">

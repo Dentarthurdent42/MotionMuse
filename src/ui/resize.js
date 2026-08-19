@@ -76,16 +76,16 @@ export function initResize() {
   measureTabs();
 }
 
-// The portrait sticky offset has to equal the CV strip's real height, and that
+// The portrait sticky offset has to equal the camera's header height, and that
 // changes with the font-size breakpoints — a hardcoded number would leave a
-// sliver of the strip on screen at one size and clip the video at another.
+// sliver of the label on screen at one size and clip the video at another.
 function measureTabs() {
-  const tabs = document.querySelector('.src-tabs');
+  const tabs = document.querySelector('.panel-cam > .cam-label');
   const cam  = document.querySelector('.panel-cam');
   if (!tabs || !cam) return;
   const apply = () => {
     const h = tabs.getBoundingClientRect().height;
-    if (h > 0) cam.style.setProperty('--src-tabs-h', `${Math.round(h)}px`);
+    if (h > 0) cam.style.setProperty('--cam-label-h', `${Math.round(h)}px`);
   };
   apply();
   new ResizeObserver(apply).observe(tabs);
