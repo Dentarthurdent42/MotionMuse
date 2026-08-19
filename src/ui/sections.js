@@ -20,7 +20,7 @@
 // unless a default is declared or the user drags one. Imposing scrollbars on
 // every section by default would trade one annoyance for a worse one.
 
-import { lsGet, lsSet } from '../storage.js';
+import { lsGet, lsSet, lsDel } from '../storage.js';
 import { stepsForSection, startSectionHelp } from './tutorial.js';
 
 const KEY = 'motionmuse-sections';
@@ -383,6 +383,55 @@ export function applyStick(root = document) {
     sec.style.setProperty('--stick-d', String(depth));
     sec.classList.add('stick');
   }
+}
+
+// Throw away every remembered thing about the layout and put the sections back
+// where the markup puts them.
+//
+// The arrangement persists across four keys, and none of them was reachable
+// from the UI — so an arrangement made against one build was carried into
+// every build after it, including builds that moved the section it names. Not
+// hypothetical: the inputs were regrouped under one section, and a patchbay
+// someone had once dragged into the camera column kept that home and landed
+// between Camera Input and the microphone, splitting the group it was dropped
+// into. The layout looked broken; the stored layout was just old. Clearing
+// site data was the only cure, and it takes gestures, patches and presets too.
+//
+// In place rather than by reloading: every section already records the host it
+// was born in and its authored index among that host's children, which is all
+// a reset needs, and a reload would take the camera and the audio graph down
+// with it — a heavy price for tidying the furniture.
+export function resetLayout() {
+  [KEY, ORDER_KEY, FOLD_KEY, HOME_KEY].forEach(lsDel);
+  heights = {}; order = {}; home = {}; folded = new Set();
+
+  for (const sec of document.querySelectorAll('.sec[data-sec-id]')) {
+    const birth = sec.dataset.secBirth;
+    const host = birth && document.querySelector(`[data-sec-host="${birth}"]`);
+    if (host && sec.parentElement !== host) addTo(host, sec);
+    delete sec.dataset.secMoved;
+    setFolded(sec, false);
+    // The height a fresh load would give it, not "no height" — a default IS
+    // the authored state for the few sections that declare one.
+    applyHeight(sec, DEFAULT_H[sec.dataset.secId] ?? null);
+  }
+
+  // Authored order within each host, from the indices recordBirth captured on
+  // the first pass of this load — before applyOrder had moved anything.
+  for (const host of document.querySelectorAll('[data-sec-host]')) {
+    const kids = hostSecs(host);
+    if (kids.length < 2) continue;
+    const want = kids.slice().sort((a, b) =>
+      (authored.get(a.dataset.secId) ?? 0) - (authored.get(b.dataset.secId) ?? 0));
+    let prev = null;
+    for (const el of want) {
+      if (prev) prev.after(el); else host.insertBefore(el, kids[0]);
+      prev = el;
+    }
+  }
+
+  colorSections(document);
+  applyStick(document);
 }
 
 // Enhance every section under `root`. Safe (and cheap) to call after any

@@ -365,6 +365,53 @@ const relocation = await (async () => {
   return { fresh, rerendered, reloaded, wired, errs };
 })();
 
+// Resetting the layout has to actually undo a stored arrangement, because a
+// stored arrangement outlives the build it was made against. A patchbay someone
+// dragged into the camera column kept that home across the release that
+// regrouped the inputs, and landed between Camera Input and the microphone —
+// splitting the group it was dropped into. The layout looked broken; the
+// stored layout was just old, and there was no way to clear it short of
+// wiping site data, which takes gestures, patches and presets with it.
+const reset = await (async () => {
+  const page = await b.newPage({ viewport: { width: 430, height: 932 } });
+  const errs = [];
+  page.on('pageerror', e => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'load' });
+  await page.evaluate(() => {
+    localStorage.setItem('motionmuse-sec-home', JSON.stringify({ patchbay: 'cam' }));
+    localStorage.setItem('motionmuse-sec-folded', JSON.stringify(['signals']));
+    localStorage.setItem('motionmuse-sections', JSON.stringify({ gestures: 120 }));
+  });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(900);
+
+  const state = () => page.evaluate(() => ({
+    order: [...document.querySelectorAll('[data-sec-id]')]
+      .filter(e => e.getClientRects().length)
+      .map(e => ({ id: e.dataset.secId, y: e.getBoundingClientRect().top }))
+      .sort((a, b) => a.y - b.y).map(o => o.id).slice(0, 3).join(' '),
+    folded: !!document.querySelector('[data-sec-id="signals"]')?.classList.contains('folded'),
+    keys: ['motionmuse-sec-home', 'motionmuse-sec-order', 'motionmuse-sections']
+      .filter(k => localStorage.getItem(k) !== null).length,
+  }));
+
+  const stale = await state();
+  // Two taps: the second is the confirmation.
+  await page.click('#settings-btn, #set-btn, [title*="ettings" i]').catch(() => {});
+  await page.waitForTimeout(250);
+  await page.click('#layout-reset-btn');
+  await page.waitForTimeout(120);
+  await page.click('#layout-reset-btn');
+  await page.waitForTimeout(600);
+  const after = await state();
+  // …and it has to survive the reload, or it only looked reset.
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(900);
+  const reloaded = await state();
+  await page.close();
+  return { stale, after, reloaded, errs };
+})();
+
 // The inference HUD is dev-only, and each of its rows belongs to a model that
 // is actually running. Both halves have failed before in the same way: a number
 // on screen that looks live and is not. The camera itself can't run here (no
@@ -632,6 +679,19 @@ const check = (ok, label, detail = '') => {
 };
 
 console.log('\nHeader layout — every breakpoint, camera off and on\n');
+
+// ── Layout reset ──
+check(reset.errs.length === 0, 'reset: no page errors', reset.errs.join(' | '));
+check(reset.stale.order === 'camera patchbay mic',
+  'reset: a stale home really does split the inputs', reset.stale.order);
+check(reset.stale.folded, 'reset: and a stale fold really does collapse a section');
+check(reset.after.order === 'camera mic patchbay',
+  'reset: RESET puts the sections back in authored order', reset.after.order);
+check(!reset.after.folded, 'reset: and reopens what was collapsed');
+check(reset.after.keys === 0, 'reset: and forgets every stored layout key',
+  `${reset.after.keys} still set`);
+check(reset.reloaded.order === 'camera mic patchbay',
+  'reset: and it survives a reload', reset.reloaded.order);
 
 for (const { width, off, on, sections, camSticky } of results) {
   const w = `${width}px`;

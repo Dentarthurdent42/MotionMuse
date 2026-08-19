@@ -1,0 +1,25 @@
+# Netlify had no config, so it ran no build command — which meant
+# scripts/stamp.mjs never ran, build.json was never written, and the app fell
+# through to its Last-Modified fallback. Netlify's CDN answers with ETag rather
+# than Last-Modified, so that fallback found nothing either and Settings
+# reported "build unstamped (local?)" on every deploy. The one question the
+# stamp exists to answer — "am I looking at a cached copy?" — was unanswerable
+# precisely where it gets asked most.
+#
+# There is nothing to compile: the site is the repository. The build command
+# exists solely to stamp the commit.
+
+[build]
+  command = "node scripts/stamp.mjs"
+  publish = "."
+
+[build.environment]
+  # Netlify installs from package.json whenever it runs a build, and this
+  # repo's `dependencies` carry Playwright, whose postinstall fetches several
+  # hundred megabytes of browsers. A deploy needs none of it — stamp.mjs uses
+  # node builtins only — but the install happens regardless, so make it cheap
+  # rather than fight it.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
+  # Nothing in the shipped app is served from node_modules; three, MediaPipe
+  # and jsqr are all devDependencies used by scripts and tests.
+  NPM_FLAGS = "--omit=dev"
