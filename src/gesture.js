@@ -253,8 +253,15 @@ export function templateDistance(features, t) {
 // the OTHER's acceptance region (min over both directions, since masks are
 // asymmetric). This is what the separation floor is measured over — shared
 // with tests/gesture-img so the definition can't drift.
+//
+// A template with no `f` — `thumbsdown` and `iloveyou`, which MediaPipe's own
+// classifier recognizes rather than the feature metric — has no pose and so no
+// acceptance region here: it can never collide with anything in this space,
+// which is Infinity, not zero. templateDistance already tolerates a missing
+// TEMPLATE vector; passing a missing FEATURE vector into it threw, which is
+// why the gesture-image suite crashed the moment it had a model to run with.
 export const templateSeparation = (a, b) =>
-  Math.min(templateDistance(a.f, b), templateDistance(b.f, a));
+  (a.f && b.f) ? Math.min(templateDistance(a.f, b), templateDistance(b.f, a)) : Infinity;
 
 // Pure nearest-template match — unit-tested.
 // features: number[]; templates: [{id, f}]; returns {id, dist} or null.
