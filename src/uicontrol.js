@@ -69,23 +69,33 @@ export const UIC = {
   HIST: 10,                    // samples of cursor history kept per hand
 
   // Clap ("prayer law"): both hands fingers-up, open, converging from apart.
-  CLAP_WRIST: 0.11,            // wrist distance at contact (frame fraction)
-  CLAP_MCP:   0.09,            // knuckle distance at contact
+  // Fitted for THIS pipeline, not Barehands': hand inference alternates with
+  // pose (~15–22Hz), so a natural clap's contact frame is often skipped and
+  // the touching palms merge into one detection. The contact gate is
+  // therefore looser than the original, and the trajectory fallback below
+  // carries the cases the sampling rate physically cannot see.
+  CLAP_WRIST: 0.14,            // wrist distance at contact (frame fraction)
+  CLAP_MCP:   0.12,            // knuckle distance at contact
   CLAP_APART: 0.18,            // hands must have been this far apart…
   CLAP_APART_MS: 800,          // …this recently (a clap is a movement)
-  CLAP_UP:   0.85,             // (wrist.y − mcp.y)/span — fingers straight up
+  CLAP_UP:   0.60,             // (wrist.y − mcp.y)/span — within ~53° of vertical
   CLAP_OPEN: 0.70,             // openness floor, and gap ratio floor
-  CLAP_OPEN_GRACE: 250,        // open within this window still counts
+  CLAP_OPEN_GRACE: 400,        // open within this window still counts (~6 frames)
   CLAP_PINCH_BLOCK: 800,       // a hand that pinched this recently disqualifies
   CLAP_COOLDOWN: 1500,
-  CLAP_VANISH_MS: 200,         // palms merged into one detection at contact:
-  CLAP_VANISH_D:  0.16,        // a qualified converging sample this recent fires
+  CLAP_VANISH_MS: 200,         // detections merged/lost at contact: a recent
+  CLAP_TRAJ_D:  0.30,          // qualified sample this close, converging fast
+  CLAP_TRAJ_MS: 120,           // enough to project contact this soon, fires
+  CLAP_MISS_D:  0.22,          // converged this far with a qualifier failing
+                               // = a near-miss worth coaching
+  MISS_TOAST_MS: 3000,         // coaching rate limit
 
   // Selection window (after a clap): hold up the hand(s) to toggle.
   WINDOW_MS: 2750,
   DWELL_MS:  800,              // raised-open hold that flips a hand
   DWELL_DRAIN: 2,              // dwell drains at 2× when the hand drops
-  RAISE_Y:    0.60,            // hand height (1 = top of frame)
+  RAISE_Y:    0.50,            // hand height (1 = top of frame) — mid-frame is
+                               // enough; a hand raised high crops out of view
   RAISE_OPEN: 0.70,            // openness
   SINGLE_DWELL: 1200,          // one-hand-tracked fallback: long raised hold
   SINGLE_COOLDOWN: 2000,
@@ -300,8 +310,14 @@ export function clapStep(st, L, R, now, grabbed = false) {
     const wasApart = st.hist.some(e => e.apart && now - e.t < UIC.CLAP_APART_MS);
     const qualified = bothUp && bothOpen && wasApart && cool
                    && !grabbed && noPinch(L) && noPinch(R);
+    // Closing speed vs the previous both-present sample (fractions/s) — what
+    // lets the trajectory fallback tell a clap from a drift-together.
+    const prev = st.hist[st.hist.length - 1];
+    const closing = prev && prev.wristD > wristD
+      ? ((prev.wristD - wristD) / Math.max(1, now - prev.t)) * 1000
+      : 0;
     st.hist.push({ t: now, wristD, apart: wristD > UIC.CLAP_APART,
-                   q: qualified && wristD < UIC.CLAP_VANISH_D });
+                   q: qualified, closing });
     if (qualified && wristD < UIC.CLAP_WRIST && mcpD < UIC.CLAP_MCP) {
       st.lastFire = now;
       return 'clap';
@@ -309,12 +325,15 @@ export function clapStep(st, L, R, now, grabbed = false) {
     return null;
   }
 
-  // Vanish fallback: at contact the two palms often merge into a single
-  // detection (or none). A qualified converging sample moments ago still
-  // counts as the clap it was about to be.
-  if (!L.present && !R.present && now - st.lastBothT < UIC.CLAP_VANISH_MS) {
+  // Trajectory fallback: at contact the palms merge into one detection (or
+  // none), and at this sampling rate the contact frame itself is often never
+  // seen at all. If a detection just vanished while the hands were qualified
+  // and converging fast enough that contact was imminent, that WAS the clap.
+  if ((!L.present || !R.present) && now - st.lastBothT < UIC.CLAP_VANISH_MS) {
     const q = st.hist[st.hist.length - 1];
-    if (q?.q && now - q.t < UIC.CLAP_VANISH_MS) {
+    if (q?.q && now - q.t < UIC.CLAP_VANISH_MS
+        && q.wristD < UIC.CLAP_TRAJ_D && q.closing > 0
+        && (q.wristD / q.closing) * 1000 <= UIC.CLAP_TRAJ_MS) {
       st.lastFire = now;
       st.hist = [];
       return 'clap';
@@ -323,9 +342,34 @@ export function clapStep(st, L, R, now, grabbed = false) {
   return null;
 }
 
+// Why a converged-but-refused clap was refused — the coaching that Barehands
+// puts in a debug overlay and a silent gate cannot give. Call it AFTER
+// clapStep on the same frame (it reads the state clapStep just updated).
+// Returns 'up' | 'open' | 'apart' | 'pinch' | null.
+export function clapNearMiss(st, L, R, now) {
+  if (!L.present || !R.present) return null;
+  const wristD = Math.hypot(L.wx - R.wx, L.wy - R.wy);
+  if (wristD > UIC.CLAP_MISS_D) return null;
+  if (!(L.up > UIC.CLAP_UP && R.up > UIC.CLAP_UP)) return 'up';
+  if (!['L', 'R'].every(s => now - st.lastOpenT[s] < UIC.CLAP_OPEN_GRACE)) return 'open';
+  if (!st.hist.some(e => e.apart && now - e.t < UIC.CLAP_APART_MS)) return 'apart';
+  if (L.pinched || R.pinched
+      || now - L.lastPinchT <= UIC.CLAP_PINCH_BLOCK
+      || now - R.lastPinchT <= UIC.CLAP_PINCH_BLOCK) return 'pinch';
+  return null;
+}
+
 // ── Selection window ─────────────────────────────────────────────────────
 export function raisedQualify(yUp, open) {
   return yUp > UIC.RAISE_Y && open > UIC.RAISE_OPEN;
+}
+
+// Which half of the raise a visible-but-unqualified hand is missing, for the
+// window prompt's coaching line. 'raise' | 'open' | null (= qualifying).
+export function raiseReason(yUp, open) {
+  if (yUp <= UIC.RAISE_Y) return 'raise';
+  if (open <= UIC.RAISE_OPEN) return 'open';
+  return null;
 }
 
 export function makeSelectState(now) {
@@ -478,6 +522,7 @@ export const uicontrol = (() => {
   let stageActive = false;   // the fullscreen stage claims both hands
   let sel = null;            // active selection window, or null
   let lastClapT = 0;
+  let lastMissT = 0;         // near-miss coaching rate limit
   let holdBothUntil = 0;     // post-clap claim of both hands
   let singleDwell = 0;       // one-hand fallback arming accumulator
   let singleCoolUntil = 0;
@@ -551,9 +596,18 @@ export const uicontrol = (() => {
           || stageActive;
     },
 
-    // An armed cursor deserves the frame budget: cv.js tilts the hand/pose
-    // alternation toward hands while this is true.
-    wantsPriority() { return stageActive || (cfg.enabled && (armed.L || armed.R)); },
+    // The cursor deserves the frame budget: cv.js tilts the hand/pose
+    // alternation toward hands while this is true. Crucially that includes
+    // the moment BEFORE arming when both hands are up — the clap approach is
+    // exactly when 15Hz sampling loses the contact — without permanently
+    // taxing pose while the modality merely sits enabled.
+    wantsPriority() {
+      if (stageActive) return true;
+      if (!cfg.enabled) return false;
+      if (armed.L || armed.R) return true;
+      const now = performance.now();
+      return now - hands.L.lastT < 1500 && now - hands.R.lastT < 1500;
+    },
 
     // The fullscreen stage: both hands become cursors (and are claimed from
     // the instrument) for as long as it is up, whatever the armed flags say.
@@ -607,7 +661,8 @@ export const uicontrol = (() => {
         };
       };
       const grabbed = ['L', 'R'].some(s => driver?.isHolding?.(s));
-      if (clapStep(clap, snap('L'), snap('R'), now, grabbed) === 'clap') {
+      const sL = snap('L'), sR = snap('R');
+      if (clapStep(clap, sL, sR, now, grabbed) === 'clap') {
         holdBothUntil = now + UIC.HOLD_AFTER_CLAP;
         const double = sel !== null || now - lastClapT < UIC.DOUBLE_CLAP_MS;
         lastClapT = now;
@@ -622,6 +677,13 @@ export const uicontrol = (() => {
         } else {
           sel = makeSelectState(now);
           emit({ type: 'window', open: true, source: 'clap' });
+        }
+      } else if (!sel && !stageActive && now - lastMissT > UIC.MISS_TOAST_MS) {
+        // A converged-but-refused clap gets told WHY, or the gate is a wall.
+        const reason = clapNearMiss(clap, sL, sR, now);
+        if (reason) {
+          lastMissT = now;
+          emit({ type: 'clap-miss', reason });
         }
       }
 
@@ -724,11 +786,17 @@ export const uicontrol = (() => {
           ghost: h.pinch.ghost,
           armed: armed[s] || stageActive,
           clawOn: h.claw.on,
+          yUp: h.yUp,
+          up: h.m?.up ?? 0,
+          open: h.m?.open ?? 0,
         };
       }
+      const wristD = hs.L.present && hs.R.present
+        ? Math.hypot(hands.L.wx - hands.R.wx, hands.L.wy - hands.R.wy) : null;
       return {
         enabled: cfg.enabled || stageActive,
         stage: stageActive,
+        wristD,
         margin: cfg.margin,
         armed: { ...armed },
         hands: hs,

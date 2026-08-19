@@ -2230,3 +2230,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   .stage-ring { animation: none; }
   .stage-card.mat, .stage-card.smack { animation: none; }
 }
+
+/* The 🖐 button's middle state: enabled and listening for the clap, nothing
+   armed yet. Dimmer than .on so the three states read at a glance. */
+#uic-btn.ready { border-color: var(--cyan); color: var(--cyan); opacity: 0.75; }

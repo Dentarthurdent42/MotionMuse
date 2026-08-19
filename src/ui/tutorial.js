@@ -130,9 +130,10 @@ export const TOUR_STEPS = [
   {
     id: 'hand-cursor', target: '#uic-btn', title: 'Hand cursor',
     body: 'Drive the app itself by hand: enable <b>HAND CURSOR</b> in ⚙ ' +
-          'settings, then <b>CLAP</b> and hold up a hand — it becomes a ' +
-          'cursor (pinch = click and drag) and stops playing the instrument. ' +
-          'Clap again to toggle back; the cursor key disarms everything.',
+          'settings (the button reads <b>READY</b>), then <b>CLAP</b> — palms ' +
+          'together, fingers up — and hold up a hand. It becomes a cursor ' +
+          '(pinch = click and drag) and stops playing the instrument. Clap ' +
+          'again to toggle back; the cursor key disarms everything.',
   },
   {
     id: 'signals', section: 'signals', target: '#sig-list', title: 'Signals',

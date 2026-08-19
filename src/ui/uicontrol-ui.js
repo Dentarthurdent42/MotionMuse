@@ -5,14 +5,17 @@
 // uicontrol.js, which this module only *reads* (view()) and listens to
 // (onEvent).
 
-import { uicontrol, cursorMap, UIC } from '../uicontrol.js';
+import { uicontrol, cursorMap, raiseReason, UIC } from '../uicontrol.js';
 import { driverView }                from './uidriver.js';
 import { toast }                     from './status.js';
+import { keyLabel, getBinding }      from './hotkeys.js';
 import { onThemeChange }             from './theme.js';
 import { fullscreen }                from './fullscreen.js';
 
 let cv = null, ctx = null;
 let reduced = false;
+let hintDone = false;         // the clap hint retires after the first window
+let hintShownAt = 0;          // …or after ~10s on screen
 
 // Theme tokens, cached — re-read when the theme flips, not every frame.
 let cols = null;
@@ -55,23 +58,28 @@ export function initUicontrol() {
   });
 
   const btn = document.getElementById('uic-btn');
+  // Three visible states, because "enabled and listening" must never look
+  // like "off": OFF (default), READY (enabled, waiting for the clap), ARMED.
   const syncBtn = () => {
     if (!btn) return;
     const on = uicontrol.enabled;
     const armed = uicontrol.anyArmed();
     btn.classList.toggle('on', armed);
+    btn.classList.toggle('ready', on && !armed);
     btn.setAttribute('aria-pressed', String(armed));
+    btn.textContent = armed ? '🖐 ARMED' : on ? '🖐 READY' : '🖐 CURSOR';
     btn.title = !on
       ? 'Hand cursor (off) — click to enable, then clap and hold up a hand to arm it'
       : armed
         ? 'Hand cursor armed — click (or the cursor key) to disarm everything'
-        : 'Hand cursor ready — clap, then hold up the hand(s) to arm. Click opens the toggle window.';
+        : 'Hand cursor ready — CLAP (palms together, fingers up), then hold up '
+          + 'the hand(s) to arm. Click opens the toggle window without a clap.';
   };
 
   btn?.addEventListener('click', () => {
     if (!uicontrol.enabled) {
       uicontrol.setEnabled(true);
-      toast('Hand cursor enabled — CLAP, then hold up the hand(s) to arm');
+      toast('Hand cursor ON — CLAP (palms together, fingers up), then hold up a hand');
       syncBtn();
       return;
     }
@@ -85,6 +93,7 @@ export function initUicontrol() {
                     : `${sideName(ev.side)} HAND → INSTRUMENT`);
         break;
       case 'window':
+        hintDone = true;                         // the ritual has been found
         if (ev.open) toast('Hold up a hand to toggle UI control');
         break;
       case 'panic':
@@ -92,6 +101,15 @@ export function initUicontrol() {
         break;
       case 'denied':
         if (ev.reason === 'disabled') toast('Hand cursor is off — enable it in ⚙ settings');
+        break;
+      case 'clap-miss':
+        // A converged-but-refused clap, told why (rate-limited upstream).
+        toast({
+          up:    'clap seen — point your fingers UP (prayer hands)',
+          open:  'clap seen — open both hands flat first',
+          apart: 'clap seen — start with your hands apart',
+          pinch: 'clap ignored — a hand just pinched; try again in a moment',
+        }[ev.reason] ?? 'almost a clap — palms together, fingers up');
         break;
       case 'sweep':
         break;                                   // the stage narrates its own sweep
@@ -168,9 +186,13 @@ function drawPrompt(text, sub) {
 export function updateUicOverlay() {
   if (!ctx) return;
   const v = uicontrol.view();
-  // Cheap no-op unless the modality is actually doing something visible.
-  // (hands[s].armed already includes the stage, where every hand is a cursor.)
-  if (!v.enabled || (!v.hands.L.armed && !v.hands.R.armed && !v.window && !v.singleDwell)) {
+  // Cheap no-op unless the modality is on and could show something — which
+  // includes merely-tracked hands: an enabled system that draws nothing
+  // until a clap lands is indistinguishable from a broken one.
+  const anyPresent = v.hands.L.present || v.hands.R.present;
+  if (!v.enabled
+      || (!v.hands.L.armed && !v.hands.R.armed && !v.window && !v.singleDwell
+          && !anyPresent)) {
     if (cv.__drawn) { ctx.clearRect(0, 0, cv.width, cv.height); cv.__drawn = false; }
     return;
   }
@@ -178,6 +200,48 @@ export function updateUicOverlay() {
   cv.__drawn = true;
 
   const pxOf = h => cursorMap(h.x, h.y, v.margin, cv.width, cv.height);
+
+  // Pre-arm "listening" feedback: a faint ring on every tracked hand, so
+  // the system is visibly alive before anything is armed — plus, until the
+  // arming ritual has been found once, the hint that names it.
+  for (const s of ['L', 'R']) {
+    const h = v.hands[s];
+    if (!h.present || h.armed) continue;
+    const p = pxOf(h);
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = cols.ring;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 9, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  if (!hintDone && anyPresent && !v.window && !v.hands.L.armed && !v.hands.R.armed) {
+    const now = performance.now();
+    if (!hintShownAt) hintShownAt = now;
+    if (now - hintShownAt < 10000) {
+      drawPrompt('CLAP — PALMS TOGETHER, FINGERS UP — TO ARM THE CURSOR',
+                 `or press ${keyLabel(getBinding('cursor'))} / the 🖐 button`);
+    } else {
+      hintDone = true;
+    }
+  }
+
+  // DEV: the live gate metrics — the tuning clinic for fitting the clap to
+  // a real pair of hands.
+  if (document.body.classList.contains('dev') && anyPresent) {
+    const f = n => (n == null ? '—' : n.toFixed(2));
+    ctx.save();
+    ctx.font = '10px "IBM Plex Mono", monospace';
+    ctx.fillStyle = cols.text;
+    ctx.globalAlpha = 0.75;
+    ctx.fillText(
+      `uic L up ${f(v.hands.L.up)} open ${f(v.hands.L.open)} · `
+      + `R up ${f(v.hands.R.up)} open ${f(v.hands.R.open)} · wristD ${f(v.wristD)}`,
+      8, cv.height - 8);
+    ctx.restore();
+  }
 
   // Hover highlight behind the rings.
   for (const s of ['L', 'R']) {
@@ -196,11 +260,22 @@ export function updateUicOverlay() {
     }
   }
 
-  // Selection window: prompt plus a dwell arc at each raised hand.
+  // Selection window: prompt plus a dwell arc at each raised hand. A hand
+  // that is visible but not qualifying gets told which half it is missing —
+  // the arc filling is the confirmation, this is the correction.
   if (v.window) {
     const left = Math.max(0, (v.window.until - v.window.now) / 1000);
-    drawPrompt('RAISE A HAND TO TOGGLE UI CONTROL',
-               `arms the cursor · window closes in ${left.toFixed(1)}s`);
+    let sub = `arms the cursor · window closes in ${left.toFixed(1)}s`;
+    for (const s of ['L', 'R']) {
+      const h = v.hands[s];
+      if (!h.present || v.window.dwell[s] > 0) continue;
+      const why = raiseReason(h.yUp, h.open);
+      if (why) {
+        sub = why === 'raise' ? 'raise it higher' : 'open your hand flat';
+        break;
+      }
+    }
+    drawPrompt('RAISE A HAND TO TOGGLE UI CONTROL', sub);
     for (const s of ['L', 'R']) {
       const h = v.hands[s];
       if (!h.present) continue;

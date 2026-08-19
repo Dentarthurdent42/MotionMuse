@@ -800,6 +800,18 @@ on-screen cursor and **stops playing the instrument** until you toggle it
 back the same way. The other hand keeps playing; this is how you change a
 patch mid-performance without touching the machine.
 
+The state is always visible: the 🖐 button reads **READY** while enabled and
+**ARMED** once a hand is a cursor, every tracked hand carries a faint ring
+before arming (so "listening" never looks like "off"), a one-time hint names
+the clap, and a clap that *almost* qualified is told which condition it
+missed ("fingers weren't up", "start with your hands apart") rather than
+refused silently. The clap detector is fitted to this app's inference
+cadence: hand and pose models alternate frames, so contact is often never
+sampled and touching palms merge into one detection — a qualified,
+fast-converging pair whose projected contact is imminent therefore counts as
+the clap it physically was. While both hands are up, hand inference is
+prioritised (3 frames of 4) so the approach is sampled fast enough to see.
+
 - **Pinch = press.** A quick pinch is a tap (buttons, carets, menu items —
   selects open a floating list, since script can't open the native picker);
   a held pinch drags — sliders, patchbay cables, section headers, resize

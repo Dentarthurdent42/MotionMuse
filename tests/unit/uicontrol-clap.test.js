@@ -5,7 +5,8 @@
 // Run: npm run test:unit
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { UIC, makeClapState, clapStep, makeSelectState, selectStep, raisedQualify } from '../../src/uicontrol.js';
+import { UIC, makeClapState, clapStep, clapNearMiss, makeSelectState, selectStep,
+         raisedQualify, raiseReason } from '../../src/uicontrol.js';
 
 // A hand snapshot at horizontal position wx (mirrored-normalized).
 const hand = (wx, over = {}) => ({
@@ -121,6 +122,69 @@ test('both hands toggled closes the window', () => {
   }
   assert.deepEqual(all.sort(), ['L', 'R']);
   assert.equal(st.until, 0, 'window closed itself');
+});
+
+// ── Trajectory contact (the 15Hz reality) ────────────────────────────────
+// Hand inference alternates with pose, so a natural clap's contact frame is
+// usually never sampled and the touching palms merge into one detection.
+// The detector must fire on the converging trajectory, not the contact.
+
+test('a 15Hz-sampled clap that merges at contact fires via trajectory', () => {
+  const st = makeClapState();
+  const t0 = 10000;
+  // Apart at 66ms steps (15Hz), then one converging sample still 0.18 wide,
+  // then the palms merge — only one detection survives.
+  for (let i = 0; i < 8; i++) clapStep(st, hand(0.30), hand(0.70), t0 + i * 66);
+  assert.equal(clapStep(st, hand(0.41), hand(0.59), t0 + 8 * 66), null);
+  assert.equal(clapStep(st, hand(0.5), gone, t0 + 9 * 66), 'clap');
+});
+
+test('a slow drift-together that loses tracking does not fire', () => {
+  const st = makeClapState();
+  const t0 = 10000;
+  for (let i = 0; i < 6; i++) clapStep(st, hand(0.30), hand(0.70), t0 + i * 66);
+  // Creep inward ~0.008/frame (≈0.12/s): contact is seconds away.
+  let t = t0 + 6 * 66;
+  for (let d = 0.36; d < 0.44; d += 0.008, t += 66) {
+    clapStep(st, hand(d), hand(1 - d), t);
+  }
+  assert.equal(clapStep(st, gone, gone, t + 66), null,
+    'no closing speed = no projected contact = no clap');
+});
+
+// ── Near-miss coaching ───────────────────────────────────────────────────
+// A converged-but-refused clap must name the failing condition; a silent
+// gate teaches nothing.
+
+const missAfter = (opts, t0 = 10000) => {
+  const st = makeClapState();
+  const { L = {}, R = {}, apart = true } = opts;
+  if (apart) for (let i = 0; i < 6; i++) {
+    clapStep(st, hand(0.30, L), hand(0.70, R), t0 + i * 33);
+  }
+  const l = hand(0.46, L), r = hand(0.54, R);
+  clapStep(st, l, r, t0 + 220);
+  return clapNearMiss(st, l, r, t0 + 220);
+};
+
+test('near-miss names the failing qualifier', () => {
+  assert.equal(missAfter({ L: { up: 0.3 } }), 'up');
+  assert.equal(missAfter({ R: { open: 0.3, r: 0.3 } }), 'open');
+  assert.equal(missAfter({ apart: false }), 'apart');
+  assert.equal(missAfter({ L: { lastPinchT: 10000 } }), 'pinch');
+});
+
+test('no near-miss when the hands are not converged, or nothing failed', () => {
+  const st = makeClapState();
+  const l = hand(0.30), r = hand(0.70);           // 0.4 apart — just far hands
+  clapStep(st, l, r, 10000);
+  assert.equal(clapNearMiss(st, l, r, 10000), null);
+});
+
+test('raiseReason coaches the missing half', () => {
+  assert.equal(raiseReason(0.3, 0.9), 'raise');
+  assert.equal(raiseReason(0.8, 0.4), 'open');
+  assert.equal(raiseReason(0.8, 0.9), null);
 });
 
 test('raisedQualify wants height and openness together', () => {
