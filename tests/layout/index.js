@@ -108,6 +108,23 @@ const sections = await page.evaluate(() => {
         const b = e.querySelector(':scope > .sec-body.sec-scroll');
         return b && getComputedStyle(b).overflowY !== 'auto';
       }).map(e => e.dataset.secId),
+    // Nothing may pan SIDEWAYS. These panels scroll vertically, and CSS
+    // computes a `visible` axis to `auto` when the other one scrolls — so an
+    // element poking a few pixels past the edge silently turns its whole
+    // column into a horizontal scroller, and every section in it slides off
+    // its own left edge. It cost exactly 8px of one header's ? button once.
+    // A container that genuinely scrolls across (the tone-picker keyboard)
+    // opts in by carrying its own scroller.
+    pans: [...document.querySelectorAll('*')]
+      .filter(e => {
+        if (!e.clientWidth || e.scrollWidth <= e.clientWidth + 1) return false;
+        if (e.closest('.ng-freq-kbd-wrap')) return false;      // opted in
+        const ox = getComputedStyle(e).overflowX;
+        return ox === 'auto' || ox === 'scroll';
+      })
+      .map(e => `${e.tagName.toLowerCase()}${e.id ? '#' + e.id : ''}`
+              + `${e.dataset.secId ? '[' + e.dataset.secId + ']' : ''}`
+              + ` +${e.scrollWidth - e.clientWidth}px`),
     // A section may not be taller than its own content: a height past that is a
     // box of empty space with a scrollbar attached, which is what applyHeight's
     // ceiling exists to prevent.
@@ -372,6 +389,52 @@ const relocation = await (async () => {
 // splitting the group it was dropped into. The layout looked broken; the
 // stored layout was just old, and there was no way to clear it short of
 // wiping site data, which takes gestures, patches and presets with it.
+// A NARROW COLUMN is where sideways play actually appeared: the columns are
+// user-resizable and the width persists, so a column well below the default
+// is an ordinary state to be in — and it was the state where one header's ?
+// button was pushed 8px past the edge, setting the whole audio column
+// panning. The per-width loop above runs at default column widths and would
+// never have caught it.
+const narrow = await (async () => {
+  const page = await b.newPage({ viewport: { width: 1440, height: 900 } });
+  const errs = [];
+  page.on('pageerror', e => errs.push(e.message));
+  await page.addInitScript(() => {
+    localStorage.setItem('motionmuse-panel-widths', JSON.stringify({ l: 320, r: 240 }));
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  });
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'load' });
+  await page.waitForTimeout(600);
+  await page.evaluate(() => document.querySelector('#start-pop button')?.click());
+  await page.waitForTimeout(200);
+  // Chord mode on: its expression rows are the densest thing in that column.
+  await page.evaluate(() => {
+    const t = document.querySelector('[data-sec="chord-mode"] .wave-btn');
+    if (t && !t.classList.contains('on')) t.click();
+  });
+  await page.waitForTimeout(300);
+  const out = await page.evaluate(() => ({
+    pans: [...document.querySelectorAll('*')]
+      .filter(e => {
+        if (!e.clientWidth || e.scrollWidth <= e.clientWidth + 1) return false;
+        if (e.closest('.ng-freq-kbd-wrap')) return false;
+        const ox = getComputedStyle(e).overflowX;
+        return ox === 'auto' || ox === 'scroll';
+      })
+      .map(e => `${e.tagName.toLowerCase()}${e.id ? '#' + e.id : ''} +${e.scrollWidth - e.clientWidth}px`),
+    // The trailing ? must still be INSIDE the panel it belongs to, not merely
+    // un-scrollable-to: clipping it would trade a layout bug for a dead control.
+    helpOutside: [...document.querySelectorAll('#audio-panel .sec-help')]
+      .filter(h => {
+        const p = document.getElementById('audio-panel');
+        return h.getBoundingClientRect().right
+             > p.getBoundingClientRect().left + p.clientWidth + 0.5;
+      }).length,
+  }));
+  await page.close();
+  return { ...out, errs };
+})();
+
 const reset = await (async () => {
   const page = await b.newPage({ viewport: { width: 430, height: 932 } });
   const errs = [];
@@ -681,6 +744,11 @@ const check = (ok, label, detail = '') => {
 console.log('\nHeader layout — every breakpoint, camera off and on\n');
 
 // ── Layout reset ──
+check(narrow.errs.length === 0, 'narrow column: no page errors', narrow.errs.join(' | '));
+check(narrow.pans.length === 0, 'narrow column: nothing pans sideways', narrow.pans.join(' | '));
+check(narrow.helpOutside === 0, 'narrow column: every ? stays inside its panel',
+      String(narrow.helpOutside));
+
 check(reset.errs.length === 0, 'reset: no page errors', reset.errs.join(' | '));
 check(reset.stale.order === 'camera patchbay mic',
   'reset: a stale home really does split the inputs', reset.stale.order);
@@ -700,6 +768,7 @@ for (const { width, off, on, sections, camSticky } of results) {
   check(sections.missingBody.length === 0, `${w}: every section has a scrollable body`, sections.missingBody.join(' '));
   check(sections.missingGrip.length === 0, `${w}: every section has a resize grip`, sections.missingGrip.join(' '));
   check(sections.unnamed === 0, `${w}: every section has an id (so its height can persist)`, String(sections.unnamed));
+  check(sections.pans.length === 0, `${w}: nothing pans sideways`, sections.pans.join(' | '));
   check(sections.pinnedNotScrolling.length === 0,
     `${w}: a section given a height scrolls rather than clipping`, sections.pinnedNotScrolling.join(' '));
   check(sections.tallerThanContent.length === 0,

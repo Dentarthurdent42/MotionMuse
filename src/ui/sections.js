@@ -135,9 +135,14 @@ const save = () => lsSet(KEY, JSON.stringify(heights));
 // would otherwise orphan the stored height.
 function sectionId(sec, head) {
   if (sec.dataset.sec) return sec.dataset.sec;
-  const raw = [...head.childNodes]
+  // The title is wrapped in a .sec-title span on the first pass (see
+  // wrapTitle), so read that when it is there. Both paths must produce the
+  // SAME slug: these ids key stored heights, order and home column, and an id
+  // that changed on a re-render would silently orphan all three.
+  const titled = head.querySelector(':scope > .sec-title');
+  const raw = (titled ? titled.textContent : [...head.childNodes]
     .filter(n => n.nodeType === Node.TEXT_NODE)
-    .map(n => n.textContent).join(' ').trim();
+    .map(n => n.textContent).join(' ')).trim();
   return raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || null;
 }
 
@@ -193,11 +198,38 @@ export function applyHeight(sec, h) {
 // Wrap one section's content and give it a grip. Idempotent: re-running over
 // already-enhanced markup only re-applies the stored height, which is what
 // makes this safe to call after every re-render.
+// A header is a flex row of [caret] TITLE [controls] [?], and the title is a
+// bare text node — which cannot be told to shrink, because an anonymous flex
+// item's min-width resolves to its longest unbreakable word. So in a narrow
+// column the title held its full width and pushed the trailing controls out
+// of the panel instead. The overflow was small (the ? button, a few px) and
+// the consequence was not: these panels scroll vertically, and CSS turns a
+// visible overflow on one axis into a SCROLLABLE one on the other, so eight
+// stray pixels in one section made the whole column pan sideways — dragging
+// every other section's labels off the left edge with it.
+//
+// Wrapping the title makes it an element that can shrink and ellipsize, so
+// the row fits and nothing is pushed anywhere.
+function wrapTitle(head) {
+  if (head.querySelector(':scope > .sec-title')) return;
+  const lead = [];
+  for (const n of head.childNodes) {
+    if (n.nodeType === Node.TEXT_NODE) { lead.push(n); continue; }
+    break;                       // stop at the first control — only the title
+  }
+  if (!lead.some(n => n.textContent.trim())) return;
+  const span = document.createElement('span');
+  span.className = 'sec-title';
+  head.insertBefore(span, lead[0]);
+  lead.forEach(n => span.appendChild(n));
+}
+
 function enhance(sec) {
   const head = headOf(sec);
   if (!head) return;
   const id = sectionId(sec, head);
   if (!id) return;
+  wrapTitle(head);
 
   let body = sec.querySelector(':scope > .sec-body');
   if (!body) {

@@ -234,6 +234,15 @@ body.resizing { cursor: col-resize; user-select: none; }
 .pb {
   flex: 1;
   overflow-y: auto;
+  /* Never sideways. A box that scrolls on one axis and is `visible` on the
+     other has that other axis computed to `auto` by CSS — so any element
+     poking a few pixels past the edge silently turns the whole column into a
+     horizontal scroller, and the panels drift off their own left edge. The
+     content is laid out to fit; this makes "it fits" structural rather than a
+     property every future row has to remember. Anything that genuinely needs
+     to scroll across (the tone-picker keyboard) carries its own scroller and
+     is unaffected. */
+  overflow-x: hidden;
 }
 .pb::-webkit-scrollbar { width: 3px; }
 .pb::-webkit-scrollbar-thumb { background: var(--border2); }
@@ -1424,6 +1433,22 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
 /* Per-panel help, at the right end of the header. Same 18px target as the
    fold caret so the two ends of the header match. */
+/* The header title (wrapped by sections.js). It is the one part of the row
+   that may shrink: everything else is a control with a job, and a control
+   pushed out of the panel is both unusable and — because these panels scroll
+   vertically, which makes a horizontal overflow SCROLLABLE — enough to set
+   the whole column panning sideways. */
+.sec-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Controls in a header hold their size; the title above absorbs the squeeze. */
+.ph > button, .ph > select, .ph > .wave-btn,
+.audio-section-label > button, .audio-section-label > select,
+.audio-section-label > .wave-btn { flex-shrink: 0; }
+
 .sec-help {
   flex: 0 0 auto;
   margin-left: auto;          /* right end, whatever else the header carries */
@@ -1543,12 +1568,13 @@ body.reordering [data-sec-host].drop-into {
 .sec > .sec-body { min-height: 0; }
 /* A section that is a whole column fills it; one with an explicit height keeps
    exactly that height instead of being stretched by the flex parent. */
-.panel.sec > .sec-body { flex: 1 1 auto; overflow-y: auto; }
+.panel.sec > .sec-body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; }
 .sec > .sec-body.sec-scroll { flex: 0 0 auto; }
 /* Only a section with a height set (by default or by drag) scrolls; the rest
    stay natural, so nothing gains a scrollbar it didn't need. */
 .sec > .sec-body.sec-scroll {
   overflow-y: auto;
+  overflow-x: hidden;              /* never sideways — see .pb */
   overscroll-behavior: contain;
   /* There IS more below — say so. A 3px scrollbar is not an affordance; the
      MODELS section clipped its stats row and looked simply finished. This
