@@ -216,15 +216,28 @@ const sections = await page.evaluate(() => {
 // So it is measured by actually scrolling, not by reading the property.
 const camSticky = await page.evaluate(async () => {
   const cam = document.querySelector('.panel-cam');
+  const vid = document.getElementById('video-wrap');
+  const settle = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const pos = getComputedStyle(cam).position;
   const before = cam.getBoundingClientRect().top;
   window.scrollTo(0, 700);
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await settle();
   const scrolled = Math.round(window.scrollY);
   const after = cam.getBoundingClientRect().top;
+  // …and all the way down. Scrolling 700px only proves the pin survives its
+  // own column: position:sticky pins within the PARENT's box, and while the
+  // columns were blocks that box ended where the camera column did, so the
+  // picture came unstuck the moment SIGNALS began — still most of the page
+  // from the bottom, and exactly where you want to see your hands. Nothing
+  // caught it, because 700px is still inside the camera column.
+  window.scrollTo(0, document.documentElement.scrollHeight);
+  await settle();
+  const deep = Math.round(window.scrollY);
+  const atEnd = vid.getBoundingClientRect().top;
   window.scrollTo(0, 0);
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await settle();
   return { pos, before: Math.round(before), after: Math.round(after), scrolled,
+           deep, atEnd: Math.round(atEnd),
            dev: document.body.classList.contains('dev') };
 });
 
@@ -683,6 +696,11 @@ for (const { width, off, on, sections, camSticky } of results) {
     // Sticky camera, and specifically NOT gated on dev mode.
     check(camSticky.dev === false, `${w} portrait: measured outside dev mode`);
     check(camSticky.pos === 'sticky', `${w} portrait: the camera is sticky`, camSticky.pos);
+    // The picture stays in sight for the WHOLE page, not just its own column.
+    if (camSticky.deep > camSticky.scrolled)
+      check(camSticky.atEnd >= -1 && camSticky.atEnd <= 40,
+        `${w} portrait: the camera is still pinned at the bottom of the page`,
+        `video top ${camSticky.atEnd} after ${camSticky.deep}px`);
     if (camSticky.scrolled > 0)
       check(camSticky.after <= camSticky.before + 0.5 && camSticky.after <= 1,
         `${w} portrait: the camera stays pinned while the page scrolls`,

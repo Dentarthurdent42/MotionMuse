@@ -1777,20 +1777,37 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
     background: var(--border);
   }
 
-  /* The columns stop being columns and become plain stacked blocks, so the
-     page reads as one list of panels. They must NOT scroll here: the document
-     is the scroller in portrait, and a column that made its own scrollport
-     would trap the camera's stickiness inside a box that never moves —
-     position:sticky against a scrollport that cannot scroll does nothing. */
-  .col {
+  /* The columns stop being columns entirely, so the page reads as one list of
+     panels — and, more importantly, so the camera can stay stuck to the top of
+     it. position:sticky pins an element within its own PARENT's box: as a
+     block, .col-c was that box, so the picture unstuck the moment the camera
+     column ended and SIGNALS began, which is exactly where you still want to
+     see your hands. `display: contents` dissolves the column, leaving #main —
+     which spans the whole page — as the box the pin is measured against.
+     They must not scroll here either: the document is the scroller in
+     portrait, and a column that made its own scrollport would trap the
+     stickiness in a box that never moves.
+     The boxes come back for the duration of a drag, because the columns are
+     drop hosts and hostUnder hit-tests measured rects — a box that generates
+     none can never be aimed at. */
+  .col { display: contents; }
+  body.reordering .col {
     display: block;
     overflow: visible;
     min-height: 0;
   }
   /* The camera's column leads on a phone. It holds the picture, which is both
      the thing you need in sight while playing and the thing you pull down on
-     to get back to the header — neither works from the middle of the page. */
-  .col-c { order: -1; }
+     to get back to the header — neither works from the middle of the page.
+     With the column dissolved there is no single box left to order, so this
+     lands on everything that reaches #main's grid from inside it. The three
+     selectors are the three contents-dissolved wrappers between .col-c and the
+     grid; each group keeps source order within itself, so the run stays
+     together and in the order the markup gives it. */
+  .col-c > *,
+  .panel-inputs > *,
+  #input-list > * { order: -1; }
+  body.reordering .col-c { order: -1; }
 
   .splitter { display: none; }
 
