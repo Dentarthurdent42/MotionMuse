@@ -20,7 +20,7 @@
 // unless a default is declared or the user drags one. Imposing scrollbars on
 // every section by default would trade one annoyance for a worse one.
 
-import { lsGet, lsSet } from '../storage.js';
+import { lsGet, lsSet, lsDel } from '../storage.js';
 import { stepsForSection, startSectionHelp } from './tutorial.js';
 
 const KEY = 'motionmuse-sections';
@@ -57,6 +57,7 @@ const HOSTS = [
   ['col-l', '.col-l'],
   ['col-c', '.col-c'],
   ['col-r', '.col-r'],
+  ['inputs', '#input-list'],
   ['audio', '#audio-panel'],
   // The audio panel is now a section itself, and enhance() wraps a section's
   // content into its collapsible body — so the oscilloscope and the synth list
@@ -109,7 +110,12 @@ const saveFolded = () => lsSet(FOLD_KEY, JSON.stringify([...folded]));
 export function setFolded(sec, on) {
   const id = sec.dataset.secId;
   sec.classList.toggle('folded', on);
-  const btn = sec.querySelector(':scope > .sec-fold');
+  // The button lives in the HEADER, not directly under the section — enhance()
+  // inserts it there so it sits beside the title. This asked for a direct
+  // child, matched nothing, and so every fold button in the app has reported
+  // aria-expanded="true" in both states since the attribute was added: a
+  // screen reader was told the section was open while it was collapsed.
+  const btn = sec.querySelector(':scope > * > .sec-fold');
   if (btn) btn.setAttribute('aria-expanded', String(!on));
   if (on) folded.add(id); else folded.delete(id);
   saveFolded();
@@ -136,7 +142,7 @@ function sectionId(sec, head) {
 }
 
 const headOf = sec =>
-  sec.querySelector(':scope > .audio-section-label, :scope > .ph, :scope > .src-tabs');
+  sec.querySelector(':scope > .audio-section-label, :scope > .ph');
 
 // The bottom fade says "there is more below". It has to lift when you reach the
 // end, or a fully-scrolled list looks like it still has hidden content.
@@ -303,6 +309,131 @@ function wireGrip(sec, grip, body, id) {
   });
 }
 
+// ── Sticky nesting ───────────────────────────────────────────────────────
+//
+// Section headers pin to the top of whatever scrolls them, and stack by depth
+// — the way an IDE keeps the enclosing scopes on screen while you scroll
+// through a function. Scrolled halfway down the audio engine you can see you
+// are in AUDIO ENGINE ▸ GESTURES rather than having to scroll back to find
+// out, which matters here because the sections are rearrangeable: their
+// position on screen is not a fact anyone can memorise.
+//
+// The offset cannot be a CSS constant, for three reasons the layout makes
+// unavoidable:
+//
+//   * headers are not one height. `.ph` measures 37px and
+//     `.audio-section-label` 19px at the same breakpoint, and both are used at
+//     both levels.
+//   * a section's scrollport depends on orientation and on whether anyone has
+//     dragged a height onto an ancestor. A child inside a scrolling .sec-body
+//     is scrolled by that body, where its parent's header is already outside
+//     the view — so counting that parent would leave a gap the size of a
+//     header, every time.
+//   * in portrait the camera pins its whole box at the top of the document, so
+//     anything the document scrolls has to start below the picture rather than
+//     underneath it.
+//
+// So it is measured: walk up until something scrolls, adding the header height
+// of every section box passed on the way. Only on refresh and resize — never
+// on scroll, which is what keeps this free.
+const scrolls = el => {
+  const cs = getComputedStyle(el);
+  if (cs.display === 'contents') return false;   // generates no scrollport
+  return cs.overflowY === 'auto' || cs.overflowY === 'scroll';
+};
+
+// How much of the camera is pinned over the document, if it is pinned at all.
+// Its own label is deliberately scrolled off (a negative sticky offset), so it
+// is the panel minus that label.
+function camPin() {
+  const cam = document.querySelector('.panel-cam');
+  if (!cam || getComputedStyle(cam).position !== 'sticky') return 0;
+  const label = cam.querySelector(':scope > .cam-label');
+  const h = cam.getBoundingClientRect().height
+          - (label?.getBoundingClientRect().height ?? 0);
+  return Math.max(0, h);
+}
+
+export function applyStick(root = document) {
+  const base = camPin();
+  for (const sec of root.querySelectorAll('.sec[data-sec-id]')) {
+    const head = headOf(sec);
+    // A section that generates no box — .panel-inputs in portrait — cannot
+    // contain its own header, so the header's containing block is the page and
+    // it would stay pinned long after its section had scrolled away. And the
+    // camera pins its whole box rather than just a header, so it is not part
+    // of this stack at all; it IS the offset everything else starts from.
+    const own = getComputedStyle(sec);
+    if (!head || own.display === 'contents' || own.position === 'sticky') {
+      sec.classList.remove('stick');
+      continue;
+    }
+    let top = 0, depth = 0, byDocument = true;
+    for (let el = sec.parentElement; el && el !== document.body; el = el.parentElement) {
+      if (scrolls(el)) { byDocument = false; break; }
+      if (el.classList.contains('sec') && getComputedStyle(el).display !== 'contents') {
+        const h = headOf(el);
+        if (h) { top += h.getBoundingClientRect().height; depth++; }
+      }
+    }
+    if (byDocument) top += base;
+    sec.style.setProperty('--stick', `${Math.round(top)}px`);
+    // Outer scopes sit above inner ones, so the moment an inner header reaches
+    // its resting place it passes behind its parent rather than over it.
+    sec.style.setProperty('--stick-d', String(depth));
+    sec.classList.add('stick');
+  }
+}
+
+// Throw away every remembered thing about the layout and put the sections back
+// where the markup puts them.
+//
+// The arrangement persists across four keys, and none of them was reachable
+// from the UI — so an arrangement made against one build was carried into
+// every build after it, including builds that moved the section it names. Not
+// hypothetical: the inputs were regrouped under one section, and a patchbay
+// someone had once dragged into the camera column kept that home and landed
+// between Camera Input and the microphone, splitting the group it was dropped
+// into. The layout looked broken; the stored layout was just old. Clearing
+// site data was the only cure, and it takes gestures, patches and presets too.
+//
+// In place rather than by reloading: every section already records the host it
+// was born in and its authored index among that host's children, which is all
+// a reset needs, and a reload would take the camera and the audio graph down
+// with it — a heavy price for tidying the furniture.
+export function resetLayout() {
+  [KEY, ORDER_KEY, FOLD_KEY, HOME_KEY].forEach(lsDel);
+  heights = {}; order = {}; home = {}; folded = new Set();
+
+  for (const sec of document.querySelectorAll('.sec[data-sec-id]')) {
+    const birth = sec.dataset.secBirth;
+    const host = birth && document.querySelector(`[data-sec-host="${birth}"]`);
+    if (host && sec.parentElement !== host) addTo(host, sec);
+    delete sec.dataset.secMoved;
+    setFolded(sec, false);
+    // The height a fresh load would give it, not "no height" — a default IS
+    // the authored state for the few sections that declare one.
+    applyHeight(sec, DEFAULT_H[sec.dataset.secId] ?? null);
+  }
+
+  // Authored order within each host, from the indices recordBirth captured on
+  // the first pass of this load — before applyOrder had moved anything.
+  for (const host of document.querySelectorAll('[data-sec-host]')) {
+    const kids = hostSecs(host);
+    if (kids.length < 2) continue;
+    const want = kids.slice().sort((a, b) =>
+      (authored.get(a.dataset.secId) ?? 0) - (authored.get(b.dataset.secId) ?? 0));
+    let prev = null;
+    for (const el of want) {
+      if (prev) prev.after(el); else host.insertBefore(el, kids[0]);
+      prev = el;
+    }
+  }
+
+  colorSections(document);
+  applyStick(document);
+}
+
 // Enhance every section under `root`. Safe (and cheap) to call after any
 // re-render; panels that rebuild their innerHTML lose the wrappers and get
 // them back here, with their stored heights.
@@ -320,8 +451,9 @@ export function enhanceSections(root = document) {
   applyPlacement();  // …then put the moved ones back where the user left them
   applyOrder();
   wireMovable();
-  // Geometry is only settled after layout, and hues are derived from it.
-  requestAnimationFrame(() => colorSections(document));
+  // Geometry is only settled after layout, and both the hues and the sticky
+  // offsets are measured from it.
+  requestAnimationFrame(() => { colorSections(document); applyStick(document); });
 }
 
 // Position drives the hue, so anything that moves sections has to recolour —
@@ -331,7 +463,14 @@ if (typeof window !== 'undefined') {
   let t = null;
   window.addEventListener('resize', () => {
     clearTimeout(t);
-    t = setTimeout(() => { placeCamExtras(); colorSections(document); }, 120);
+    t = setTimeout(() => {
+      placeCamExtras();
+      colorSections(document);
+      // Header heights move with the breakpoints and the camera's pinned
+      // height moves with the drag handle, so the offsets are re-measured
+      // rather than kept.
+      applyStick(document);
+    }, 120);
   });
 }
 
@@ -405,10 +544,12 @@ const PORTRAIT = '(max-width: 768px)';
 function placeCamExtras() {
   const ex   = document.getElementById('cam-extras');
   const cam  = document.querySelector('.panel-cam');
-  const main = document.getElementById('main');
-  if (!ex || !cam || !main) return;
+  if (!ex || !cam) return;
   const portrait = window.matchMedia?.(PORTRAIT).matches ?? false;
-  const want = portrait ? main : cam;
+  // Out to the camera's own parent — the Inputs list — rather than to #main:
+  // the point is only to leave the sticky box, and landing beside the other
+  // three inputs keeps it inside the group it belongs to.
+  const want = portrait ? cam.parentElement : cam;
   if (ex.parentElement === want) return;
   if (portrait) cam.after(ex); else cam.appendChild(ex);
 }
@@ -442,14 +583,25 @@ function dedupe() {
   }
 }
 
-// Where a section was born — which host its markup puts it in. Recorded the
-// first time it is seen, so "dragged back to where it started" can clear the
-// stored entry instead of pinning the section there forever.
+// Where a section was born — which host its markup puts it in, and where it
+// sat among that host's siblings. Recorded the first time an id is seen, so
+// "dragged back to where it started" can clear the stored entry instead of
+// pinning the section there forever, and so a section this build ADDED can be
+// slotted in beside the neighbour it was authored next to (see `rank` below).
+//
+// The index is captured on the first pass of a page load, which runs before
+// applyOrder has touched anything — so it really is markup order. Keyed by id
+// in a module map rather than a data attribute, because a re-rendered panel
+// gets fresh elements and would otherwise re-record its position from the
+// already-reordered DOM.
+const authored = new Map();
 function recordBirth() {
   for (const host of document.querySelectorAll('[data-sec-host]')) {
-    for (const el of hostSecs(host)) {
+    hostSecs(host).forEach((el, i) => {
       if (!el.dataset.secBirth) el.dataset.secBirth = host.dataset.secHost;
-    }
+      const id = el.dataset.secId;
+      if (id && !authored.has(id)) authored.set(id, i);
+    });
   }
 }
 
@@ -475,17 +627,43 @@ export function applyOrder() {
   document.querySelectorAll('[data-sec-host]').forEach(orderHost);
 }
 
+// Rank for a section the stored order has never seen: sit it just after its
+// nearest authored predecessor that HAS a rank, or just before its nearest
+// authored successor if it was authored first. The epsilon keeps two new
+// neighbours in their authored order rather than tied.
+function inherited(el, kids) {
+  const mine = authored.get(el.dataset.secId);
+  if (!Number.isFinite(mine)) return 1e6;
+  let before = null, after = null;
+  for (const k of kids) {
+    const a = authored.get(k.dataset.secId);
+    const o = order[k.dataset.secId];
+    if (!Number.isFinite(a) || !Number.isFinite(o)) continue;
+    if (a < mine && (!before || a > before.a)) before = { a, o };
+    if (a > mine && (!after  || a < after.a))  after  = { a, o };
+  }
+  const eps = mine * 1e-6;
+  if (before) return before.o + 0.5 + eps;
+  if (after)  return after.o  - 0.5 + eps;
+  return mine;
+}
+
 function orderHost(host) {
   const kids = hostSecs(host);
   // Earlier builds wrote CSS `order`; left behind it would fight the DOM order
   // this now relies on.
   kids.forEach(el => el.style.removeProperty('order'));
   if (kids.length < 2) return;
-  // A section with no stored index keeps its markup position, after the placed
-  // ones — a host the user has never touched is left exactly as authored.
+  // A section with no stored index is one this build ADDED — the stored order
+  // predates it. It used to sort to 1e6, i.e. the bottom of its host, so every
+  // new panel was exiled to the end for anyone who had ever dragged anything
+  // in that column: the microphone ships authored above EEG Input and landed
+  // under the patchbay. Instead it inherits a rank from the sibling it was
+  // authored next to, so it appears where the markup puts it and the user's
+  // arrangement of everything else is untouched.
   const rank = el => {
     const i = order[el.dataset.secId];
-    return Number.isFinite(i) ? i : 1e6 + kids.indexOf(el);
+    return Number.isFinite(i) ? i : inherited(el, kids);
   };
   const want = kids.slice().sort((a, b) => rank(a) - rank(b));
   if (want.every((el, i) => el === kids[i])) return;

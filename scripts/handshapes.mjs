@@ -8,6 +8,22 @@
 // drift silently, and a wrong picture is worse than none: it teaches a shape
 // that will not match.
 //
+// What a wrong picture does NOT tell you, though, is which end is wrong. The
+// vector is real, but the decode below is a reading of it rather than the
+// inverse of math.js — and a feature vector is lossy, so no exact inverse
+// exists. Two failure modes look identical on screen:
+//
+//   * the decode misreads a good template  → fix pose()
+//   * the decode is faithful and the template describes the wrong hand
+//                                          → recalibrate the template
+//
+// The split that separates them is already in gesture.js: `fist`, `point`,
+// `peace` and `thumbs` are MEASURED from the reference photos in
+// tests/gesture-img and are ground truth, while the other ten carry `est`.
+// A measured shape that renders wrong is the decoder's fault, full stop. Three
+// such bugs are documented against the rules in pose() below; all three were
+// found that way.
+//
 //   node scripts/handshapes.mjs          → icons/handshapes/<id>.png
 //
 // Needs a Chromium (same CHROME fallback as the test suites) and three.js from
@@ -64,75 +80,12 @@ await page.goto(`http://127.0.0.1:${port}${RIG_PATH}`);
 const shapes = await page.evaluate(async ({ SIZE }) => {
   const THREE = await import('three');
   const { gesture } = await import('/src/gesture.js');
+  // The rig and the decode live in scripts/handrig.js, shared with
+  // tests/handshape-render so the pictures and the check that they are
+  // faithful cannot drift apart.
+  const { buildRig } = await import('/scripts/handrig.js');
 
-  // ── The rig ────────────────────────────────────────────────────────────
-  // A palm and five fingers of three segments each. Proportions are in palm
-  // lengths, the same unit math.js normalizes by, so the model is in the units
-  // the feature vector is expressed in.
-  const SKIN = new THREE.MeshStandardMaterial({
-    color: 0x9fb4c7, roughness: 0.55, metalness: 0.05,
-  });
-  const capsule = (len, r) => new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 14), SKIN);
-
-  // len/radius per finger, and where each knuckle sits across the palm.
-  const FINGERS = [
-    { key: 'index',  x: -0.26, segs: [0.34, 0.22, 0.16], r: 0.070 },
-    { key: 'middle', x: -0.09, segs: [0.38, 0.24, 0.17], r: 0.072 },
-    { key: 'ring',   x:  0.08, segs: [0.35, 0.22, 0.16], r: 0.068 },
-    { key: 'pinky',  x:  0.24, segs: [0.27, 0.17, 0.13], r: 0.058 },
-  ];
-
-  // A finger is a chain of hinges. `curl` 0 = straight, 1 = fully folded; the
-  // joints do not bend equally — the knuckle leads, which is what makes a fist
-  // read as a fist rather than a claw.
-  const JOINT_SHARE = [0.9, 1.0, 0.8];
-  function buildFinger(spec) {
-    const root = new THREE.Group();
-    let parent = root;
-    const joints = [];
-    spec.segs.forEach((len, i) => {
-      const pivot = new THREE.Group();
-      if (i > 0) pivot.position.y = spec.segs[i - 1];
-      parent.add(pivot);
-      const m = capsule(len, spec.r);
-      m.position.y = len / 2;
-      pivot.add(m);
-      joints.push(pivot);
-      parent = pivot;
-    });
-    root.userData.joints = joints;
-    return root;
-  }
-
-  const scene = new THREE.Scene();
-  const hand = new THREE.Group();
-  scene.add(hand);
-
-  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.72, 0.20), SKIN);
-  palm.geometry.translate(0, 0.36, 0);
-  hand.add(palm);
-  const wrist = capsule(0.22, 0.13);
-  wrist.position.y = -0.12;
-  hand.add(wrist);
-
-  const fingers = {};
-  for (const spec of FINGERS) {
-    const f = buildFinger(spec);
-    f.position.set(spec.x, 0.72, 0);
-    hand.add(f);
-    fingers[spec.key] = f;
-  }
-
-  // The thumb hangs off the side of the palm and needs two extra freedoms:
-  // how far it swings away from the palm (thumbOut) and how far round it
-  // reaches (spread / contacts).
-  const thumb = buildFinger({ segs: [0.26, 0.20, 0.15], r: 0.082 });
-  const thumbYaw = new THREE.Group();
-  const thumbSwing = new THREE.Group();
-  thumbYaw.position.set(-0.30, 0.18, 0.02);
-  thumbYaw.add(thumbSwing);
-  thumbSwing.add(thumb);
-  hand.add(thumbYaw);
+  const { scene, pose } = buildRig(THREE);
 
   // ── Lighting ───────────────────────────────────────────────────────────
   scene.add(new THREE.HemisphereLight(0xdfeaf5, 0x1a2230, 1.15));
@@ -152,60 +105,11 @@ const shapes = await page.evaluate(async ({ SIZE }) => {
   renderer.setClearColor(0x000000, 0);
   document.body.appendChild(renderer.domElement);
 
-  // ── Pose from the feature vector ───────────────────────────────────────
-  // f = [thumb, index, middle, ring, pinky, open, spread, thumbOut, cIdx, cMid, cRing, cPinky]
-  // The first five are EXTENSION: measured ~0.16-0.24 curled, ~0.80-0.94
-  // extended (see the reference table in gesture.js). Map that range onto a
-  // full fold rather than treating extension as a raw angle, or every shape
-  // sits at a permanent half-curl.
-  const EXT_MIN = 0.16, EXT_MAX = 0.92;
-  const curlOf = ext => {
-    const t = (ext - EXT_MIN) / (EXT_MAX - EXT_MIN);
-    return Math.min(1, Math.max(0, 1 - t));
-  };
-  const FULL_FOLD = 1.55;                       // radians at the knuckle
-
-  const setFinger = (f, curl, splay) => {
-    f.userData.joints.forEach((j, i) => { j.rotation.x = curl * FULL_FOLD * JOINT_SHARE[i]; });
-    f.rotation.z = splay;
-  };
-
-  function pose(f) {
-    const [thumbExt, iExt, mExt, rExt, pExt, , spread, thumbOut, ...contacts] = f;
-
-    const curls = [iExt, mExt, rExt, pExt].map(curlOf);
-    // Fingers fan out with spread; the outer two carry most of it.
-    const SPLAY = [1.0, 0.35, -0.35, -1.0];
-    FINGERS.forEach((spec, i) => {
-      setFinger(fingers[spec.key], curls[i], SPLAY[i] * spread * 0.30);
-    });
-
-    // Thumb. thumbOut is the dominant term — it is what separates a thumbs-up
-    // from a fist — with spread opening it further across the palm.
-    thumbYaw.rotation.z = 0.50 + thumbOut * 0.95 + spread * 0.25;
-    thumbSwing.rotation.x = -0.45 + (1 - thumbOut) * 0.30;
-    thumbYaw.rotation.y = -0.55 + thumbOut * 0.30;
-    setFinger(thumb, curlOf(thumbExt) * 0.75, 0);
-
-    // A contact means the thumb pad is touching that fingertip: curl the thumb
-    // in and bring the touched finger to meet it, which is the whole visual
-    // difference between ASL 6/7/8/9 and a plain open hand.
-    const touched = contacts.findIndex(c => c > 0.5);
-    if (touched >= 0) {
-      const spec = FINGERS[touched];
-      thumbYaw.rotation.z = 0.35 - spec.x * 0.8;
-      thumbYaw.rotation.y = -0.25;
-      thumbSwing.rotation.x = -0.95;
-      setFinger(thumb, 0.42, 0);
-      setFinger(fingers[spec.key], 0.52, 0);
-    }
-  }
-
   // ── Render every template that has one ─────────────────────────────────
   const out = [];
   for (const g of gesture.list()) {
     if (!g.f) continue;                 // no template, nothing truthful to draw
-    pose(g.f);
+    pose(g);
     renderer.render(scene, camera);
     out.push({ id: g.id, name: g.name, asl: g.asl ?? null,
                png: renderer.domElement.toDataURL('image/png') });

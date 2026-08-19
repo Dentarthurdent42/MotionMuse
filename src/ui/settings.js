@@ -12,6 +12,7 @@
 import { THEMES, getTheme, setTheme } from './theme.js';
 import { buildInfo, buildLabel }        from '../build.js';
 import { keyLabel, getBinding, setBinding, captureNextKey } from './hotkeys.js';
+import { resetLayout }               from './sections.js';
 
 let pop = null;
 
@@ -30,6 +31,16 @@ function build() {
       <button class="wave-btn" id="mute-key-btn" type="button"
               title="Click, then press the key you want. Esc cancels.">${keyLabel(getBinding('mute'))}</button>
     </label>
+    <!-- The only way back to the authored layout. Section positions, heights
+         and fold states persist across four localStorage keys, so an
+         arrangement made against one build follows you into every build after
+         it — including ones that moved the sections it names. Without this the
+         only cure is clearing site data, which also takes your gestures,
+         patches and presets with it. -->
+    <label class="set-row">LAYOUT
+      <button class="wave-btn" id="layout-reset-btn" type="button"
+              title="Put every section back where the app puts it, forgetting any you have moved, resized or collapsed. Gestures, patches and presets are untouched.">RESET</button>
+    </label>
     <!-- Which build is on screen. Here rather than only in the console because
          the question it answers — "am I looking at a cached copy?" — comes up
          most on a phone, where there is no console to check. -->
@@ -42,6 +53,19 @@ function build() {
   });
 
   el.querySelector('#theme-select').addEventListener('change', e => setTheme(e.target.value));
+
+  // Two taps, because it discards work and there is no undo — the second tap
+  // is the confirmation, and moving away from the button cancels it.
+  const resetBtn = el.querySelector('#layout-reset-btn');
+  resetBtn.addEventListener('click', () => {
+    if (resetBtn.classList.contains('on')) { resetLayout(); return; }
+    resetBtn.classList.add('on');
+    resetBtn.textContent = 'SURE?';
+  });
+  resetBtn.addEventListener('pointerleave', () => {
+    resetBtn.classList.remove('on');
+    resetBtn.textContent = 'RESET';
+  });
 
   const keyBtn = el.querySelector('#mute-key-btn');
   keyBtn.addEventListener('click', () => {

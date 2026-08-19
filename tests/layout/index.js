@@ -150,6 +150,34 @@ const sections = await page.evaluate(() => {
       }
       return seen;
     })(),
+    // A fold button has to say which state it is in. The attribute was set once
+    // at creation and then updated through a selector that matched nothing, so
+    // it read "expanded" in both states — the caret was the only signal, and a
+    // caret is not one a screen reader can see.
+    folds: (() => {
+      const bad = [];
+      for (const sec of document.querySelectorAll('.sec[data-sec-id]')) {
+        const btn = sec.querySelector(':scope > * > .sec-fold');
+        if (!btn) continue;
+        const want = String(!sec.classList.contains('folded'));
+        if (btn.getAttribute('aria-expanded') !== want) bad.push(sec.dataset.secId);
+      }
+      return bad;
+    })(),
+    // …after actually collapsing one, since every section starts expanded and
+    // a stuck "true" is indistinguishable from a correct one until then.
+    foldsAfterToggle: (() => {
+      const sec = document.querySelector('.panel-aud[data-sec-id], [data-sec-id="audio-engine"]');
+      const btn = sec?.querySelector(':scope > * > .sec-fold');
+      if (!btn) return 'no fold button on the audio engine';
+      btn.click();
+      const collapsed = sec.classList.contains('folded')
+                     && btn.getAttribute('aria-expanded') === 'false';
+      btn.click();
+      const reopened = !sec.classList.contains('folded')
+                    && btn.getAttribute('aria-expanded') === 'true';
+      return collapsed && reopened ? '' : `collapsed=${collapsed} reopened=${reopened}`;
+    })(),
     // The camera panel is sticky in portrait, and everything inside it rides
     // along. The dev-only sections must therefore live OUTSIDE it there, or
     // they sit pinned under the video occupying a screen you cannot scroll
@@ -158,12 +186,10 @@ const sections = await page.evaluate(() => {
     camExtras: (() => {
       const ex = document.getElementById('cam-extras');
       if (!ex) return null;
-      const p = ex.parentElement;
-      if (p.classList.contains('panel-cam')) return 'panel-cam';
-      // Out of the sticky panel is the point; which box it lands in beside it
-      // is not. That used to be #main and is now the camera's column.
-      if (p.id === 'main' || p.classList.contains('col')) return 'outside';
-      return p.className;
+      // Out of the sticky panel is the whole invariant; which box it lands in
+      // beside it is not, and naming the acceptable ones has now been wrong
+      // twice (it was #main, then the column, and is now the Inputs list).
+      return ex.parentElement.classList.contains('panel-cam') ? 'panel-cam' : 'outside';
     })(),
     // …and the inflation heuristic itself is off, so the authored size is what
     // ships at every zoom level rather than a per-container guess.
@@ -218,15 +244,59 @@ const sections = await page.evaluate(() => {
 // So it is measured by actually scrolling, not by reading the property.
 const camSticky = await page.evaluate(async () => {
   const cam = document.querySelector('.panel-cam');
+  const vid = document.getElementById('video-wrap');
+  const settle = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const pos = getComputedStyle(cam).position;
   const before = cam.getBoundingClientRect().top;
   window.scrollTo(0, 700);
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await settle();
   const scrolled = Math.round(window.scrollY);
   const after = cam.getBoundingClientRect().top;
+  // …and all the way down. Scrolling 700px only proves the pin survives its
+  // own column: position:sticky pins within the PARENT's box, and while the
+  // columns were blocks that box ended where the camera column did, so the
+  // picture came unstuck the moment SIGNALS began — still most of the page
+  // from the bottom, and exactly where you want to see your hands. Nothing
+  // caught it, because 700px is still inside the camera column.
+  window.scrollTo(0, document.documentElement.scrollHeight);
+  await settle();
+  const deep = Math.round(window.scrollY);
+  const atEnd = vid.getBoundingClientRect().top;
+  // Sticky nesting: walking down the page, the sections you are inside should
+  // pin at the top and stack, the way an IDE keeps the enclosing scopes on
+  // screen. Sampled across the scroll rather than at one position, because
+  // which section is pinned depends on where you stop.
+  const headOf = s => s.querySelector(':scope > .audio-section-label, :scope > .ph');
+  const camBottom = (() => {
+    if (getComputedStyle(cam).position !== 'sticky') return 0;
+    const label = cam.querySelector(':scope > .cam-label');
+    return cam.getBoundingClientRect().height - (label?.getBoundingClientRect().height ?? 0);
+  })();
+  let maxStack = 0, behindCamera = [], depths = [];
+  const span = document.documentElement.scrollHeight - window.innerHeight;
+  for (let i = 1; i <= 8; i++) {
+    window.scrollTo(0, Math.round(span * i / 9));
+    await settle();
+    const now = [];
+    for (const sec of document.querySelectorAll('.sec.stick')) {
+      const h = headOf(sec);
+      if (!h) continue;
+      const want = parseFloat(sec.style.getPropertyValue('--stick')) || 0;
+      const top = h.getBoundingClientRect().top;
+      if (Math.abs(top - want) > 1.5) continue;         // in flow, not pinned
+      now.push({ id: sec.dataset.secId, d: +(sec.style.getPropertyValue('--stick-d') || 0) });
+      // A header pinned above the camera's bottom edge is a header nobody can
+      // see: the picture is painted over it.
+      if (top < camBottom - 1.5 && !behindCamera.includes(sec.dataset.secId))
+        behindCamera.push(sec.dataset.secId);
+    }
+    if (now.length > maxStack) { maxStack = now.length; depths = now.map(n => n.d); }
+  }
   window.scrollTo(0, 0);
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await settle();
   return { pos, before: Math.round(before), after: Math.round(after), scrolled,
+           deep, atEnd: Math.round(atEnd),
+           maxStack, depths, behindCamera, camBottom: Math.round(camBottom),
            dev: document.body.classList.contains('dev') };
 });
 
@@ -293,6 +363,53 @@ const relocation = await (async () => {
 
   await page.close();
   return { fresh, rerendered, reloaded, wired, errs };
+})();
+
+// Resetting the layout has to actually undo a stored arrangement, because a
+// stored arrangement outlives the build it was made against. A patchbay someone
+// dragged into the camera column kept that home across the release that
+// regrouped the inputs, and landed between Camera Input and the microphone —
+// splitting the group it was dropped into. The layout looked broken; the
+// stored layout was just old, and there was no way to clear it short of
+// wiping site data, which takes gestures, patches and presets with it.
+const reset = await (async () => {
+  const page = await b.newPage({ viewport: { width: 430, height: 932 } });
+  const errs = [];
+  page.on('pageerror', e => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'load' });
+  await page.evaluate(() => {
+    localStorage.setItem('motionmuse-sec-home', JSON.stringify({ patchbay: 'cam' }));
+    localStorage.setItem('motionmuse-sec-folded', JSON.stringify(['signals']));
+    localStorage.setItem('motionmuse-sections', JSON.stringify({ gestures: 120 }));
+  });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(900);
+
+  const state = () => page.evaluate(() => ({
+    order: [...document.querySelectorAll('[data-sec-id]')]
+      .filter(e => e.getClientRects().length)
+      .map(e => ({ id: e.dataset.secId, y: e.getBoundingClientRect().top }))
+      .sort((a, b) => a.y - b.y).map(o => o.id).slice(0, 3).join(' '),
+    folded: !!document.querySelector('[data-sec-id="signals"]')?.classList.contains('folded'),
+    keys: ['motionmuse-sec-home', 'motionmuse-sec-order', 'motionmuse-sections']
+      .filter(k => localStorage.getItem(k) !== null).length,
+  }));
+
+  const stale = await state();
+  // Two taps: the second is the confirmation.
+  await page.click('#settings-btn, #set-btn, [title*="ettings" i]').catch(() => {});
+  await page.waitForTimeout(250);
+  await page.click('#layout-reset-btn');
+  await page.waitForTimeout(120);
+  await page.click('#layout-reset-btn');
+  await page.waitForTimeout(600);
+  const after = await state();
+  // …and it has to survive the reload, or it only looked reset.
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(900);
+  const reloaded = await state();
+  await page.close();
+  return { stale, after, reloaded, errs };
 })();
 
 // The inference HUD is dev-only, and each of its rows belongs to a model that
@@ -563,6 +680,19 @@ const check = (ok, label, detail = '') => {
 
 console.log('\nHeader layout — every breakpoint, camera off and on\n');
 
+// ── Layout reset ──
+check(reset.errs.length === 0, 'reset: no page errors', reset.errs.join(' | '));
+check(reset.stale.order === 'camera patchbay mic',
+  'reset: a stale home really does split the inputs', reset.stale.order);
+check(reset.stale.folded, 'reset: and a stale fold really does collapse a section');
+check(reset.after.order === 'camera mic patchbay',
+  'reset: RESET puts the sections back in authored order', reset.after.order);
+check(!reset.after.folded, 'reset: and reopens what was collapsed');
+check(reset.after.keys === 0, 'reset: and forgets every stored layout key',
+  `${reset.after.keys} still set`);
+check(reset.reloaded.order === 'camera mic patchbay',
+  'reset: and it survives a reload', reset.reloaded.order);
+
 for (const { width, off, on, sections, camSticky } of results) {
   const w = `${width}px`;
 
@@ -583,7 +713,9 @@ for (const { width, off, on, sections, camSticky } of results) {
   // that the panels which used to BE the columns — SIGNALS, the camera, the
   // AUDIO ENGINE — have somewhere to be dropped, and so any section can be
   // dragged out to sit beside them as a column-level panel.
-  check(sections.hosts.join(',') === 'aud,audio,cam,col-c,col-l,col-r,map,sig',
+  // `inputs` is the list inside the Inputs section that holds the four
+  // sources, so a section can be dropped among them rather than only beside.
+  check(sections.hosts.join(',') === 'aud,audio,cam,col-c,col-l,col-r,inputs,map,sig',
     `${w}: every column can receive a section`, sections.hosts.join(','));
   check(sections.inHost.length >= 12, `${w}: sections live in hosts`, `${sections.inHost.length}`);
   check(sections.noBirth.length === 0,
@@ -592,6 +724,11 @@ for (const { width, off, on, sections, camSticky } of results) {
     `${w}: every section in a host is draggable`, sections.notDraggable.join(' '));
   check(sections.unaimableHosts.length === 0,
     `${w}: every host is aimable mid-drag`, sections.unaimableHosts.join(' '));
+  check(sections.folds.length === 0,
+    `${w}: every fold button reports its state`, sections.folds.join(' '));
+  check(sections.foldsAfterToggle === '',
+    `${w}: and still reports it after collapsing and reopening`,
+    sections.foldsAfterToggle);
 
   // ── Header typography parity ──
   const hStyles = Object.keys(sections.headerStyles);
@@ -683,6 +820,20 @@ for (const { width, off, on, sections, camSticky } of results) {
     // Sticky camera, and specifically NOT gated on dev mode.
     check(camSticky.dev === false, `${w} portrait: measured outside dev mode`);
     check(camSticky.pos === 'sticky', `${w} portrait: the camera is sticky`, camSticky.pos);
+    // Enclosing sections pin and stack, and none of them hides behind the
+    // picture — a header pinned above the camera's bottom edge is a header
+    // nobody can see.
+    check(camSticky.maxStack >= 2,
+      `${w} portrait: enclosing sections stack at the top while you scroll`,
+      `${camSticky.maxStack} pinned at once, depths ${camSticky.depths.join(',')}`);
+    check(camSticky.behindCamera.length === 0,
+      `${w} portrait: and none of them pins behind the camera`,
+      camSticky.behindCamera.join(' '));
+    // The picture stays in sight for the WHOLE page, not just its own column.
+    if (camSticky.deep > camSticky.scrolled)
+      check(camSticky.atEnd >= -1 && camSticky.atEnd <= 40,
+        `${w} portrait: the camera is still pinned at the bottom of the page`,
+        `video top ${camSticky.atEnd} after ${camSticky.deep}px`);
     if (camSticky.scrolled > 0)
       check(camSticky.after <= camSticky.before + 0.5 && camSticky.after <= 1,
         `${w} portrait: the camera stays pinned while the page scrolls`,

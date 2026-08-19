@@ -47,3 +47,13 @@ export function lsGet(key) {
 export function lsSet(key, value) {
   try { localStorage.setItem(key, value); } catch { /* private mode / quota */ }
 }
+
+// Forget a key, under the current name and any legacy one — otherwise lsGet
+// would helpfully adopt the legacy copy on the very next read and undo the
+// removal.
+export function lsDel(key) {
+  try {
+    localStorage.removeItem(key);
+    for (const legacyKey of legacyNames(key)) localStorage.removeItem(legacyKey);
+  } catch { /* private mode */ }
+}
