@@ -234,10 +234,41 @@ const camSticky = await page.evaluate(async () => {
   await settle();
   const deep = Math.round(window.scrollY);
   const atEnd = vid.getBoundingClientRect().top;
+  // Sticky nesting: walking down the page, the sections you are inside should
+  // pin at the top and stack, the way an IDE keeps the enclosing scopes on
+  // screen. Sampled across the scroll rather than at one position, because
+  // which section is pinned depends on where you stop.
+  const headOf = s => s.querySelector(':scope > .audio-section-label, :scope > .ph');
+  const camBottom = (() => {
+    if (getComputedStyle(cam).position !== 'sticky') return 0;
+    const label = cam.querySelector(':scope > .cam-label');
+    return cam.getBoundingClientRect().height - (label?.getBoundingClientRect().height ?? 0);
+  })();
+  let maxStack = 0, behindCamera = [], depths = [];
+  const span = document.documentElement.scrollHeight - window.innerHeight;
+  for (let i = 1; i <= 8; i++) {
+    window.scrollTo(0, Math.round(span * i / 9));
+    await settle();
+    const now = [];
+    for (const sec of document.querySelectorAll('.sec.stick')) {
+      const h = headOf(sec);
+      if (!h) continue;
+      const want = parseFloat(sec.style.getPropertyValue('--stick')) || 0;
+      const top = h.getBoundingClientRect().top;
+      if (Math.abs(top - want) > 1.5) continue;         // in flow, not pinned
+      now.push({ id: sec.dataset.secId, d: +(sec.style.getPropertyValue('--stick-d') || 0) });
+      // A header pinned above the camera's bottom edge is a header nobody can
+      // see: the picture is painted over it.
+      if (top < camBottom - 1.5 && !behindCamera.includes(sec.dataset.secId))
+        behindCamera.push(sec.dataset.secId);
+    }
+    if (now.length > maxStack) { maxStack = now.length; depths = now.map(n => n.d); }
+  }
   window.scrollTo(0, 0);
   await settle();
   return { pos, before: Math.round(before), after: Math.round(after), scrolled,
            deep, atEnd: Math.round(atEnd),
+           maxStack, depths, behindCamera, camBottom: Math.round(camBottom),
            dev: document.body.classList.contains('dev') };
 });
 
@@ -696,6 +727,15 @@ for (const { width, off, on, sections, camSticky } of results) {
     // Sticky camera, and specifically NOT gated on dev mode.
     check(camSticky.dev === false, `${w} portrait: measured outside dev mode`);
     check(camSticky.pos === 'sticky', `${w} portrait: the camera is sticky`, camSticky.pos);
+    // Enclosing sections pin and stack, and none of them hides behind the
+    // picture — a header pinned above the camera's bottom edge is a header
+    // nobody can see.
+    check(camSticky.maxStack >= 2,
+      `${w} portrait: enclosing sections stack at the top while you scroll`,
+      `${camSticky.maxStack} pinned at once, depths ${camSticky.depths.join(',')}`);
+    check(camSticky.behindCamera.length === 0,
+      `${w} portrait: and none of them pins behind the camera`,
+      camSticky.behindCamera.join(' '));
     // The picture stays in sight for the WHOLE page, not just its own column.
     if (camSticky.deep > camSticky.scrolled)
       check(camSticky.atEnd >= -1 && camSticky.atEnd <= 40,

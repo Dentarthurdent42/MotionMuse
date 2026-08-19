@@ -304,6 +304,82 @@ function wireGrip(sec, grip, body, id) {
   });
 }
 
+// ── Sticky nesting ───────────────────────────────────────────────────────
+//
+// Section headers pin to the top of whatever scrolls them, and stack by depth
+// — the way an IDE keeps the enclosing scopes on screen while you scroll
+// through a function. Scrolled halfway down the audio engine you can see you
+// are in AUDIO ENGINE ▸ GESTURES rather than having to scroll back to find
+// out, which matters here because the sections are rearrangeable: their
+// position on screen is not a fact anyone can memorise.
+//
+// The offset cannot be a CSS constant, for three reasons the layout makes
+// unavoidable:
+//
+//   * headers are not one height. `.ph` measures 37px and
+//     `.audio-section-label` 19px at the same breakpoint, and both are used at
+//     both levels.
+//   * a section's scrollport depends on orientation and on whether anyone has
+//     dragged a height onto an ancestor. A child inside a scrolling .sec-body
+//     is scrolled by that body, where its parent's header is already outside
+//     the view — so counting that parent would leave a gap the size of a
+//     header, every time.
+//   * in portrait the camera pins its whole box at the top of the document, so
+//     anything the document scrolls has to start below the picture rather than
+//     underneath it.
+//
+// So it is measured: walk up until something scrolls, adding the header height
+// of every section box passed on the way. Only on refresh and resize — never
+// on scroll, which is what keeps this free.
+const scrolls = el => {
+  const cs = getComputedStyle(el);
+  if (cs.display === 'contents') return false;   // generates no scrollport
+  return cs.overflowY === 'auto' || cs.overflowY === 'scroll';
+};
+
+// How much of the camera is pinned over the document, if it is pinned at all.
+// Its own label is deliberately scrolled off (a negative sticky offset), so it
+// is the panel minus that label.
+function camPin() {
+  const cam = document.querySelector('.panel-cam');
+  if (!cam || getComputedStyle(cam).position !== 'sticky') return 0;
+  const label = cam.querySelector(':scope > .cam-label');
+  const h = cam.getBoundingClientRect().height
+          - (label?.getBoundingClientRect().height ?? 0);
+  return Math.max(0, h);
+}
+
+export function applyStick(root = document) {
+  const base = camPin();
+  for (const sec of root.querySelectorAll('.sec[data-sec-id]')) {
+    const head = headOf(sec);
+    // A section that generates no box — .panel-inputs in portrait — cannot
+    // contain its own header, so the header's containing block is the page and
+    // it would stay pinned long after its section had scrolled away. And the
+    // camera pins its whole box rather than just a header, so it is not part
+    // of this stack at all; it IS the offset everything else starts from.
+    const own = getComputedStyle(sec);
+    if (!head || own.display === 'contents' || own.position === 'sticky') {
+      sec.classList.remove('stick');
+      continue;
+    }
+    let top = 0, depth = 0, byDocument = true;
+    for (let el = sec.parentElement; el && el !== document.body; el = el.parentElement) {
+      if (scrolls(el)) { byDocument = false; break; }
+      if (el.classList.contains('sec') && getComputedStyle(el).display !== 'contents') {
+        const h = headOf(el);
+        if (h) { top += h.getBoundingClientRect().height; depth++; }
+      }
+    }
+    if (byDocument) top += base;
+    sec.style.setProperty('--stick', `${Math.round(top)}px`);
+    // Outer scopes sit above inner ones, so the moment an inner header reaches
+    // its resting place it passes behind its parent rather than over it.
+    sec.style.setProperty('--stick-d', String(depth));
+    sec.classList.add('stick');
+  }
+}
+
 // Enhance every section under `root`. Safe (and cheap) to call after any
 // re-render; panels that rebuild their innerHTML lose the wrappers and get
 // them back here, with their stored heights.
@@ -321,8 +397,9 @@ export function enhanceSections(root = document) {
   applyPlacement();  // …then put the moved ones back where the user left them
   applyOrder();
   wireMovable();
-  // Geometry is only settled after layout, and hues are derived from it.
-  requestAnimationFrame(() => colorSections(document));
+  // Geometry is only settled after layout, and both the hues and the sticky
+  // offsets are measured from it.
+  requestAnimationFrame(() => { colorSections(document); applyStick(document); });
 }
 
 // Position drives the hue, so anything that moves sections has to recolour —
@@ -332,7 +409,14 @@ if (typeof window !== 'undefined') {
   let t = null;
   window.addEventListener('resize', () => {
     clearTimeout(t);
-    t = setTimeout(() => { placeCamExtras(); colorSections(document); }, 120);
+    t = setTimeout(() => {
+      placeCamExtras();
+      colorSections(document);
+      // Header heights move with the breakpoints and the camera's pinned
+      // height moves with the drag handle, so the offsets are re-measured
+      // rather than kept.
+      applyStick(document);
+    }, 120);
   });
 }
 

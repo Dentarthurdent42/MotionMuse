@@ -1523,6 +1523,19 @@ body.reordering [data-sec-host].drop-into {
   background-image: linear-gradient(90deg,
     oklch(var(--accent-l) var(--accent-c) var(--hue, 275) / 0.13), transparent 70%);
 }
+/* Sticky nesting: a section header pins to the top of whatever scrolls it,
+   offset by the headers of the sections it sits inside (measured in
+   sections.js — see applyStick). The background is already opaque, which is
+   what lets a pinned header sit over its own content. */
+.sec.stick > .audio-section-label,
+.sec.stick > .ph {
+  position: sticky;
+  top: var(--stick, 0px);
+  /* Under the pinned camera (z 30), which is the one thing that outranks a
+     header, and above the section content a header pins over. */
+  z-index: calc(12 - var(--stick-d, 0));
+}
+
 .sec > .sec-body { min-height: 0; }
 /* A section that is a whole column fills it; one with an explicit height keeps
    exactly that height instead of being stretched by the flex parent. */
@@ -1858,6 +1871,20 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   /* No box to hang it off, and nothing to resize while the children are laid
      out by the column. */
   .panel-inputs > .sec-grip { display: none; }
+
+  /* A panel body carries `overflow-y: auto` so it can scroll inside a column
+     — but in portrait there are no columns, the panel is height:auto, and the
+     declaration only establishes a scrollport that can never scroll. A sticky
+     header inside one resolves against THAT, so it could never pin: the
+     nested sections simply scrolled away under the camera. Bodies that a
+     height was actually dragged onto keep theirs (.sec-scroll). */
+  .panel.sec > .sec-body:not(.sec-scroll) { overflow: visible; }
+  /* Same for the camera's extras box. It scrolls on its own in landscape so a
+     section dropped into it cannot grow the panel that is pinned to the top of
+     the screen — but in portrait it is hoisted OUT of that panel, so the
+     reason is gone and all the declaration leaves behind is a scrollport that
+     pinned MODELS at its top, which is underneath the picture. */
+  #cam-extras { overflow: visible; }
 
   .panel-cam {
     position: sticky;
