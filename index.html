@@ -113,14 +113,15 @@
 
     <!-- Input source (camera) -->
     <div class="panel panel-cam" data-sec="camera">
-      <!-- Reads as a section label, like EEG Input and EMG Input beneath it:
-           these are three input sources and "CV" named one of them in jargon
-           while the other two spelled themselves out. The .src-tabs element
-           stays because resize.js measures it into --src-tabs-h, which is the
-           offset the portrait sticky camera pins itself by. -->
-      <div class="src-tabs">
-        <div class="src-tab active">Camera Input</div>
-      </div>
+      <!-- The SAME element EEG Input, EMG Input and Microphone Input use.
+           This was a one-tab .src-tabs strip left over from when EEG and EMG
+           were tabs here: renaming "CV" to "Camera Input" made the words match
+           while the box still read as a tab strip from another design — cyan
+           fill, title case, edge to edge — next to three plain section labels.
+           Four input sources, one header component.
+           resize.js measures this into --cam-label-h, the offset the portrait
+           sticky camera pins itself by. -->
+      <div class="audio-section-label cam-label">Camera Input</div>
 
       <div id="video-wrap">
         <video id="video" autoplay playsinline muted></video>

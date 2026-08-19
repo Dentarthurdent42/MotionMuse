@@ -136,7 +136,7 @@ function sectionId(sec, head) {
 }
 
 const headOf = sec =>
-  sec.querySelector(':scope > .audio-section-label, :scope > .ph, :scope > .src-tabs');
+  sec.querySelector(':scope > .audio-section-label, :scope > .ph');
 
 // The bottom fade says "there is more below". It has to lift when you reach the
 // end, or a fully-scrolled list looks like it still has hidden content.
@@ -442,14 +442,25 @@ function dedupe() {
   }
 }
 
-// Where a section was born — which host its markup puts it in. Recorded the
-// first time it is seen, so "dragged back to where it started" can clear the
-// stored entry instead of pinning the section there forever.
+// Where a section was born — which host its markup puts it in, and where it
+// sat among that host's siblings. Recorded the first time an id is seen, so
+// "dragged back to where it started" can clear the stored entry instead of
+// pinning the section there forever, and so a section this build ADDED can be
+// slotted in beside the neighbour it was authored next to (see `rank` below).
+//
+// The index is captured on the first pass of a page load, which runs before
+// applyOrder has touched anything — so it really is markup order. Keyed by id
+// in a module map rather than a data attribute, because a re-rendered panel
+// gets fresh elements and would otherwise re-record its position from the
+// already-reordered DOM.
+const authored = new Map();
 function recordBirth() {
   for (const host of document.querySelectorAll('[data-sec-host]')) {
-    for (const el of hostSecs(host)) {
+    hostSecs(host).forEach((el, i) => {
       if (!el.dataset.secBirth) el.dataset.secBirth = host.dataset.secHost;
-    }
+      const id = el.dataset.secId;
+      if (id && !authored.has(id)) authored.set(id, i);
+    });
   }
 }
 
@@ -475,17 +486,43 @@ export function applyOrder() {
   document.querySelectorAll('[data-sec-host]').forEach(orderHost);
 }
 
+// Rank for a section the stored order has never seen: sit it just after its
+// nearest authored predecessor that HAS a rank, or just before its nearest
+// authored successor if it was authored first. The epsilon keeps two new
+// neighbours in their authored order rather than tied.
+function inherited(el, kids) {
+  const mine = authored.get(el.dataset.secId);
+  if (!Number.isFinite(mine)) return 1e6;
+  let before = null, after = null;
+  for (const k of kids) {
+    const a = authored.get(k.dataset.secId);
+    const o = order[k.dataset.secId];
+    if (!Number.isFinite(a) || !Number.isFinite(o)) continue;
+    if (a < mine && (!before || a > before.a)) before = { a, o };
+    if (a > mine && (!after  || a < after.a))  after  = { a, o };
+  }
+  const eps = mine * 1e-6;
+  if (before) return before.o + 0.5 + eps;
+  if (after)  return after.o  - 0.5 + eps;
+  return mine;
+}
+
 function orderHost(host) {
   const kids = hostSecs(host);
   // Earlier builds wrote CSS `order`; left behind it would fight the DOM order
   // this now relies on.
   kids.forEach(el => el.style.removeProperty('order'));
   if (kids.length < 2) return;
-  // A section with no stored index keeps its markup position, after the placed
-  // ones — a host the user has never touched is left exactly as authored.
+  // A section with no stored index is one this build ADDED — the stored order
+  // predates it. It used to sort to 1e6, i.e. the bottom of its host, so every
+  // new panel was exiled to the end for anyone who had ever dragged anything
+  // in that column: the microphone ships authored above EEG Input and landed
+  // under the patchbay. Instead it inherits a rank from the sibling it was
+  // authored next to, so it appears where the markup puts it and the user's
+  // arrangement of everything else is untouched.
   const rank = el => {
     const i = order[el.dataset.secId];
-    return Number.isFinite(i) ? i : 1e6 + kids.indexOf(el);
+    return Number.isFinite(i) ? i : inherited(el, kids);
   };
   const want = kids.slice().sort((a, b) => rank(a) - rank(b));
   if (want.every((el, i) => el === kids[i])) return;

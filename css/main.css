@@ -409,7 +409,7 @@ body:not(.dev) .uc-feature { display: none !important; }
 /* Visible keyboard focus for every interactive element. */
 a:focus-visible, button:focus-visible, select:focus-visible,
 input:focus-visible, [tabindex]:focus-visible, .wave-btn:focus-visible,
-.src-tab:focus-visible, .sig-row:focus-visible {
+.sig-row:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }
@@ -418,49 +418,20 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
 
-/* ── Source tabs ─────────────────────────────────────────── */
-.src-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-/* Matched to .audio-section-label: same size, tracking and left-aligned
-   padding, so the camera's header sits in the same visual row as EEG Input and
-   EMG Input rather than looking like a tab strip from another design. */
-.src-tab {
-  flex: 1;
-  padding: 5px 10px;
-  text-align: left;
-  font-size: 10px;
-  letter-spacing: 2px;
-  color: var(--dim);
-  border-right: 1px solid var(--border);
-  cursor: pointer;
-  transition: color 0.15s, background 0.15s;
-}
-.src-tab:last-child { border-right: none; }
-.src-tab.active { color: var(--cyan); background: var(--cyan-dim); }
-.src-tab.future {
-  color: var(--border2);
-  cursor: default;
-  font-style: italic;
-  position: relative;
-}
-.src-tab.future::after {
-  content: attr(data-soon);
-  position: absolute;
-  bottom: 100%; left: 50%;
-  transform: translateX(-50%);
-  background: var(--panel);
-  border: 1px solid var(--border2);
-  padding: 2px 6px;
-  font-size: 8px;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s;
-}
-.src-tab.future:hover::after { opacity: 1; }
+/* ── Camera header ───────────────────────────────────────
+   The camera used to carry a one-tab .src-tabs strip — cyan fill, title case,
+   full-bleed — while EEG Input, EMG Input and Microphone Input beside it used
+   .audio-section-label. Four input sources, two header components, and the odd
+   one out was the source that actually works. The strip is gone; the camera
+   now uses the same label, and .sec > .audio-section-label dresses it exactly
+   like every other section header.
+
+   The one deviation: no bottom margin. Every other section wants air between
+   its header and its content; the camera wants the picture flush, and the
+   portrait sticky offset is measured from this box (--cam-label-h in
+   resize.js), so a margin would leave a sliver of label pinned on screen. */
+.cam-label { margin-bottom: 0; padding: 5px 10px; }
+
 /* Persistent "under construction" marker — visible at a glance, not just on hover. */
 .src-tab-wip { margin-left: 3px; font-size: 8px; opacity: 0.85; font-style: normal; }
 
@@ -1831,18 +1802,18 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
      controls below it. This is an instrument you play by moving in front of a
      camera, so losing sight of the camera while you reach for a control is
      backwards; the grip below it is there for when the height is in the way. */
-  /* The video pins; the CV strip above it does not. It has to be the PANEL
+  /* The video pins; the label above it does not. It has to be the PANEL
      that is sticky — a sticky element can only stick inside its own parent's
      box, and #video-wrap's parent is this short panel, so sticking the video
      directly let it scroll away the moment the panel did.
      
-     The negative offset is what excludes the strip: the panel pins its top
-     edge one strip-height ABOVE the viewport, so the CV label slides off and
-     the picture lands flush at 0. --src-tabs-h is measured and written by
-     resize.js, since the strip's height moves with the font-size breakpoints. */
+     The negative offset is what excludes the label: the panel pins its top
+     edge one label-height ABOVE the viewport, so the label slides off and
+     the picture lands flush at 0. --cam-label-h is measured and written by
+     resize.js, since the label's height moves with the font-size breakpoints. */
   .panel-cam {
     position: sticky;
-    top: calc(-1 * var(--src-tabs-h, 27px));
+    top: calc(-1 * var(--cam-label-h, 27px));
     z-index: 30;
     background: var(--panel);
     box-shadow: var(--shadow-lg);
@@ -1904,7 +1875,6 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   .mapper-thead span:nth-child(6) { grid-row: 1; grid-column: 7; }
 
   /* Touch-friendly targets (≥44 px) */
-  .src-tab  { padding: 10px 0; }
   .sig-row  { padding: 8px 10px; }
   .map-row  { padding: 8px 10px; }
   .wave-btn { padding: 8px 0; }
@@ -1975,9 +1945,6 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
 
   .uc-badge { font-size: 9px; padding: 2px 5px; }
 
-  /* Source tabs */
-  .src-tab { padding: 8px 0; font-size: 11px; }
-  .src-tab.future::after { font-size: 10px; padding: 3px 8px; }
   .src-tab-wip { font-size: 10px; }
 
   /* Camera */
