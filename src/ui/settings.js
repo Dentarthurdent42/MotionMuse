@@ -10,6 +10,7 @@
 // the sound.
 
 import { THEMES, getTheme, setTheme } from './theme.js';
+import { buildInfo, buildLabel }        from '../build.js';
 import { keyLabel, getBinding, setBinding, captureNextKey } from './hotkeys.js';
 
 let pop = null;
@@ -28,8 +29,17 @@ function build() {
     <label class="set-row">MUTE KEY
       <button class="wave-btn" id="mute-key-btn" type="button"
               title="Click, then press the key you want. Esc cancels.">${keyLabel(getBinding('mute'))}</button>
-    </label>`;
+    </label>
+    <!-- Which build is on screen. Here rather than only in the console because
+         the question it answers — "am I looking at a cached copy?" — comes up
+         most on a phone, where there is no console to check. -->
+    <div class="set-build" id="set-build" title="The deployed build this page is running. If it does not match what you just deployed, you are on a cached copy.">build …</div>`;
   document.body.appendChild(el);
+
+  buildInfo().then(b => {
+    const out = el.querySelector('#set-build');
+    if (out) out.textContent = `build ${buildLabel(b)}`;
+  });
 
   el.querySelector('#theme-select').addEventListener('change', e => setTheme(e.target.value));
 

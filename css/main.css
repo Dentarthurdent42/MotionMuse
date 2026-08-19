@@ -1053,13 +1053,45 @@ option { background: var(--panel); }
 /* Handshape illustration. Fixed box whether or not there is a picture, so the
    names still line up down the column — a custom shape has no render, and a
    ragged left edge would be a worse trade than a little empty space. */
+/* The wrapper carries the DEV gate and positions the 🚧 marker; the img keeps
+   the box. Outside DEV the whole thing is display:none via .uc-feature, and the
+   row simply gives the name more width. */
+.gesture-pic-wrap {
+  position: relative;
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  line-height: 0;
+}
 .gesture-pic {
-  width: 34px; height: 34px; flex-shrink: 0;
+  width: 34px; height: 34px;
   object-fit: contain;
   border-radius: 3px;
   background: color-mix(in oklab, var(--faint) 70%, transparent);
+  /* Dimmed, because these renders are not yet trustworthy: several do not
+     match the handshape they are filed under. Legible enough to audit, not
+     confident enough to be read as documentation. */
+  opacity: 0.55;
+}
+/* Amber corner marker, matching .uc-badge's colour language elsewhere. */
+.gesture-pic-wip {
+  position: absolute;
+  right: 0; bottom: 0;
+  font-size: 9px; line-height: 1;
+  pointer-events: none;
 }
 .gesture-pic-none { background: none; }
+
+/* Build stamp in the settings popover. Deliberately quiet — it is diagnostic,
+   not a control — but selectable, so it can be pasted into a bug report. */
+.set-build {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  user-select: text;
+}
 /* What a handshape plays in Chord Mode, shown on the row that defines it.
    Reads as a chip rather than more text so it does not compete with the name,
    and RELEASE is amber because it is the one that stops sound rather than

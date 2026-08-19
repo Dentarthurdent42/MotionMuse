@@ -25,6 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Records the commit into build.json so the running app can report which
+      # deploy it is. Generated here rather than committed: it describes a
+      # deploy, not the source.
+      - name: Stamp the build
+        run: node scripts/stamp.mjs
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3

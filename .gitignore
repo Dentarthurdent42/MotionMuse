@@ -6,3 +6,7 @@ test-results/
 # large models for the optional gesture-image + pose-bench tests (auto/manually fetched)
 tests/gesture-img/hand_landmarker.task
 tests/pose-bench/models/
+
+# Written at deploy time by scripts/stamp.mjs — a property of a deploy,
+# not of the source.
+build.json

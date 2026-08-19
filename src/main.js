@@ -2,6 +2,7 @@ import { cvSource }                        from './cv.js';
 import { depthSource }                      from './depth.js';
 import { faceSource }                       from './face.js';
 import { micSource }                        from './mic.js';
+import { buildInfo, buildLabel }            from './build.js';
 import { engine }                           from './engine.js';
 import { mapper, trackersFor }              from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
@@ -466,3 +467,10 @@ const shaderHost = document.getElementById('shader-host');
 if (shaderHost) { shaderHost.innerHTML = shaderSectionHTML(); wireShaderSection(); }
 enhanceSections();        // wrap every section: own container, scroller, resize grip
 loop();
+
+// Say which build this is, once, on startup. The cheapest possible answer to
+// "am I running a cached version?" — and the only one available on a phone
+// without opening a console, short of the line in the settings popover.
+buildInfo().then(b => console.info(
+  `%cMotionMuse%c build ${buildLabel(b)}${b.source === 'header' ? ' (from Last-Modified; no build.json)' : ''}`,
+  'color:#00e5cc;font-weight:600', 'color:inherit'));
