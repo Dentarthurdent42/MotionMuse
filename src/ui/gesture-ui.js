@@ -60,14 +60,28 @@ export function gestureSections() {
     const tag = g.est
       ? `<span class="gesture-tag est" title="Estimated template — calibrate it on your own hand">est</span>`
       : (g.builtin ? '' : `<span class="gesture-tag">custom</span>`);
-    // Illustration, where one exists. Rendered from this template's own feature
-    // vector (scripts/handshapes.mjs), so it shows the shape the matcher is
-    // actually looking for rather than an artist's idea of it. A custom shape
-    // the user recorded has no render and simply shows none — the row still
-    // reads, and an approximate stand-in would be a lie about which shape it is.
+    // Illustration — DEV ONLY, and under construction.
+    //
+    // These are rendered from each template's own feature vector
+    // (scripts/handshapes.mjs) on the theory that a picture derived from the
+    // data cannot disagree with it. The theory outran the rig: most of the
+    // renders do not currently show the shape they claim to, because the
+    // procedural hand's thumb placement and contact handling are cruder than
+    // the templates they are posed from.
+    //
+    // A wrong picture is worse than no picture — it teaches a handshape that
+    // will not match — so they are behind `uc-feature` (DEV) rather than shown
+    // to players. They stay VISIBLE inside DEV, badged, precisely so the wrong
+    // ones can be identified and the rig fixed against them; hiding them would
+    // make that impossible.
     const pic = g.builtin && g.f
-      ? `<img class="gesture-pic" src="icons/handshapes/${g.id}.png" alt="" width="34" height="34" loading="lazy">`
-      : '<span class="gesture-pic gesture-pic-none" aria-hidden="true"></span>';
+      ? `<span class="gesture-pic-wrap uc-feature">
+           <img class="gesture-pic" src="icons/handshapes/${g.id}.png" alt=""
+                width="34" height="34" loading="lazy">
+           <span class="gesture-pic-wip" aria-hidden="true"
+                 title="Under construction — this render may not match the handshape it is labelled with">🚧</span>
+         </span>`
+      : '<span class="gesture-pic-wrap gesture-pic-none uc-feature" aria-hidden="true"></span>';
     return `
     <div class="gesture-row" data-gid="${g.id}" title="${label}${g.builtin ? ' (built-in)' : ''}">
       <span class="gesture-dot" id="gdot-${g.id}"></span>
