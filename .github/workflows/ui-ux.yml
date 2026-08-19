@@ -5,9 +5,21 @@ on:
     branches: [main]
   pull_request:
 
+# One run per ref. Pushing again supersedes the previous run instead of
+# leaving it racing the new one for a runner — which also means a stalled run
+# is cleared by the next push rather than dangling.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ui-ux:
     runs-on: ubuntu-latest
+    # This job takes ~2 minutes. Twice in one evening it hung in the Playwright
+    # browser install and sat in_progress for over an hour, which reports as a
+    # check that never resolves — indistinguishable, from the PR, from one that
+    # is merely slow. Fail fast instead, so a stall is visibly a stall.
+    timeout-minutes: 15
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
