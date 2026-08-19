@@ -101,6 +101,11 @@ export function initUicontrol() {
       case 'tap':
         flash = { x: ev.x, y: ev.y, t: performance.now() };
         break;
+      case 'unarmed-pinch':
+        toast(ev.lone
+          ? 'That hand is not armed yet — hold it up, open, for a second to arm it'
+          : 'That hand is not armed yet — CLAP, then hold it up to arm it');
+        break;
       case 'panic':
         toast('Hand cursor disarmed');
         break;
@@ -128,27 +133,47 @@ export function initUicontrol() {
   syncBtn();
 }
 
-// One ring: the cursor. Shrinks and brightens while pinched; dashed while a
-// ghost/probation grip is still proving itself.
-function drawRing(x, y, { pinched, ghost, armed }) {
-  const r = pinched ? 10 : 15;
+// Every ring is drawn twice: a dark halo first, then the bright stroke over
+// it. The cursor lands on whatever the app happens to show — a near-black
+// panel, a white keyboard, a lit camera frame — and a single thin stroke in
+// one colour is legible on some of those and invisible on the rest. The halo
+// makes it read on all of them, which is the same reason subtitles are
+// outlined.
+function ring(x, y, r, color, width, { dash = null, glow = false } = {}) {
   ctx.save();
-  ctx.lineWidth = pinched ? 3.5 : 2.5;
-  ctx.strokeStyle = armed ? cols.ring : cols.warn;
-  if (ghost) ctx.setLineDash([4, 4]);
-  if (pinched && !reduced) {
-    ctx.shadowColor = cols.ring;
-    ctx.shadowBlur = 12;
+  ctx.setLineDash(dash ?? []);
+  ctx.lineWidth = width + 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  if (glow && !reduced) { ctx.shadowColor = color; ctx.shadowBlur = 14; }
+  ctx.lineWidth = width;
+  ctx.strokeStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+// The armed cursor. Bright, thick, and unmistakably different from the idle
+// ring — the two used to differ only in radius and alpha, which is how a
+// cursor that was never armed passed for a working one.
+function drawRing(x, y, { pinched, ghost }) {
+  const r = pinched ? 11 : 16;
+  ring(x, y, r, cols.ring, pinched ? 5 : 3.5,
+       { dash: ghost ? [4, 4] : null, glow: pinched });
+  // A pinched cursor fills, so "pressed" is a change in mass, not a hairline.
+  if (pinched) {
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = cols.ring;
+    ctx.beginPath(); ctx.arc(x, y, r - 3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.stroke();
   // A dot pins the exact point so the ring can breathe without ambiguity.
-  ctx.setLineDash([]);
-  ctx.fillStyle = ctx.strokeStyle;
-  ctx.beginPath();
-  ctx.arc(x, y, 2, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.save();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+  ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
@@ -213,21 +238,22 @@ export function updateUicOverlay() {
     const h = v.hands[s];
     if (!h.present || h.armed) continue;
     const p = pxOf(h);
-    ctx.save();
-    ctx.globalAlpha = 0.35;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = cols.ring;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 9, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
+    // Dashed and amber: "seen, not armed". It must be visible enough to prove
+    // tracking works and different enough that it is never mistaken for a
+    // cursor that can click.
+    ring(p.x, p.y, 9, cols.warn, 2, { dash: [3, 3] });
   }
   if (!hintDone && anyPresent && !v.window && !v.hands.L.armed && !v.hands.R.armed) {
     const now = performance.now();
     if (!hintShownAt) hintShownAt = now;
     if (now - hintShownAt < 10000) {
-      drawPrompt('CLAP — PALMS TOGETHER, FINGERS UP — TO ARM THE CURSOR',
-                 `or press ${keyLabel(getBinding('cursor'))} / the 🖐 button`);
+      // Telling someone to clap when only one of their hands is in frame is
+      // an instruction they cannot follow — and with a tablet held in the
+      // other hand, that is the normal case, not the edge case.
+      drawPrompt(v.lone
+        ? 'HOLD YOUR HAND UP, OPEN, TO ARM THE CURSOR'
+        : 'CLAP — PALMS TOGETHER, FINGERS UP — TO ARM THE CURSOR',
+        `or press ${keyLabel(getBinding('cursor'))} / the 🖐 button`);
     } else {
       hintDone = true;
     }

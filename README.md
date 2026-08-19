@@ -794,14 +794,23 @@ their alignment at any screen shape.
 ## Hand cursor (drive the UI by hand)
 
 Enable **HAND CURSOR** in ⚙ settings and the app itself becomes playable by
-hand: **clap** (palms together, fingers up, from apart), then hold up the
-hand(s) you want inside the short window that opens — each one becomes an
+hand. With **both hands in view**: **clap** (palms together, fingers up, from
+apart), then hold up the hand(s) you want inside the short window that opens — each one becomes an
 on-screen cursor and **stops playing the instrument** until you toggle it
 back the same way. The other hand keeps playing; this is how you change a
 patch mid-performance without touching the machine.
 
+With **only one hand in view** — a tablet held in the other hand, say — a
+clap is impossible, so holding that hand up, open, for about a second arms it
+on its own. Which case you are in is read from what the camera actually sees,
+not from the ✋ L/R toggles: both toggles are normally on, so trusting them
+meant a one-handed setup could never arm at all.
+
 The state is always visible: the 🖐 button reads **READY** while enabled and
-**ARMED** once a hand is a cursor, every tracked hand carries a faint ring
+**ARMED** once a hand is a cursor, an armed cursor is a bright filled ring
+while a merely-tracked hand gets a dashed amber one (both drawn over a dark
+halo so they read against the camera picture, a white keyboard or a black
+panel alike), pinching an unarmed hand says so rather than doing nothing, every tracked hand carries a faint ring
 before arming (so "listening" never looks like "off"), a one-time hint names
 the clap, and a clap that *almost* qualified is told which condition it
 missed ("fingers weren't up", "start with your hands apart") rather than

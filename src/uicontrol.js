@@ -102,8 +102,9 @@ export const UIC = {
   RAISE_Y:    0.50,            // hand height (1 = top of frame) — mid-frame is
                                // enough; a hand raised high crops out of view
   RAISE_OPEN: 0.70,            // openness
-  SINGLE_DWELL: 1200,          // one-hand-tracked fallback: long raised hold
+  SINGLE_DWELL: 1200,          // one-hand fallback: long raised hold to toggle
   SINGLE_COOLDOWN: 2000,
+  LONE_MS: 1500,               // only one hand seen this recently = alone
   DOUBLE_CLAP_MS: 1200,        // second clap inside this = cancel (stage: sweep)
   HOLD_AFTER_CLAP: 400,        // both hands claimed briefly so the landing
                                // drains through the decay path, not the synth
@@ -540,6 +541,7 @@ export const uicontrol = (() => {
   let sel = null;            // active selection window, or null
   let lastClapT = 0;
   let lastMissT = 0;         // near-miss coaching rate limit
+  let lastUnarmedT = 0;      // "you pinched an unarmed hand" rate limit
   let holdBothUntil = 0;     // post-clap claim of both hands
   let singleDwell = 0;       // one-hand fallback arming accumulator
   let singleCoolUntil = 0;
@@ -550,6 +552,17 @@ export const uicontrol = (() => {
   const watchers = [];
 
   const emit = ev => watchers.forEach(fn => { try { fn(ev); } catch { /* not fatal */ } });
+
+  // The hand to arm when there is only one to choose from: whichever side is
+  // actually in frame on its own, or the one side the trackers are set to.
+  const seen = (s, now) =>
+    hands[s].present && now - hands[s].lastT < UIC.LONE_MS;
+  const loneHand = now => {
+    const hinted = singleSide();
+    if (hinted) return hinted;
+    const L = seen('L', now), R = seen('R', now);
+    return L !== R ? (L ? 'L' : 'R') : null;
+  };
 
   const setArmed = (s, on) => {
     if (armed[s] === on) return;
@@ -622,8 +635,11 @@ export const uicontrol = (() => {
       if (stageActive) return true;
       if (!cfg.enabled) return false;
       if (armed.L || armed.R) return true;
+      // Both hands up = a clap may be coming, and that is exactly when the
+      // sampling rate matters. `seen` rather than a bare recency check: a
+      // hand that has never been fed must not read as present.
       const now = performance.now();
-      return now - hands.L.lastT < 1500 && now - hands.R.lastT < 1500;
+      return seen('L', now) && seen('R', now);
     },
 
     // The fullscreen stage: both hands become cursors (and are claimed from
@@ -720,9 +736,16 @@ export const uicontrol = (() => {
           if (sel && sel.until === 0) { sel = null; emit({ type: 'window', open: false }); }
         }
       } else {
-        // One-hand fallback: a clap is impossible with a single tracker on,
-        // so a long raised-open dwell toggles that hand instead.
-        const only = singleSide();
+        // One-hand fallback: a clap needs two hands, so when only one is
+        // available a long raised-open dwell toggles that hand instead.
+        //
+        // "Available" has to mean what the CAMERA sees, not what the tracking
+        // toggles say. Keying this off the toggles made arming impossible in
+        // the most ordinary setup there is — a tablet held in one hand, both
+        // toggles on, one hand permanently out of frame: no clap was possible
+        // and the fallback never engaged, so the cursor could never be armed
+        // at all while its idle ring cheerfully followed the free hand.
+        const only = loneHand(now);
         if (only && now > singleCoolUntil) {
           const h = hands[only];
           const up = h.present && now - h.lastT < UIC.STALE_MS
@@ -745,6 +768,15 @@ export const uicontrol = (() => {
         const h = hands[s];
         if (!armed[s] && !stageActive) {
           if (h.pinch.pinched) dropGrip(s);
+          // Pinching a hand that is not armed does nothing at all, and the
+          // idle ring following that hand is a strong suggestion that it
+          // should. Say so rather than letting it read as a broken click.
+          if (h.present && now - h.lastT < UIC.STALE_MS && h.m
+              && h.m.r < UIC.PINCH_ENTER_PROFILE
+              && now - lastUnarmedT > UIC.MISS_TOAST_MS) {
+            lastUnarmedT = now;
+            emit({ type: 'unarmed-pinch', side: s, lone: loneHand(now) === s });
+          }
           continue;
         }
         if (!h.present || now - h.lastT > UIC.STALE_MS) {
@@ -825,6 +857,7 @@ export const uicontrol = (() => {
         hands: hs,
         window: sel ? { until: sel.until, dwell: { ...sel.dwell }, now } : null,
         singleDwell,
+        lone: loneHand(now),        // the hand a one-handed raise would arm
       };
     },
   };
