@@ -169,7 +169,8 @@ export function updateUicOverlay() {
   if (!ctx) return;
   const v = uicontrol.view();
   // Cheap no-op unless the modality is actually doing something visible.
-  if (!v.enabled || (!v.armed.L && !v.armed.R && !v.window && !v.singleDwell)) {
+  // (hands[s].armed already includes the stage, where every hand is a cursor.)
+  if (!v.enabled || (!v.hands.L.armed && !v.hands.R.armed && !v.window && !v.singleDwell)) {
     if (cv.__drawn) { ctx.clearRect(0, 0, cv.width, cv.height); cv.__drawn = false; }
     return;
   }
@@ -180,7 +181,7 @@ export function updateUicOverlay() {
 
   // Hover highlight behind the rings.
   for (const s of ['L', 'R']) {
-    if (!v.armed[s]) continue;
+    if (!v.hands[s].armed) continue;
     const d = driverView(s);
     if (d.hoverRect && !d.gripping) {
       const r = d.hoverRect;
@@ -220,7 +221,7 @@ export function updateUicOverlay() {
   // The cursors themselves.
   for (const s of ['L', 'R']) {
     const h = v.hands[s];
-    if (!v.armed[s] || !h.present) continue;
+    if (!h.armed || !h.present) continue;
     const p = pxOf(h);
     drawRing(p.x, p.y, h);
   }

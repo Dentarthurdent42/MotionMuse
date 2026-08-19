@@ -32,6 +32,7 @@ import { shouldOfferStart, openStartPicker } from './ui/firstrun.js';
 import { uicontrol }                        from './uicontrol.js';
 import { initUidriver }                     from './ui/uidriver.js';
 import { initUicontrol, updateUicOverlay }  from './ui/uicontrol-ui.js';
+import { initStage, updateStage }           from './ui/stage-ui.js';
 import * as preset                          from './preset.js';
 
 // ── A shared setup, if this page was opened from a QR code / link ────────
@@ -63,6 +64,7 @@ function loop() {
   updateFsOverlay();     // cheap no-op unless fullscreen is active
   updateGamePanel();     // cheap no-op unless a song is running
   updateUicOverlay();    // cheap no-op unless the hand cursor is live
+  updateStage();         // cheap no-op unless the gesture stage is up
   requestAnimationFrame(loop);
 }
 
@@ -453,6 +455,7 @@ initUicontrol();          // hand-cursor overlay, arming window, 🖐 button
 // rather than imports, so cv.js stays the only module that owns the flags.
 uicontrol.setSingleSide(() =>
   cvSource.handsL !== cvSource.handsR ? (cvSource.handsL ? 'L' : 'R') : null);
+initStage();              // fullscreen gesture stage (DEV, under construction)
 initShare();              // SHARE → a QR code of this setup
 initModelPanel();         // dev-mode pose model comparison panel
 initTutorial();           // guided tour (? button; auto-offers on first visit)

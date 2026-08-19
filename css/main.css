@@ -2105,3 +2105,128 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   border-color: var(--cyan);
   color: var(--cyan);
 }
+
+/* ── The gesture stage (Phase 2, DEV) ──────────────────────────────────────
+   Glass panels over the fullscreen camera. Items are absolutely positioned
+   by transform from stage-ui; --ch (0..1) is the force-pull strain charge
+   that drives the glow. */
+#stage-layer {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow: hidden;
+  z-index: 60;               /* above the video + overlays, below .cam-toggles */
+}
+#stage-layer.on { display: block; }
+
+.stage-ring {
+  position: absolute;
+  left: 0; top: 0;
+  width: 120px; height: 120px;
+  border: 10px solid var(--cyan);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--cyan);
+  font: 700 13px "IBM Plex Mono", monospace;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow: 0 0 34px var(--cyan-dim), inset 0 0 22px var(--cyan-dim);
+  /* Positioned by left/top from stage-ui; the animation owns transform. */
+  transform: translate(-50%, -50%);
+  animation: stage-breathe 3.4s ease-in-out infinite;
+}
+@keyframes stage-breathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(1);    opacity: 0.9; }
+  50%      { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+}
+
+.stage-orb {
+  position: absolute;
+  left: 0; top: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--cyan);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--cyan);
+  font: 600 11px "IBM Plex Mono", monospace;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  box-shadow: 0 0 18px var(--cyan-dim);
+  white-space: nowrap;
+}
+
+.stage-card {
+  position: absolute;
+  left: 0; top: 0;
+  min-width: 220px;
+  max-width: 340px;
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--panel) 82%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 calc(20px + var(--ch, 0) * 70px)
+      rgba(111, 229, 214, calc(0.15 + var(--ch, 0) * 0.55));
+}
+.stage-card.held { border-color: var(--cyan); }
+.stage-card.mat { animation: stage-mat 0.65s ease-out; }
+@keyframes stage-mat {
+  from { filter: saturate(0.2) brightness(1.8); opacity: 0.2; }
+  to   { filter: none; opacity: 1; }
+}
+.stage-card.smack { animation: stage-smack 0.18s ease-out; }
+@keyframes stage-smack {
+  0%   { filter: brightness(1.6); }
+  100% { filter: none; }
+}
+
+.stage-bar {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--cyan);
+  font: 700 11px "IBM Plex Mono", monospace;
+  letter-spacing: 0.1em;
+  cursor: grab;
+  user-select: none;
+}
+.stage-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.stage-item-btn {
+  padding: 10px 14px;
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font: 600 12px "IBM Plex Mono", monospace;
+  cursor: pointer;
+}
+.stage-item-btn:hover { border-color: var(--cyan); }
+.stage-item-btn.sel { border-color: var(--cyan); color: var(--cyan); }
+.stage-mix-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: var(--dim);
+  font-size: 11px;
+}
+.stage-body select {
+  padding: 8px 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-ring { animation: none; }
+  .stage-card.mat, .stage-card.smack { animation: none; }
+}

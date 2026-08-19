@@ -96,6 +96,11 @@ function openSelectList(sel) {
 const mk = () => ({ x: 0, y: 0, hover: null, hoverRect: null, grip: null });
 const S = { L: mk(), R: mk() };
 
+// The stage (Phase 2) plugs its card-grabbing in here — injected so this
+// module never imports stage-ui (which imports this one).
+let stageHooks = null;
+export function setStageHooks(h) { stageHooks = h; }
+
 function resolveGrip(el, x, y) {
   // Real clickables win even inside a pointer surface (the × on a patchbay
   // pill is a button; the socket is too, but the socket IS wiring's pointer
@@ -104,6 +109,10 @@ function resolveGrip(el, x, y) {
       && el.closest?.('button:not(.ng-socket), select, a, [role="button"], .wave-btn, input[type="checkbox"]')) {
     return { kind: 'tap', el, x0: x, y0: y };
   }
+  // A stage card is grabbed by its title bar; its contents stay ordinary
+  // targets for the adapters below.
+  const bar = stageHooks && el.closest?.('.stage-bar');
+  if (bar) return { kind: 'stage', el: bar.closest('.stage-card'), x0: x, y0: y };
   const range = el.closest?.('input[type="range"]');
   if (range) {
     const r = range.getBoundingClientRect();
@@ -137,6 +146,8 @@ function press(side, nx, ny) {
   st.grip = resolveGrip(el, x, y);
   if (st.grip.kind === 'pointer') {
     synth('pointerdown', st.grip.target, PTR_ID[side], x, y);
+  } else if (st.grip.kind === 'stage') {
+    stageHooks?.grab(side, st.grip.el, x, y);
   }
 }
 
@@ -160,6 +171,8 @@ function move(side, nx, ny) {
     } else if (g.kind === 'scroll') {
       g.el.scrollTop -= (y - g.lastY) * SCROLL_RATE;
       g.lastY = y;
+    } else if (g.kind === 'stage') {
+      stageHooks?.drag(side, x, y);
     }
   } else {
     // Aiming: keep the hover target and its rect fresh for the overlay ring.
@@ -181,11 +194,22 @@ function tapActivate(el) {
     .click?.();
 }
 
-function release(side, { kind }) {
+function release(side, { kind, vx = 0, vy = 0 }) {
   const st = S[side];
   const g = st.grip;
   st.grip = null;
   if (!g) return;
+  if (g.kind === 'stage') {
+    // Velocities arrive in frame-fractions/s; the stage flies in px/s, so
+    // scale by the same gain the cursor mapping applies.
+    const gain = 1 / (1 - 2 * uicontrol.margin);
+    stageHooks?.drop(side, {
+      kind,
+      pvx: vx * window.innerWidth * gain,
+      pvy: vy * window.innerHeight * gain,
+    });
+    return;
+  }
   if (g.kind === 'pointer') {
     // The pointer surface hears its own up; a quick pinch IS its tap
     // (patchbay pills arm/inspect on exactly this pair).

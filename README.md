@@ -827,6 +827,23 @@ and the patchbay never fight the cursor for a hand. Logic:
 unit-tested in `tests/unit/uicontrol-*.test.js`); `src/ui/uidriver.js`
 (cursor → real UI effects); `src/ui/uicontrol-ui.js` (overlay + arming UI).
 
+### The stage (under construction, DEV)
+
+With **DEV** on, **◭ STAGE** (under the camera) opens the fullscreen
+**gesture stage**: a glass control surface over the camera feed where *both*
+hands are cursors. A **muse ring** breathes at the bottom — tap it and orbs
+bloom in orbit; tap an orb and its panel materializes as a glass card
+(**PRESETS**, **SOUND KIT**, **MIXER**, **KEY**), wired straight into the
+same apply paths the panels use. Grab a card by its title bar and drag it;
+grab it with both hands and stretch to resize; **fling** it off-screen to
+close it (the throw needs real speed *and* follow-through); **double-clap**
+to sweep the stage clean. The **claw** force-pull: flash your hand open,
+make a claw (fingers hooked, pinky out), aim at a distant card — it strains
+and glows for two seconds — then **snap** the claw shut and it rips across
+the screen into your hand. Model: `src/stage.js` (pure physics, tested in
+`tests/unit/stage-physics.test.js`); scene: `src/ui/stage-ui.js`; claw state
+machine: `clawStep` in `src/uicontrol.js` (`tests/unit/uicontrol-claw.test.js`).
+
 ## Play along (Guitar Hero mode)
 
 The **Play Along** section starts a falling-note game: notes descend toward a

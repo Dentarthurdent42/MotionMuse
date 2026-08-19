@@ -31,7 +31,7 @@
 // frame, converted from thresholds fitted at a ~1920px window), so neither
 // the window size nor the cursor reach-gain changes what counts as "still".
 
-import { handOpenness }        from './math.js';
+import { handOpenness, dist3 } from './math.js';
 import { makeOneEuro }         from './filter.js';
 import { lsGet, lsSet }        from './storage.js';
 
@@ -96,6 +96,30 @@ export const UIC = {
   // Cursor.
   MARGIN: 0.15,                // inner (1−2m) of the frame maps to the screen
   STALE_MS: 500,               // a hand unseen this long drops its grip
+
+  // Claw / force-pull (stage only). Every shape term is a strict-enter /
+  // loose-hold hysteresis pair, applied via clawGate's inClaw flag.
+  CLAW_R_LO:   [0.80, 0.68],   // mouth open at least this…
+  CLAW_R_HI:   [1.45, 1.80],   // …but still a mouth, not a splay
+  CLAW_C8:     [0.60, 0.80],   // index folded (3D curl dot: straight ≈ +0.9)
+  CLAW_C12:    [0.35, 0.60],   // middle ALWAYS folded — the tightest term
+  CLAW_C16:    [0.55, 0.75],   // ring votes with the others
+  CLAW_CMEAN:  [0.30, 0.55],
+  CLAW_C20:    [0.10, -0.35],  // the pinky stays OUT (a fold means a fist)
+  CLAW_ASPECT: [1.05, 0.85],   // not pointed straight at the lens
+  CLAW_HOOK:   [1.50, 1.60],   // tips hooked back toward the wrist
+  CLAW_ARM:    14,             // pose-streak frames to arm (~0.5s)
+  CLAW_COACH:  20,             // streak at which a stale open earns coaching
+  CLAW_STREAK_DN: 5,           // a bad frame costs 5 — decay, not reset
+  CLAW_OPEN_MS: 900,           // the open-palm flash must be this recent:
+                               // a claw is a movement, not a shape
+  CLAW_LOST_MS: 300,           // shape lost this long releases the lock
+  CLAW_SNAP_R:   0.34,         // plunge: mouth slammed absolutely shut…
+  CLAW_SNAP_DROP: 0.22,        // …or collapsed this much within…
+  CLAW_SNAP_WIN:  280,         // …this window (of a 400ms rolling buffer)
+  CLAW_SNAP_SOFT: 0.48,
+  CLAW_STRAIN_MS: 2000,        // the snap is honored only after the strain
+  CLAW_RAMP_MS:   4000,        // visual strain ramp
 };
 
 const d2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -324,6 +348,107 @@ export function selectStep(st, raised, now, dtMs) {
   return out;
 }
 
+// ── Claw / force-pull (stage) ────────────────────────────────────────────
+// 3D finger curls and hooks — the shape terms the 2D metrics can't see.
+export function clawMetrics(lm) {
+  const v = (a, b) => {
+    const d = [b.x - a.x, b.y - a.y, (b.z || 0) - (a.z || 0)];
+    const n = Math.hypot(...d) || 1e-6;
+    return [d[0] / n, d[1] / n, d[2] / n];
+  };
+  const dot  = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const curl = (m, p, d, t) => dot(v(lm[m], lm[p]), v(lm[d], lm[t]));
+  const hook = (t, p) => dist3(lm[0], lm[t]) / (dist3(lm[0], lm[p]) || 1e-6);
+  return {
+    c8: curl(5, 6, 7, 8), c12: curl(9, 10, 11, 12),
+    c16: curl(13, 14, 15, 16), c20: curl(17, 18, 19, 20),
+    h8: hook(8, 6), h12: hook(12, 10), h16: hook(16, 14),
+  };
+}
+
+// The ten-term shape gate. `inClaw` picks the loose half of every hysteresis
+// pair, so a lock survives the wobble that would never have earned it.
+export function clawGate(cm, m, inClaw) {
+  const P = pair => pair[inClaw ? 1 : 0];
+  const cMean = (cm.c8 + cm.c12 + cm.c16) / 3;
+  return m.r > P(UIC.CLAW_R_LO) && m.r < P(UIC.CLAW_R_HI)
+      && cm.c8  < P(UIC.CLAW_C8)  && cm.c12 < P(UIC.CLAW_C12)
+      && cm.c16 < P(UIC.CLAW_C16) && cMean  < P(UIC.CLAW_CMEAN)
+      && cm.c20 > P(UIC.CLAW_C20)
+      && m.aspect > P(UIC.CLAW_ASPECT)
+      && cm.h8 < P(UIC.CLAW_HOOK) && cm.h12 < P(UIC.CLAW_HOOK)
+      && cm.h16 < P(UIC.CLAW_HOOK);
+}
+
+export function makeClawState() {
+  return { pose: 0, on: false, lost: 0, coached: false, rh: [] };
+}
+
+// One step. Returns 'arm' | 'hold' | 'snap' | 'drop' | 'coach' | null.
+// The 2-second strain law is NOT here: whether a lit target has strained
+// long enough is scene knowledge, so the stage enforces it and answers a
+// premature snap with its own "too soon".
+export function clawStep(st, cm, m, now, { openRecent = false, holding = false } = {}) {
+  st.rh.push({ t: now, r: m.r });
+  while (st.rh.length && now - st.rh[0].t > 400) st.rh.shift();
+  const claw = clawGate(cm, m, st.on);
+
+  if (!st.on) {
+    st.pose = claw ? st.pose + 1 : Math.max(0, st.pose - UIC.CLAW_STREAK_DN);
+    if (st.pose >= UIC.CLAW_ARM && openRecent && !holding) {
+      st.on = true;
+      st.lost = 0;
+      st.coached = false;
+      return 'arm';
+    }
+    // Held the shape long enough with a stale open: coach once, don't arm —
+    // the flash-open-first rule is what keeps a resting claw from grabbing.
+    if (st.pose >= UIC.CLAW_COACH && !st.coached && !holding) {
+      st.coached = true;
+      return 'coach';
+    }
+    return null;
+  }
+
+  // The plunge: mouth slammed absolutely shut, or collapsed fast from its
+  // recent peak. Either reads as SNAP even when blur ate the exact frame.
+  let rPeak = 0;
+  for (const e of st.rh) if (now - e.t <= UIC.CLAW_SNAP_WIN) rPeak = Math.max(rPeak, e.r);
+  if (m.r < UIC.CLAW_SNAP_R
+      || (m.r < UIC.CLAW_SNAP_SOFT && rPeak - m.r > UIC.CLAW_SNAP_DROP)) {
+    st.on = false;
+    st.pose = 0;
+    return 'snap';
+  }
+  if (!claw) {
+    if (!st.lost) st.lost = now;
+    if (now - st.lost > UIC.CLAW_LOST_MS) {
+      st.on = false;
+      st.pose = 0;
+      st.lost = 0;
+      return 'drop';
+    }
+  } else {
+    st.lost = 0;
+  }
+  return 'hold';
+}
+
+// The aim ray, in mirrored-normalized frame coords: perpendicular to the
+// thumbtip↔indextip line — the claw mouth's normal — signed away from the
+// palm center, so it points where the mouth faces.
+export function clawRay(lm) {
+  const tx = 1 - lm[4].x, ty = lm[4].y;
+  const ix = 1 - lm[8].x, iy = lm[8].y;
+  const ox = (tx + ix) / 2, oy = (ty + iy) / 2;
+  const px = 1 - (lm[5].x + lm[17].x) / 2, py = (lm[5].y + lm[17].y) / 2;
+  let dx = -(iy - ty), dy = ix - tx;
+  const n = Math.hypot(dx, dy) || 1e-6;
+  dx /= n; dy /= n;
+  if (dx * (ox - px) + dy * (oy - py) < 0) { dx = -dx; dy = -dy; }
+  return { ox, oy, dx, dy };
+}
+
 // ── The singleton ────────────────────────────────────────────────────────
 const LS_KEY = 'motionmuse-uicontrol';
 const EURO = { minCutoff: 1.0, beta: 0.4 };   // pointing wants steadier than pinch
@@ -334,9 +459,11 @@ const mkHand = () => ({
   fx: makeOneEuro(EURO), fy: makeOneEuro(EURO),
   hist: [],
   m: null,                              // last handMetrics
+  lm: null,                             // last raw landmarks (claw needs 3D)
   wx: 0, wy: 0, mcpx: 0, mcpy: 0, yUp: 0,
   pinch: makePinchState(),
-  lastPinchT: 0,
+  claw: makeClawState(),
+  lastPinchT: 0, lastOpenT: 0,
   pressX: 0, pressY: 0, pressT: 0, trav: 0,
 });
 
@@ -348,6 +475,7 @@ export const uicontrol = (() => {
   const hands = { L: mkHand(), R: mkHand() };
   const armed = { L: false, R: false };
   const clap  = makeClapState();
+  let stageActive = false;   // the fullscreen stage claims both hands
   let sel = null;            // active selection window, or null
   let lastClapT = 0;
   let holdBothUntil = 0;     // post-clap claim of both hands
@@ -419,12 +547,23 @@ export const uicontrol = (() => {
     // (the cursor owns it) and briefly after a clap (so the landing drains
     // through the decay path instead of jolting the synth).
     claims(s) {
-      return cfg.enabled && (armed[s] || performance.now() < holdBothUntil);
+      return (cfg.enabled && (armed[s] || performance.now() < holdBothUntil))
+          || stageActive;
     },
 
     // An armed cursor deserves the frame budget: cv.js tilts the hand/pose
     // alternation toward hands while this is true.
-    wantsPriority() { return cfg.enabled && (armed.L || armed.R); },
+    wantsPriority() { return stageActive || (cfg.enabled && (armed.L || armed.R)); },
+
+    // The fullscreen stage: both hands become cursors (and are claimed from
+    // the instrument) for as long as it is up, whatever the armed flags say.
+    get stage() { return stageActive; },
+    setStageActive(on) {
+      if (stageActive === !!on) return;
+      stageActive = !!on;
+      if (!on) ['L', 'R'].forEach(s => { if (!armed[s]) dropGrip(s); });
+      emit({ type: 'stage', on: stageActive });
+    },
 
     // Called from cv.js each hand frame, BEFORE the claims gate — the cursor
     // must see armed hands precisely because the bus no longer does.
@@ -441,9 +580,13 @@ export const uicontrol = (() => {
         h.hist.push({ x: h.x, y: h.y, t: tMs });
         if (h.hist.length > UIC.HIST) h.hist.shift();
         h.m = handMetrics(lm);
+        h.lm = lm;
         h.wx = 1 - lm[0].x;  h.wy = lm[0].y;
         h.mcpx = 1 - lm[9].x; h.mcpy = lm[9].y;
         h.yUp = 1 - lm[0].y;
+        // Soft-open memory: the claw's transition law wants a recent flash of
+        // an open hand, because a claw is a movement, not a shape.
+        if (h.m.open > UIC.CLAP_OPEN && h.m.r > UIC.CLAP_OPEN) h.lastOpenT = tMs;
       }
     },
 
@@ -451,7 +594,7 @@ export const uicontrol = (() => {
       const now = performance.now();
       const dt = lastTickT ? Math.min(100, now - lastTickT) : 16;
       lastTickT = now;
-      if (!cfg.enabled) return;
+      if (!cfg.enabled && !stageActive) return;
 
       // ── Clap → selection window (or double-clap: cancel / stage sweep) ──
       const snap = s => {
@@ -468,7 +611,11 @@ export const uicontrol = (() => {
         holdBothUntil = now + UIC.HOLD_AFTER_CLAP;
         const double = sel !== null || now - lastClapT < UIC.DOUBLE_CLAP_MS;
         lastClapT = now;
-        if (double) {
+        if (stageActive) {
+          // On the stage both hands already are cursors, so a lone clap has
+          // nothing to arm — only the double-clap SWEEP means anything.
+          if (double && onSweep?.()) emit({ type: 'sweep' });
+        } else if (double) {
           sel = null;
           if (onSweep?.()) emit({ type: 'sweep' });
           else emit({ type: 'window', open: false });
@@ -514,10 +661,10 @@ export const uicontrol = (() => {
         }
       }
 
-      // ── Armed cursors ────────────────────────────────────────────────────
+      // ── Armed cursors (on the stage, every hand is one) ─────────────────
       for (const s of ['L', 'R']) {
         const h = hands[s];
-        if (!armed[s]) {
+        if (!armed[s] && !stageActive) {
           if (h.pinch.pinched) dropGrip(s);
           continue;
         }
@@ -526,6 +673,19 @@ export const uicontrol = (() => {
           continue;
         }
         if (h.pinch.pinched) h.lastPinchT = now;
+
+        // The claw runs only on the stage, and never on a hand that is
+        // pinching or carrying — a grip is already a commitment.
+        if (stageActive && h.lm && !h.pinch.pinched && !driver?.isHolding?.(s)) {
+          const ev = clawStep(h.claw, clawMetrics(h.lm), h.m, now, {
+            openRecent: now - h.lastOpenT < UIC.CLAW_OPEN_MS,
+            holding: false,
+          });
+          if (ev) emit({ type: 'claw', side: s, phase: ev,
+                         ray: ev === 'coach' ? null : clawRay(h.lm) });
+        } else if (h.claw.on || h.claw.pose) {
+          h.claw = makeClawState();
+        }
 
         const { lastS } = histVel(h.hist, now);
         const holding = driver?.isHolding?.(s) ?? false;
@@ -562,11 +722,13 @@ export const uicontrol = (() => {
           x: h.x, y: h.y,
           pinched: h.pinch.pinched && !h.pinch.ghost,
           ghost: h.pinch.ghost,
-          armed: armed[s],
+          armed: armed[s] || stageActive,
+          clawOn: h.claw.on,
         };
       }
       return {
-        enabled: cfg.enabled,
+        enabled: cfg.enabled || stageActive,
+        stage: stageActive,
         margin: cfg.margin,
         armed: { ...armed },
         hands: hs,
