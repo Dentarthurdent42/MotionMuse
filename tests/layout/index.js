@@ -150,6 +150,34 @@ const sections = await page.evaluate(() => {
       }
       return seen;
     })(),
+    // A fold button has to say which state it is in. The attribute was set once
+    // at creation and then updated through a selector that matched nothing, so
+    // it read "expanded" in both states — the caret was the only signal, and a
+    // caret is not one a screen reader can see.
+    folds: (() => {
+      const bad = [];
+      for (const sec of document.querySelectorAll('.sec[data-sec-id]')) {
+        const btn = sec.querySelector(':scope > * > .sec-fold');
+        if (!btn) continue;
+        const want = String(!sec.classList.contains('folded'));
+        if (btn.getAttribute('aria-expanded') !== want) bad.push(sec.dataset.secId);
+      }
+      return bad;
+    })(),
+    // …after actually collapsing one, since every section starts expanded and
+    // a stuck "true" is indistinguishable from a correct one until then.
+    foldsAfterToggle: (() => {
+      const sec = document.querySelector('.panel-aud[data-sec-id], [data-sec-id="audio-engine"]');
+      const btn = sec?.querySelector(':scope > * > .sec-fold');
+      if (!btn) return 'no fold button on the audio engine';
+      btn.click();
+      const collapsed = sec.classList.contains('folded')
+                     && btn.getAttribute('aria-expanded') === 'false';
+      btn.click();
+      const reopened = !sec.classList.contains('folded')
+                    && btn.getAttribute('aria-expanded') === 'true';
+      return collapsed && reopened ? '' : `collapsed=${collapsed} reopened=${reopened}`;
+    })(),
     // The camera panel is sticky in portrait, and everything inside it rides
     // along. The dev-only sections must therefore live OUTSIDE it there, or
     // they sit pinned under the video occupying a screen you cannot scroll
@@ -636,6 +664,11 @@ for (const { width, off, on, sections, camSticky } of results) {
     `${w}: every section in a host is draggable`, sections.notDraggable.join(' '));
   check(sections.unaimableHosts.length === 0,
     `${w}: every host is aimable mid-drag`, sections.unaimableHosts.join(' '));
+  check(sections.folds.length === 0,
+    `${w}: every fold button reports its state`, sections.folds.join(' '));
+  check(sections.foldsAfterToggle === '',
+    `${w}: and still reports it after collapsing and reopening`,
+    sections.foldsAfterToggle);
 
   // ── Header typography parity ──
   const hStyles = Object.keys(sections.headerStyles);

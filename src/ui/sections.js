@@ -110,7 +110,12 @@ const saveFolded = () => lsSet(FOLD_KEY, JSON.stringify([...folded]));
 export function setFolded(sec, on) {
   const id = sec.dataset.secId;
   sec.classList.toggle('folded', on);
-  const btn = sec.querySelector(':scope > .sec-fold');
+  // The button lives in the HEADER, not directly under the section — enhance()
+  // inserts it there so it sits beside the title. This asked for a direct
+  // child, matched nothing, and so every fold button in the app has reported
+  // aria-expanded="true" in both states since the attribute was added: a
+  // screen reader was told the section was open while it was collapsed.
+  const btn = sec.querySelector(':scope > * > .sec-fold');
   if (btn) btn.setAttribute('aria-expanded', String(!on));
   if (on) folded.add(id); else folded.delete(id);
   saveFolded();

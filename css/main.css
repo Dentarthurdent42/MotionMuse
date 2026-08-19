@@ -1414,8 +1414,12 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
    points it right (collapsed). The translate re-centres the glyph, since a
    rotated square's ink sits off-centre in its own box. */
 .sec-fold::before          { transform: translateY(-2px) rotate(45deg); }
-.sec.folded > * > .sec-fold::before,
-.sec.folded .sec-fold::before { transform: translateX(-2px) rotate(-45deg); }
+/* The section's OWN caret, in its own header — not a descendant selector. A
+   descendant one also turned every nested section's caret when an outer
+   section folded, which is invisible today only because a folded body is
+   display:none, and stops being invisible the moment anything renders a
+   collapsed section's contents. */
+.sec.folded > * > .sec-fold::before { transform: translateX(-2px) rotate(-45deg); }
 .sec-fold:hover { color: var(--cyan); }
 
 /* Per-panel help, at the right end of the header. Same 18px target as the
