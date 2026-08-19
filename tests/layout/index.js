@@ -158,12 +158,10 @@ const sections = await page.evaluate(() => {
     camExtras: (() => {
       const ex = document.getElementById('cam-extras');
       if (!ex) return null;
-      const p = ex.parentElement;
-      if (p.classList.contains('panel-cam')) return 'panel-cam';
-      // Out of the sticky panel is the point; which box it lands in beside it
-      // is not. That used to be #main and is now the camera's column.
-      if (p.id === 'main' || p.classList.contains('col')) return 'outside';
-      return p.className;
+      // Out of the sticky panel is the whole invariant; which box it lands in
+      // beside it is not, and naming the acceptable ones has now been wrong
+      // twice (it was #main, then the column, and is now the Inputs list).
+      return ex.parentElement.classList.contains('panel-cam') ? 'panel-cam' : 'outside';
     })(),
     // …and the inflation heuristic itself is off, so the authored size is what
     // ships at every zoom level rather than a per-container guess.
@@ -583,7 +581,9 @@ for (const { width, off, on, sections, camSticky } of results) {
   // that the panels which used to BE the columns — SIGNALS, the camera, the
   // AUDIO ENGINE — have somewhere to be dropped, and so any section can be
   // dragged out to sit beside them as a column-level panel.
-  check(sections.hosts.join(',') === 'aud,audio,cam,col-c,col-l,col-r,map,sig',
+  // `inputs` is the list inside the Inputs section that holds the four
+  // sources, so a section can be dropped among them rather than only beside.
+  check(sections.hosts.join(',') === 'aud,audio,cam,col-c,col-l,col-r,inputs,map,sig',
     `${w}: every column can receive a section`, sections.hosts.join(','));
   check(sections.inHost.length >= 12, `${w}: sections live in hosts`, `${sections.inHost.length}`);
   check(sections.noBirth.length === 0,

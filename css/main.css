@@ -1628,10 +1628,21 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
 .col > .panel-map,
 .col > .panel-aud { flex: 1 1 auto; min-height: 0; }
 
+/* ── Inputs ──────────────────────────────────────────────
+   One section holding the four sources, each an ordinary .audio-section so
+   the camera reads as the same KIND of thing as the microphone beside it. */
+.panel-inputs { display: flex; flex-direction: column; flex: 0 0 auto; }
+#input-list { display: flex; flex-direction: column; min-height: 0; }
+
 /* ── Panel grid layouts (desktop) ───────────────────────── */
+/* The camera is an .audio-section like its three siblings, minus the padding:
+   the picture goes edge to edge, and the landmark overlay is drawn in
+   normalised coordinates across the full canvas, so an inset frame would put
+   the overlay out of register with the video under it. */
 .panel-cam {
-  display: grid;
-  grid-template-rows: auto auto auto;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
   flex: 0 0 auto;                 /* the picture keeps its size in a column */
 }
 /* Drop host for the camera column. Scrolls on its own so a section dragged in
@@ -1811,6 +1822,26 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
      edge one label-height ABOVE the viewport, so the label slides off and
      the picture lands flush at 0. --cam-label-h is measured and written by
      resize.js, since the label's height moves with the font-size breakpoints. */
+  /* position:sticky pins an element inside its own PARENT's box, so nesting the
+     camera in an Inputs section would have capped its travel at the bottom of
+     that section — it would unstick a few hundred pixels down, which is the
+     whole feature gone. `display: contents` removes the group's boxes from
+     layout without removing the group: the header still renders, the four
+     inputs still stack in order, and the camera's parent for positioning is
+     the column again.
+     The boxes come back for the duration of a drag, because hostUnder
+     hit-tests against measured rects and a box that generates none can never
+     be a drop target. */
+  .panel-inputs,
+  .panel-inputs > .sec-body,
+  #input-list { display: contents; }
+  body.reordering .panel-inputs,
+  body.reordering .panel-inputs > .sec-body,
+  body.reordering #input-list { display: block; }
+  /* No box to hang it off, and nothing to resize while the children are laid
+     out by the column. */
+  .panel-inputs > .sec-grip { display: none; }
+
   .panel-cam {
     position: sticky;
     top: calc(-1 * var(--cam-label-h, 27px));

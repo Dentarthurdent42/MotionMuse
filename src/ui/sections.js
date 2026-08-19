@@ -57,6 +57,7 @@ const HOSTS = [
   ['col-l', '.col-l'],
   ['col-c', '.col-c'],
   ['col-r', '.col-r'],
+  ['inputs', '#input-list'],
   ['audio', '#audio-panel'],
   // The audio panel is now a section itself, and enhance() wraps a section's
   // content into its collapsible body — so the oscilloscope and the synth list
@@ -405,10 +406,12 @@ const PORTRAIT = '(max-width: 768px)';
 function placeCamExtras() {
   const ex   = document.getElementById('cam-extras');
   const cam  = document.querySelector('.panel-cam');
-  const main = document.getElementById('main');
-  if (!ex || !cam || !main) return;
+  if (!ex || !cam) return;
   const portrait = window.matchMedia?.(PORTRAIT).matches ?? false;
-  const want = portrait ? main : cam;
+  // Out to the camera's own parent — the Inputs list — rather than to #main:
+  // the point is only to leave the sticky box, and landing beside the other
+  // three inputs keeps it inside the group it belongs to.
+  const want = portrait ? cam.parentElement : cam;
   if (ex.parentElement === want) return;
   if (portrait) cam.after(ex); else cam.appendChild(ex);
 }
