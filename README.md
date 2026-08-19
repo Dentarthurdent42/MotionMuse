@@ -791,6 +791,42 @@ the native Fullscreen API where available, or a CSS takeover on iPhone Safari
 pitch-quantise keyboard along the bottom of the view. Gesture overlays keep
 their alignment at any screen shape.
 
+## Hand cursor (drive the UI by hand)
+
+Enable **HAND CURSOR** in ⚙ settings and the app itself becomes playable by
+hand: **clap** (palms together, fingers up, from apart), then hold up the
+hand(s) you want inside the short window that opens — each one becomes an
+on-screen cursor and **stops playing the instrument** until you toggle it
+back the same way. The other hand keeps playing; this is how you change a
+patch mid-performance without touching the machine.
+
+- **Pinch = press.** A quick pinch is a tap (buttons, carets, menu items —
+  selects open a floating list, since script can't open the native picker);
+  a held pinch drags — sliders, patchbay cables, section headers, resize
+  grips, and scrolling inside any section body.
+- The cursor is the thumb/index midpoint, One-Euro filtered, with the inner
+  portion of the camera frame mapped to the whole screen (**CURSOR REACH**
+  in settings sets how much). A ring shows each armed hand; it tightens
+  when pinched and a box marks what you're aiming at.
+- The **cursor key** (default `C`, rebindable) opens the arming window from
+  the keyboard, and is the panic key: one press disarms everything. The
+  **🖐 CURSOR** button under the camera does the same by click.
+- The pinch gate is not a distance threshold: it demands the OK-sign
+  *signature* (index arch collapsed against three tall fingers), two clean
+  frames or a confidence EMA, a 400 ms probation for fresh pinches, and a
+  motion-blur rule that refuses grips born faster than a hand can honestly
+  move. All of it is span-relative, so it works at any distance from the
+  camera. The interaction design follows the Barehands project
+  (github.com/jaredrhod/barehands), reimplemented natively on this app's
+  tracking stack.
+
+While a hand is armed, cv.js publishes it as *absent* — its signals decay,
+pinch reads 1 (the fail-quiet convention), gestures release — so chord mode
+and the patchbay never fight the cursor for a hand. Logic:
+`src/uicontrol.js` (pure state machines — pinch, clap, selection window —
+unit-tested in `tests/unit/uicontrol-*.test.js`); `src/ui/uidriver.js`
+(cursor → real UI effects); `src/ui/uicontrol-ui.js` (overlay + arming UI).
+
 ## Play along (Guitar Hero mode)
 
 The **Play Along** section starts a falling-note game: notes descend toward a

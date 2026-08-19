@@ -128,6 +128,13 @@ export const TOUR_STEPS = [
           'face and gaze tracking; ⛶ goes fullscreen.',
   },
   {
+    id: 'hand-cursor', target: '#uic-btn', title: 'Hand cursor',
+    body: 'Drive the app itself by hand: enable <b>HAND CURSOR</b> in ⚙ ' +
+          'settings, then <b>CLAP</b> and hold up a hand — it becomes a ' +
+          'cursor (pinch = click and drag) and stops playing the instrument. ' +
+          'Clap again to toggle back; the cursor key disarms everything.',
+  },
+  {
     id: 'signals', section: 'signals', target: '#sig-list', title: 'Signals',
     body: 'Everything the camera measures, live: wrist height, pinch, finger ' +
           'curl, elbow angle, fingertip touches. Any signal can drive any ' +
