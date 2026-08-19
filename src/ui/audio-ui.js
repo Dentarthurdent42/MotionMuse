@@ -90,6 +90,8 @@ export function renderAudioPanel() {
     .map(([id, k]) => `<option value="${id}"${id === kitId ? ' selected' : ''}>${k.label}</option>`)
     .join('') + (kitId === 'custom' ? '<option value="custom" selected>Custom</option>' : '');
 
+  const le = engine.getLeadEnv();
+  const shep = engine.getShepard();
   const gv = playalong.view;
   const gameActive = gv.state === 'countdown' || gv.state === 'playing';
 
@@ -156,6 +158,29 @@ export function renderAudioPanel() {
                 title="Where the gate switches off, as a share of full volume. The ladder's own midpoint (·auto) is not always where you want the switch: with 2 steps it lands at 18%, so an on/off control flips very early. Raise it to move the switch later in the gesture.">${gateAtOpts(vq)}</select>
       </div>
       <div id="vq-level" class="quant-notes">${vq.enabled ? '' : '—'}</div>
+      <!-- ADSR lives here rather than in its own section because this is where
+           its trigger is: crossing up out of silence is the note-on and
+           dropping to the bottom rung is the note-off. It REPLACES the edge
+           preset above when on, which is why the select dims. -->
+      <div class="audio-section-label" style="margin-top:8px;">
+        Envelope
+        <button type="button" class="wave-btn${le.enabled ? ' on' : ''}" id="lead-env-toggle"
+             aria-pressed="${le.enabled}"
+             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;"
+             title="Use a full ADSR instead of the fixed attack/release of the edge preset. Triggered by the volume gate: out of silence is a note-on, back to silence a note-off.">${le.enabled ? 'ADSR' : 'EDGE'}</button>
+      </div>
+      <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;"
+           ${le.enabled ? '' : 'aria-hidden="true"'}>
+        ${['attack', 'decay', 'sustain', 'release'].map(k => `
+          <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
+            ${k.slice(0, 3).toUpperCase()}
+            <input type="range" class="lead-env" data-env="${k}"
+              min="${engine.LEAD_ENV_RANGE[k][0]}" max="${engine.LEAD_ENV_RANGE[k][1]}"
+              step="0.005" value="${le[k]}" ${le.enabled ? '' : 'disabled'}>
+            <span class="ctrl-val" id="le-env-${k}">${k === 'sustain'
+              ? Math.round(le[k] * 100) + '%' : le[k].toFixed(2) + 's'}</span>
+          </label>`).join('')}
+      </div>
     </div>
     <div class="audio-section" data-sec="oscillators">
       <div class="audio-section-label">Oscillators
@@ -177,8 +202,15 @@ export function renderAudioPanel() {
             ${waveBtn('sawtooth','SAW',i)}${waveBtn('square','SQR',i)}
           </div>
         </div>`).join('')}
+      <div class="wave-btns" style="margin-top:4px;">
+        <button type="button" class="wave-btn${shep.lead ? ' on' : ''}" id="shep-lead"
+             aria-pressed="${shep.lead}"
+             title="Shepard tones: each oscillator becomes a stack of octaves under a fixed loudness curve, so pitch rises or falls endlessly without ever leaving its register.">SHEPARD</button>
+      </div>
       <div class="osc-hint">${nOsc
-        ? 'Each has its own level: Osc1 Vol… under Parameters'
+        ? (shep.lead
+            ? 'Shepard: sweep pitch and it climbs forever — an octave returns you to the start'
+            : 'Each has its own level: Osc1 Vol… under Parameters')
         : 'No lead oscillators — chord mode plays on its own'}</div>
     </div>
     <div class="audio-section">
@@ -304,6 +336,30 @@ export function renderAudioPanel() {
     syncKitToCustom();
     renderAudioPanel();
   };
+  // ── Shepard (lead) ─────────────────────────────────────────────────────
+  // Re-renders because the hint line under the oscillator list changes with it,
+  // and because engine.setShepard rebuilds the bank — the panel should reflect
+  // the instrument it now actually is.
+  document.getElementById('shep-lead')?.addEventListener('click', () => {
+    engine.setShepard({ lead: !engine.getShepard().lead });
+    renderAudioPanel();
+  });
+
+  // ── Lead ADSR ──────────────────────────────────────────────────────────
+  document.getElementById('lead-env-toggle')?.addEventListener('click', () => {
+    engine.setLeadEnv({ enabled: !engine.getLeadEnv().enabled });
+    renderAudioPanel();          // the sliders enable/disable with it
+  });
+  document.querySelectorAll('.lead-env').forEach(el => {
+    el.addEventListener('input', e => {
+      const k = e.target.dataset.env;
+      const v = engine.setLeadEnv({ [k]: +e.target.value })[k];
+      const out = document.getElementById(`le-env-${k}`);
+      if (out) out.textContent = k === 'sustain'
+        ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`;
+    });
+  });
+
   document.getElementById('osc-minus').addEventListener('click', () => setCount(engine.getOscCount() - 1));
   document.getElementById('osc-plus') .addEventListener('click', () => setCount(engine.getOscCount() + 1));
   const oscCountInput = document.getElementById('osc-count');
