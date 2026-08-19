@@ -833,9 +833,16 @@ prioritised (3 frames of 4) so the approach is sampled fast enough to see.
   (github.com/jaredrhod/barehands), reimplemented natively on this app's
   tracking stack.
 
-While a hand is armed, cv.js publishes it as *absent* — its signals decay,
-pinch reads 1 (the fail-quiet convention), gestures release — so chord mode
-and the patchbay never fight the cursor for a hand. Logic:
+While a hand is armed its signals **freeze** — they hold the value they had
+rather than updating — so the patchbay and chord mode never fight the cursor
+for it. Freezing rather than reporting the hand *absent* is the whole point:
+absence is a tracking failure and the safe answer to it is to fail quiet
+(decay, and force pinch to 1, since 0 reads as "hand open" and a volume
+mapping would take that as full blast). A borrowed hand is not a failure, and
+running it through that path drove the default patch's `pinch_R → volume`
+mapping to zero — arming a cursor silenced the whole instrument, chords
+included. Now the sound you were making simply holds while you work the UI,
+and the gesture matcher keeps the shape it had, so a held chord sustains. Logic:
 `src/uicontrol.js` (pure state machines — pinch, clap, selection window —
 unit-tested in `tests/unit/uicontrol-*.test.js`); `src/ui/uidriver.js`
 (cursor → real UI effects); `src/ui/uicontrol-ui.js` (overlay + arming UI).

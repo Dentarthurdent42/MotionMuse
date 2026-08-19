@@ -486,23 +486,28 @@ export const cvSource = {
     // The hand cursor sees every hand BEFORE the claims gate below — an armed
     // hand is invisible to the bus precisely because the cursor owns it.
     uicontrol.feedHands(found, foundWorld, performance.now());
-    // A claimed side is published as absent: signals decay, pinch fails
-    // quiet, the gesture matcher releases, chord mode sees nothing. One
-    // suppression point; nothing downstream knows the modality exists.
-    const pub = {
-      L: uicontrol.claims('L') ? null : found.L,
-      R: uicontrol.claims('R') ? null : found.R,
-    };
+    // A claimed hand is BORROWED, not lost, and the difference is audible.
+    // This published it as absent, which runs the fail-quiet path below —
+    // signals decay and pinch is forced to 1 — and the default patch maps
+    // pinch to volume inverted, so arming a cursor drove the main volume to
+    // zero and silenced the whole instrument, chords included. Absence means
+    // "tracking failed, make it safe"; a borrowed hand means "someone is
+    // using this hand for something else". So its signals simply stop
+    // updating: whatever you were playing holds while you work the UI, and
+    // the gesture matcher keeps the shape it had, so a held chord sustains.
+    const claimed = { L: uicontrol.claims('L'), R: uicontrol.claims('R') };
 
     // 'None' is the classifier saying it has no opinion, not a gesture.
     for (const side of ['L', 'R']) {
-      const c = pub[side] ? foundCanned[side] : null;
+      if (claimed[side]) continue;               // frozen — keep the last answer
+      const c = foundCanned[side];
       gesture.setCanned(side, c && c.categoryName !== 'None' ? c.categoryName : null,
                         c?.score ?? 0);
     }
 
     ['L', 'R'].forEach(s => {
-      const lm = pub[s];
+      if (claimed[s]) return;                    // frozen — publish nothing
+      const lm = found[s];
       if (lm) {
         bus.update(`hand_${s}_x`,      lm[0].x);
         bus.update(`hand_${s}_y`,      1 - lm[0].y); // flip: up = 1
@@ -533,8 +538,8 @@ export const cvSource = {
     });
 
     // Distance-from-camera (LiDAR if active, else monocular size estimate).
-    // Claimed hands are absent here too, so their z-signals decay in step.
-    depthSource.feedHands(pub);
+    // Claimed hands freeze here in step with their other signals.
+    depthSource.feedHands(found, claimed);
   },
 
   // ── Signal extraction: pose ──────────────────────────────────────────

@@ -48,13 +48,20 @@ jobs:
       - name: Layout guard
         run: npm run test:layout
 
+      # DISABLED — the Claude Vision screenshot pass. The deterministic guards
+      # above (contrast, tutorial, service worker, audio launch, layout) still
+      # run on every PR and are what actually gate a merge; this step needs an
+      # API key, costs a call per viewport, and grades screenshots by
+      # judgement rather than assertion. Re-enable by removing the `if: false`
+      # (and the same line on the upload step below).
       - name: Run UI/UX tests
+        if: false
         run: npm run test:ui
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Upload report
-        if: always()
+        if: false
         uses: actions/upload-artifact@v4
         with:
           name: ui-ux-report
