@@ -1,10 +1,12 @@
 // What a released pinch *was* — a tap, a fling, or just letting go — decides
-// whether a button fires or a card flies. The classifier reads duration,
-// stillness, peak speed and follow-through; these pin each boundary.
+// whether a button fires or a card flies. A grip that never travelled is a
+// tap however long it was held; one that hit speed and carried it into the
+// release is a fling. These pin each boundary.
 // Run: npm run test:unit
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { UIC, classifyRelease, histVel, cursorMap, handMetrics } from '../../src/uicontrol.js';
+import { UIC, classifyRelease, histVel, cursorMap, handMetrics, speedScale }
+  from '../../src/uicontrol.js';
 
 const rel = over => classifyRelease({
   gripMs: 200, trav: 0.005, peak: 0, lastS: 0, probKill: false, ...over,
@@ -18,9 +20,27 @@ test('a probation-killed grip never taps', () => {
   assert.equal(rel({ probKill: true }), 'drop');
 });
 
-test('too long or too travelled is not a tap', () => {
-  assert.equal(rel({ gripMs: UIC.TAP_MS + 50 }), 'drop');
-  assert.equal(rel({ trav: UIC.TAP_TRAV * 3 }), 'drop');
+// The bug this pins: a real "pinch to click" is neither quick nor perfectly
+// still — a hand drifts while its fingers close, and a first-timer holds the
+// pinch for half a second. The old rule (under 300 ms AND under 26 px)
+// classified every such press as a drop, so no click ever fired even though
+// the press was detected and the cursor moved.
+test('a deliberate, held pinch still taps', () => {
+  assert.equal(rel({ gripMs: 500,  trav: 0.02 }), 'tap');
+  assert.equal(rel({ gripMs: 1500, trav: 0.04 }), 'tap', 'holding is not a reason to refuse');
+});
+
+test('travel, not duration, is what makes it a drag', () => {
+  assert.equal(rel({ gripMs: 120, trav: UIC.TAP_SLOP + 0.01 }), 'drop');
+  assert.equal(rel({ gripMs: 5000, trav: UIC.TAP_SLOP - 0.01 }), 'tap');
+});
+
+test('speedScale converts camera travel to screen travel', () => {
+  assert.equal(speedScale(0), 1);
+  assert.ok(Math.abs(speedScale(0.15) - 1 / 0.7) < 1e-9);
+  // A drift the camera sees as small covers more screen at a closer reach,
+  // which is exactly why the threshold is applied to the scaled value.
+  assert.ok(speedScale(0.22) > speedScale(0.10));
 });
 
 test('a fling needs peak speed AND follow-through', () => {

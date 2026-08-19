@@ -812,7 +812,8 @@ fast-converging pair whose projected contact is imminent therefore counts as
 the clap it physically was. While both hands are up, hand inference is
 prioritised (3 frames of 4) so the approach is sampled fast enough to see.
 
-- **Pinch = press.** A quick pinch is a tap (buttons, carets, menu items —
+- **Pinch = press.** Pinch without moving and it is a tap, however long you
+  hold it — travel, not time, is what makes a press a drag (buttons, carets, menu items —
   selects open a floating list, since script can't open the native picker);
   a held pinch drags — sliders, patchbay cables, section headers, resize
   grips, and scrolling inside any section body.

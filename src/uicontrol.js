@@ -26,10 +26,12 @@
 // project (github.com/jaredrhod/barehands) from its documented behaviour and
 // tuned threshold values — measurements, not code. Every shape gate is a
 // ratio of the hand's own span (wrist→middle-MCP), so recognition holds at
-// any distance from the camera; only travel and speed are screen-relative,
-// and those are kept in *normalized camera space* here (fractions of the
-// frame, converted from thresholds fitted at a ~1920px window), so neither
-// the window size nor the cursor reach-gain changes what counts as "still".
+// any distance from the camera. Travel and speed are the exception — they
+// are inherently screen-relative — so they are written as fractions of the
+// SCREEN (converted from thresholds fitted at a ~1920px window) and the
+// measured camera-space values are multiplied by the reach gain before
+// comparison, which keeps "still" meaning the same thing at every CURSOR
+// REACH setting and every window size.
 
 import { handOpenness, dist3 } from './math.js';
 import { makeOneEuro }         from './filter.js';
@@ -59,9 +61,12 @@ export const UIC = {
   GHOST_HEAL: 0.26,            // 500 — …and self-heals once the hand settles
   PROB_SKIP:  0.31,            // 600 — probation doesn't apply mid-swing
 
-  // Release classification.
-  TAP_MS:    300,              // shorter than this…
-  TAP_TRAV:  0.014,            // …and stiller than this (26 px) = a tap
+  // Release classification. A press that never travels is a TAP however long
+  // it was held — the duration+stillness pair this replaced (300 ms / 26 px)
+  // was fitted to a mouse-grade pointer and unreachable by a hand: a hand
+  // drifts further than that just closing its fingers, so every deliberate
+  // pinch classified as a drop and no click ever fired.
+  TAP_SLOP:  0.05,             // travel (screen fractions) that makes it a drag
   FLING_MIN_GRIP: 120,         // a blur-phantom grip can't throw
   FLING_PEAK:   0.68,          // 1300 px/s peak over the last…
   PEAK_WIN:     220,           // …ms of history…
@@ -257,16 +262,28 @@ export function histVel(hist, now) {
   return { peak, lastS, vx, vy };
 }
 
-// A short, still grip is a tap. A grip that hit real speed *and carried it
-// into the release* is a fling (follow-through is what separates a throw
-// from a stop). Everything else just lets go.
-export function classifyRelease({ gripMs, trav, peak, lastS, probKill }) {
+// A grip that hit real speed *and carried it into the release* is a fling
+// (follow-through is what separates a throw from a stop). Otherwise a grip
+// that never left its starting point is a TAP — holding still is the whole
+// signal, and how long you held is not the app's business. Anything that
+// travelled and then stopped is just letting go.
+//
+// `trav`, `peak` and `lastS` arrive in SCREEN fractions (the caller applies
+// the reach gain), so these numbers mean the same thing at every CURSOR
+// REACH setting.
+export function classifyRelease({ trav, gripMs, peak, lastS, probKill }) {
   if (probKill) return 'drop';
-  if (gripMs < UIC.TAP_MS && trav < UIC.TAP_TRAV) return 'tap';
   if (gripMs >= UIC.FLING_MIN_GRIP && peak > UIC.FLING_PEAK
       && lastS > peak * UIC.FLING_FOLLOW) return 'fling';
+  if (trav < UIC.TAP_SLOP) return 'tap';
   return 'drop';
 }
+
+// Camera travel → screen travel. The cursor maps the inner (1−2·margin) of
+// the frame onto the whole screen, so a hand movement covers more screen
+// than frame; every distance and speed threshold is written in screen terms
+// and measured in camera terms, and this is the conversion between them.
+export const speedScale = margin => 1 / Math.max(0.1, 1 - 2 * margin);
 
 // ── Cursor mapping ───────────────────────────────────────────────────────
 // Mirrored-normalized camera coords → viewport px. The inner (1−2·margin) of
@@ -749,9 +766,10 @@ export const uicontrol = (() => {
           h.claw = makeClawState();
         }
 
+        const gain = speedScale(cfg.margin);
         const { lastS } = histVel(h.hist, now);
         const holding = driver?.isHolding?.(s) ?? false;
-        const ev = pinchStep(h.pinch, h.m, now, lastS, holding);
+        const ev = pinchStep(h.pinch, h.m, now, lastS * gain, holding);
 
         if (ev === 'press') {
           h.pressX = h.x; h.pressY = h.y; h.pressT = now; h.trav = 0;
@@ -763,10 +781,14 @@ export const uicontrol = (() => {
         if (ev === 'release') {
           const v = histVel(h.hist, now);
           const kind = classifyRelease({
-            gripMs: now - h.pressT, trav: h.trav,
-            peak: v.peak, lastS: v.lastS, probKill: h.pinch.probKill,
+            gripMs: now - h.pressT, trav: h.trav * gain,
+            peak: v.peak * gain, lastS: v.lastS * gain,
+            probKill: h.pinch.probKill,
           });
           driver?.release(s, { kind, vx: v.vx, vy: v.vy });
+          // A click you cannot see is indistinguishable from a click that did
+          // not happen — which is exactly how the broken tap rule read.
+          if (kind === 'tap') emit({ type: 'tap', side: s, x: h.x, y: h.y });
         } else if (ev === 'drop') {
           driver?.release(s, { kind: 'drop' });
         }
@@ -789,6 +811,7 @@ export const uicontrol = (() => {
           yUp: h.yUp,
           up: h.m?.up ?? 0,
           open: h.m?.open ?? 0,
+          r: h.m?.r ?? null,
         };
       }
       const wristD = hs.L.present && hs.R.present

@@ -16,6 +16,8 @@ let cv = null, ctx = null;
 let reduced = false;
 let hintDone = false;         // the clap hint retires after the first window
 let hintShownAt = 0;          // …or after ~10s on screen
+let flash = null;             // { x, y, t } — a tap just fired, show that it did
+const FLASH_MS = 260;
 
 // Theme tokens, cached — re-read when the theme flips, not every frame.
 let cols = null;
@@ -95,6 +97,9 @@ export function initUicontrol() {
       case 'window':
         hintDone = true;                         // the ritual has been found
         if (ev.open) toast('Hold up a hand to toggle UI control');
+        break;
+      case 'tap':
+        flash = { x: ev.x, y: ev.y, t: performance.now() };
         break;
       case 'panic':
         toast('Hand cursor disarmed');
@@ -228,17 +233,43 @@ export function updateUicOverlay() {
     }
   }
 
-  // DEV: the live gate metrics — the tuning clinic for fitting the clap to
-  // a real pair of hands.
+  // A tap that fires draws a ring where it landed. Without it a click and a
+  // missed click look identical, which is how a broken tap rule stayed
+  // invisible: the cursor moved, so the modality looked alive.
+  if (flash) {
+    const age = (performance.now() - flash.t) / FLASH_MS;
+    if (age >= 1) {
+      flash = null;
+    } else {
+      const p = pxOf(flash);
+      ctx.save();
+      ctx.strokeStyle = cols.armed;
+      ctx.globalAlpha = 1 - age;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, reduced ? 22 : 12 + age * 26, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // DEV: the live gate metrics — the tuning clinic for fitting the gates to
+  // a real pair of hands. Pinch first, since that is what a click is.
   if (document.body.classList.contains('dev') && anyPresent) {
     const f = n => (n == null ? '—' : n.toFixed(2));
+    const pin = s => {
+      const h = v.hands[s];
+      if (!h.present) return `${s} —`;
+      return `${s} r ${f(h.r)}${h.pinched ? ' PINCH' : ''}${h.ghost ? ' ghost' : ''}`;
+    };
     ctx.save();
     ctx.font = '10px "IBM Plex Mono", monospace';
     ctx.fillStyle = cols.text;
     ctx.globalAlpha = 0.75;
+    ctx.fillText(`uic ${pin('L')} · ${pin('R')}`, 8, cv.height - 22);
     ctx.fillText(
-      `uic L up ${f(v.hands.L.up)} open ${f(v.hands.L.open)} · `
-      + `R up ${f(v.hands.R.up)} open ${f(v.hands.R.open)} · wristD ${f(v.wristD)}`,
+      `up ${f(v.hands.L.up)}/${f(v.hands.R.up)} · `
+      + `open ${f(v.hands.L.open)}/${f(v.hands.R.open)} · wristD ${f(v.wristD)}`,
       8, cv.height - 8);
     ctx.restore();
   }
