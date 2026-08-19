@@ -45,8 +45,10 @@ export function midiAtPoint(width, height, x, y) {
 // Pure draw. opts: { height, root, scale, markers, labels, dpr }
 //   scale: null → plain keys, no in-scale tint (quantise off)
 //   markers: array of marker midis (one per oscillator); null entries skipped
+//   chord:   midis currently sounding as a chord — painted ON the keys, so the
+//            keyboard shows the harmony as shape rather than as a note list
 //   labels: true → octave anchors (C2…C7) on the C keys
-export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, markers = [], labels = false, dpr } = {}) {
+export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, markers = [], chord = [], labels = false, dpr } = {}) {
   dpr = dpr ?? Math.min(window.devicePixelRatio || 1, 2);
   const W = canvas.clientWidth || 260, H = height;
   if (canvas.width !== W * dpr || canvas.height !== H * dpr) { canvas.width = W * dpr; canvas.height = H * dpr; }
@@ -82,6 +84,30 @@ export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, ma
       ? (pc(m) === rootPc ? '#c58a1e' : '#41527f')
       : '#20242b';
     ctx.fillRect(x, 0, bw, bh);
+  }
+
+  // Chord tones. Every octave of each pitch class is lit, not just the octave
+  // the voice happens to be in: the point of the overlay is to show the SHAPE
+  // of the harmony across the keyboard while you play, and one triad in the
+  // middle of six octaves is a detail you cannot read at arm's length from a
+  // camera. The sounding octave is drawn solid, its echoes translucent, so the
+  // actual voicing is still distinguishable.
+  if (chord.length) {
+    const sounding = new Set(chord);
+    const classes  = new Set(chord.map(pc));
+    const CHORD_COL = '0,229,204';                       // the app's cyan
+    for (let m = KBD_LO; m <= KBD_HI; m++) {
+      if (!classes.has(pc(m))) continue;
+      const solid = sounding.has(m);
+      ctx.fillStyle = `rgba(${CHORD_COL},${solid ? 0.82 : 0.26})`;
+      if (isWhite(m)) {
+        const x = L.wIdx.get(m) * L.ww;
+        ctx.fillRect(x + 0.5, 0, L.ww - 1, H);
+      } else {
+        const x = (L.wIdx.get(m - 1) + 1) * L.ww - bw / 2;
+        ctx.fillRect(x, 0, bw, bh);
+      }
+    }
   }
 
   // Octave anchors on C keys — per-key names are unreadable at 36 white keys,
@@ -124,7 +150,8 @@ export function makeKbdView(canvasId, { height = 46 } = {}) {
       const c = document.getElementById(canvasId);
       if (!c) return;
       const h = typeof height === 'function' ? height() : height;
-      const s = `${opts.root}|${opts.scale}|${c.clientWidth}|${h}|${(opts.markers ?? []).join(',')}`;
+      const s = `${opts.root}|${opts.scale}|${c.clientWidth}|${h}`
+              + `|${(opts.markers ?? []).join(',')}|${(opts.chord ?? []).join(',')}`;
       if (s === sig) return;
       sig = s;
       drawKeyboard(c, { ...opts, height: h });

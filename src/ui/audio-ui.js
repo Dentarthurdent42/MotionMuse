@@ -10,7 +10,7 @@ import { enhanceSections } from './sections.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
-import { gestureSectionsHTML, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
+import { gestureSections, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
 
 const opts = (arr, sel) =>
   arr.map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`).join('');
@@ -73,7 +73,7 @@ export function renderAudioPanel() {
     </div>`;
 
   const waveBtn = (type, label, osc) =>
-    `<div class="wave-btn" data-type="${type}" data-osc="${osc}">${label}</div>`;
+    `<button type="button" class="wave-btn" data-type="${type}" data-osc="${osc}">${label}</button>`;
 
   const vq = engine.getVolStep();
   const vqStepOpts = STEP_OPTS.map(s =>
@@ -93,7 +93,14 @@ export function renderAudioPanel() {
   const gv = playalong.view;
   const gameActive = gv.state === 'countdown' || gv.state === 'playing';
 
+  // Chord Mode leads the panel: it is a way of playing rather than a setting,
+  // so someone who came to play chords should not have to scroll past the
+  // timbre picker and the note game to reach it. A section the user has
+  // dragged keeps the position they gave it — sections.js only falls back to
+  // this markup order for hosts nobody has rearranged.
+  const secs = gestureSections();
   panel.innerHTML = `
+    ${secs.chordMode}
     <div class="audio-section">
       <div class="audio-section-label">Sound Kit</div>
       <select id="kit-select" title="Instrument timbre preset (synthesized)">${kitOpts}</select>
@@ -109,18 +116,18 @@ export function renderAudioPanel() {
         </select>
       </div>
       <div class="wave-btns" style="margin-top:4px;">
-        <div class="wave-btn${gameActive ? ' on' : ''}" id="game-btn">${gameActive ? 'STOP' : 'PLAY'}</div>
-        <div class="wave-btn${playalong.guide ? ' on' : ''}" id="guide-btn" title="Play a quiet guide melody">GUIDE</div>
+        <button type="button" class="wave-btn${gameActive ? ' on' : ''}" id="game-btn">${gameActive ? 'STOP' : 'PLAY'}</button>
+        <button type="button" class="wave-btn${playalong.guide ? ' on' : ''}" id="guide-btn" title="Play a quiet guide melody">GUIDE</button>
       </div>
       <canvas id="game-canvas" class="game-canvas" style="display:${gv.state !== 'idle' ? 'block' : 'none'}"></canvas>
       <div id="game-score" class="quant-notes">${gv.state === 'idle' ? bestLine() : '—'}</div>
     </div>
-    ${gestureSectionsHTML()}
+    ${secs.gestures}
     <div class="audio-section">
       <div class="audio-section-label">
         Pitch Quantize
-        <div class="wave-btn${t.enabled ? ' on' : ''}" id="quant-toggle"
-             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${t.enabled ? 'ON' : 'OFF'}</div>
+        <button type="button" class="wave-btn${t.enabled ? ' on' : ''}" id="quant-toggle"
+             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${t.enabled ? 'ON' : 'OFF'}</button>
       </div>
       <div class="scale-grid">
         <select id="scale-root"   title="Root note">${opts(NOTE_NAMES, t.root)}</select>
@@ -133,8 +140,8 @@ export function renderAudioPanel() {
     <div class="audio-section">
       <div class="audio-section-label">
         Volume Quantize
-        <div class="wave-btn${vq.enabled ? ' on' : ''}" id="vq-toggle"
-             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${vq.enabled ? 'ON' : 'OFF'}</div>
+        <button type="button" class="wave-btn${vq.enabled ? ' on' : ''}" id="vq-toggle"
+             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${vq.enabled ? 'ON' : 'OFF'}</button>
       </div>
       <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr;">
         <select id="vq-steps" title="Loudness levels, silence included">${vqStepOpts}</select>
@@ -142,8 +149,8 @@ export function renderAudioPanel() {
         <select id="vq-edge"  title="Attack / release speed at a level change">${vqEdgeOpts}</select>
       </div>
       <div class="wave-btns" style="margin-top:4px;">
-        <div class="wave-btn${vq.gate ? ' on' : ''}" id="vq-gate"
-             title="Make the bottom level true silence, so notes can be separated and re-attacked">GATE</div>
+        <button type="button" class="wave-btn${vq.gate ? ' on' : ''}" id="vq-gate"
+             title="Make the bottom level true silence, so notes can be separated and re-attacked">GATE</button>
         <select id="vq-gate-at" style="flex:1 1 auto;min-width:0;"
                 ${vq.gate ? '' : 'disabled'}
                 title="Where the gate switches off, as a share of full volume. The ladder's own midpoint (·auto) is not always where you want the switch: with 2 steps it lands at 18%, so an on/off control flips very early. Raise it to move the switch later in the gesture.">${gateAtOpts(vq)}</select>
@@ -178,7 +185,7 @@ export function renderAudioPanel() {
       <div class="audio-section-label">Filter Type</div>
       <div class="wave-btns" id="filt-types">
         ${['lowpass','highpass','bandpass','notch'].map(t =>
-          `<div class="wave-btn" data-ftype="${t}">${t.slice(0, 3).toUpperCase()}</div>`
+          `<button type="button" class="wave-btn" data-ftype="${t}">${t.slice(0, 3).toUpperCase()}</button>`
         ).join('')}
       </div>
     </div>
@@ -186,7 +193,7 @@ export function renderAudioPanel() {
       <div class="audio-section-label">Chord Filter Type</div>
       <div class="wave-btns" id="cfilt-types">
         ${['lowpass','highpass','bandpass','notch'].map(t =>
-          `<div class="wave-btn" data-ftype="${t}">${t.slice(0, 3).toUpperCase()}</div>`
+          `<button type="button" class="wave-btn" data-ftype="${t}">${t.slice(0, 3).toUpperCase()}</button>`
         ).join('')}
       </div>
     </div>

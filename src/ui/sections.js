@@ -47,9 +47,23 @@ const MIN_H = 56;              // below this a section is unreadable, not compac
 // to live outside that rebuild to keep its canvas and its click handler.
 // hostUnder picks the smallest box containing the pointer, so aiming at the
 // synth list targets the inner one and aiming at the scope targets the outer.
+// The three columns come first: they are the outermost hosts, and everything
+// else nests inside one of them. They exist so that SIGNALS, the camera and the
+// AUDIO ENGINE can be moved at all — those panels used to BE the columns, which
+// made them the only sections in the app that could not go anywhere. hostUnder
+// picks the smallest box under the pointer, so aiming at a panel's own list
+// still targets that panel rather than the column holding it.
 const HOSTS = [
+  ['col-l', '.col-l'],
+  ['col-c', '.col-c'],
+  ['col-r', '.col-r'],
   ['audio', '#audio-panel'],
-  ['aud',   '.panel-aud'],
+  // The audio panel is now a section itself, and enhance() wraps a section's
+  // content into its collapsible body — so the oscilloscope and the synth list
+  // moved one level down and `.panel-aud` stopped being their parent. The body
+  // is the host here for that reason, unlike the panels above: folding AUDIO
+  // ENGINE *should* hide what is inside it, which is exactly what the body is.
+  ['aud',   '.panel-aud > .sec-body'],
   ['cam',   '#cam-extras'],
   ['sig',   '.panel-sig'],
   ['map',   '.panel-map'],
@@ -70,6 +84,10 @@ const DEFAULT_H = {
 let heights = load();
 let order   = loadMap(ORDER_KEY);
 let home    = loadMap(HOME_KEY);
+// Section ids that have already been given their DEFAULT_H this page load, so a
+// re-render cannot re-impose it. Deliberately not persisted: the default is
+// about the first sight of a section, and a fresh page should get it again.
+const defaulted = new Set();
 
 function loadMap(key) {
   try {
@@ -230,7 +248,20 @@ function enhance(sec) {
   sec.dataset.secId = id;
 
   const stored = heights[id];
-  applyHeight(sec, stored === undefined ? DEFAULT_H[id] ?? null : stored);
+  if (stored !== undefined) applyHeight(sec, stored);
+  else if (!defaulted.has(id)) {
+    // A default height is a STARTING size, applied once. It used to be
+    // re-applied on every enhance pass, and every re-render goes through one —
+    // so picking a handshape from a dropdown rebuilt the audio panel and
+    // snapped Chord Mode back to 220px, which read as "the container resets
+    // when I use it". Worse, whether it snapped depended on how much content
+    // the section happened to have the first time it was measured: applyHeight
+    // releases a height that exceeds the content, so a section that was short
+    // at first paint (chord mode off) went natural, grew when you switched the
+    // mode on, and then got clamped by the next unrelated re-render.
+    defaulted.add(id);
+    applyHeight(sec, DEFAULT_H[id] ?? null);
+  }
   if (folded.has(id)) setFolded(sec, true);
 }
 

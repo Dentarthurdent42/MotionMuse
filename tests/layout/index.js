@@ -159,7 +159,11 @@ const sections = await page.evaluate(() => {
       const ex = document.getElementById('cam-extras');
       if (!ex) return null;
       const p = ex.parentElement;
-      return p.id === 'main' ? 'main' : (p.classList.contains('panel-cam') ? 'panel-cam' : p.className);
+      if (p.classList.contains('panel-cam')) return 'panel-cam';
+      // Out of the sticky panel is the point; which box it lands in beside it
+      // is not. That used to be #main and is now the camera's column.
+      if (p.id === 'main' || p.classList.contains('col')) return 'outside';
+      return p.className;
     })(),
     // …and the inflation heuristic itself is off, so the authored size is what
     // ships at every zoom level rather than a per-container guess.
@@ -575,7 +579,11 @@ for (const { width, off, on, sections, camSticky } of results) {
   // Every column can receive a dropped section. The audio column has two: the
   // synth list (which renderAudioPanel rebuilds) and the panel around it, which
   // is where the oscilloscope lives so its canvas survives that rebuild.
-  check(sections.hosts.join(',') === 'aud,audio,cam,map,sig',
+  // col-l / col-c / col-r are the three columns themselves. They are hosts so
+  // that the panels which used to BE the columns — SIGNALS, the camera, the
+  // AUDIO ENGINE — have somewhere to be dropped, and so any section can be
+  // dragged out to sit beside them as a column-level panel.
+  check(sections.hosts.join(',') === 'aud,audio,cam,col-c,col-l,col-r,map,sig',
     `${w}: every column can receive a section`, sections.hosts.join(','));
   check(sections.inHost.length >= 12, `${w}: sections live in hosts`, `${sections.inHost.length}`);
   check(sections.noBirth.length === 0,
@@ -603,7 +611,7 @@ for (const { width, off, on, sections, camSticky } of results) {
   check(!v.inRebuiltPanel, `${w}: and sits outside the panel that rebuilds itself`);
   check(v.foldable, `${w}: it can be minimized`);
   check(v.movable, `${w}: and moved to another column`);
-  check(sections.camExtras === (width < 769 ? 'main' : 'panel-cam'),
+  check(sections.camExtras === (width < 769 ? 'outside' : 'panel-cam'),
     `${w}: the camera column's extra sections are ${width < 769 ? 'outside' : 'inside'} the sticky panel`,
     String(sections.camExtras));
   if (sections.caret) {
@@ -682,8 +690,12 @@ for (const { width, off, on, sections, camSticky } of results) {
 
     const stacked = [['cam', cam], ['sig', sig], ['map', map], ['aud', aud]];
     const order = [...stacked].sort((a, b) => a[1].top - b[1].top).map(([k]) => k).join('→');
-    check(order === 'cam→sig→map→aud',
-      `${w} portrait: panels stack camera→signals→patchbay→audio`, order);
+    // The camera still leads — it is what you watch while playing, and what you
+    // pull down on to get back to the header. Patchbay follows it now rather
+    // than signals: the two share the middle column, and columns stack whole
+    // now that they are real containers instead of a per-panel grid placement.
+    check(order === 'cam→map→sig→aud',
+      `${w} portrait: panels stack camera→patchbay→signals→audio`, order);
   }
 }
 

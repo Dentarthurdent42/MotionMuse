@@ -424,11 +424,14 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+/* Matched to .audio-section-label: same size, tracking and left-aligned
+   padding, so the camera's header sits in the same visual row as EEG Input and
+   EMG Input rather than looking like a tab strip from another design. */
 .src-tab {
   flex: 1;
-  padding: 5px 0;
-  text-align: center;
-  font-size: 9px;
+  padding: 5px 10px;
+  text-align: left;
+  font-size: 10px;
   letter-spacing: 2px;
   color: var(--dim);
   border-right: 1px solid var(--border);
@@ -1047,6 +1050,43 @@ option { background: var(--panel); }
   display: flex; align-items: center; gap: 5px;
   padding: 3px 0; font-size: 10px; color: var(--text);
 }
+/* Handshape illustration. Fixed box whether or not there is a picture, so the
+   names still line up down the column — a custom shape has no render, and a
+   ragged left edge would be a worse trade than a little empty space. */
+.gesture-pic {
+  width: 34px; height: 34px; flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--faint) 70%, transparent);
+}
+.gesture-pic-none { background: none; }
+/* What a handshape plays in Chord Mode, shown on the row that defines it.
+   Reads as a chip rather than more text so it does not compete with the name,
+   and RELEASE is amber because it is the one that stops sound rather than
+   making it — the distinction matters mid-performance. */
+.gesture-chord {
+  flex-shrink: 0;
+  font-size: 9px;
+  letter-spacing: 1px;
+  padding: 1px 5px;
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  border-radius: 2px;
+  background: var(--cyan-dim);
+}
+.mic-meter {
+  height: 6px;
+  margin: 5px 0 3px;
+  background: var(--faint);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.mic-meter-fill {
+  height: 100%; width: 0%;
+  background: var(--cyan);
+  transition: width 0.06s linear;
+}
+.gesture-chord.rel { border-color: var(--amber); color: var(--amber); background: #f0a50022; }
 .gesture-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--border2); flex-shrink: 0;
@@ -1563,10 +1603,33 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
 .sig-group-meta { margin-left: auto; font-size: 8px; letter-spacing: 1px; color: var(--border2); }
 .sig-sec-body { padding: 2px 0 4px; }
 
+/* ── Columns ────────────────────────────────────────────────
+   A column is a generic drop host: it owns a grid cell and stacks whatever
+   sections are in it. It scrolls on its own in landscape, so a column that
+   collects several panels pages through them instead of growing the page.
+   `min-height: 0` is what lets it actually scroll inside the grid row rather
+   than stretching the row to fit its content. */
+.col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg);
+}
+/* A panel keeps its natural height in a column; only the ones that own a list
+   are allowed to take the slack, so a short column does not stretch its last
+   panel down the whole screen. */
+.col > .panel-sig,
+.col > .panel-map,
+.col > .panel-aud { flex: 1 1 auto; min-height: 0; }
+
 /* ── Panel grid layouts (desktop) ───────────────────────── */
 .panel-cam {
   display: grid;
   grid-template-rows: auto auto auto;
+  flex: 0 0 auto;                 /* the picture keeps its size in a column */
 }
 /* Drop host for the camera column. Scrolls on its own so a section dragged in
    here cannot grow the panel — which in portrait is pinned to the top of the
@@ -1609,14 +1672,18 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
    The splitters still drive columns 1 and 5 (--col-l / --col-r), so the
    existing drag/persist logic needs no change — only the contents moved. */
 @media (min-width: 769px) {
-  #main { grid-template-rows: auto 1fr; }
+  #main { grid-template-rows: 1fr; }
 
-  .panel-sig { grid-column: 1; grid-row: 1 / span 2; }
-  #split-l   { grid-column: 2; grid-row: 1 / span 2; }
-  .panel-cam { grid-column: 3; grid-row: 1; }
-  .panel-map { grid-column: 3; grid-row: 2; }
-  #split-r   { grid-column: 4; grid-row: 1 / span 2; }
-  .panel-aud { grid-column: 5; grid-row: 1 / span 2; }
+  /* The COLUMNS take the cells now, not the panels. A panel that claimed its
+     own cell could not be moved out of it — dragging AUDIO ENGINE to the left
+     changed the DOM and the grid put it straight back, because `grid-column:5`
+     is a property of the panel rather than of where it happens to be. Cells
+     belong to the containers; what is inside one is then just DOM order. */
+  .col-l   { grid-column: 1; }
+  #split-l { grid-column: 2; }
+  .col-c   { grid-column: 3; }
+  #split-r { grid-column: 4; }
+  .col-r   { grid-column: 5; }
 
   .panel-cam { border-bottom: 1px solid var(--border); }
 
@@ -1695,6 +1762,21 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
     gap: 1px;
     background: var(--border);
   }
+
+  /* The columns stop being columns and become plain stacked blocks, so the
+     page reads as one list of panels. They must NOT scroll here: the document
+     is the scroller in portrait, and a column that made its own scrollport
+     would trap the camera's stickiness inside a box that never moves —
+     position:sticky against a scrollport that cannot scroll does nothing. */
+  .col {
+    display: block;
+    overflow: visible;
+    min-height: 0;
+  }
+  /* The camera's column leads on a phone. It holds the picture, which is both
+     the thing you need in sight while playing and the thing you pull down on
+     to get back to the header — neither works from the middle of the page. */
+  .col-c { order: -1; }
 
   .splitter { display: none; }
 

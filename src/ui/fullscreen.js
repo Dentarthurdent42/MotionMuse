@@ -6,6 +6,7 @@
 
 import { engine } from '../engine.js';
 import { makeKbdView, midiOf } from './keyboard.js';
+import { chordmode } from '../chordmode.js';
 
 let wrap, fsBtn, kbdBtn, kbdCanvas;
 let kbdShown = false;
@@ -112,10 +113,17 @@ export function updateFsOverlay() {
   }
   kbdCanvas.classList.add('shown');
   const t = engine.getTuning();
+  // Chord tones go on the same keyboard as the oscillator markers, because in
+  // chord mode the keyboard is otherwise inert — the markers track oscillators,
+  // and chord mode typically runs with none. Fullscreen is exactly where you
+  // cannot see the panel, so this is the only place the harmony is visible
+  // while you are playing it.
+  const c = chordmode.enabled ? chordmode.currentChord() : null;
   fsKbd.draw({
     root: t.root,
     scale: t.enabled ? t.scale : null,   // untinted keys when quantise is off
     markers: Array.from({ length: engine.getOscCount() },
       (_, i) => midiOf(engine.PARAMS[`osc${i + 1}_freq`].val)),
+    chord: c ? c.freqs.map(midiOf) : [],
   });
 }

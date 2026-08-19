@@ -21,11 +21,34 @@ const MODE_LABELS = {
   'harmonic minor': 'harm min',
 };
 
-export function gestureSectionsHTML() {
+// Returns the two sections separately — see the note beside the templates.
+export function gestureSections() {
   const gestures = gesture.list();
   const relId = chordmode.getReleaseGesture();
   const env = engine.getChordEnv();
   const on = chordmode.enabled;
+
+  // What each handshape is currently wired to in Chord Mode. The Gestures
+  // panel is where a handshape is DEFINED — calibrated, illustrated, named —
+  // and it used to say nothing about what that shape does, while Chord Mode
+  // assigned shapes without showing whether they were calibrated. Two lists of
+  // the same sixteen things, neither referring to the other. This is the
+  // read-only half of the fix: Chord Mode still owns the assignment.
+  //
+  // Shown whether or not chord mode is switched on, because the chip answers
+  // "what is this shape wired to", not "is it sounding". Hiding it when the
+  // mode is off would read as having lost the assignment.
+  const chordChips = (() => {
+    const m = new Map();
+    const k = chordmode.effectiveKey();
+    const sev = chordmode.sevenths();
+    for (const [gid, deg] of Object.entries(chordmode.assignments())) {
+      m.set(gid, diatonicChord(k.root, k.octave, k.mode, deg, sev[deg]).numeral);
+    }
+    const rel = chordmode.getReleaseGesture();
+    if (rel) m.set(rel, 'RELEASE');
+    return m;
+  })();
 
   const row = g => {
     const label = gestureLabel(g);
@@ -37,10 +60,23 @@ export function gestureSectionsHTML() {
     const tag = g.est
       ? `<span class="gesture-tag est" title="Estimated template — calibrate it on your own hand">est</span>`
       : (g.builtin ? '' : `<span class="gesture-tag">custom</span>`);
+    // Illustration, where one exists. Rendered from this template's own feature
+    // vector (scripts/handshapes.mjs), so it shows the shape the matcher is
+    // actually looking for rather than an artist's idea of it. A custom shape
+    // the user recorded has no render and simply shows none — the row still
+    // reads, and an approximate stand-in would be a lie about which shape it is.
+    const pic = g.builtin && g.f
+      ? `<img class="gesture-pic" src="icons/handshapes/${g.id}.png" alt="" width="34" height="34" loading="lazy">`
+      : '<span class="gesture-pic gesture-pic-none" aria-hidden="true"></span>';
     return `
     <div class="gesture-row" data-gid="${g.id}" title="${label}${g.builtin ? ' (built-in)' : ''}">
       <span class="gesture-dot" id="gdot-${g.id}"></span>
+      ${pic}
       <span class="gesture-name">${short}</span>
+      ${chordChips.has(g.id)
+        ? `<span class="gesture-chord${chordChips.get(g.id) === 'RELEASE' ? ' rel' : ''}"
+                 title="Chord Mode: plays ${chordChips.get(g.id)}">${chordChips.get(g.id)}</span>`
+        : ''}
       ${tag}
       <button class="rm-btn gesture-cal" data-gid="${g.id}"
               title="Calibrate ${label} on your own hand" aria-label="Calibrate ${label}">⊙</button>
@@ -93,9 +129,13 @@ export function gestureSectionsHTML() {
   // Listing the chords instead makes the mapping a function by construction:
   // seven degrees plus RELEASE, one handshape each, and choosing a shape takes
   // it off whatever it was doing before.
+  // `· est` rides along with the name: whether a shape is calibrated is exactly
+  // what you want to know at the moment you assign it to a chord, and it used
+  // to live only in the Gestures panel, one section away.
   const shapeOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
     + gesture.list().map(g =>
-        `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>${gestureLabel(g)}</option>`).join('');
+        `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
+        + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
 
   const chordRow = i => {
     const c = diatonicChord(eff.root, eff.octave, eff.mode, i, sevenths[i]);
@@ -163,18 +203,23 @@ export function gestureSectionsHTML() {
       <span class="ch-sev-gap"></span>
     </div>`;
 
-  return `
+  // Returned separately rather than as one blob: the two sections are built
+  // from the same handshape data, but the panel places them apart — Chord Mode
+  // leads the panel, Gestures sits further down with the rest of the setup.
+  const gesturesHTML = `
     <div class="audio-section" data-sec="gestures">
       <div class="audio-section-label">
         Gestures
-        <div class="wave-btn" id="record-gesture-btn"
-             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">● REC</div>
+        <button type="button" class="wave-btn" id="record-gesture-btn"
+             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">● REC</button>
       </div>
       <div id="gesture-list">${gestureRows}</div>
       <div id="gesture-cal-status" class="quant-notes"></div>
       ${calibrate}
       ${restore}
-    </div>
+    </div>`;
+
+  const chordModeHTML = `
     <div class="audio-section" data-sec="chord-mode">
       <div class="audio-section-label">
         Chord Mode
@@ -195,7 +240,7 @@ export function gestureSectionsHTML() {
           </label>`).join('')}
       </div>
       <div class="chord-live" id="chord-live" style="display:${on ? 'grid' : 'none'}">
-        <div id="chord-readout" class="quant-notes">—</div>
+        <div id="chord-readout" class="quant-notes" role="status" aria-live="polite">—</div>
         <div class="chord-vol" title="How loud the chord is right now">
           <div class="chord-vol-fill" id="chord-vol-fill"></div>
           <span class="chord-vol-read" id="chord-vol-read">—</span>
@@ -203,6 +248,8 @@ export function gestureSectionsHTML() {
       </div>
       ${on ? '' : '<div class="quant-notes">hold a gesture to play its chord</div>'}
     </div>`;
+
+  return { gestures: gesturesHTML, chordMode: chordModeHTML };
 }
 
 // How to make each shape, shown during calibration. A template recorded from

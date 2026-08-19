@@ -1,6 +1,7 @@
 import { cvSource }                        from './cv.js';
 import { depthSource }                      from './depth.js';
 import { faceSource }                       from './face.js';
+import { micSource }                        from './mic.js';
 import { engine }                           from './engine.js';
 import { mapper, trackersFor }              from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
@@ -37,10 +38,17 @@ consumeSharedLink();
 // ── Main RAF loop ────────────────────────────────────────────────────────
 function loop() {
   mapper.tick();
+  micSource.tick();      // cheap no-op unless the mic is on
   gesture.tick();        // recognize hand gestures → gesture_<id> bus signals
   chordmode.tick();      // cheap no-op unless chord mode is enabled
   playalong.tick();      // cheap no-op unless a song is running
   updateSigPanel();
+  // Mic meter: the one piece of feedback that tells you the browser is actually
+  // hearing you, which is otherwise invisible until you have wired a cable.
+  if (micSource.active) {
+    const f = document.getElementById('mic-meter-fill');
+    if (f) f.style.width = `${(micSource.level * 100).toFixed(1)}%`;
+  }
   updateMapperBars();
   if (engine.started) updateAudioSliders();
   drawViz();
@@ -120,6 +128,36 @@ const faceToggle = (btnId, key, setter, label) => {
     btn.disabled = false;
   });
 };
+// ── Microphone ───────────────────────────────────────────────────────────
+const micBtn = document.getElementById('mic-btn');
+if (micBtn) {
+  if (!micSource.supported) {
+    micBtn.disabled = true;
+    micBtn.title = 'No microphone API in this browser';
+  }
+  micBtn.addEventListener('click', async () => {
+    micBtn.disabled = true;
+    try {
+      const on = await micSource.toggle();
+      micBtn.textContent = on ? 'ON' : 'OFF';
+      micBtn.classList.toggle('on', on);
+      micBtn.setAttribute('aria-pressed', String(on));
+      // Signals only exist once the mic has been started, so the panel has to
+      // be rebuilt to list them — same as the camera does when it starts.
+      buildSigPanel();
+      if (on) toast('Microphone on — mic_level, mic_pitch, mic_clarity, mic_bright');
+    } catch (err) {
+      // Denial is the common case and deserves a real explanation, not silence:
+      // the browser prompt may have been dismissed minutes ago.
+      toast(err?.name === 'NotAllowedError'
+        ? 'Microphone permission denied — allow it in your browser’s site settings'
+        : `Microphone unavailable: ${err?.message ?? err}`);
+    } finally {
+      micBtn.disabled = false;
+    }
+  });
+}
+
 faceToggle('face-btn', 'faceOn', on => faceSource.setFace(on), 'Face');
 faceToggle('gaze-btn', 'gazeOn', on => faceSource.setGaze(on), 'Gaze');
 
