@@ -269,7 +269,10 @@ function wireGrip(sec, grip, body, id) {
   grip.addEventListener('pointerdown', e => {
     e.preventDefault();
     e.stopPropagation();          // never start a panel drag underneath
-    grip.setPointerCapture(e.pointerId);
+    // Guarded: the hand cursor drives this with a synthetic pointerId, which
+    // has no active pointer to capture (it emulates capture by dispatching
+    // straight at this element).
+    try { grip.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
     const startY = e.clientY;
     const startH = body.getBoundingClientRect().height;
     document.body.classList.add('resizing-sec');
@@ -542,7 +545,7 @@ function wireDrag(sec, head) {
 
     const startX = e.clientX, startY = e.clientY;
     let dragging = false, marked = null, target = null;
-    head.setPointerCapture(e.pointerId);
+    try { head.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
 
     const clearMark = () => {
       marked?.classList.remove('drop-before', 'drop-after', 'drop-into');

@@ -29,6 +29,9 @@ import { initTheme }                        from './ui/theme.js';
 import { initSettings }                     from './ui/settings.js';
 import { initShare, consumeSharedLink, announceSharedLink, isConsumingShare } from './ui/share.js';
 import { shouldOfferStart, openStartPicker } from './ui/firstrun.js';
+import { uicontrol }                        from './uicontrol.js';
+import { initUidriver }                     from './ui/uidriver.js';
+import { initUicontrol, updateUicOverlay }  from './ui/uicontrol-ui.js';
 import * as preset                          from './preset.js';
 
 // ── A shared setup, if this page was opened from a QR code / link ────────
@@ -41,6 +44,9 @@ function loop() {
   mapper.tick();
   micSource.tick();      // cheap no-op unless the mic is on
   gesture.tick();        // recognize hand gestures → gesture_<id> bus signals
+  uicontrol.tick();      // hand cursor — cheap no-op unless enabled; sits
+                         // between gesture and chordmode so a claim made this
+                         // frame is respected this frame
   chordmode.tick();      // cheap no-op unless chord mode is enabled
   playalong.tick();      // cheap no-op unless a song is running
   updateSigPanel();
@@ -56,6 +62,7 @@ function loop() {
   shader.render();       // cheap no-op unless the shader panel is active
   updateFsOverlay();     // cheap no-op unless fullscreen is active
   updateGamePanel();     // cheap no-op unless a song is running
+  updateUicOverlay();    // cheap no-op unless the hand cursor is live
   requestAnimationFrame(loop);
 }
 
@@ -300,7 +307,13 @@ const wakeAudio = () => { engine.resume(); };
 ['pointerdown', 'keydown'].forEach(ev =>
   document.addEventListener(ev, wakeAudio, { once: true, capture: true }));
 
-initHotkeys({ mute: () => { toggleMute(); } });
+initHotkeys({
+  mute:   () => { toggleMute(); },
+  // The cursor key is the keyboard's version of the clap: opens the arming
+  // window when nothing is armed, and is the panic key — disarm everything,
+  // one press — when anything is.
+  cursor: () => { uicontrol.hotkey(); },
+});
 onBindingChange(syncMuteUI);    // rebinding the key relabels the button and banner
 syncMuteUI();                   // muted from the first paint, before the graph exists
 startAudio();
@@ -433,6 +446,13 @@ initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
 initSettings();           // ⚙ theme + hotkeys: how the tool looks and is driven
+initUidriver();           // hand cursor → real UI effects (adapter table)
+initUicontrol();          // hand-cursor overlay, arming window, 🖐 button
+// A clap needs both hands tracked; with exactly one ✋ toggle on, arming
+// falls back to a long raised-open dwell of that hand. The cursor asks
+// rather than imports, so cv.js stays the only module that owns the flags.
+uicontrol.setSingleSide(() =>
+  cvSource.handsL !== cvSource.handsR ? (cvSource.handsL ? 'L' : 'R') : null);
 initShare();              // SHARE → a QR code of this setup
 initModelPanel();         // dev-mode pose model comparison panel
 initTutorial();           // guided tour (? button; auto-offers on first visit)

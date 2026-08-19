@@ -6,6 +6,7 @@ import { depthSource }                                      from './depth.js';
 import { createPoseBackend }                                from './posebackends.js';
 import { lsGet, lsSet }                                     from './storage.js';
 import { gesture }                                          from './gesture.js';
+import { uicontrol }                                        from './uicontrol.js';
 
 // How sure the handedness guess has to be before it is allowed to REJECT a
 // hand. MediaPipe reports a score per detection; below this the label is a coin
@@ -331,6 +332,9 @@ export const cvSource = {
   // hardware indicator off), detaches the stream, and resets the view.
   stopCamera() {
     this.running = false;
+    // No camera means no hands to steer with — an armed cursor would be a
+    // stuck claim on signals that can never move again.
+    uicontrol.disarmAll();
     const stream = this.video?.srcObject;
     stream?.getTracks?.().forEach(t => t.stop());
     if (this.video) {
@@ -366,7 +370,12 @@ export const cvSource = {
         // pose off is meant to buy hand tracking the whole frame budget, and
         // keeping the alternation would have thrown half of it away.
         const both = this.handsOn && this.poseOn;
-        const runHand = both ? (lat.frame & 1) === 0 : this.handsOn;
+        // An armed hand cursor deserves the frame budget: tilt the
+        // alternation to hands 3-of-4 (~22Hz at 30fps) while it is, and give
+        // pose the remaining quarter. Plain alternation otherwise.
+        const boost = both && uicontrol.wantsPriority();
+        const runHand = both ? (boost ? (lat.frame & 3) !== 3 : (lat.frame & 1) === 0)
+                             : this.handsOn;
         const runPose = both ? !runHand : this.poseOn;
         if (runHand) {
           this._hr = this.hand.recognizeForVideo
@@ -474,15 +483,26 @@ export const cvSource = {
         });
       }
     }
+    // The hand cursor sees every hand BEFORE the claims gate below — an armed
+    // hand is invisible to the bus precisely because the cursor owns it.
+    uicontrol.feedHands(found, foundWorld, performance.now());
+    // A claimed side is published as absent: signals decay, pinch fails
+    // quiet, the gesture matcher releases, chord mode sees nothing. One
+    // suppression point; nothing downstream knows the modality exists.
+    const pub = {
+      L: uicontrol.claims('L') ? null : found.L,
+      R: uicontrol.claims('R') ? null : found.R,
+    };
+
     // 'None' is the classifier saying it has no opinion, not a gesture.
     for (const side of ['L', 'R']) {
-      const c = foundCanned[side];
+      const c = pub[side] ? foundCanned[side] : null;
       gesture.setCanned(side, c && c.categoryName !== 'None' ? c.categoryName : null,
                         c?.score ?? 0);
     }
 
     ['L', 'R'].forEach(s => {
-      const lm = found[s];
+      const lm = pub[s];
       if (lm) {
         bus.update(`hand_${s}_x`,      lm[0].x);
         bus.update(`hand_${s}_y`,      1 - lm[0].y); // flip: up = 1
@@ -513,7 +533,8 @@ export const cvSource = {
     });
 
     // Distance-from-camera (LiDAR if active, else monocular size estimate).
-    depthSource.feedHands(found);
+    // Claimed hands are absent here too, so their z-signals decay in step.
+    depthSource.feedHands(pub);
   },
 
   // ── Signal extraction: pose ──────────────────────────────────────────

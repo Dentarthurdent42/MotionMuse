@@ -2056,3 +2056,52 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   #toast { font-size: 12px; padding: 7px 18px; }
   .note-badge { font-size: 10px; }
 }
+
+/* ── Hand cursor (uicontrol) ───────────────────────────────────────────────
+   The overlay canvas carries the cursor rings, dwell arcs and hover
+   highlight. It ignores the pointer entirely — it IS the pointer — and sits
+   above every panel and popover (tour tops out at 1002) but is reparented
+   into #video-wrap during native fullscreen, which only shows its own
+   subtree. */
+#uic-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+/* The floating option list that stands in for a native select — script can
+   set a select's value but cannot open its picker, and a hand cursor needs
+   something tappable. Fat rows on purpose: the cursor is steadier than a
+   fingertip but not as steady as a mouse. */
+#uic-select {
+  position: fixed;
+  z-index: 2001;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  box-shadow: var(--shadow-lg);
+}
+#uic-select button {
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+#uic-select button:hover { background: var(--faint); }
+#uic-select button.sel {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}

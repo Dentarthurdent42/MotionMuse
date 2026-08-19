@@ -12,6 +12,7 @@
 import { THEMES, getTheme, setTheme } from './theme.js';
 import { buildInfo, buildLabel }        from '../build.js';
 import { keyLabel, getBinding, setBinding, captureNextKey } from './hotkeys.js';
+import { uicontrol } from '../uicontrol.js';
 
 let pop = null;
 
@@ -30,6 +31,20 @@ function build() {
       <button class="wave-btn" id="mute-key-btn" type="button"
               title="Click, then press the key you want. Esc cancels.">${keyLabel(getBinding('mute'))}</button>
     </label>
+    <label class="set-row">HAND CURSOR
+      <button class="wave-btn" id="uic-toggle" type="button" aria-pressed="${uicontrol.enabled}"
+              title="Drive the UI with a hand: clap, then hold up the hand(s) to arm. The armed hand stops playing the instrument until you toggle it back.">${uicontrol.enabled ? 'ON' : 'OFF'}</button>
+    </label>
+    <label class="set-row">CURSOR REACH
+      <select id="uic-reach" title="How much of the camera frame maps to the whole screen — higher reach means smaller hand movements">
+        ${[['0.10', 'wide'], ['0.15', 'normal'], ['0.22', 'close']].map(([v, l]) =>
+          `<option value="${v}"${Math.abs(uicontrol.margin - +v) < 0.01 ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+    </label>
+    <label class="set-row">CURSOR KEY
+      <button class="wave-btn" id="cursor-key-btn" type="button"
+              title="Opens the arming window; disarms everything when armed. Click, then press the key you want. Esc cancels.">${keyLabel(getBinding('cursor'))}</button>
+    </label>
     <!-- Which build is on screen. Here rather than only in the console because
          the question it answers — "am I looking at a cached copy?" — comes up
          most on a phone, where there is no console to check. -->
@@ -43,17 +58,32 @@ function build() {
 
   el.querySelector('#theme-select').addEventListener('change', e => setTheme(e.target.value));
 
-  const keyBtn = el.querySelector('#mute-key-btn');
-  keyBtn.addEventListener('click', () => {
-    if (keyBtn.classList.contains('on')) return;      // already listening
-    keyBtn.classList.add('on');
-    keyBtn.textContent = 'PRESS A KEY';
-    captureNextKey(code => {
-      if (code) setBinding('mute', code);
-      keyBtn.classList.remove('on');
-      keyBtn.textContent = keyLabel(getBinding('mute'));
+  // One rebind pattern for every bound action, so a third hotkey is a table
+  // row rather than a fourth copy of this closure.
+  const wireKeyBtn = (id, action) => {
+    const keyBtn = el.querySelector(id);
+    keyBtn.addEventListener('click', () => {
+      if (keyBtn.classList.contains('on')) return;    // already listening
+      keyBtn.classList.add('on');
+      keyBtn.textContent = 'PRESS A KEY';
+      captureNextKey(code => {
+        if (code) setBinding(action, code);
+        keyBtn.classList.remove('on');
+        keyBtn.textContent = keyLabel(getBinding(action));
+      });
     });
+  };
+  wireKeyBtn('#mute-key-btn', 'mute');
+  wireKeyBtn('#cursor-key-btn', 'cursor');
+
+  const uicBtn = el.querySelector('#uic-toggle');
+  uicBtn.addEventListener('click', () => {
+    uicontrol.setEnabled(!uicontrol.enabled);
+    uicBtn.textContent = uicontrol.enabled ? 'ON' : 'OFF';
+    uicBtn.setAttribute('aria-pressed', String(uicontrol.enabled));
   });
+  el.querySelector('#uic-reach').addEventListener('change', e =>
+    uicontrol.setMargin(parseFloat(e.target.value)));
   return el;
 }
 
@@ -88,7 +118,7 @@ export function initSettings() {
     // Not while rebinding — Escape there means "cancel the capture", and the
     // hotkey module has already swallowed it.
     if (e.key === 'Escape' && pop?.classList.contains('open')
-        && !pop.querySelector('#mute-key-btn')?.classList.contains('on')) close();
+        && !pop.querySelector('#mute-key-btn.on, #cursor-key-btn.on')) close();
   });
   window.addEventListener('resize', () => { if (pop?.classList.contains('open')) open(); });
 }
