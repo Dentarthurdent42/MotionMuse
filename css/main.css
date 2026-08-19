@@ -1080,6 +1080,18 @@ option { background: var(--panel); }
   pointer-events: none;
 }
 .gesture-pic-none { background: none; }
+
+/* Build stamp in the settings popover. Deliberately quiet — it is diagnostic,
+   not a control — but selectable, so it can be pasted into a bug report. */
+.set-build {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  user-select: text;
+}
 /* What a handshape plays in Chord Mode, shown on the row that defines it.
    Reads as a chip rather than more text so it does not compete with the name,
    and RELEASE is amber because it is the one that stops sound rather than
