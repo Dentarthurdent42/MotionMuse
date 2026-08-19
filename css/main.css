@@ -204,7 +204,7 @@ body.cam-on .hcam { display: flex; }
   padding: 0 2.5px;
   touch-action: none;
 }
-.splitter:hover, body.resizing .splitter { background-color: var(--cyan); }
+body.resizing .splitter { background-color: var(--cyan); }
 body.resizing { cursor: col-resize; user-select: none; }
 
 .panel {
@@ -292,7 +292,6 @@ body.resizing { cursor: col-resize; user-select: none; }
   transition: border-color 0.15s, color 0.15s, background 0.15s;
   white-space: nowrap;
 }
-.btn:hover { border-color: var(--cyan); color: var(--cyan); }
 .btn.on { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim); }
 .btn.purple.on { border-color: var(--purple); color: var(--purple); background: var(--purple-dim); }
 /* Muted is a *state*, not a disabled control, so it reads as loud as "on"
@@ -339,7 +338,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   text-decoration: none;
   border-radius: 3px;
 }
-#donate-pop a:hover, #donate-pop a:focus-visible { background: var(--faint); color: var(--cyan); }
+#donate-pop a:focus-visible { background: var(--faint); color: var(--cyan); }
 
 /* ── Settings popover ────────────────────────────────────── */
 /* Fixed, not absolute: anchored to the ⚙ button's measured rect rather than
@@ -393,8 +392,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   padding: 6px; cursor: pointer;
   font-family: 'IBM Plex Mono', monospace;
 }
-.preset-item:hover, .preset-item:focus-visible { background: var(--faint); }
-.preset-item:hover .preset-name { color: var(--cyan); }
+.preset-item:focus-visible { background: var(--faint); }
 .preset-name { display: block; font-size: 10px; color: var(--text); }
 .preset-hint { display: block; font-size: 9px; color: var(--dim); margin-top: 2px; line-height: 1.4; }
 .preset-needs {
@@ -479,7 +477,6 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
   border-radius: 2px;
   transition: color .15s, border-color .15s, background .15s, opacity .15s;
 }
-.depth-toggle:hover { color: var(--cyan); border-color: var(--cyan); }
 .depth-toggle.on { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
 .depth-toggle.unsupported { opacity: .4; }
 .depth-toggle:disabled { opacity: .3; cursor: default; }
@@ -560,7 +557,6 @@ body.no-scroll { overflow: hidden; }
   border-radius: 2px;
   transition: background 0.1s;
 }
-.sig-row:hover { background: var(--faint); }
 .sig-row:active { background: var(--cyan-dim); }
 
 .sig-name {
@@ -648,7 +644,6 @@ body.no-scroll { overflow: hidden; }
 }
 .ng-node.ng-in  .ng-node-del { left: 2px; }
 .ng-node.ng-out .ng-node-del { right: 2px; }
-.ng-node-del:hover { background: var(--faint); color: var(--text); }
 .ng-node-del:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
 .ng-socket {
   position: absolute; top: 50%; transform: translateY(-50%);
@@ -661,7 +656,6 @@ body.no-scroll { overflow: hidden; }
 .ng-socket::after { content: ''; position: absolute; inset: -13px; border-radius: 50%; }
 .ng-node.ng-in  .ng-socket.ng-out { right: -7px; }
 .ng-node.ng-out .ng-socket.ng-in  { left: -7px; }
-.ng-socket:hover { background: var(--wire, var(--cyan)); }
 .ng-socket.armed { box-shadow: 0 0 0 3px var(--cyan); background: var(--cyan); }
 /* Where an in-progress drag would land. */
 .ng-socket.drop-target { box-shadow: 0 0 0 5px var(--cyan-dim); background: var(--cyan); }
@@ -709,7 +703,6 @@ body.no-scroll { overflow: hidden; }
   padding: 5px 10px;
   transition: background 0.1s;
 }
-.map-row:hover { background: var(--faint); }
 
 .map-bar {
   height: 2px;
@@ -748,7 +741,6 @@ option { background: var(--panel); }
   padding: 1px 4px;
   transition: color 0.15s, border-color 0.15s;
 }
-.rm-btn:hover { color: var(--red); border-color: var(--red); }
 
 .mapper-toolbar {
   padding: 8px 10px;
@@ -898,7 +890,7 @@ option { background: var(--panel); }
   border-radius: 3px;
   color: var(--text);
 }
-.start-item:hover, .start-item:focus-visible {
+.start-item:focus-visible {
   border-color: var(--cyan);
   outline: none;
 }
@@ -1116,7 +1108,6 @@ option { background: var(--panel); }
 /* "est" = template is a geometric estimate, not measured on a real hand. */
 .gesture-tag.est { color: var(--amber); border: 1px solid var(--amber); padding: 0 3px; }
 .gesture-del, .gesture-cal { flex-shrink: 0; }
-.gesture-cal:hover { color: var(--cyan); }
 /* Collapsed group for the ASL number handshapes. */
 .gesture-group > summary {
   font-size: 8px; letter-spacing: 1px; color: var(--dim);
@@ -1126,7 +1117,6 @@ option { background: var(--panel); }
 .gesture-group > summary::-webkit-details-marker { display: none; }
 .gesture-group > summary::before { content: '▸'; font-size: 9px; }
 .gesture-group[open] > summary::before { content: '▾'; }
-.gesture-group > summary:hover { color: var(--text); }
 .chord-assign {
   display: grid;
   /* dot · chord name · handshape · 7th */
@@ -1256,7 +1246,6 @@ option { background: var(--panel); }
   transition: all 0.1s;
   font-family: 'IBM Plex Mono', monospace;
 }
-.wave-btn:hover { border-color: var(--amber); color: var(--amber); }
 .wave-btn.on { border-color: var(--amber); color: var(--amber); background: #f0a50022; }
 
 .ctrl-row {
@@ -1291,7 +1280,6 @@ input[type="range"]::-webkit-slider-thumb {
   cursor: pointer;
   transition: transform 0.1s;
 }
-input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
 /* ── Clipboard toast ─────────────────────────────────────── */
 #toast {
@@ -1429,7 +1417,6 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
    display:none, and stops being invisible the moment anything renders a
    collapsed section's contents. */
 .sec.folded > * > .sec-fold::before { transform: translateX(-2px) rotate(-45deg); }
-.sec-fold:hover { color: var(--cyan); }
 
 /* Per-panel help, at the right end of the header. Same 18px target as the
    fold caret so the two ends of the header match. */
@@ -1467,7 +1454,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   justify-content: center;
   vertical-align: middle;
 }
-.sec-help:hover, .sec-help:focus-visible {
+.sec-help:focus-visible {
   color: var(--cyan);
   border-color: var(--cyan);
   outline: none;
@@ -1608,7 +1595,6 @@ body.reordering [data-sec-host].drop-into {
   background: var(--border2);
   transition: background 0.12s, width 0.12s;
 }
-.sec-grip:hover::after { background: var(--cyan); width: 44px; }
 body.resizing-sec { cursor: ns-resize; user-select: none; }
 body.resizing-sec .sec-grip::after { background: var(--cyan); }
 
@@ -2172,7 +2158,6 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   text-align: left;
   cursor: pointer;
 }
-#uic-select button:hover { background: var(--faint); }
 #uic-select button.sel {
   border-color: var(--cyan);
   color: var(--cyan);
@@ -2279,7 +2264,6 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   font: 600 12px "IBM Plex Mono", monospace;
   cursor: pointer;
 }
-.stage-item-btn:hover { border-color: var(--cyan); }
 .stage-item-btn.sel { border-color: var(--cyan); color: var(--cyan); }
 .stage-mix-row {
   display: grid;
@@ -2306,3 +2290,68 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
 /* The 🖐 button's middle state: enabled and listening for the clap, nothing
    armed yet. Dimmer than .on so the three states read at a glance. */
 #uic-btn.ready { border-color: var(--cyan); color: var(--cyan); opacity: 0.75; }
+
+/* ── Hover is for pointers that can hover ──────────────────────────────────
+   Every one of these was unguarded, and on a touchscreen a tap leaves the
+   element in :hover until you tap something else. Since the hover styling
+   here sets the same accent border and text as the .on styling, a toggle
+   switched OFF by a tap kept looking ON — the only surviving difference
+   being a background tint at ~13-22% alpha. Reported as "buttons barely
+   change appearance when tapped, their borders staying highlighted even when
+   toggled off", which is exactly what it was.
+
+   :focus-visible companions deliberately stay outside this block: a tablet
+   with a keyboard still needs its focus ring. */
+@media (hover: hover) {
+  .splitter:hover { background-color: var(--cyan); }
+  .btn:hover { border-color: var(--cyan); color: var(--cyan); }
+  #donate-pop a:hover { background: var(--faint); color: var(--cyan); }
+  .preset-item:hover { background: var(--faint); }
+  .preset-item:hover .preset-name { color: var(--cyan); }
+  .depth-toggle:hover { color: var(--cyan); border-color: var(--cyan); }
+  .sig-row:hover { background: var(--faint); }
+  .ng-node-del:hover { background: var(--faint); color: var(--text); }
+  .ng-socket:hover { background: var(--wire, var(--cyan)); }
+  .map-row:hover { background: var(--faint); }
+  .rm-btn:hover { color: var(--red); border-color: var(--red); }
+  .start-item:hover {
+  border-color: var(--cyan);
+  outline: none;
+}
+  .gesture-cal:hover { color: var(--cyan); }
+  .gesture-group > summary:hover { color: var(--text); }
+  .wave-btn:hover { border-color: var(--amber); color: var(--amber); }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+  .sec-fold:hover { color: var(--cyan); }
+  .sec-help:hover {
+  color: var(--cyan);
+  border-color: var(--cyan);
+  outline: none;
+}
+  .sec-grip:hover::after { background: var(--cyan); width: 44px; }
+  #uic-select button:hover { background: var(--faint); }
+  .stage-item-btn:hover { border-color: var(--cyan); }
+}
+
+/* Press feedback, which a touch device otherwise has none of: with hover
+   correctly gone, a tap that toggles something now has one unambiguous cue
+   at the moment of contact, before any state change lands. */
+.btn:active, .depth-toggle:active, .wave-btn:active,
+.sec-help:active, .sec-fold:active, .stage-item-btn:active {
+  transform: scale(0.96);
+  filter: brightness(1.25);
+}
+
+/* ON differs in WEIGHT as well as hue — an inner ring doubling the border —
+   so the state survives being read quickly, in bright light, or by someone
+   who does not separate these two colours. */
+.btn.on, .btn.muted, .depth-toggle.on, .wave-btn.on {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active, .depth-toggle:active, .wave-btn:active,
+  .sec-help:active, .sec-fold:active, .stage-item-btn:active {
+    transform: none;
+  }
+}
