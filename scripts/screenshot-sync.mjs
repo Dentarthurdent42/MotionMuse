@@ -58,7 +58,10 @@ function sourceHash() {
 
 const mode  = process.argv.includes('--check') ? 'check'
             : process.argv.includes('--hook')  ? 'hook' : 'sync';
-const emit  = o => { if (mode === 'hook') console.log(JSON.stringify(o)); else if (o.message) console.log(o.message); };
+// Hook mode speaks only when there is something to act on. The no-change path
+// is the one taken on almost every turn, and a line of JSON reporting that
+// nothing happened is noise in a transcript that already scrolls.
+const emit  = o => { if (mode !== 'hook' && o.message) console.log(o.message); };
 
 const hash = sourceHash();
 const memo = existsSync(CACHE) ? readFileSync(CACHE, 'utf8').trim() : '';
