@@ -10,3 +10,8 @@ tests/pose-bench/models/
 # Written at deploy time by scripts/stamp.mjs — a property of a deploy,
 # not of the source.
 build.json
+
+# A memo recording which source state scripts/screenshot-sync.mjs last checked,
+# so an unchanged tree costs a hash instead of a browser launch. Local, because
+# committing it would create a second thing to keep in sync.
+.screenshot-cache

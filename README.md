@@ -6,7 +6,7 @@ A browser-based instrument that maps live webcam data — hand position, gesture
 
 ![MotionMuse: the camera panel, the patchbay wiring hand signals to synth parameters, and the audio engine — shown with the default Hands patch loaded and the output muted](docs/screenshot.png)
 
-<sub>Regenerate with `npm run screenshot` after a visible UI change.</sub>
+<sub>Kept in step with the UI automatically — see [Keeping the screenshot honest](#keeping-the-screenshot-honest). Regenerate by hand with `npm run screenshot`.</sub>
 
 Open `index.html` (or the Netlify deploy) and:
 1. Click **START CAMERA** — MediaPipe loads and begins detecting hands and pose
@@ -1076,6 +1076,11 @@ src/
 scripts/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
   screenshot.mjs    Regenerates docs/screenshot.png (npm run screenshot)
+  screenshot-sync.mjs
+                    Re-shoots it only when the picture actually changed
+                    (npm run screenshot:sync / :check) — see "Keeping the
+                    screenshot honest"
+  lib/capture.mjs   The one capture recipe both screenshot scripts share
 sw.js               Service worker (network-first app shell, cached MediaPipe models)
 tests/
   unit/             node --test suites (chords, diatonic degrees, chord mode,
@@ -1136,6 +1141,50 @@ Notes:
   instead — e.g. `npx localtunnel --port 8443` or `cloudflared tunnel --url
   https://localhost:8443` — or host the static site on **GitHub Pages** for a
   stable HTTPS URL that scales without per-deploy limits.
+
+## Keeping the screenshot honest
+
+The README's hero image is a picture of software that changes weekly, which is
+exactly the kind of thing that rots quietly: nobody notices a screenshot is a
+release behind, because it still looks like the app. So it is maintained by a
+script rather than by memory.
+
+```bash
+npm run screenshot         # force a fresh capture
+npm run screenshot:sync    # re-shoot only if the picture actually changed
+npm run screenshot:check   # report only — exits 1 if the committed shot is stale
+```
+
+`screenshot:sync` runs on a `Stop` hook (`.claude/settings.json`), so a session
+that moves the UI cannot end without the shot being brought along.
+
+Two things make that cheap enough to run every time:
+
+**A source hash gates the render.** Hashing `index.html`, `css/`, `src/` and the
+capture scripts costs half a second; launching a browser costs seventeen. When
+nothing that feeds the picture has moved, the hash matches a memo in the
+gitignored `.screenshot-cache` and the script exits immediately.
+
+**A pixel diff gates the write.** A hash match is not the same as a visual
+change — most edits under `src/` change nothing you can see, and re-shooting for
+those would rewrite a 370 KB binary on every commit. So a hash *miss* only means
+a render is worth doing: the fresh capture is compared against the committed one
+and the file is replaced only if they genuinely differ. The comparison masks out
+the oscilloscope, which draws whatever the analyser holds at the instant of
+capture and so never matches between two runs; everything else is deterministic,
+and two renders of an unchanged UI differ by exactly zero pixels outside that
+box. The threshold is therefore slack, not tolerance: 64 device pixels, well
+under anything a person could point at.
+
+The capture itself is the honest first-run state — camera off (there is no
+webcam in CI, and a fake device renders a spinning test pattern that would
+misrepresent the product), audio started and muted, and the default Hands patch
+loaded, which is exactly what one click on **PRESET** does.
+
+One caveat: a capture taken on a machine with different fonts will differ
+wholesale from one taken here, so the first sync after cloning onto a new OS
+will rewrite the image. That is true of any screenshot generator, and the check
+is honest about it rather than papering over it with a large tolerance.
 
 ## UI/UX tests
 
