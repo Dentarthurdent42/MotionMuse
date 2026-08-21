@@ -32,7 +32,7 @@ function build() {
       <button class="wave-btn" id="mute-key-btn" type="button"
               title="Click, then press the key you want. Esc cancels.">${keyLabel(getBinding('mute'))}</button>
     </label>
-    <label class="set-row">HAND CURSOR
+    <label class="set-row">HAND CURSOR <span class="uc-badge">under construction</span>
       <button class="wave-btn" id="uic-toggle" type="button" aria-pressed="${uicontrol.enabled}"
               title="Drive the UI with a hand: clap, then hold up the hand(s) to arm. The armed hand stops playing the instrument until you toggle it back.">${uicontrol.enabled ? 'ON' : 'OFF'}</button>
     </label>

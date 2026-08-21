@@ -129,7 +129,8 @@ export const TOUR_STEPS = [
   },
   {
     id: 'hand-cursor', target: '#uic-btn', title: 'Hand cursor',
-    body: 'Drive the app itself by hand: enable <b>HAND CURSOR</b> in ⚙ ' +
+    body: '🚧 <b>Under construction</b> — it works, but expect rough edges. ' +
+          'Drive the app itself by hand: enable <b>HAND CURSOR</b> in ⚙ ' +
           'settings (the button reads <b>READY</b>), then <b>CLAP</b> — palms ' +
           'together, fingers up — and hold up a hand. It becomes a cursor ' +
           '(pinch = click and drag) and stops playing the instrument. Clap ' +
@@ -210,8 +211,9 @@ export const TOUR_STEPS = [
   },
   {
     id: 'dev', target: '#dev-btn', title: 'DEV',
-    body: '<b>DEV</b> shows the experimental parts, marked 🚧: pose-model ' +
-          'comparison, the shader, EEG/EMG, inference timings.',
+    body: '<b>DEV</b> shows the experimental parts: pose-model comparison, ' +
+          'the shader, EEG/EMG, inference timings. 🚧 marks anything still ' +
+          'under construction, whether or not DEV is needed to reach it.',
   },
   {
     id: 'gestures', section: 'gestures', target: '#gesture-list', needs: ['audio'], title: 'Gestures',

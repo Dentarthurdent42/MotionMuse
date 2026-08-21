@@ -793,6 +793,11 @@ their alignment at any screen shape.
 
 ## Hand cursor (drive the UI by hand)
 
+> 🚧 **Under construction.** Everything below works, but the gesture thresholds
+> are still being fitted across different hands, cameras and distances — expect
+> to need a deliberate clap and a deliberate pinch. The feature is off by
+> default and changes nothing until you enable it.
+
 Enable **HAND CURSOR** in ⚙ settings and the app itself becomes playable by
 hand. With **both hands in view**: **clap** (palms together, fingers up, from
 apart), then hold up the hand(s) you want inside the short window that opens — each one becomes an

@@ -60,6 +60,10 @@ export function initUicontrol() {
   });
 
   const btn = document.getElementById('uic-btn');
+  // The caption lives in its own span so the 🚧 beside it survives: writing
+  // textContent on the button itself would take the marker with it. Same shape
+  // #depth-btn uses, for the same reason.
+  const lbl = document.getElementById('uic-btn-lbl');
   // Three visible states, because "enabled and listening" must never look
   // like "off": OFF (default), READY (enabled, waiting for the clap), ARMED.
   const syncBtn = () => {
@@ -69,12 +73,14 @@ export function initUicontrol() {
     btn.classList.toggle('on', armed);
     btn.classList.toggle('ready', on && !armed);
     btn.setAttribute('aria-pressed', String(armed));
-    btn.textContent = armed ? '🖐 ARMED' : on ? '🖐 READY' : '🖐 CURSOR';
+    if (lbl) lbl.textContent = armed ? '🖐 ARMED' : on ? '🖐 READY' : '🖐 CURSOR';
+    // Every state says it, because a tooltip is read one state at a time and
+    // the one you are in is the only one you see.
     btn.title = !on
-      ? 'Hand cursor (off) — click to enable, then clap and hold up a hand to arm it'
+      ? 'Under construction — hand cursor (off). Click to enable, then clap and hold up a hand to arm it'
       : armed
-        ? 'Hand cursor armed — click (or the cursor key) to disarm everything'
-        : 'Hand cursor ready — CLAP (palms together, fingers up), then hold up '
+        ? 'Under construction — hand cursor armed. Click (or the cursor key) to disarm everything'
+        : 'Under construction — hand cursor ready. CLAP (palms together, fingers up), then hold up '
           + 'the hand(s) to arm. Click opens the toggle window without a clap.';
   };
 
