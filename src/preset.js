@@ -45,6 +45,7 @@ const UI_KEYS = {
   models:      'motionmuse-posemodel',
   hotkeys:     'motionmuse-hotkeys',
   dev:         'motionmuse-dev',
+  uicontrol:   'motionmuse-uicontrol',
 };
 
 function uiSnapshot() {

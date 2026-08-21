@@ -16,7 +16,7 @@ const LS_KEY = 'motionmuse-hotkeys';
 
 // KeyboardEvent.code values: layout-independent, so the shortcut sits on the
 // same physical key whatever the keyboard layout.
-export const DEFAULT_BINDINGS = { mute: 'Space' };
+export const DEFAULT_BINDINGS = { mute: 'Space', cursor: 'KeyC' };
 
 // Fields where a keystroke is content, not a command.
 const TYPING = /^(INPUT|TEXTAREA|SELECT)$/;

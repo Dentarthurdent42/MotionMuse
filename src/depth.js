@@ -72,8 +72,12 @@ export const depthSource = {
 
   // ── CV feed: hands ──────────────────────────────────────────────────────
   // `found` = { L: imageLandmarks|null, R: imageLandmarks|null }
-  feedHands(found) {
+  // `frozen` names hands the UI cursor has borrowed. Their depth holds its
+  // last value rather than decaying, for the same reason their other signals
+  // do: the hand is in use elsewhere, not missing.
+  feedHands(found, frozen = {}) {
     ['L', 'R'].forEach(s => {
+      if (frozen[s]) return;
       const lm = found[s];
       if (!lm) {
         bus.decay(`hand_${s}_z`);

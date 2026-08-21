@@ -204,7 +204,7 @@ body.cam-on .hcam { display: flex; }
   padding: 0 2.5px;
   touch-action: none;
 }
-.splitter:hover, body.resizing .splitter { background-color: var(--cyan); }
+body.resizing .splitter { background-color: var(--cyan); }
 body.resizing { cursor: col-resize; user-select: none; }
 
 .panel {
@@ -234,6 +234,15 @@ body.resizing { cursor: col-resize; user-select: none; }
 .pb {
   flex: 1;
   overflow-y: auto;
+  /* Never sideways. A box that scrolls on one axis and is `visible` on the
+     other has that other axis computed to `auto` by CSS — so any element
+     poking a few pixels past the edge silently turns the whole column into a
+     horizontal scroller, and the panels drift off their own left edge. The
+     content is laid out to fit; this makes "it fits" structural rather than a
+     property every future row has to remember. Anything that genuinely needs
+     to scroll across (the tone-picker keyboard) carries its own scroller and
+     is unaffected. */
+  overflow-x: hidden;
 }
 .pb::-webkit-scrollbar { width: 3px; }
 .pb::-webkit-scrollbar-thumb { background: var(--border2); }
@@ -283,7 +292,6 @@ body.resizing { cursor: col-resize; user-select: none; }
   transition: border-color 0.15s, color 0.15s, background 0.15s;
   white-space: nowrap;
 }
-.btn:hover { border-color: var(--cyan); color: var(--cyan); }
 .btn.on { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim); }
 .btn.purple.on { border-color: var(--purple); color: var(--purple); background: var(--purple-dim); }
 /* Muted is a *state*, not a disabled control, so it reads as loud as "on"
@@ -330,7 +338,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   text-decoration: none;
   border-radius: 3px;
 }
-#donate-pop a:hover, #donate-pop a:focus-visible { background: var(--faint); color: var(--cyan); }
+#donate-pop a:focus-visible { background: var(--faint); color: var(--cyan); }
 
 /* ── Settings popover ────────────────────────────────────── */
 /* Fixed, not absolute: anchored to the ⚙ button's measured rect rather than
@@ -384,8 +392,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   padding: 6px; cursor: pointer;
   font-family: 'IBM Plex Mono', monospace;
 }
-.preset-item:hover, .preset-item:focus-visible { background: var(--faint); }
-.preset-item:hover .preset-name { color: var(--cyan); }
+.preset-item:focus-visible { background: var(--faint); }
 .preset-name { display: block; font-size: 10px; color: var(--text); }
 .preset-hint { display: block; font-size: 9px; color: var(--dim); margin-top: 2px; line-height: 1.4; }
 .preset-needs {
@@ -470,7 +477,6 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
   border-radius: 2px;
   transition: color .15s, border-color .15s, background .15s, opacity .15s;
 }
-.depth-toggle:hover { color: var(--cyan); border-color: var(--cyan); }
 .depth-toggle.on { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
 .depth-toggle.unsupported { opacity: .4; }
 .depth-toggle:disabled { opacity: .3; cursor: default; }
@@ -551,7 +557,6 @@ body.no-scroll { overflow: hidden; }
   border-radius: 2px;
   transition: background 0.1s;
 }
-.sig-row:hover { background: var(--faint); }
 .sig-row:active { background: var(--cyan-dim); }
 
 .sig-name {
@@ -639,7 +644,6 @@ body.no-scroll { overflow: hidden; }
 }
 .ng-node.ng-in  .ng-node-del { left: 2px; }
 .ng-node.ng-out .ng-node-del { right: 2px; }
-.ng-node-del:hover { background: var(--faint); color: var(--text); }
 .ng-node-del:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
 .ng-socket {
   position: absolute; top: 50%; transform: translateY(-50%);
@@ -652,7 +656,6 @@ body.no-scroll { overflow: hidden; }
 .ng-socket::after { content: ''; position: absolute; inset: -13px; border-radius: 50%; }
 .ng-node.ng-in  .ng-socket.ng-out { right: -7px; }
 .ng-node.ng-out .ng-socket.ng-in  { left: -7px; }
-.ng-socket:hover { background: var(--wire, var(--cyan)); }
 .ng-socket.armed { box-shadow: 0 0 0 3px var(--cyan); background: var(--cyan); }
 /* Where an in-progress drag would land. */
 .ng-socket.drop-target { box-shadow: 0 0 0 5px var(--cyan-dim); background: var(--cyan); }
@@ -700,7 +703,6 @@ body.no-scroll { overflow: hidden; }
   padding: 5px 10px;
   transition: background 0.1s;
 }
-.map-row:hover { background: var(--faint); }
 
 .map-bar {
   height: 2px;
@@ -739,7 +741,6 @@ option { background: var(--panel); }
   padding: 1px 4px;
   transition: color 0.15s, border-color 0.15s;
 }
-.rm-btn:hover { color: var(--red); border-color: var(--red); }
 
 .mapper-toolbar {
   padding: 8px 10px;
@@ -889,7 +890,7 @@ option { background: var(--panel); }
   border-radius: 3px;
   color: var(--text);
 }
-.start-item:hover, .start-item:focus-visible {
+.start-item:focus-visible {
   border-color: var(--cyan);
   outline: none;
 }
@@ -1107,7 +1108,6 @@ option { background: var(--panel); }
 /* "est" = template is a geometric estimate, not measured on a real hand. */
 .gesture-tag.est { color: var(--amber); border: 1px solid var(--amber); padding: 0 3px; }
 .gesture-del, .gesture-cal { flex-shrink: 0; }
-.gesture-cal:hover { color: var(--cyan); }
 /* Collapsed group for the ASL number handshapes. */
 .gesture-group > summary {
   font-size: 8px; letter-spacing: 1px; color: var(--dim);
@@ -1117,7 +1117,6 @@ option { background: var(--panel); }
 .gesture-group > summary::-webkit-details-marker { display: none; }
 .gesture-group > summary::before { content: '▸'; font-size: 9px; }
 .gesture-group[open] > summary::before { content: '▾'; }
-.gesture-group > summary:hover { color: var(--text); }
 .chord-assign {
   display: grid;
   /* dot · chord name · handshape · 7th */
@@ -1247,7 +1246,6 @@ option { background: var(--panel); }
   transition: all 0.1s;
   font-family: 'IBM Plex Mono', monospace;
 }
-.wave-btn:hover { border-color: var(--amber); color: var(--amber); }
 .wave-btn.on { border-color: var(--amber); color: var(--amber); background: #f0a50022; }
 
 .ctrl-row {
@@ -1282,7 +1280,6 @@ input[type="range"]::-webkit-slider-thumb {
   cursor: pointer;
   transition: transform 0.1s;
 }
-input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
 /* ── Clipboard toast ─────────────────────────────────────── */
 #toast {
@@ -1420,10 +1417,25 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
    display:none, and stops being invisible the moment anything renders a
    collapsed section's contents. */
 .sec.folded > * > .sec-fold::before { transform: translateX(-2px) rotate(-45deg); }
-.sec-fold:hover { color: var(--cyan); }
 
 /* Per-panel help, at the right end of the header. Same 18px target as the
    fold caret so the two ends of the header match. */
+/* The header title (wrapped by sections.js). It is the one part of the row
+   that may shrink: everything else is a control with a job, and a control
+   pushed out of the panel is both unusable and — because these panels scroll
+   vertically, which makes a horizontal overflow SCROLLABLE — enough to set
+   the whole column panning sideways. */
+.sec-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Controls in a header hold their size; the title above absorbs the squeeze. */
+.ph > button, .ph > select, .ph > .wave-btn,
+.audio-section-label > button, .audio-section-label > select,
+.audio-section-label > .wave-btn { flex-shrink: 0; }
+
 .sec-help {
   flex: 0 0 auto;
   margin-left: auto;          /* right end, whatever else the header carries */
@@ -1442,7 +1454,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
   justify-content: center;
   vertical-align: middle;
 }
-.sec-help:hover, .sec-help:focus-visible {
+.sec-help:focus-visible {
   color: var(--cyan);
   border-color: var(--cyan);
   outline: none;
@@ -1543,12 +1555,13 @@ body.reordering [data-sec-host].drop-into {
 .sec > .sec-body { min-height: 0; }
 /* A section that is a whole column fills it; one with an explicit height keeps
    exactly that height instead of being stretched by the flex parent. */
-.panel.sec > .sec-body { flex: 1 1 auto; overflow-y: auto; }
+.panel.sec > .sec-body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; }
 .sec > .sec-body.sec-scroll { flex: 0 0 auto; }
 /* Only a section with a height set (by default or by drag) scrolls; the rest
    stay natural, so nothing gains a scrollbar it didn't need. */
 .sec > .sec-body.sec-scroll {
   overflow-y: auto;
+  overflow-x: hidden;              /* never sideways — see .pb */
   overscroll-behavior: contain;
   /* There IS more below — say so. A 3px scrollbar is not an affordance; the
      MODELS section clipped its stats row and looked simply finished. This
@@ -1582,7 +1595,6 @@ body.reordering [data-sec-host].drop-into {
   background: var(--border2);
   transition: background 0.12s, width 0.12s;
 }
-.sec-grip:hover::after { background: var(--cyan); width: 44px; }
 body.resizing-sec { cursor: ns-resize; user-select: none; }
 body.resizing-sec .sec-grip::after { background: var(--cyan); }
 
@@ -2101,4 +2113,245 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
 
   #toast { font-size: 12px; padding: 7px 18px; }
   .note-badge { font-size: 10px; }
+}
+
+/* ── Hand cursor (uicontrol) ───────────────────────────────────────────────
+   The overlay canvas carries the cursor rings, dwell arcs and hover
+   highlight. It ignores the pointer entirely — it IS the pointer — and sits
+   above every panel and popover (tour tops out at 1002) but is reparented
+   into #video-wrap during native fullscreen, which only shows its own
+   subtree. */
+#uic-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+/* The floating option list that stands in for a native select — script can
+   set a select's value but cannot open its picker, and a hand cursor needs
+   something tappable. Fat rows on purpose: the cursor is steadier than a
+   fingertip but not as steady as a mouse. */
+#uic-select {
+  position: fixed;
+  z-index: 2001;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  box-shadow: var(--shadow-lg);
+}
+#uic-select button {
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+#uic-select button.sel {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+/* ── The gesture stage (Phase 2, DEV) ──────────────────────────────────────
+   Glass panels over the fullscreen camera. Items are absolutely positioned
+   by transform from stage-ui; --ch (0..1) is the force-pull strain charge
+   that drives the glow. */
+#stage-layer {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow: hidden;
+  z-index: 60;               /* above the video + overlays, below .cam-toggles */
+}
+#stage-layer.on { display: block; }
+
+.stage-ring {
+  position: absolute;
+  left: 0; top: 0;
+  width: 120px; height: 120px;
+  border: 10px solid var(--cyan);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--cyan);
+  font: 700 13px "IBM Plex Mono", monospace;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow: 0 0 34px var(--cyan-dim), inset 0 0 22px var(--cyan-dim);
+  /* Positioned by left/top from stage-ui; the animation owns transform. */
+  transform: translate(-50%, -50%);
+  animation: stage-breathe 3.4s ease-in-out infinite;
+}
+@keyframes stage-breathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(1);    opacity: 0.9; }
+  50%      { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+}
+
+.stage-orb {
+  position: absolute;
+  left: 0; top: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--cyan);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--cyan);
+  font: 600 11px "IBM Plex Mono", monospace;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  box-shadow: 0 0 18px var(--cyan-dim);
+  white-space: nowrap;
+}
+
+.stage-card {
+  position: absolute;
+  left: 0; top: 0;
+  min-width: 220px;
+  max-width: 340px;
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--panel) 82%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 calc(20px + var(--ch, 0) * 70px)
+      rgba(111, 229, 214, calc(0.15 + var(--ch, 0) * 0.55));
+}
+.stage-card.held { border-color: var(--cyan); }
+.stage-card.mat { animation: stage-mat 0.65s ease-out; }
+@keyframes stage-mat {
+  from { filter: saturate(0.2) brightness(1.8); opacity: 0.2; }
+  to   { filter: none; opacity: 1; }
+}
+.stage-card.smack { animation: stage-smack 0.18s ease-out; }
+@keyframes stage-smack {
+  0%   { filter: brightness(1.6); }
+  100% { filter: none; }
+}
+
+.stage-bar {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--cyan);
+  font: 700 11px "IBM Plex Mono", monospace;
+  letter-spacing: 0.1em;
+  cursor: grab;
+  user-select: none;
+}
+.stage-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.stage-item-btn {
+  padding: 10px 14px;
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font: 600 12px "IBM Plex Mono", monospace;
+  cursor: pointer;
+}
+.stage-item-btn.sel { border-color: var(--cyan); color: var(--cyan); }
+.stage-mix-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: var(--dim);
+  font-size: 11px;
+}
+.stage-body select {
+  padding: 8px 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-ring { animation: none; }
+  .stage-card.mat, .stage-card.smack { animation: none; }
+}
+
+/* The 🖐 button's middle state: enabled and listening for the clap, nothing
+   armed yet. Dimmer than .on so the three states read at a glance. */
+#uic-btn.ready { border-color: var(--cyan); color: var(--cyan); opacity: 0.75; }
+
+/* ── Hover is for pointers that can hover ──────────────────────────────────
+   Every one of these was unguarded, and on a touchscreen a tap leaves the
+   element in :hover until you tap something else. Since the hover styling
+   here sets the same accent border and text as the .on styling, a toggle
+   switched OFF by a tap kept looking ON — the only surviving difference
+   being a background tint at ~13-22% alpha. Reported as "buttons barely
+   change appearance when tapped, their borders staying highlighted even when
+   toggled off", which is exactly what it was.
+
+   :focus-visible companions deliberately stay outside this block: a tablet
+   with a keyboard still needs its focus ring. */
+@media (hover: hover) {
+  .splitter:hover { background-color: var(--cyan); }
+  .btn:hover { border-color: var(--cyan); color: var(--cyan); }
+  #donate-pop a:hover { background: var(--faint); color: var(--cyan); }
+  .preset-item:hover { background: var(--faint); }
+  .preset-item:hover .preset-name { color: var(--cyan); }
+  .depth-toggle:hover { color: var(--cyan); border-color: var(--cyan); }
+  .sig-row:hover { background: var(--faint); }
+  .ng-node-del:hover { background: var(--faint); color: var(--text); }
+  .ng-socket:hover { background: var(--wire, var(--cyan)); }
+  .map-row:hover { background: var(--faint); }
+  .rm-btn:hover { color: var(--red); border-color: var(--red); }
+  .start-item:hover {
+  border-color: var(--cyan);
+  outline: none;
+}
+  .gesture-cal:hover { color: var(--cyan); }
+  .gesture-group > summary:hover { color: var(--text); }
+  .wave-btn:hover { border-color: var(--amber); color: var(--amber); }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+  .sec-fold:hover { color: var(--cyan); }
+  .sec-help:hover {
+  color: var(--cyan);
+  border-color: var(--cyan);
+  outline: none;
+}
+  .sec-grip:hover::after { background: var(--cyan); width: 44px; }
+  #uic-select button:hover { background: var(--faint); }
+  .stage-item-btn:hover { border-color: var(--cyan); }
+}
+
+/* Press feedback, which a touch device otherwise has none of: with hover
+   correctly gone, a tap that toggles something now has one unambiguous cue
+   at the moment of contact, before any state change lands. */
+.btn:active, .depth-toggle:active, .wave-btn:active,
+.sec-help:active, .sec-fold:active, .stage-item-btn:active {
+  transform: scale(0.96);
+  filter: brightness(1.25);
+}
+
+/* ON differs in WEIGHT as well as hue — an inner ring doubling the border —
+   so the state survives being read quickly, in bright light, or by someone
+   who does not separate these two colours. */
+.btn.on, .btn.muted, .depth-toggle.on, .wave-btn.on {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active, .depth-toggle:active, .wave-btn:active,
+  .sec-help:active, .sec-fold:active, .stage-item-btn:active {
+    transform: none;
+  }
 }

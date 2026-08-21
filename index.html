@@ -147,6 +147,10 @@
                     title="Under construction — use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth (DEV mode feature)"><span id="depth-btn-lbl">◈ LiDAR</span><span class="src-tab-wip">🚧</span></button>
             <button id="fs-btn" class="depth-toggle"
                     title="Fullscreen camera view">⛶ FULL</button>
+            <button id="uic-btn" class="depth-toggle"
+                    title="Under construction — hand cursor: clap, then hold up a hand to arm it"><span id="uic-btn-lbl">🖐 CURSOR</span><span class="src-tab-wip">🚧</span></button>
+            <button id="stage-btn" class="depth-toggle uc-feature"
+                    title="Under construction — the fullscreen gesture stage: glass panels you grab, throw and force-pull (DEV mode feature)">◭ STAGE<span class="src-tab-wip">🚧</span></button>
             <button id="fskbd-btn" class="depth-toggle fs-only"
                     title="Show the piano keyboard overlay">🎹 KEYS</button>
           </div>
@@ -174,6 +178,7 @@
             <span>START CAMERA</span>
           </div>
           <canvas id="fs-kbd"></canvas>
+          <div id="stage-layer"></div>
         </div>
         <!-- Portrait dev mode pins the camera to the top of the scroll, which
              makes its height precious — this drags it smaller. Shown only there

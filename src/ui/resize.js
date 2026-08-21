@@ -42,7 +42,7 @@ export function initResize() {
     const el = document.getElementById(id);
     el.addEventListener('pointerdown', e => {
       e.preventDefault();
-      el.setPointerCapture(e.pointerId);
+      try { el.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
       const startX = e.clientX, startW = w[key];
       document.body.classList.add('resizing');
       // A drag *is* an explicit request, so the clamped result is what gets
@@ -118,7 +118,7 @@ function initCamHandle() {
   let startY = 0, startH = 0;
   handle.addEventListener('pointerdown', e => {
     e.preventDefault();
-    handle.setPointerCapture(e.pointerId);
+    try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
     startY = e.clientY;
     startH = wrap.getBoundingClientRect().height;
     document.body.classList.add('resizing-cam');

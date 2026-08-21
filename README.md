@@ -6,7 +6,7 @@ A browser-based instrument that maps live webcam data — hand position, gesture
 
 ![MotionMuse: the camera panel, the patchbay wiring hand signals to synth parameters, and the audio engine — shown with the default Hands patch loaded and the output muted](docs/screenshot.png)
 
-<sub>Regenerate with `npm run screenshot` after a visible UI change.</sub>
+<sub>Kept in step with the UI automatically — see [Keeping the screenshot honest](#keeping-the-screenshot-honest). Regenerate by hand with `npm run screenshot`.</sub>
 
 Open `index.html` (or the Netlify deploy) and:
 1. Click **START CAMERA** — MediaPipe loads and begins detecting hands and pose
@@ -791,6 +791,93 @@ the native Fullscreen API where available, or a CSS takeover on iPhone Safari
 pitch-quantise keyboard along the bottom of the view. Gesture overlays keep
 their alignment at any screen shape.
 
+## Hand cursor (drive the UI by hand)
+
+> 🚧 **Under construction.** Everything below works, but the gesture thresholds
+> are still being fitted across different hands, cameras and distances — expect
+> to need a deliberate clap and a deliberate pinch. The feature is off by
+> default and changes nothing until you enable it.
+
+Enable **HAND CURSOR** in ⚙ settings and the app itself becomes playable by
+hand. With **both hands in view**: **clap** (palms together, fingers up, from
+apart), then hold up the hand(s) you want inside the short window that opens — each one becomes an
+on-screen cursor and **stops playing the instrument** until you toggle it
+back the same way. The other hand keeps playing; this is how you change a
+patch mid-performance without touching the machine.
+
+With **only one hand in view** — a tablet held in the other hand, say — a
+clap is impossible, so holding that hand up, open, for about a second arms it
+on its own. Which case you are in is read from what the camera actually sees,
+not from the ✋ L/R toggles: both toggles are normally on, so trusting them
+meant a one-handed setup could never arm at all.
+
+The state is always visible: the 🖐 button reads **READY** while enabled and
+**ARMED** once a hand is a cursor, an armed cursor is a bright filled ring
+while a merely-tracked hand gets a dashed amber one (both drawn over a dark
+halo so they read against the camera picture, a white keyboard or a black
+panel alike), pinching an unarmed hand says so rather than doing nothing, every tracked hand carries a faint ring
+before arming (so "listening" never looks like "off"), a one-time hint names
+the clap, and a clap that *almost* qualified is told which condition it
+missed ("fingers weren't up", "start with your hands apart") rather than
+refused silently. The clap detector is fitted to this app's inference
+cadence: hand and pose models alternate frames, so contact is often never
+sampled and touching palms merge into one detection — a qualified,
+fast-converging pair whose projected contact is imminent therefore counts as
+the clap it physically was. While both hands are up, hand inference is
+prioritised (3 frames of 4) so the approach is sampled fast enough to see.
+
+- **Pinch = press.** Pinch without moving and it is a tap, however long you
+  hold it — travel, not time, is what makes a press a drag (buttons, carets, menu items —
+  selects open a floating list, since script can't open the native picker);
+  a held pinch drags — sliders, patchbay cables, section headers, resize
+  grips, and scrolling inside any section body.
+- The cursor is the thumb/index midpoint, One-Euro filtered, with the inner
+  portion of the camera frame mapped to the whole screen (**CURSOR REACH**
+  in settings sets how much). A ring shows each armed hand; it tightens
+  when pinched and a box marks what you're aiming at.
+- The **cursor key** (default `C`, rebindable) opens the arming window from
+  the keyboard, and is the panic key: one press disarms everything. The
+  **🖐 CURSOR** button under the camera does the same by click.
+- The pinch gate is not a distance threshold: it demands the OK-sign
+  *signature* (index arch collapsed against three tall fingers), two clean
+  frames or a confidence EMA, a 400 ms probation for fresh pinches, and a
+  motion-blur rule that refuses grips born faster than a hand can honestly
+  move. All of it is span-relative, so it works at any distance from the
+  camera. The interaction design follows the Barehands project
+  (github.com/jaredrhod/barehands), reimplemented natively on this app's
+  tracking stack.
+
+While a hand is armed its signals **freeze** — they hold the value they had
+rather than updating — so the patchbay and chord mode never fight the cursor
+for it. Freezing rather than reporting the hand *absent* is the whole point:
+absence is a tracking failure and the safe answer to it is to fail quiet
+(decay, and force pinch to 1, since 0 reads as "hand open" and a volume
+mapping would take that as full blast). A borrowed hand is not a failure, and
+running it through that path drove the default patch's `pinch_R → volume`
+mapping to zero — arming a cursor silenced the whole instrument, chords
+included. Now the sound you were making simply holds while you work the UI,
+and the gesture matcher keeps the shape it had, so a held chord sustains. Logic:
+`src/uicontrol.js` (pure state machines — pinch, clap, selection window —
+unit-tested in `tests/unit/uicontrol-*.test.js`); `src/ui/uidriver.js`
+(cursor → real UI effects); `src/ui/uicontrol-ui.js` (overlay + arming UI).
+
+### The stage (under construction, DEV)
+
+With **DEV** on, **◭ STAGE** (under the camera) opens the fullscreen
+**gesture stage**: a glass control surface over the camera feed where *both*
+hands are cursors. A **muse ring** breathes at the bottom — tap it and orbs
+bloom in orbit; tap an orb and its panel materializes as a glass card
+(**PRESETS**, **SOUND KIT**, **MIXER**, **KEY**), wired straight into the
+same apply paths the panels use. Grab a card by its title bar and drag it;
+grab it with both hands and stretch to resize; **fling** it off-screen to
+close it (the throw needs real speed *and* follow-through); **double-clap**
+to sweep the stage clean. The **claw** force-pull: flash your hand open,
+make a claw (fingers hooked, pinky out), aim at a distant card — it strains
+and glows for two seconds — then **snap** the claw shut and it rips across
+the screen into your hand. Model: `src/stage.js` (pure physics, tested in
+`tests/unit/stage-physics.test.js`); scene: `src/ui/stage-ui.js`; claw state
+machine: `clawStep` in `src/uicontrol.js` (`tests/unit/uicontrol-claw.test.js`).
+
 ## Play along (Guitar Hero mode)
 
 The **Play Along** section starts a falling-note game: notes descend toward a
@@ -994,6 +1081,11 @@ src/
 scripts/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
   screenshot.mjs    Regenerates docs/screenshot.png (npm run screenshot)
+  screenshot-sync.mjs
+                    Re-shoots it only when the picture actually changed
+                    (npm run screenshot:sync / :check) — see "Keeping the
+                    screenshot honest"
+  lib/capture.mjs   The one capture recipe both screenshot scripts share
 sw.js               Service worker (network-first app shell, cached MediaPipe models)
 tests/
   unit/             node --test suites (chords, diatonic degrees, chord mode,
@@ -1054,6 +1146,50 @@ Notes:
   instead — e.g. `npx localtunnel --port 8443` or `cloudflared tunnel --url
   https://localhost:8443` — or host the static site on **GitHub Pages** for a
   stable HTTPS URL that scales without per-deploy limits.
+
+## Keeping the screenshot honest
+
+The README's hero image is a picture of software that changes weekly, which is
+exactly the kind of thing that rots quietly: nobody notices a screenshot is a
+release behind, because it still looks like the app. So it is maintained by a
+script rather than by memory.
+
+```bash
+npm run screenshot         # force a fresh capture
+npm run screenshot:sync    # re-shoot only if the picture actually changed
+npm run screenshot:check   # report only — exits 1 if the committed shot is stale
+```
+
+`screenshot:sync` runs on a `Stop` hook (`.claude/settings.json`), so a session
+that moves the UI cannot end without the shot being brought along.
+
+Two things make that cheap enough to run every time:
+
+**A source hash gates the render.** Hashing `index.html`, `css/`, `src/` and the
+capture scripts costs half a second; launching a browser costs seventeen. When
+nothing that feeds the picture has moved, the hash matches a memo in the
+gitignored `.screenshot-cache` and the script exits immediately.
+
+**A pixel diff gates the write.** A hash match is not the same as a visual
+change — most edits under `src/` change nothing you can see, and re-shooting for
+those would rewrite a 370 KB binary on every commit. So a hash *miss* only means
+a render is worth doing: the fresh capture is compared against the committed one
+and the file is replaced only if they genuinely differ. The comparison masks out
+the oscilloscope, which draws whatever the analyser holds at the instant of
+capture and so never matches between two runs; everything else is deterministic,
+and two renders of an unchanged UI differ by exactly zero pixels outside that
+box. The threshold is therefore slack, not tolerance: 64 device pixels, well
+under anything a person could point at.
+
+The capture itself is the honest first-run state — camera off (there is no
+webcam in CI, and a fake device renders a spinning test pattern that would
+misrepresent the product), audio started and muted, and the default Hands patch
+loaded, which is exactly what one click on **PRESET** does.
+
+One caveat: a capture taken on a machine with different fonts will differ
+wholesale from one taken here, so the first sync after cloning onto a new OS
+will rewrite the image. That is true of any screenshot generator, and the check
+is honest about it rather than papering over it with a large tolerance.
 
 ## UI/UX tests
 
