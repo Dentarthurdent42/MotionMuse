@@ -128,8 +128,9 @@ export const TOUR_STEPS = [
           'face and gaze tracking; ⛶ goes fullscreen.',
   },
   {
-    id: 'hand-cursor', target: '#uic-btn', title: 'Hand cursor',
-    body: '🚧 <b>Under construction</b> — it works, but expect rough edges. ' +
+    id: 'hand-cursor', target: '#uic-btn', needs: ['dev'], title: 'Hand cursor',
+    body: '🚧 <b>Under construction</b>, so it lives in <b>DEV</b> — it works, ' +
+          'but expect rough edges. ' +
           'Drive the app itself by hand: enable <b>HAND CURSOR</b> in ⚙ ' +
           'settings (the button reads <b>READY</b>), then <b>CLAP</b> — palms ' +
           'together, fingers up — and hold up a hand. It becomes a cursor ' +
@@ -211,9 +212,10 @@ export const TOUR_STEPS = [
   },
   {
     id: 'dev', target: '#dev-btn', title: 'DEV',
-    body: '<b>DEV</b> shows the experimental parts: pose-model comparison, ' +
-          'the shader, EEG/EMG, inference timings. 🚧 marks anything still ' +
-          'under construction, whether or not DEV is needed to reach it.',
+    body: 'Everything marked 🚧 <b>under construction</b> lives in <b>DEV</b>: ' +
+          'the hand cursor and gesture stage, pose-model comparison, the ' +
+          'shader, EEG/EMG, LiDAR, inference timings. Switch it off and they ' +
+          'go away — and stop running.',
   },
   {
     id: 'gestures', section: 'gestures', target: '#gesture-list', needs: ['audio'], title: 'Gestures',

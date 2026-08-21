@@ -515,8 +515,21 @@ The tour is built for a project that changes weekly:
 Most features are visible by default, but experimental / in-progress ones are
 tucked behind the **DEV** toggle in the header (persisted). With dev mode off,
 the **EEG/EMG** source tabs, the **◈ LiDAR** depth toggle, the **MODELS** panel,
-the inference HUD under the camera and the **Shader** panel are hidden — a
-deliberate *progressive-disclosure* choice so newcomers meet a simpler surface.
+the inference HUD under the camera, the **Shader** panel, the **🖐 CURSOR** hand
+cursor (button, its three ⚙ settings rows, and its hotkey) and the **◭ STAGE**
+gesture stage are hidden — a deliberate *progressive-disclosure* choice so
+newcomers meet a simpler surface.
+
+The rule is: **anything marked 🚧 under construction lives in DEV**, and nothing
+under construction is reachable outside it. That covers the ways in that are not
+a button, too — the hand cursor's tick and its bound key are both inert with DEV
+off, because hiding a button is not the same as switching a feature off and the
+HAND CURSOR setting persists. Features that *run* also stop when DEV goes off:
+a live LiDAR session ends, the stage tears down, and armed hand cursors disarm.
+An armed hand is one the instrument has lost, and leaving that in place with the
+button gone is a hand that stops playing for no reason a player can see. The
+underlying setting is left alone — DEV gates reach, it does not overwrite what
+the player chose.
 
 **Gestures and Chord Mode are not among them any more.** They were, and that was
 wrong: chord mode is a way of playing the instrument rather than an experiment,
@@ -834,10 +847,12 @@ their alignment at any screen shape.
 
 ## Hand cursor (drive the UI by hand)
 
-> 🚧 **Under construction.** Everything below works, but the gesture thresholds
-> are still being fitted across different hands, cameras and distances — expect
-> to need a deliberate clap and a deliberate pinch. The feature is off by
-> default and changes nothing until you enable it.
+> 🚧 **Under construction, so it lives in DEV.** Switch **DEV** on in the header
+> and the **🖐 CURSOR** button and its ⚙ settings rows appear. Everything below
+> works, but the gesture thresholds are still being fitted across different
+> hands, cameras and distances — expect to need a deliberate clap and a
+> deliberate pinch. With DEV off nothing here runs at all: not the tick, not the
+> hotkey, not the overlay.
 
 Enable **HAND CURSOR** in ⚙ settings and the app itself becomes playable by
 hand. With **both hands in view**: **clap** (palms together, fingers up, from
