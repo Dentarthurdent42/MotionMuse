@@ -1183,13 +1183,22 @@ option { background: var(--panel); }
   font-size: 8px; letter-spacing: 1px; color: var(--text);
 }
 /* What sounds the chord: mode, which hand, and how the signal is read. */
-.chord-expr {
+.chord-expr,
+/* Same four-column shape — a label then three controls — so the two rows read
+   as one block of "how it plays" rather than two. */
+.chord-arp {
   display: grid;
   grid-template-columns: auto 1.6fr minmax(74px, 0.9fr) minmax(74px, 0.9fr);
   gap: 4px; align-items: center;
   margin: 4px 0 5px;
 }
-.chord-expr select:disabled { opacity: 0.45; cursor: not-allowed; }
+/* The arp row's controls are not the same widths, though: its second column is
+   an ON/OFF toggle, which needs no room, while the widest label it has to show
+   is a pattern name ("DOWN · UP"). Give the width to the select that needs it
+   and the row still starts and ends flush with the one above. */
+.chord-arp { grid-template-columns: auto minmax(58px, 0.55fr) 1.6fr minmax(74px, 0.9fr); }
+.chord-expr select:disabled,
+.chord-arp select:disabled { opacity: 0.45; cursor: not-allowed; }
 /* A row whose control does not apply in the current mode — present, so the
    setting is not mysteriously missing, but visibly not in play. */
 .chord-assign.dimmed { opacity: 0.45; }
@@ -1197,17 +1206,23 @@ option { background: var(--panel); }
 /* Range calibration + the live meter, which is what makes the range legible:
    hand openness never reaches 0, so you have to be able to SEE where your
    fist actually lands. */
-.chord-expr-cal {
+.chord-expr-cal,
+.chord-arp-cal {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px 8px;
   margin-bottom: 6px;
 }
-.chord-expr-cal .ctrl-lbl {
+.chord-expr-cal .ctrl-lbl,
+.chord-arp-cal .ctrl-lbl {
   display: flex; align-items: center; gap: 5px;
   font-size: 8px; letter-spacing: 1px; color: var(--dim);
 }
-.chord-expr-cal input[type=range] { flex: 1 1 auto; min-width: 0; }
+.chord-expr-cal input[type=range],
+.chord-arp-cal input[type=range] { flex: 1 1 auto; min-width: 0; }
+/* Spans both slider columns: the rate, its tempo equivalent and where the run
+   has got to are one sentence, not two columns of it. */
+.arp-read { grid-column: 1 / -1; margin: 0; }
 .expr-meter {
   grid-column: 1 / -1;
   position: relative;
