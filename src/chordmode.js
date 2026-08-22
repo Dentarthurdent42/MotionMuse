@@ -13,6 +13,8 @@ import { engine }                     from './engine.js';
 import { gesture, gestureLabel }      from './gesture.js';
 import { diatonicChord, isDiatonic }  from './chords.js';
 import { NOTE_NAMES }                 from './scale.js';
+import { ARP_PATTERNS, ARP_MAX_OCTAVES, ARP_DEFAULTS,
+         notePool, stepIndex, stepSeconds, noteSeconds, dueSteps } from './arp.js';
 
 export const DEFAULT_KEY = {
   root: 'C',
@@ -137,6 +139,64 @@ export const chordmode = (() => {
   let voiced = null;    // what the voice bank is currently pointed at
   let exprRaw = 0, exprLevel = 0;   // last read, for the panel's readout
 
+  // ── Arpeggiator ─────────────────────────────────────────────────────────
+  //
+  // An alternative to sounding the chord as a block: the same chord, the same
+  // gesture, the same expression — played one note at a time. It replaces the
+  // block chord rather than layering over it, which is why it is a property of
+  // chord mode and not a separate instrument.
+  //
+  // Rate and gate live in engine.PARAMS (`arp_rate`, `arp_gate`) so they can be
+  // driven from the patchbay; pattern and octaves are discrete choices and live
+  // here. The clock is the audio clock, read through engine.now(): rAF decides
+  // when we look, never when a note sounds.
+  let arp = { ...ARP_DEFAULTS };
+  let arpClock = null;              // { at, i } while running; null when idle
+  let arpSched = [];                // recently scheduled {at, idx}, for the panel
+
+  // How far ahead steps are scheduled. Long enough that a dropped frame cannot
+  // leave a hole in the pulse (a 60 Hz frame is 17 ms), short enough that a
+  // chord change is heard on the next step rather than the one after it.
+  const ARP_HORIZON = 0.12;
+
+  const arpRate = () => engine.PARAMS.arp_rate?.val ?? 4;
+  const arpGate = () => engine.PARAMS.arp_gate?.val ?? 0.55;
+
+  // Hand the voices back and forget the clock. Stopping the clock alone is not
+  // enough: the arp schedules into the future, so notes are already queued.
+  const stopArp = () => {
+    if (!arpClock && !arpSched.length) return;
+    arpClock = null;
+    arpSched = [];
+    engine.silenceChordVoices?.();
+  };
+
+  // Start the run from the top of the pattern on the next look.
+  const restartArp = () => { arpClock = null; arpSched = []; };
+
+  // Schedule whatever is due. `level` is 1 in the envelope-driven modes: there
+  // the ADSR on the shared gain already owns loudness, and a second multiplier
+  // here would only fight it.
+  const runArp = (freqs, level = 1) => {
+    if (!engine.started) return;
+    const pool = notePool(freqs, arp.octaves);
+    if (!pool.length) return;
+    const now = engine.now();
+    if (!arpClock) arpClock = { at: now, i: 0 };
+    const rate = arpRate();
+    const { steps, state } = dueSteps(arpClock, now, ARP_HORIZON, rate);
+    arpClock = state;
+    if (!steps.length) return;
+    const dur = noteSeconds(stepSeconds(rate), arpGate());
+    for (const s of steps) {
+      const idx = stepIndex(s.i, pool.length, arp.pattern);
+      engine.arpNote({ freq: pool[idx], when: s.at, dur, gain: level });
+      arpSched.push({ at: s.at, idx });
+    }
+    // Only the recent past is interesting, and this runs every frame.
+    if (arpSched.length > 24) arpSched = arpSched.slice(-12);
+  };
+
   // Raw signal → 0..1 travel, with the bottom rounded down to silence.
   const readExpression = () => {
     const key = expr.mode === 'brow' ? 'brow_raise' : `hand_${expr.hand}_open`;
@@ -181,7 +241,7 @@ export const chordmode = (() => {
     get enabled() { return enabled; },
     setEnabled(on) {
       enabled = !!on;
-      if (!enabled) { engine.releaseChord(); playing = null; latched = null; gateOpen = false; voiced = null; }
+      if (!enabled) { engine.releaseChord(); stopArp(); playing = null; latched = null; gateOpen = false; voiced = null; }
     },
 
     key: () => ({ ...key }),
@@ -192,7 +252,7 @@ export const chordmode = (() => {
     isFollowing: () => !!key.follow && !!engine.getTuning?.().enabled,
     setKey(partial) {
       key = { ...key, ...partial };
-      if (playing) this._sound(playing);      // live-transpose a held chord
+      if (playing) this._sound(playing, { restart: false });      // live-transpose a held chord
     },
 
     assignments: () => ({ ...assignments }),
@@ -223,20 +283,20 @@ export const chordmode = (() => {
         if (prev && prev !== gestureId && from !== undefined) assignments[prev] = from;
       }
       // A held chord may have just changed hands, or stopped existing.
-      if (playing && assignments[playing] === undefined) { engine.releaseChord(); playing = null; }
-      else if (playing) this._sound(playing);
+      if (playing && assignments[playing] === undefined) { engine.releaseChord(); stopArp(); playing = null; }
+      else if (playing) this._sound(playing, { restart: false });
     },
 
     setSeventh(degree, on) {
       const d = normDegree(degree);
       sevenths[d] = !!on;
       const id = gestureFor(d);
-      if (id && playing === id) this._sound(id);               // live-update a held chord
+      if (id && playing === id) this._sound(id, { restart: false });               // live-update a held chord
     },
 
     unassign(gestureId) {
       delete assignments[gestureId];
-      if (playing === gestureId) { engine.releaseChord(); playing = null; }
+      if (playing === gestureId) { engine.releaseChord(); stopArp(); playing = null; }
     },
 
     // Human-readable "gesture → chord" for the live readout ('' when silent).
@@ -251,9 +311,16 @@ export const chordmode = (() => {
     // than name it (the fullscreen keyboard overlay). Null when nothing is held.
     currentChord() { return playing ? chordFor(playing) : null; },
 
-    _sound(id) {
+    // `restart: false` for a chord that is already sounding and has merely
+    // been transposed or re-voiced — the arpeggio should carry on in time
+    // rather than jumping back to the root, which would be heard as a stumble
+    // every time the key select moves.
+    _sound(id, { restart = true } = {}) {
       const c = chordFor(id);
-      if (c) engine.playChord(c.freqs);
+      if (!c) return;
+      if (!arp.enabled) { engine.playChord(c.freqs); return; }
+      if (restart) restartArp();
+      engine.attackChord();
     },
 
     tick() {
@@ -267,7 +334,7 @@ export const chordmode = (() => {
       // instrument, not an experiment, and hiding it behind DEV meant the one
       // starting point that needs no wiring was the one nobody could find.
       if (!enabled) {
-        if (playing) { engine.releaseChord(); playing = null; }
+        if (playing) { engine.releaseChord(); stopArp(); playing = null; }
         return;
       }
       if (expr.mode !== 'gesture') return this._tickExpressed();
@@ -282,17 +349,22 @@ export const chordmode = (() => {
       // shape carries no chord, so this is a belt-and-braces ordering rather
       // than a rule that resolves a real conflict.
       if (releaseGesture && held.includes(releaseGesture)) {
-        if (playing) { engine.releaseChord(); playing = null; }
+        if (playing) { engine.releaseChord(); stopArp(); playing = null; }
         return;
       }
 
       // First currently-held gesture that has a chord assigned wins.
       // `!== undefined`, not truthy: degree 0 is the tonic.
       const id = held.find(g => assignments[g] !== undefined) ?? null;
-      if (id === playing) return;
-      if (id) this._sound(id);
-      else engine.releaseChord();
-      playing = id;
+      if (id !== playing) {
+        if (id) this._sound(id);
+        else { engine.releaseChord(); stopArp(); }
+        playing = id;
+      }
+      // A block chord is set up once and sustains itself; an arpeggio has to be
+      // fed. This is why the early-out above became a branch — the state may be
+      // unchanged and there can still be notes owed.
+      if (playing && arp.enabled) runArp(chordFor(playing)?.freqs);
     },
 
     // hand / brow modes. The handshape names the chord and LATCHES — dropping
@@ -311,13 +383,23 @@ export const chordmode = (() => {
       if (!latched) return;
 
       if (expr.control === 'volume') {
+        engine.setChordLevel(level);
+        gateOpen = level > 0;
+        if (arp.enabled) {
+          // The hand owns loudness on the shared gain and the arp owns rhythm
+          // underneath it, so the notes go out at full voice level. Silence is
+          // a real state here, not a quiet one: at zero the run stops and
+          // restarts from the root when the hand opens again.
+          if (level > 0) runArp(chordFor(latched)?.freqs);
+          else stopArp();
+          voiced = null;         // block-chord voicing is stale while the arp drives
+          return;
+        }
         // Only re-point the voices when the chord actually changes. Ramping
         // four oscillator frequencies every frame is the same never-settling
         // glide that made continuous volume unplayable in the first place.
         const sig = `${latched}|${assignments[latched]}|${sevenths[assignments[latched]]}|${JSON.stringify(effectiveKey())}`;
         if (sig !== voiced) { engine.setChordVoices(chordFor(latched)?.freqs); voiced = sig; }
-        engine.setChordLevel(level);
-        gateOpen = level > 0;
         return;
       }
       // Gate: one attack on the way up, one release on the way down, with a
@@ -328,10 +410,15 @@ export const chordmode = (() => {
       // A chord swapped while the gate is already open re-attacks on the new
       // one, which is what playing a progression through a held note means.
       const changed = on && gateOpen && voiced !== latched;
-      if (on === gateOpen && !changed) return;
-      gateOpen = on;
-      if (on) { this._sound(latched); voiced = latched; }
-      else { engine.releaseChord(); voiced = null; }
+      if (on !== gateOpen || changed) {
+        gateOpen = on;
+        // A swap mid-gate is one chord becoming another under a hand that never
+        // let go, so the arpeggio carries on in time; a fresh attack starts the
+        // pattern at the root.
+        if (on) { this._sound(latched, { restart: !changed }); voiced = latched; }
+        else { engine.releaseChord(); stopArp(); voiced = null; }
+      }
+      if (gateOpen && arp.enabled) runArp(chordFor(latched)?.freqs);
     },
 
     // Which degree is sounding, or -1 — for the row indicators. `playing` is a
@@ -349,6 +436,44 @@ export const chordmode = (() => {
     // The chord's real loudness, straight off the audio graph — not the input
     // signal, which differs from it whenever an envelope is in between.
     chordLevel: () => engine.chordLevel?.() ?? 0,
+
+    arpState: () => ({ ...arp }),
+    // Which note of the pool is sounding, or -1. Steps are scheduled ahead of
+    // the audio clock, so "the last one scheduled" is the wrong answer by up to
+    // a step — this reports the last one that has actually started, which is
+    // what a player watching the panel is hearing.
+    arpSounding() {
+      if (!arp.enabled || !arpClock) return -1;
+      const t = engine.now?.() ?? 0;
+      let idx = -1;
+      for (const s of arpSched) if (s.at <= t) idx = s.idx;
+      return idx;
+    },
+    // How many notes the current chord gives the pattern to walk, so the panel
+    // can say "3 of 6" rather than leaving the octave setting abstract.
+    arpPoolSize() {
+      const c = playing ? chordFor(playing) : (latched ? chordFor(latched) : null);
+      return notePool(c?.freqs ?? [], arp.octaves).length;
+    },
+    setArp(partial) {
+      const next = { ...arp, ...partial };
+      next.enabled = !!next.enabled;
+      if (!ARP_PATTERNS.includes(next.pattern)) next.pattern = ARP_DEFAULTS.pattern;
+      const o = Math.round(Number(next.octaves));
+      next.octaves = Number.isFinite(o) ? Math.max(1, Math.min(ARP_MAX_OCTAVES, o)) : 1;
+      const flipped = next.enabled !== arp.enabled;
+      arp = next;
+      // Block chord and arpeggio are two owners of the same voice gains, so a
+      // switch hands them over cleanly instead of leaving whatever the other
+      // one last scheduled ringing under the new one.
+      if (flipped) {
+        stopArp();
+        engine.releaseChord();
+        voiced = null;
+        gateOpen = false;
+      }
+      return { ...arp };
+    },
 
     expression: () => ({ ...expr }),
     // Live values for the panel's meter — the only way to see whether your
@@ -389,7 +514,8 @@ export const chordmode = (() => {
 
     serialize() {
       return { enabled, key: { ...key }, assignments: { ...assignments },
-               sevenths: sevenths.slice(), releaseGesture, expression: { ...expr } };
+               sevenths: sevenths.slice(), releaseGesture, expression: { ...expr },
+               arp: { ...arp } };
     },
 
     load(data) {
@@ -420,6 +546,9 @@ export const chordmode = (() => {
       // Absent in setups saved before expression existed, which were all
       // gesture-driven — so the default is the old behaviour exactly.
       this.setExpression({ ...DEFAULT_EXPRESSION, ...(data.expression ?? {}) });
+      // Absent in setups saved before the arpeggiator existed, which all played
+      // block chords — so the default is off, and the old behaviour exactly.
+      this.setArp({ ...ARP_DEFAULTS, ...(data.arp ?? {}) });
 
       // Enforce the bijection on the way in. Loaded data predates it — the same
       // shape could be a chord and the release, and two shapes could share a

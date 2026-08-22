@@ -32,17 +32,17 @@ function build() {
       <button class="wave-btn" id="mute-key-btn" type="button"
               title="Click, then press the key you want. Esc cancels.">${keyLabel(getBinding('mute'))}</button>
     </label>
-    <label class="set-row">HAND CURSOR <span class="uc-badge">under construction</span>
+    <label class="set-row uc-feature">HAND CURSOR <span class="uc-badge">under construction</span>
       <button class="wave-btn" id="uic-toggle" type="button" aria-pressed="${uicontrol.enabled}"
               title="Drive the UI with a hand: clap, then hold up the hand(s) to arm. The armed hand stops playing the instrument until you toggle it back.">${uicontrol.enabled ? 'ON' : 'OFF'}</button>
     </label>
-    <label class="set-row">CURSOR REACH
+    <label class="set-row uc-feature">CURSOR REACH
       <select id="uic-reach" title="How much of the camera frame maps to the whole screen — higher reach means smaller hand movements">
         ${[['0.10', 'wide'], ['0.15', 'normal'], ['0.22', 'close']].map(([v, l]) =>
           `<option value="${v}"${Math.abs(uicontrol.margin - +v) < 0.01 ? ' selected' : ''}>${l}</option>`).join('')}
       </select>
     </label>
-    <label class="set-row">CURSOR KEY
+    <label class="set-row uc-feature">CURSOR KEY
       <button class="wave-btn" id="cursor-key-btn" type="button"
               title="Opens the arming window; disarms everything when armed. Click, then press the key you want. Esc cancels.">${keyLabel(getBinding('cursor'))}</button>
     </label>

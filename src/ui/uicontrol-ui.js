@@ -11,6 +11,7 @@ import { toast }                     from './status.js';
 import { keyLabel, getBinding }      from './hotkeys.js';
 import { onThemeChange }             from './theme.js';
 import { fullscreen }                from './fullscreen.js';
+import { devmode }                   from '../devmode.js';
 
 let cv = null, ctx = null;
 let reduced = false;
@@ -221,6 +222,14 @@ function drawPrompt(text, sub) {
 
 export function updateUicOverlay() {
   if (!ctx) return;
+  // Under construction, so DEV-only. Gated here rather than only at the call
+  // site because the pre-arm rings are drawn for merely-TRACKED hands, and
+  // cv.js keeps feeding hands whether or not the tick runs — so an enabled
+  // cursor outside DEV would keep painting rings that no clap could ever arm.
+  if (!devmode.enabled) {
+    if (cv.__drawn) { ctx.clearRect(0, 0, cv.width, cv.height); cv.__drawn = false; }
+    return;
+  }
   const v = uicontrol.view();
   // Cheap no-op unless the modality is on and could show something — which
   // includes merely-tracked hands: an enabled system that draws nothing

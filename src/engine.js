@@ -139,6 +139,13 @@ export const engine = (() => {
     // chords the quiet one. Default and old behaviour are unchanged, and 1 is
     // a detent so unity is still where the thumb lands.
     chord_volume:      { label: 'Chord Vol',    min: 0,   max: 4,     val: 1,    snaps: [0.5, 1, 2] },
+    // Arpeggiator, for the chord bank. Here rather than in chordmode.js so
+    // they are patchbay outputs like any other: a hand that drives the arp's
+    // speed is the same idea as one that opens the filter, and that is the
+    // whole instrument. Nothing downstream reads them from an AudioNode, so
+    // set() has no case for them — it clamps and stores, which is all they need.
+    arp_rate:    { label: 'Arp Rate',     min: 0.5,  max: 24,    val: 4,    unit: '/s', snaps: [2, 4, 8] },
+    arp_gate:    { label: 'Arp Gate',     min: 0.05, max: 1,     val: 0.55, snaps: [0.5] },
     lfo_rate:    { label: 'LFO Rate',      min: 0.05, max: 20,    val: 1,    unit: 'Hz' },
     lfo_depth:   { label: 'LFO Depth',     min: 0,    max: 1,     val: 0,     snaps: [0.5] },
     reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12,  snaps: [0.25, 0.5] },
@@ -630,10 +637,13 @@ export const engine = (() => {
     chordOn = v > 0;
   }
 
-  function playChord(freqs, { gain = CHORD_PEAK } = {}) {
-    if (!started || !freqs?.length) return;
+  // Run the chord envelope without pointing the voices anywhere. Split out
+  // for the arpeggiator, which drives the individual voices itself: repointing
+  // them here would overwrite the note it just scheduled, but the outer
+  // envelope is still what "the chord is sounding" means.
+  function attackChord(gain = CHORD_PEAK) {
+    if (!started) return;
     const t = ctx.currentTime;
-    setChordVoices(freqs);
     // Attack to peak, then decay to the sustain level, both anchored at the
     // gain we are actually at — retriggering mid-release has to start from the
     // dying value, not snap to zero first, or fast chord changes click.
@@ -646,6 +656,65 @@ export const engine = (() => {
     g.linearRampToValueAtTime(gain, t + a);
     if (d > 0) g.linearRampToValueAtTime(sus, t + a + d);
     chordOn = true;
+  }
+
+  function playChord(freqs, { gain = CHORD_PEAK } = {}) {
+    if (!started || !freqs?.length) return;
+    setChordVoices(freqs);
+    attackChord(gain);
+  }
+
+  // ── Arpeggiator notes ────────────────────────────────────────────────
+  //
+  // One note, scheduled ahead on the audio clock. The chord's own envelope on
+  // the shared gain stays where it is — this rides underneath it on a single
+  // voice, so the arp is shaped by the chord's ADSR and the expression hand's
+  // level exactly like a block chord is.
+  //
+  // Round-robin across the voices rather than reusing one: a note's release
+  // tail then rings under the next note's attack. With a single voice the gate
+  // would have to shut before the next could open, which is the difference
+  // between an arpeggio and a stutter. Four voices at a gate of at most one
+  // step means a voice is never asked to play again while it is still ringing.
+  //
+  // Peak is below unity. setChordVoices gives a triad three voices at 1/3 each,
+  // summing to 1; a lone arp note at 1 would be no louder in peak but audibly
+  // hotter in the moment, and two overlapping tails would sum past it. 0.7
+  // lands the arp about level with the block chord it replaces.
+  const ARP_VOICE_GAIN = 0.7;
+  let arpVoice = 0;
+  function arpNote({ freq, when = 0, dur = 0.12, gain = 1 } = {}) {
+    if (!started || !(freq > 0)) return;
+    const t = Math.max(ctx.currentTime, when);
+    const g = chordVGains[arpVoice].gain;
+    const v = chordOscs[arpVoice];
+    arpVoice = (arpVoice + 1) % CHORD_VOICES;
+    const peak = Math.max(0, Math.min(1, gain)) * ARP_VOICE_GAIN;
+    // Pitch set just before the note opens, and with no glide: the voice is
+    // silent at that instant, so a ramp from the previous note's frequency
+    // would be a swoop nobody asked for.
+    v.setFreq(freq, t - 0.004, 0);
+    const atk = 0.006;
+    const rel = Math.min(0.09, dur * 0.5);
+    g.cancelScheduledValues(t - 0.004);
+    g.setValueAtTime(0, t);
+    g.linearRampToValueAtTime(peak, t + atk);
+    g.setValueAtTime(peak, t + Math.max(atk, dur - rel));
+    g.linearRampToValueAtTime(0, t + dur);
+  }
+
+  // Drop whatever the voices are holding without touching the shared gain —
+  // the arpeggiator's counterpart to releaseChord(), which owns the other end.
+  // Needed because the arp leaves notes scheduled into the future: stopping
+  // the clock is not the same as stopping the sound.
+  function silenceChordVoices() {
+    if (!started) return;
+    const t = ctx.currentTime;
+    for (const n of chordVGains) {
+      n.gain.cancelScheduledValues(t);
+      n.gain.setValueAtTime(n.gain.value, t);
+      n.gain.linearRampToValueAtTime(0, t + 0.03);
+    }
   }
 
   function releaseChord() {
@@ -787,6 +856,7 @@ export const engine = (() => {
     snapshot, restore,
     defineWave, playTone, now,
     playChord, releaseChord, chordActive, setChordVoices, setChordLevel, chordLevel,
+    attackChord, arpNote, silenceChordVoices,
     setChordEnv, getChordEnv, CHORD_ENV_RANGE,
     setLeadEnv, getLeadEnv, LEAD_ENV_RANGE,
     setShepard, getShepard,

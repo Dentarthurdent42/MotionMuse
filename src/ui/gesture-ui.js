@@ -4,6 +4,7 @@
 
 import { gesture, gestureLabel } from '../gesture.js';
 import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS } from '../chordmode.js';
+import { ARP_PATTERNS, ARP_MAX_OCTAVES } from '../arp.js';
 import { diatonicChord, DIATONIC_SCALES } from '../chords.js';
 import { NOTE_NAMES } from '../scale.js';
 import { cvSource }   from '../cv.js';
@@ -203,6 +204,43 @@ export function gestureSections() {
       </div>
     </div>`}`;
 
+  // ── Arpeggiator ────────────────────────────────────────────────────────
+  //
+  // Rate and gate are engine PARAMS, so they are also patchbay outputs; the
+  // sliders here and a cable there write the same value, and the readout is
+  // refreshed every frame so a driven rate is visible rather than a slider
+  // that has quietly stopped telling the truth.
+  const a = chordmode.arpState();
+  const arpRate = engine.PARAMS.arp_rate, arpGate = engine.PARAMS.arp_gate;
+  const PATTERN_LABEL = {
+    up: 'UP', down: 'DOWN', updown: 'UP · DOWN', downup: 'DOWN · UP', random: 'RANDOM',
+  };
+  const arpRow = !on ? '' : `
+    <div class="chord-arp">
+      <span class="chord-key-lbl">ARP</span>
+      <button class="wave-btn${a.enabled ? ' on' : ''}" id="ck-arp" aria-pressed="${a.enabled}"
+              title="Play the held chord one note at a time instead of as a block. Same chord, same handshape, same expression — the notes just take turns.">${a.enabled ? 'ON' : 'OFF'}</button>
+      <select id="ck-arp-pattern" aria-label="Arpeggio pattern" ${a.enabled ? '' : 'disabled'}
+              title="The order the chord's notes are played in. UP · DOWN turns at the ends without playing them twice.">
+        ${ARP_PATTERNS.map(k => `<option value="${k}"${k === a.pattern ? ' selected' : ''}>${PATTERN_LABEL[k]}</option>`).join('')}
+      </select>
+      <select id="ck-arp-oct" aria-label="Arpeggio octave range" ${a.enabled ? '' : 'disabled'}
+              title="How many octaves the run covers. More octaves means more notes before the pattern repeats.">
+        ${Array.from({ length: ARP_MAX_OCTAVES }, (_, i) => i + 1).map(o =>
+          `<option value="${o}"${o === a.octaves ? ' selected' : ''}>${o} OCT</option>`).join('')}
+      </select>
+    </div>
+    ${a.enabled ? `
+    <div class="chord-arp-cal">
+      <label class="ctrl-lbl" title="Notes per second. Also a patchbay output — wire a signal to Arp Rate and your hand drives the tempo.">RATE
+        <input type="range" id="ck-arp-rate" min="${arpRate.min}" max="${arpRate.max}" step="0.1" value="${arpRate.val}">
+      </label>
+      <label class="ctrl-lbl" title="How much of each step the note fills: short is staccato, full is legato. Also a patchbay output.">GATE
+        <input type="range" id="ck-arp-gate" min="${arpGate.min}" max="${arpGate.max}" step="0.01" value="${arpGate.val}">
+      </label>
+      <div class="arp-read quant-notes" id="ck-arp-read">—</div>
+    </div>` : ''}`;
+
   const assignRows = !on ? '' :
     Array.from({ length: DEGREES }, (_, i) => chordRow(i)).join('') + `
     <div class="chord-assign${ex.mode === 'gesture' ? '' : ' dimmed'}" data-degree="release">
@@ -243,6 +281,7 @@ export function gestureSections() {
       ${keyRow}
       ${exprRow}
       <div id="chord-assigns">${assignRows}</div>
+      ${arpRow}
       <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;">
         ${['attack', 'decay', 'sustain', 'release'].map(k => `
           <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
@@ -397,6 +436,26 @@ export function wireGestureSections(rerender) {
     });
   });
 
+  // Toggling and the two selects re-render (the sliders appear and disappear
+  // with the toggle); the sliders themselves mutate in place, for the same
+  // reason the ADSR ones do — a re-render mid-drag drops the pointer capture.
+  document.getElementById('ck-arp')?.addEventListener('click', () => {
+    chordmode.setArp({ enabled: !chordmode.arpState().enabled });
+    rerender();
+  });
+  document.getElementById('ck-arp-pattern')?.addEventListener('change', e => {
+    chordmode.setArp({ pattern: e.target.value });
+  });
+  document.getElementById('ck-arp-oct')?.addEventListener('change', e => {
+    chordmode.setArp({ octaves: Number(e.target.value) });
+  });
+  document.getElementById('ck-arp-rate')?.addEventListener('input', e => {
+    engine.set('arp_rate', +e.target.value);
+  });
+  document.getElementById('ck-arp-gate')?.addEventListener('input', e => {
+    engine.set('arp_gate', +e.target.value);
+  });
+
   document.getElementById('ck-follow')?.addEventListener('click', () => {
     // Turning follow off keeps whatever key was being followed, so the sound
     // doesn't jump the moment you take manual control.
@@ -492,6 +551,28 @@ export function updateGesturePanel() {
       fillV.classList.toggle('on', lvl > 0.001);
       const r = document.getElementById('chord-vol-read');
       if (r && r.textContent !== pct) r.textContent = pct;
+    }
+
+    // Arpeggiator readout. Rate is a patchbay output, so it can be moving
+    // without anyone touching the slider — the number has to come from the
+    // parameter every frame, not from the last thing the thumb did. The BPM
+    // equivalent is there because "6.2 notes per second" is not a tempo anyone
+    // thinks in; steps are eighth notes for that reading.
+    const arpRead = document.getElementById('ck-arp-read');
+    if (arpRead) {
+      const rate = engine.PARAMS.arp_rate.val;
+      const gate = engine.PARAMS.arp_gate.val;
+      const pool = chordmode.arpPoolSize();
+      const step = chordmode.arpSounding();
+      const where = pool ? ` · ${step >= 0 ? step + 1 : '–'}/${pool}` : '';
+      const txt = `${rate.toFixed(1)}/s · ≈${Math.round(rate * 30)} BPM · gate ${Math.round(gate * 100)}%${where}`;
+      if (arpRead.textContent !== txt) arpRead.textContent = txt;
+      // A slider left behind by a cable driving the same parameter is worse
+      // than no slider: it says the rate is one thing while you hear another.
+      const rs = document.getElementById('ck-arp-rate');
+      if (rs && document.activeElement !== rs && +rs.value !== rate) rs.value = rate;
+      const gs = document.getElementById('ck-arp-gate');
+      if (gs && document.activeElement !== gs && +gs.value !== gate) gs.value = gate;
     }
 
     // Live expression meter. Without it, calibrating the range is guesswork:

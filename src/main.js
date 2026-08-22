@@ -45,9 +45,13 @@ function loop() {
   mapper.tick();
   micSource.tick();      // cheap no-op unless the mic is on
   gesture.tick();        // recognize hand gestures → gesture_<id> bus signals
-  uicontrol.tick();      // hand cursor — cheap no-op unless enabled; sits
-                         // between gesture and chordmode so a claim made this
-                         // frame is respected this frame
+  // Hand cursor — cheap no-op unless enabled. Sits between gesture and
+  // chordmode so a claim made this frame is respected this frame. DEV-gated
+  // while under construction, and gated HERE rather than inside uicontrol:
+  // hiding the button does not switch the feature off, and the setting
+  // persists, so without this a clap would arm an invisible cursor that
+  // silently claims a hand away from the instrument.
+  if (devmode.enabled) uicontrol.tick();
   chordmode.tick();      // cheap no-op unless chord mode is enabled
   playalong.tick();      // cheap no-op unless a song is running
   updateSigPanel();
@@ -233,6 +237,11 @@ depthBtn.addEventListener('click', async () => {
 // LiDAR is under construction: turning dev mode off ends a live depth session
 // (a hidden, running XR session with no visible control would be confusing).
 devmode.onChange(on => { if (!on && depthSource.lidarActive) depthSource.stopLidar(); });
+// Same rule for the hand cursor: an armed hand is one the instrument has lost,
+// and leaving that in place with the button gone is a hand that stops playing
+// for no reason a player can see. Disarmed, not disabled — the HAND CURSOR
+// setting is the player's, and DEV should gate reach, not overwrite choices.
+devmode.onChange(on => { if (!on) uicontrol.disarmAll(); });
 
 // ── Audio: starts with the page, muted ───────────────────────────────────
 // The engine used to wait behind a button, which meant every control in the
@@ -314,7 +323,9 @@ initHotkeys({
   // The cursor key is the keyboard's version of the clap: opens the arming
   // window when nothing is armed, and is the panic key — disarm everything,
   // one press — when anything is.
-  cursor: () => { uicontrol.hotkey(); },
+  // …and inert outside DEV, for the same reason the tick is: it is the one
+  // way in that does not go through a button we can hide.
+  cursor: () => { if (devmode.enabled) uicontrol.hotkey(); },
 });
 onBindingChange(syncMuteUI);    // rebinding the key relabels the button and banner
 syncMuteUI();                   // muted from the first paint, before the graph exists
