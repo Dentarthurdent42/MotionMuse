@@ -222,7 +222,7 @@ const selMapping = () => mapper.mappings.find(m => m.id === selectedId);
 // screens the canvas is also wider than its scroll container (see CSS), which
 // is what makes individual keys big enough to tap.
 const fpKbdHeight = () =>
-  typeof window !== 'undefined' && window.matchMedia?.('(max-width: 768px)').matches ? 88
+  globalThis.matchMedia?.('(max-width: 768px)').matches ? 88
     : isDesktop() ? 72 : 56;
 
 function drawFreqKbd() {
@@ -274,7 +274,7 @@ function nudgeArmed(delta) {
 // a frequency cable's editor is open and focus isn't in a form field.
 const FP_KEYMAP = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11 };
 // Guarded so the module stays importable in node (unit tests).
-if (typeof document !== 'undefined') document.addEventListener('keydown', e => {
+if (globalThis.document !== undefined) document.addEventListener('keydown', e => {
   if (!document.querySelector('#ng-editor[data-freq]')) return;
   if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
@@ -616,7 +616,7 @@ function highlightWire(id) {
 
 let _ro = null;
 function ensureRedrawObserver() {
-  if (_ro || typeof ResizeObserver === 'undefined') return;
+  if (_ro || globalThis.ResizeObserver === undefined) return;
   const el = document.getElementById('mapper-rows');
   if (!el) return;
   _ro = new ResizeObserver(() => drawWires());

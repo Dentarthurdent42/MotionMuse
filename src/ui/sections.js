@@ -21,6 +21,7 @@
 // every section by default would trade one annoyance for a worse one.
 
 import { lsGet, lsSet, lsDel } from '../storage.js';
+import { isRecord } from '../is.js';
 import { stepsForSection, startSectionHelp } from './tutorial.js';
 
 const KEY = 'motionmuse-sections';
@@ -93,7 +94,7 @@ const defaulted = new Set();
 function loadMap(key) {
   try {
     const v = JSON.parse(lsGet(key) || '{}');
-    return v && typeof v === 'object' ? v : {};
+    return isRecord(v) ? v : {};
   } catch { return {}; }
 }
 const saveOrder = () => lsSet(ORDER_KEY, JSON.stringify(order));
@@ -124,7 +125,7 @@ export function setFolded(sec, on) {
 function load() {
   try {
     const v = JSON.parse(lsGet(KEY) || '{}');
-    return v && typeof v === 'object' ? v : {};
+    return isRecord(v) ? v : {};
   } catch { return {}; }
 }
 const save = () => lsSet(KEY, JSON.stringify(heights));
@@ -494,7 +495,7 @@ export function enhanceSections(root = document) {
 // Position drives the hue, so anything that moves sections has to recolour —
 // and crossing the portrait breakpoint moves the camera column's extras between
 // two different parents, so that is re-decided here too.
-if (typeof window !== 'undefined') {
+if (globalThis.window !== undefined) {
   let t = null;
   window.addEventListener('resize', () => {
     clearTimeout(t);

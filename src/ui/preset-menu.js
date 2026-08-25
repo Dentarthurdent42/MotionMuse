@@ -6,7 +6,6 @@
 // needs switched on, then choose.
 
 import { mapper, PRESETS } from '../mapper.js';
-import { toast } from './status.js';
 
 // Human-readable prerequisite, so a preset can't leave you with a silent patch
 // and no clue why.

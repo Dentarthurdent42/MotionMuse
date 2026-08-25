@@ -1,4 +1,5 @@
 import { makeQuantizer } from './scale.js';
+import { isString } from './is.js';
 import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 
 import { shepardPartials, SHEP_PARTIALS, SHEP_FMIN } from './shepard.js';
@@ -84,12 +85,12 @@ export const engine = (() => {
   let periodicCache = new Map();     // name → PeriodicWave (this ctx only)
   function defineWave(name, { real, imag }) {
     waveSpecs.set(name, {
-      real: Float32Array.from(real ?? new Array(imag.length).fill(0)),
+      real: real ? Float32Array.from(real) : new Float32Array(imag.length),
       imag: Float32Array.from(imag),
     });
   }
   function applyType(osc, type) {
-    if (typeof type === 'string' && type.startsWith('custom:')) {
+    if (isString(type) && type.startsWith('custom:')) {
       const spec = waveSpecs.get(type.slice(7));
       if (!spec) { osc.type = 'sine'; return; }   // unknown name degrades safely
       let pw = periodicCache.get(type);

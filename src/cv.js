@@ -133,7 +133,7 @@ export const cvSource = {
       // later. Snappier One-Euro than the default; anti-jitter is handled
       // downstream by the volume ladder's hysteresis.
       bus.register(`pinch_${s}`,       { label: `${lbl} Pinch`,    group: g, min: 0, max: 1,   source: 'cv', smooth: { minCutoff: 2.5, beta: 0.4 } });
-      ['Thumb','Index','Middle','Ring','Pinky'].forEach((fn, fi) =>
+      ['Thumb','Index','Middle','Ring','Pinky'].forEach(fn =>
         bus.register(`finger_${s}_${fn.toLowerCase()}`, {
           label: `${lbl} ${fn}`, group: g, min: 0, max: 1, source: 'cv', smooth: true,
         })
@@ -145,7 +145,7 @@ export const cvSource = {
       // Thumb-to-fingertip contacts: 1 when the pads meet. These are what make
       // the ASL number handshapes distinguishable, and they're good triggers
       // in their own right — a thumb-to-pinky tap is an easy discrete gesture.
-      ['Index','Middle','Ring','Pinky'].forEach((fn, i) =>
+      ['Index','Middle','Ring','Pinky'].forEach(fn =>
         bus.register(`contact_${s}_${fn.toLowerCase()}`, {
           label: `${lbl} ${fn} Touch`, group: g, min: 0, max: 1, source: 'cv', smooth: true,
         })
