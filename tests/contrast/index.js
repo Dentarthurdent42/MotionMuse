@@ -26,7 +26,7 @@ function parseThemes(cssPath) {
     const vars = {};
     for (const [, name, val] of body.matchAll(declRe)) vars[`--${name}`] = val.trim();
     if (!Object.keys(vars).length) continue;
-    for (const n of names) themes.set(n, { ...(themes.get(n) || {}), ...vars });
+    for (const n of names) themes.set(n, { ...themes.get(n), ...vars });
   }
   return themes;
 }

@@ -566,7 +566,7 @@ const hud = await (async () => {
       [...document.querySelectorAll('#chord-assigns .chord-assign')].map(r => ({
         d: r.dataset.degree,
         label: r.querySelector('.chord-degree')?.textContent ?? '',
-        shape: r.querySelector('.ch-shape')?.value ?? '',
+        handshape: r.querySelector('.ch-shape')?.value ?? '',
         hasSelect: !!r.querySelector('.ch-shape'),
       })));
     const initial = await read();
@@ -597,7 +597,7 @@ const hud = await (async () => {
     await page.selectOption('#ck-expr-mode', 'gesture');
     await page.waitForTimeout(200);
     // Hand the release the shape that plays the first chord.
-    const taken = initial.find(r => r.d === '0')?.shape;
+    const taken = initial.find(r => r.d === '0')?.handshape;
     if (taken) {
       await page.selectOption('.ch-shape[data-degree="release"]', taken);
       await page.waitForTimeout(200);
@@ -990,10 +990,10 @@ console.log('\nChord mode\n');
   check(initial.some(r => r.d === 'release'), 'the release is one of the rows');
   check(/^I\b/.test(initial[0]?.label ?? ''), 'rows are labelled by degree', initial[0]?.label);
   check(!!taken, 'the tonic starts with a handshape on it', String(taken));
-  check(after.find(r => r.d === 'release')?.shape === taken,
-    'the release took the shape', after.find(r => r.d === 'release')?.shape);
-  check(after.find(r => r.d === '0')?.shape === '',
-    'and it left the chord it was playing', after.find(r => r.d === '0')?.shape);
+  check(after.find(r => r.d === 'release')?.handshape === taken,
+    'the release took the shape', after.find(r => r.d === 'release')?.handshape);
+  check(after.find(r => r.d === '0')?.handshape === '',
+    'and it left the chord it was playing', after.find(r => r.d === '0')?.handshape);
   check(!state.releaseHasChord, 'the release shape holds no chord');
   check(new Set(state.degrees).size === state.degrees.length,
     'no chord is claimed by two handshapes', state.degrees.join(','));
@@ -1013,10 +1013,10 @@ console.log('\nChord live state\n');
 // ── Chord expression ──
 console.log('\nChord expression\n');
 {
-  const [byShape, byHand, byBrow] = hud.chords.expr;
-  check(byShape.mode === 'gesture' && byShape.handOff && byShape.ctlOff,
-    'handshape mode: the hand and control pickers do not apply', JSON.stringify(byShape));
-  check(!byShape.meter, 'and there is no range to calibrate');
+  const [byHandshape, byHand, byBrow] = hud.chords.expr;
+  check(byHandshape.mode === 'gesture' && byHandshape.handOff && byHandshape.ctlOff,
+    'handshape mode: the hand and control pickers do not apply', JSON.stringify(byHandshape));
+  check(!byHandshape.meter, 'and there is no range to calibrate');
   check(byHand.mode === 'hand' && !byHand.handOff && !byHand.ctlOff,
     'two-handed mode: both pickers live', JSON.stringify(byHand));
   check(byHand.meter, 'and a live meter to calibrate the range against');
@@ -1029,9 +1029,9 @@ console.log('\nChord expression\n');
   // zero would put silence out of reach entirely.
   check(byHand.lo > 0.3, 'the hand range starts above a closed fist', String(byHand.lo));
   check(byHand.deadzone > 0, 'and the bottom of the travel rounds down to silence');
-  check(byBrow.relOff === true && byShape.relOff === false,
+  check(byBrow.relOff === true && byHandshape.relOff === false,
     'RELEASE applies to handshape mode only',
-    `gesture ${byShape.relOff}, brow ${byBrow.relOff}`);
+    `gesture ${byHandshape.relOff}, brow ${byBrow.relOff}`);
 }
 
 // ── Share ──

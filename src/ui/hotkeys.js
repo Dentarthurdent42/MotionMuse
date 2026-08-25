@@ -11,6 +11,7 @@
 // predictable instead of dependent on invisible focus state.
 
 import { lsGet, lsSet } from '../storage.js';
+import { isRecord } from '../is.js';
 
 const LS_KEY = 'motionmuse-hotkeys';
 
@@ -54,9 +55,10 @@ export function shouldFire(e, code) {
 function load() {
   try {
     const raw = JSON.parse(lsGet(LS_KEY) || '{}');
+    if (!isRecord(raw)) return { ...DEFAULT_BINDINGS };
     // Merge over the defaults rather than replacing them, so a binding added
     // in a later release still reaches someone with a saved file.
-    return { ...DEFAULT_BINDINGS, ...(raw && typeof raw === 'object' ? raw : {}) };
+    return { ...DEFAULT_BINDINGS, ...raw };
   } catch { return { ...DEFAULT_BINDINGS }; }
 }
 

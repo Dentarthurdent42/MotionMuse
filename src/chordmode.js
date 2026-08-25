@@ -520,7 +520,7 @@ export const chordmode = (() => {
 
     load(data) {
       if (!data) return;
-      key = { ...DEFAULT_KEY, ...(data.key ?? {}) };
+      key = { ...DEFAULT_KEY, ...data.key };
       sevenths = Array.isArray(data.sevenths)
         ? Array.from({ length: DEGREES }, (_, i) => !!data.sevenths[i])
         : [...DEFAULT_SEVENTHS];
@@ -530,7 +530,7 @@ export const chordmode = (() => {
         // in a later version still arrive with a chord for existing users.
         const merged = { ...DEFAULT_ASSIGNMENTS };
         for (const [id, a] of Object.entries(data.assignments)) {
-          if (typeof a === 'number') { merged[id] = normDegree(a); continue; }
+          if (Number.isFinite(a)) { merged[id] = normDegree(a); continue; }
           // Older formats: { degree, seventh } and, older still, an absolute
           // { root, octave, quality }. The 7th moves from the handshape to the
           // chord it plays, which is where it now lives.
@@ -545,10 +545,10 @@ export const chordmode = (() => {
       if (data.releaseGesture !== undefined) releaseGesture = data.releaseGesture || null;
       // Absent in setups saved before expression existed, which were all
       // gesture-driven — so the default is the old behaviour exactly.
-      this.setExpression({ ...DEFAULT_EXPRESSION, ...(data.expression ?? {}) });
+      this.setExpression({ ...DEFAULT_EXPRESSION, ...data.expression });
       // Absent in setups saved before the arpeggiator existed, which all played
       // block chords — so the default is off, and the old behaviour exactly.
-      this.setArp({ ...ARP_DEFAULTS, ...(data.arp ?? {}) });
+      this.setArp({ ...ARP_DEFAULTS, ...data.arp });
 
       // Enforce the bijection on the way in. Loaded data predates it — the same
       // shape could be a chord and the release, and two shapes could share a

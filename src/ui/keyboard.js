@@ -149,7 +149,7 @@ export function makeKbdView(canvasId, { height = 46 } = {}) {
     draw(opts = {}) {
       const c = document.getElementById(canvasId);
       if (!c) return;
-      const h = typeof height === 'function' ? height() : height;
+      const h = height instanceof Function ? height() : height;
       const s = `${opts.root}|${opts.scale}|${c.clientWidth}|${h}`
               + `|${(opts.markers ?? []).join(',')}|${(opts.chord ?? []).join(',')}`;
       if (s === sig) return;

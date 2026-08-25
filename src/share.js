@@ -13,6 +13,7 @@
 // someone else's.
 
 import { snapshot } from './preset.js';
+import { isString } from './is.js';
 
 export const SHARE_PARAM = 's';
 
@@ -40,8 +41,8 @@ const fromB64 = str => {
   return u8;
 };
 
-const hasCompression = () => typeof CompressionStream !== 'undefined'
-                          && typeof DecompressionStream !== 'undefined';
+const hasCompression = () => globalThis.CompressionStream !== undefined
+                          && globalThis.DecompressionStream !== undefined;
 
 async function pipe(stream, bytes) {
   const w = stream.writable.getWriter();
@@ -60,7 +61,7 @@ export async function encodeState(state) {
 }
 
 export async function decodeState(payload) {
-  if (typeof payload !== 'string' || payload.length < 2) throw new Error('empty share link');
+  if (!isString(payload) || payload.length < 2) throw new Error('empty share link');
   const kind = payload[0];
   const bytes = fromB64(payload.slice(1));
   let json;
@@ -74,7 +75,7 @@ export async function decodeState(payload) {
 
 // ── URLs ──────────────────────────────────────────────────────────────────
 export function shareUrl(payload, base) {
-  const u = new URL(base ?? (typeof location !== 'undefined' ? location.href : 'https://localhost/'));
+  const u = new URL(base ?? (globalThis.location !== undefined ? location.href : 'https://localhost/'));
   u.hash = '';
   u.search = '';
   return `${u.href.replace(/[?#]$/, '')}#${SHARE_PARAM}=${payload}`;

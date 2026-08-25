@@ -24,12 +24,30 @@
     "anti-slop/no-reflect-apply": "error",
     "anti-slop/no-reflect-get": "error",
     "anti-slop/no-runtime-typeof": "error",
-    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-shape-in-symbol-names": [
+      "error",
+      {
+        // Compound domain terms whose "shape" is vocabulary, not structure:
+        // "handshape" is this app's ASL-style hand-pose concept; "blendshape"
+        // appears in MediaPipe's API (faceBlendshapes, outputFaceBlendshapes).
+        "allowedTerms": ["handshape", "blendshape"]
+      }
+    ],
     "anti-slop/no-unknown-parameters": "error",
     "anti-slop/no-unknown-returns": "error",
     "anti-slop/no-unknown-type-aliases": "error",
     "anti-slop/no-unsafe-dictionary-type": "error",
     "anti-slop/no-widen-then-assert": "error",
     "anti-slop/require-safety-comment-for-type-assertion": "error"
-  }
+  },
+  "overrides": [
+    {
+      // src/is.js is the designated boundary-guard module; concentrating the
+      // raw `typeof` checks there is this plain-JS project's equivalent of the
+      // type-predicate escape hatch the rule offers TypeScript projects
+      // (allowInTypeGuards). Everywhere else the rule still applies in full.
+      "files": ["src/is.js"],
+      "rules": { "anti-slop/no-runtime-typeof": "off" }
+    }
+  ]
 }

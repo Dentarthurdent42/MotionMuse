@@ -39,7 +39,7 @@ const gfMul = (a, b) => (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]];
 function rsGenerator(degree) {
   let poly = [1];
   for (let i = 0; i < degree; i++) {
-    const next = new Array(poly.length + 1).fill(0);
+    const next = Array.from({ length: poly.length + 1 }, () => 0);
     for (let j = 0; j < poly.length; j++) {
       next[j] ^= gfMul(poly[j], EXP[i]);
       next[j + 1] ^= poly[j];
@@ -128,7 +128,7 @@ class Bits {
 export function encodeQR(input, { ecc = 'M', minVersion = 1 } = {}) {
   // `=== undefined`, not falsy: level L is index 0.
   if (ECC_LEVELS[ecc] === undefined) throw new Error(`unknown ECC level ${ecc}`);
-  const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+  const bytes = input instanceof Uint8Array ? input : new TextEncoder().encode(input);
 
   // Smallest version that fits. The count indicator widens at version 10, so
   // capacity is checked against the version actually being tried.
@@ -279,7 +279,7 @@ function draw(ver, ecc, codewords) {
 const MASKS = [
   (x, y) => (x + y) % 2 === 0,
   (x, y) => y % 2 === 0,
-  (x, y) => x % 3 === 0,
+  x => x % 3 === 0,
   (x, y) => (x + y) % 3 === 0,
   (x, y) => (Math.floor(y / 2) + Math.floor(x / 3)) % 2 === 0,
   (x, y) => (x * y) % 2 + (x * y) % 3 === 0,

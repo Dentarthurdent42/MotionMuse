@@ -56,7 +56,7 @@ const r = await p.evaluate(async () => {
   // ── Data integrity ──
   const ids = TOUR_STEPS.map(s => s.id);
   out.dupIds = ids.filter((id, i) => ids.indexOf(id) !== i);
-  out.badShape = TOUR_STEPS.filter(s => !s.id || !s.title || !s.body).map(s => s.id ?? '(missing id)');
+  out.malformed = TOUR_STEPS.filter(s => !s.id || !s.title || !s.body).map(s => s.id ?? '(missing id)');
 
   // ── The core guard: every target must resolve to visible UI ──
   for (const s of TOUR_STEPS) {
@@ -228,7 +228,7 @@ console.log(`\nTutorial staleness guard — ${r.total} steps across ${Object.key
 check(r.stale.length === 0, 'every step targets visible UI',
   r.stale.length ? `stale: ${r.stale.join('; ')} (update TOUR_STEPS in src/ui/tutorial.js)` : '');
 check(r.dupIds.length === 0, 'step ids are unique', r.dupIds.join(', '));
-check(r.badShape.length === 0, 'every step has id/title/body', r.badShape.join(', '));
+check(r.malformed.length === 0, 'every step has id/title/body', r.malformed.join(', '));
 check(r.orphans.length === 0, 'every step belongs to at least one mode',
   r.orphans.join(' '));
 

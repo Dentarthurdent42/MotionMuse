@@ -147,7 +147,7 @@ export function gestureSections() {
   // `· est` rides along with the name: whether a shape is calibrated is exactly
   // what you want to know at the moment you assign it to a chord, and it used
   // to live only in the Gestures panel, one section away.
-  const shapeOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
+  const handshapeOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
     + gesture.list().map(g =>
         `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
         + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
@@ -162,7 +162,7 @@ export function gestureSections() {
         >${c.numeral} · ${c.rootName}</span>
       <select class="ch-shape" data-degree="${i}"
               aria-label="Handshape that plays ${c.numeral}"
-        >${shapeOptions(gid)}</select>
+        >${handshapeOptions(gid)}</select>
       <button class="wave-btn ch-sev${sevenths[i] ? ' on' : ''}" data-degree="${i}"
               aria-pressed="${sevenths[i]}" title="Add the diatonic 7th">7th</button>
     </div>`;
@@ -251,7 +251,7 @@ export function gestureSections() {
         >RELEASE</span>
       <select class="ch-shape" data-degree="release" ${ex.mode === 'gesture' ? '' : 'disabled'}
               aria-label="Handshape that releases a held chord"
-        >${shapeOptions(relId)}</select>
+        >${handshapeOptions(relId)}</select>
       <span class="ch-sev-gap"></span>
     </div>`;
 
