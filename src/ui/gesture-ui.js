@@ -235,7 +235,7 @@ export function gestureSections() {
       <label class="ctrl-lbl" title="Notes per second. Also a patchbay output — wire a signal to Arp Rate and your hand drives the tempo.">RATE
         <input type="range" id="ck-arp-rate" min="${arpRate.min}" max="${arpRate.max}" step="0.1" value="${arpRate.val}">
       </label>
-      <label class="ctrl-lbl" title="How much of each step the note fills: short is staccato, full is legato. Also a patchbay output.">GATE
+      <label class="ctrl-lbl" title="How long each note rings, in steps: below 1 is staccato, 1 runs notes wall-to-wall, above 1 lets each note ring under the ones that follow. Also a patchbay output.">GATE
         <input type="range" id="ck-arp-gate" min="${arpGate.min}" max="${arpGate.max}" step="0.01" value="${arpGate.val}">
       </label>
       <div class="arp-read quant-notes" id="ck-arp-read">—</div>
@@ -565,7 +565,10 @@ export function updateGesturePanel() {
       const pool = chordmode.arpPoolSize();
       const step = chordmode.arpSounding();
       const where = pool ? ` · ${step >= 0 ? step + 1 : '–'}/${pool}` : '';
-      const txt = `${rate.toFixed(1)}/s · ≈${Math.round(rate * 30)} BPM · gate ${Math.round(gate * 100)}%${where}`;
+      // Percent while the note lives inside its step; multiples once it rings
+      // past it, because "gate 250%" reads as an error and "×2.5" as a length.
+      const gateTxt = gate <= 1 ? `${Math.round(gate * 100)}%` : `×${gate.toFixed(1)}`;
+      const txt = `${rate.toFixed(1)}/s · ≈${Math.round(rate * 30)} BPM · gate ${gateTxt}${where}`;
       if (arpRead.textContent !== txt) arpRead.textContent = txt;
       // A slider left behind by a cable driving the same parameter is worse
       // than no slider: it says the rate is one thing while you hear another.

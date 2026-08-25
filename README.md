@@ -811,7 +811,7 @@ owns the rhythm.
 | **Pattern** | `UP`, `DOWN`, `UP · DOWN`, `DOWN · UP`, `RANDOM`. |
 | **Octaves** | 1–3. Two octaves over a seventh chord is an eight-note run. |
 | **RATE** | Notes per second (0.5–24). The readout gives the tempo equivalent, reading steps as eighth notes. |
-| **GATE** | How much of each step the note fills — staccato at the bottom, legato at the top. |
+| **GATE** | How long each note rings, in steps (0.05–3). Below 1 is staccato, 1 runs the notes wall-to-wall, and above 1 each note rings under the ones that follow — the voices overlap, like an arpeggio under a sustain pedal. |
 
 `UP · DOWN` reflects at the ends rather than concatenating an up-run with a
 down-run: over a triad it plays `0 1 2 1`, not `0 1 2 2 1 0`. The naive version
