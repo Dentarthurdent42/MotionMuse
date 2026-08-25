@@ -4,7 +4,7 @@
 // Run: npm run test:unit
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ARP_PATTERNS, ARP_MAX_OCTAVES, notePool, stepIndex,
+import { ARP_PATTERNS, ARP_MAX_OCTAVES, ARP_MAX_GATE, notePool, stepIndex,
          stepSeconds, noteSeconds, dueSteps } from '../../src/arp.js';
 
 // The first `len` steps of a pattern over `n` notes, as a plain array — the
@@ -99,16 +99,20 @@ test('a nonsense rate cannot become an infinite or negative step', () => {
   assert.equal(stepSeconds(NaN), 10);
 });
 
-test('gate is a share of the step, floored above a click', () => {
+test('gate is the note length in steps, floored above a click', () => {
   assert.equal(noteSeconds(0.25, 0.5), 0.125);
   assert.equal(noteSeconds(0.25, 1), 0.25);
+  assert.equal(noteSeconds(0.25, 2), 0.5);       // rings past its own step
   assert.equal(noteSeconds(0.04, 0.05), 0.02);   // 2 ms would be a click
 });
 
-test('a note never outlasts its step', () => {
+// The engine round-robins four chord voices, so a note has to be done before
+// the fourth-next step reclaims its voice — that is what ARP_MAX_GATE holds.
+test('a note never outlasts the voice-recycle horizon', () => {
+  assert.ok(ARP_MAX_GATE < 4);
   for (const rate of [0.5, 4, 11, 24]) {
     const step = stepSeconds(rate);
-    assert.ok(noteSeconds(step, 1) <= step + 1e-9, `rate ${rate}`);
+    assert.ok(noteSeconds(step, 99) <= ARP_MAX_GATE * step + 1e-9, `rate ${rate}`);
   }
 });
 

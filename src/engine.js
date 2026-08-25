@@ -1,4 +1,5 @@
 import { makeQuantizer } from './scale.js';
+import { ARP_MAX_GATE } from './arp.js';
 import { isString } from './is.js';
 import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 
@@ -146,7 +147,9 @@ export const engine = (() => {
     // whole instrument. Nothing downstream reads them from an AudioNode, so
     // set() has no case for them — it clamps and stores, which is all they need.
     arp_rate:    { label: 'Arp Rate',     min: 0.5,  max: 24,    val: 4,    unit: '/s', snaps: [2, 4, 8] },
-    arp_gate:    { label: 'Arp Gate',     min: 0.05, max: 1,     val: 0.55, snaps: [0.5] },
+    // Gate is in steps: 1 is wall-to-wall, above 1 each note rings under the
+    // ones that follow (capped so a tail is done before its voice recycles).
+    arp_gate:    { label: 'Arp Gate',     min: 0.05, max: ARP_MAX_GATE, val: 0.55, snaps: [0.5, 1] },
     lfo_rate:    { label: 'LFO Rate',      min: 0.05, max: 20,    val: 1,    unit: 'Hz' },
     lfo_depth:   { label: 'LFO Depth',     min: 0,    max: 1,     val: 0,     snaps: [0.5] },
     reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12,  snaps: [0.25, 0.5] },
@@ -675,8 +678,9 @@ export const engine = (() => {
   // Round-robin across the voices rather than reusing one: a note's release
   // tail then rings under the next note's attack. With a single voice the gate
   // would have to shut before the next could open, which is the difference
-  // between an arpeggio and a stutter. Four voices at a gate of at most one
-  // step means a voice is never asked to play again while it is still ringing.
+  // between an arpeggio and a stutter. Four voices at a gate capped at three
+  // steps (ARP_MAX_GATE) means a voice always gets a full step of silence
+  // before it is asked to play again.
   //
   // Peak is below unity. setChordVoices gives a triad three voices at 1/3 each,
   // summing to 1; a lone arp note at 1 would be no louder in peak but audibly
