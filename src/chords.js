@@ -112,3 +112,53 @@ export function diatonicChord(keyRoot = 'C', octave = 4, scale = 'major (ionian)
     rootName: NOTE_NAMES[((base % 12) + 12) % 12],
   };
 }
+
+// ── Single notes: a degree, plus an accidental ───────────────────────────
+//
+// The same degree addressing as the chords above, sounding only the degree's
+// own root — and then raised or lowered a semitone. The accidental is what
+// puts the five notes BETWEEN the scale degrees within reach: seven shapes
+// name seven degrees, and a hand saying ♯ or ♭ reaches the rest of the
+// chromatic scale without a shape for each.
+
+export const NATURAL = 0;
+export const SHARP = 1;
+export const FLAT = -1;
+
+// Both spellings of every pitch class. Which one to show is not cosmetic: a
+// player who flattened a note wants to read the flat they played, and
+// "A♯" for it reads as a different note reached a different way.
+const SHARP_SPELLING = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+const FLAT_SPELLING  = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
+
+/**
+ * Name a pitch, spelled to match how it was reached.
+ *
+ * Only the black keys have two spellings, so this is exactly "flats read as
+ * flats": flattening B gives B♭, while flattening C gives plain B — naming
+ * that C♭ would be correct on paper and unreadable on a panel.
+ */
+export const pitchName = (midi, accidental = NATURAL) =>
+  (accidental < 0 ? FLAT_SPELLING : SHARP_SPELLING)[((midi % 12) + 12) % 12]
+  + (Math.floor(midi / 12) - 1);
+
+/**
+ * One degree of one key as a single note.
+ *
+ * `accidental` is -1, 0 or +1 semitones. Deliberately not clamped to the key:
+ * the whole point of a sharp is to leave it.
+ */
+export function diatonicNote(keyRoot = 'C', octave = 4, scale = 'major (ionian)',
+                             degree = 0, accidental = NATURAL) {
+  const c = diatonicChord(keyRoot, octave, scale, degree);
+  const acc = Math.max(-1, Math.min(1, Math.round(Number(accidental) || 0)));
+  const midi = c.midi[0] + acc;
+  return {
+    degree: c.degree,
+    numeral: c.numeral,
+    accidental: acc,
+    midi,
+    freq: mtof(midi),
+    name: pitchName(midi, acc),
+  };
+}

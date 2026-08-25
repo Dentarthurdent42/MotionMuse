@@ -3,7 +3,8 @@
 // audio-ui.js stays focused on the synth panel.
 
 import { gesture, gestureLabel } from '../gesture.js';
-import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS } from '../chordmode.js';
+import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS,
+         VOICINGS, accidentalSign } from '../chordmode.js';
 import { ARP_PATTERNS, ARP_MAX_OCTAVES } from '../arp.js';
 import { diatonicChord, DIATONIC_SCALES } from '../chords.js';
 import { NOTE_NAMES } from '../scale.js';
@@ -136,6 +137,57 @@ export function gestureSections() {
                 : 'Take the key from Pitch Quantize, so chords match the melody'}">FOLLOW</button>
     </div>` : '';
 
+  // ── Voicing: the chord, or the single note it is built on ───────────────
+  //
+  // The switch is deliberately here rather than in its own panel section: it
+  // changes what the rows below SOUND, not what they mean, and every setting
+  // around it — the key, the shapes, the expression, the arpeggiator — applies
+  // either way.
+  const ex = chordmode.expression();
+  const voicing = chordmode.getVoicing();
+  const isNote = voicing === 'note';
+  const accG = chordmode.accidentalGestures();
+  const VOICING_LABEL = { chord: 'CHORDS', note: 'SINGLE NOTES' };
+  // Every shape is offered, including ones already on a degree: the accidental
+  // is read from the hand that is NOT naming the note, so one shape can do
+  // both jobs without the two ever being asked at once.
+  const accOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
+    + gestures.map(g =>
+        `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
+        + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
+  // Accidentals need a free hand, and in 'other hand — openness' expression
+  // there is not one: that hand is already the volume. Say so rather than
+  // leaving two live-looking selects that quietly do nothing.
+  const accBusy = ex.mode === 'hand';
+  const voicingRow = !on ? '' : `
+    <div class="chord-voicing">
+      <span class="chord-key-lbl">PLAY</span>
+      <select id="ck-voicing" aria-label="Whether a handshape sounds a chord or one note"
+              title="The same handshapes and the same key, sounding either the whole chord on a degree or just that degree's own note.">
+        ${VOICINGS.map(v => `<option value="${v}"${v === voicing ? ' selected' : ''}>${VOICING_LABEL[v]}</option>`).join('')}
+      </select>
+      <span class="acc-read" id="ck-acc-read"
+            title="What your other hand is saying about the note right now.">${isNote ? '♮' : '—'}</span>
+    </div>
+    ${!isNote ? '' : `
+    <div class="chord-expr-cal chord-acc">
+      <label class="ctrl-lbl" title="${accBusy
+        ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
+        : 'Hold this on your other hand to raise the note a semitone'}">♯ SHARP
+        <select id="ck-acc-sharp" ${accBusy ? 'disabled' : ''}
+                aria-label="Handshape that sharpens the note">${accOptions(accG.sharp)}</select>
+      </label>
+      <label class="ctrl-lbl" title="${accBusy
+        ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
+        : 'Hold this on your other hand to lower the note a semitone'}">♭ FLAT
+        <select id="ck-acc-flat" ${accBusy ? 'disabled' : ''}
+                aria-label="Handshape that flattens the note">${accOptions(accG.flat)}</select>
+      </label>
+      <div class="quant-notes" style="grid-column:1 / -1;margin:0;">${accBusy
+        ? 'The other hand is playing the volume, so every note sounds natural.'
+        : 'Neither shape held is natural. The hand that is not naming the note is the one that bends it.'}</div>
+    </div>`}`;
+
   // One row per CHORD, not per handshape.
   //
   // It was the other way round, and that let the same shape be a chord *and*
@@ -155,20 +207,28 @@ export function gestureSections() {
   const chordRow = i => {
     const c = diatonicChord(eff.root, eff.octave, eff.mode, i, sevenths[i]);
     const gid = chordmode.gestureFor(i);
+    // In note voicing the row shows the pitch that will sound, octave and all
+    // — the degree is the same, but "C4" is the answer to what you are about
+    // to hear and "C major" is not.
+    // …and by the note's OWN numeral, which carries no 7th: the row would
+    // otherwise read "iii7 · E4" while sounding one E.
+    const n = isNote ? chordmode.noteAt(i) : null;
     return `
     <div class="chord-assign" data-degree="${i}">
       <span class="gesture-dot" id="cdot-${i}"></span>
-      <span class="chord-degree" title="${c.numeral} · ${c.rootName} ${c.quality}"
-        >${c.numeral} · ${c.rootName}</span>
+      <span class="chord-degree" title="${n ? `${n.numeral} · ${n.name}` : `${c.numeral} · ${c.rootName} ${c.quality}`}"
+        >${n ? `${n.numeral} · ${n.name}` : `${c.numeral} · ${c.rootName}`}</span>
       <select class="ch-shape" data-degree="${i}"
               aria-label="Handshape that plays ${c.numeral}"
         >${handshapeOptions(gid)}</select>
       <button class="wave-btn ch-sev${sevenths[i] ? ' on' : ''}" data-degree="${i}"
-              aria-pressed="${sevenths[i]}" title="Add the diatonic 7th">7th</button>
+              aria-pressed="${sevenths[i]}" ${isNote ? 'disabled' : ''}
+              title="${isNote
+                ? 'A single note has no 7th to add — switch back to CHORDS for this'
+                : 'Add the diatonic 7th'}">7th</button>
     </div>`;
   };
 
-  const ex = chordmode.expression();
   const MODE_LABEL = {
     gesture: 'Handshape holds it',
     hand:    'Other hand — openness',
@@ -279,6 +339,7 @@ export function gestureSections() {
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</button>
       </div>
       ${keyRow}
+      ${voicingRow}
       ${exprRow}
       <div id="chord-assigns">${assignRows}</div>
       ${arpRow}
@@ -304,7 +365,7 @@ export function gestureSections() {
           <span class="chord-vol-read" id="chord-vol-read">—</span>
         </div>
       </div>
-      ${on ? '' : '<div class="quant-notes">hold a gesture to play its chord</div>'}
+      ${on ? '' : `<div class="quant-notes">hold a gesture to play its ${isNote ? 'note' : 'chord'}</div>`}
     </div>`;
 
   return { gestures: gesturesHTML, chordMode: chordModeHTML };
@@ -456,6 +517,21 @@ export function wireGestureSections(rerender) {
     engine.set('arp_gate', +e.target.value);
   });
 
+  // Re-renders: the accidental pickers appear with SINGLE NOTES, the 7ths go
+  // dead, and every row relabels from a chord to the pitch it will sound.
+  document.getElementById('ck-voicing')?.addEventListener('change', e => {
+    chordmode.setVoicing(e.target.value);
+    rerender();
+  });
+  document.getElementById('ck-acc-sharp')?.addEventListener('change', e => {
+    chordmode.setAccidentalGestures({ sharp: e.target.value || null });
+    rerender();   // taking a shape for ♯ may have freed it from ♭
+  });
+  document.getElementById('ck-acc-flat')?.addEventListener('change', e => {
+    chordmode.setAccidentalGestures({ flat: e.target.value || null });
+    rerender();
+  });
+
   document.getElementById('ck-follow')?.addEventListener('click', () => {
     // Turning follow off keeps whatever key was being followed, so the sound
     // doesn't jump the moment you take manual control.
@@ -538,6 +614,20 @@ export function updateGesturePanel() {
     }
     const rel = document.getElementById('cdot-release');
     if (rel) rel.classList.toggle('on', chordmode.releaseHeld());
+
+    // What the off hand is saying, live. Worth its own indicator rather than
+    // only appearing inside the readout: a sharp that is not being recognized
+    // is invisible until you play a note and hear the wrong one, and this says
+    // so while your hand is still up.
+    const accEl = document.getElementById('ck-acc-read');
+    if (accEl) {
+      const a = chordmode.currentAccidental();
+      // An em dash in chord voicing: there is no accidental to be at, and a
+      // standing ♮ would claim otherwise.
+      const txt = chordmode.getVoicing() === 'note' ? accidentalSign(a) || '♮' : '—';
+      if (accEl.textContent !== txt) accEl.textContent = txt;
+      accEl.classList.toggle('on', a !== 0);
+    }
 
     // …and how loud it actually is. The expression meter above shows the input;
     // this shows the result, which is not the same number once an ADSR is in
