@@ -796,6 +796,53 @@ gestures, calibration and chord assignments are saved with presets. Logic:
 `src/chordmode.js` (gesture→chord glue), with the voice bank in
 `engine.playChord()` / `releaseChord()`.
 
+### Single notes (the off hand says ♮ / ♯ / ♭)
+
+**PLAY** switches what a handshape sounds: **CHORDS**, or **SINGLE NOTES** — the
+degree's own note instead of the chord built on it. It is a *voicing*, not a
+second mode: the same shapes, the same key, the same expression and the same
+arpeggiator, so switching to notes to play a melody over what you were just
+comping costs one select and teaches the app nothing new.
+
+Seven shapes name seven degrees, which leaves the five notes between them out
+of reach — so **the hand that is not naming the note says what to do to it**:
+
+| Off hand | Note |
+|---|---|
+| nothing, or any other shape | **natural** |
+| **Thumbs Up** | **sharp** — up a semitone |
+| **Thumbs Down** | **flat** — down a semitone |
+
+That is the whole chromatic scale from shapes you already know. Either hand can
+name and either can bend — whichever hand is holding a degree shape is the one
+naming it. The accidental is read continuously, so a thumb turning over *under*
+a note that is already sounding re-attacks it at the new pitch rather than
+waiting for you to let go, and a flattened note reads as the flat you played
+(**B♭**, not A♯). The live **♮ / ♯ / ♭** beside the switch is lit while an
+accidental is recognized, which is what separates "flat" from "flat, and the
+camera never saw it".
+
+Both accidental shapes are **settings**, and worth knowing why: they are
+recognized by MediaPipe's bundled classifier rather than by a measured
+template, and **Thumbs Down has no template at all** — with the canned
+classifier off it cannot be recognized until you record one (the **⊙** button
+on its row in Gestures). Pick any other shape instead if you would rather. One
+shape cannot mean both, but a shape already on a degree *can* also be an
+accidental: the two are read from different hands, so they are never asked at
+once.
+
+Two things fall out of the voicing being one note. The **7th** buttons go dead
+— a single note has no 7th — and the **arpeggiator** run becomes the octaves of
+that one note, so `2 OCT` on a single note is an octave trill rather than a
+chord figure. And in **other hand — openness** expression the off hand is
+already playing the volume, so accidentals stand down there and every note
+sounds natural; the panel says so rather than leaving two live-looking pickers
+that quietly do nothing. Handshape and eyebrow expression both leave a hand
+free.
+
+Logic: `diatonicNote()` / `pitchName()` in `src/chords.js` (pure), voicing and
+the hand rule in `src/chordmode.js`.
+
 ### Arpeggiator
 
 **ARP** turns the held chord into a run of single notes instead of a block. It
@@ -1104,11 +1151,12 @@ src/
   soundkit.js       Instrument timbre presets (synthesized)
   songs.js          Bundled play-along note charts
   playalong.js      Play-along game logic (scheduler, judging, difficulties)
-  chords.js         Chord construction + diatonic degrees (I–vii in any mode)
+  chords.js         Chord construction + diatonic degrees (I–vii in any mode),
+                    and single notes with an accidental
   arp.js            Arpeggiator pattern order, note pool and step clock (pure)
   gesture.js        Weighted 12-feature gesture recognizer, built-in and ASL
                     templates, calibration store
-  chordmode.js      Gesture → scale-degree chord mapping (hold-to-sound)
+  chordmode.js      Gesture → scale-degree chord/note mapping (hold-to-sound)
   devmode.js        Developer-mode toggle (gates under-construction features)
   shader.js         WebGL visual-output shader (reacts to audio + signals)
   cv.js             MediaPipe Hand + swappable pose source (dev inference HUD)
