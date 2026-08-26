@@ -403,6 +403,16 @@ body.resizing { cursor: col-resize; user-select: none; }
   font-size: 8px; letter-spacing: 1px; color: var(--amber);
   border: 1px solid var(--amber); border-radius: 2px; padding: 0 4px;
 }
+/* A saved setup and its × sit on one line, and the × is a sibling rather than
+   a child of the button: nesting a button inside a button is invalid, and it
+   would also make forgetting a setup one mis-tap away from loading it. */
+.preset-row { display: flex; align-items: center; gap: 2px; }
+.preset-row .preset-item { flex: 1; min-width: 0; }
+.preset-row .preset-name,
+.preset-row .preset-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Named by its owner, so it can be anything — including a name long enough to
+   push the × off the edge if it were allowed to set the width. */
+.preset-del { flex: 0 0 auto; align-self: flex-start; margin-top: 5px; }
 
 /* ── Developer mode / under-construction gating ──────────── */
 /* Experimental features are hidden until dev mode is on. Using
@@ -989,6 +999,15 @@ option { background: var(--panel); }
   word-break: break-all;
 }
 .share-note.warn { color: var(--amber); }
+/* Confirmation that the name did something beyond travelling in the link: the
+   setup is now in PRESET and will still be there tomorrow. */
+.share-kept {
+  min-height: 12px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-align: center;
+  color: var(--green);
+}
 
 .osc-hint {
   margin-top: 5px;
@@ -2398,6 +2417,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   #donate-pop a:hover { background: var(--faint); color: var(--cyan); }
   .preset-item:hover { background: var(--faint); }
   .preset-item:hover .preset-name { color: var(--cyan); }
+  .preset-del:hover { color: var(--red); border-color: var(--red); }
   .depth-toggle:hover { color: var(--cyan); border-color: var(--cyan); }
   .sig-row:hover { background: var(--faint); }
   .ng-node-del:hover { background: var(--faint); color: var(--text); }

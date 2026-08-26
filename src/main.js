@@ -22,6 +22,7 @@ import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
+import { findConfig }                       from './saved.js';
 import { initTutorial, maybeOfferTour, offerTourForMode, offerTourForSharedSetup } from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { enhanceSections, colorSections }   from './ui/sections.js';
@@ -349,6 +350,26 @@ initPresetMenu({
     if (changed.length) bits.push(changed.join(', '));
     if (missing.length) bits.push(`switch on ${missing.join(' + ')}`);
     toast(`${preset.name} — ${bits.join(' · ')}`);
+  },
+  // A saved configuration is a whole snapshot, not a patch, so it restores the
+  // way a loaded file does rather than the way a preset does — same call, same
+  // refresh, same reload rule. Anything less would make "the setup I named"
+  // come back as only part of itself.
+  onApplyConfig: name => {
+    const entry = findConfig(name);
+    if (!entry) { toast(`No saved setup called “${name}”`); return; }
+    const { ok, uiChanged } = preset.applyAll(entry.snap);
+    if (!ok) { toast(`Could not restore “${name}”`); return; }
+    refreshFromState();
+    preset.saveLocal();
+    if (uiChanged) {
+      // Theme and tracker state are read at startup by the modules that own
+      // them — the same reason LOAD reloads.
+      toast(`${name} — restoring`);
+      setTimeout(() => location.reload(), 700);
+    } else {
+      toast(`${name} — restored`);
+    }
   },
   state: () => ({
     camera: cvSource.running,
