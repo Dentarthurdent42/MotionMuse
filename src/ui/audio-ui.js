@@ -11,6 +11,7 @@ import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../sound
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
 import { gestureSections, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
+import { looperSectionHTML, wireLooperSection } from './looper-ui.js';
 
 const opts = (arr, sel) =>
   arr.map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`).join('');
@@ -125,6 +126,7 @@ export function renderAudioPanel() {
       <div id="game-score" class="quant-notes">${gv.state === 'idle' ? bestLine() : '—'}</div>
     </div>
     ${secs.gestures}
+    ${looperSectionHTML()}
     <div class="audio-section">
       <div class="audio-section-label">
         Pitch Quantize
@@ -484,6 +486,7 @@ export function renderAudioPanel() {
   if (t.enabled) redrawKbd();
 
   wireGestureSections(renderAudioPanel);
+  wireLooperSection();
 
   // Cache slider/readout refs — updateAudioSliders runs every frame and
   // shouldn't pay for per-mapping querySelector calls.
