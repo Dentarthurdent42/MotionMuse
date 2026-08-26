@@ -51,12 +51,17 @@ export const depthSource = {
   // ── Register the depth signals into the bus ─────────────────────────────
   registerSignals() {
     const g = 'depth';
-    bus.register('hand_L_z',     { label: 'L Hand Depth',  group: g, min: 0,  max: 1, source: 'depth' });
-    bus.register('hand_R_z',     { label: 'R Hand Depth',  group: g, min: 0,  max: 1, source: 'depth' });
+    // How fast a hand is closing on the camera is a different gesture from how
+    // near it is — a punch and a slow reach end in the same place. `hand_dz`
+    // is the one signal here that is already a rate, so it gets no twin: the
+    // derivative of a derivative is an acceleration, which is not what anyone
+    // reaching for "hand push speed" is looking for.
+    bus.register('hand_L_z',     { velocity: true, label: 'L Hand Depth',  group: g, min: 0,  max: 1, source: 'depth' });
+    bus.register('hand_R_z',     { velocity: true, label: 'R Hand Depth',  group: g, min: 0,  max: 1, source: 'depth' });
     bus.register('hand_dz',      { label: 'Hand Push Δ',   group: g, min: -1, max: 1, source: 'depth' });
-    bus.register('body_z',       { label: 'Body Depth',    group: g, min: 0,  max: 1, source: 'depth' });
-    bus.register('depth_near',   { label: 'Nearest (m)',   group: g, min: 0,  max: 4, source: 'depth' });
-    bus.register('depth_center', { label: 'Center (m)',    group: g, min: 0,  max: 4, source: 'depth' });
+    bus.register('body_z',       { velocity: true, label: 'Body Depth',    group: g, min: 0,  max: 1, source: 'depth' });
+    bus.register('depth_near',   { velocity: true, label: 'Nearest (m)',   group: g, min: 0,  max: 4, source: 'depth' });
+    bus.register('depth_center', { velocity: true, label: 'Center (m)',    group: g, min: 0,  max: 4, source: 'depth' });
   },
 
   init() {

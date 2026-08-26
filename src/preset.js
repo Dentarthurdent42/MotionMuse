@@ -43,6 +43,7 @@ const UI_KEYS = {
   panelWidths: 'motionmuse-panel-widths',
   camHeight:   'motionmuse-cam-height',
   tracking:    'motionmuse-tracking',
+  face:        'motionmuse-face',
   models:      'motionmuse-posemodel',
   hotkeys:     'motionmuse-hotkeys',
   dev:         'motionmuse-dev',

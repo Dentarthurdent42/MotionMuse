@@ -1,4 +1,4 @@
-import { bus }   from '../bus.js';
+import { bus, velKeyOf } from '../bus.js';
 import { toast } from './status.js';
 import { cvSource }   from '../cv.js';
 import { faceSource } from '../face.js';
@@ -41,21 +41,46 @@ export function buildSigPanel() {
     groups.get(g).push({ k, s });
   });
 
+  // One channel line: its name, its number, and a bar. The bar column is a
+  // fixed width for every channel of every signal, so two bars under one
+  // measure — and bars under different measures — are read against the same
+  // scale. A bar whose length meant something different per row would not be
+  // a comparison, it would be decoration.
+  const channel = (key, name = '', cls = '') => `
+    ${name ? `<span class="sig-chan-name ${cls}" data-key="${key}">${name}</span>` : ''}
+    <span class="sig-val ${cls}" id="sv-${key}" data-key="${key}">0.00</span>
+    <div class="sig-bar" data-key="${key}"><div class="sig-bar-fill ${cls}" id="sb-${key}" style="width:0%"></div></div>`;
+
   let html = '';
   groups.forEach((sigs, g) => {
     const live = groupLive(g);
+    // Count what a reader counts: the things being measured, not the channels
+    // they are measured on.
+    const bases = sigs.filter(({ s }) => !s.of);
     html += `<details class="sig-sec" data-group="${g}"${live ? ' open' : ''}>
       <summary class="sig-group">
         <span class="sig-group-name">${g}</span>
-        <span class="sig-group-meta">${sigs.length}${live ? '' : ' · off'}</span>
+        <span class="sig-group-meta">${bases.length}${live ? '' : ' · off'}</span>
       </summary>
       <div class="sig-sec-body">`;
-    sigs.forEach(({ k, s }) => {
-      html += `<div class="sig-row" data-key="${k}" title="Click to copy signal key">
-        <span class="sig-name">${s.label}</span>
-        <span class="sig-val" id="sv-${k}">0.00</span>
-        <div class="sig-bar"><div class="sig-bar-fill" id="sb-${k}" style="width:0%"></div></div>
-      </div>`;
+    bases.forEach(({ k, s }) => {
+      const vk = velKeyOf(k);
+      // A measure that also reports how fast it is changing gets its name on
+      // its own line with both channels indented under it; one that does not
+      // stays the single line it always was, rather than growing a heading
+      // over a lone value.
+      html += bus.signals.has(vk)
+        ? `<div class="sig-row sig-row-multi" data-key="${k}" title="Click to copy signal key">
+             <span class="sig-name">${s.label}</span>
+             <div class="sig-chans">
+               ${channel(k, 'displacement')}
+               ${channel(vk, 'velocity', 'vel')}
+             </div>
+           </div>`
+        : `<div class="sig-row" data-key="${k}" title="Click to copy signal key">
+             <span class="sig-name">${s.label}</span>
+             ${channel(k)}
+           </div>`;
     });
     html += `</div></details>`;
   });
@@ -70,8 +95,13 @@ export function buildSigPanel() {
   });
 
   list.querySelectorAll('.sig-row').forEach(row => {
-    row.addEventListener('click', () => {
-      const key = row.dataset.key;
+    row.addEventListener('click', e => {
+      // On a two-channel row, copy the channel actually clicked — the whole
+      // point of having both is that they are wired to different things. Every
+      // channel element carries its own key, and the row carries the base one,
+      // so a click on the measure's name (or on the row's padding) walks up to
+      // the measure itself rather than guessing at one of its channels.
+      const key = e.target.closest('[data-key]')?.dataset.key ?? row.dataset.key;
       navigator.clipboard.writeText(key).catch(() => {});
       toast(`Copied: ${key}`);
     });
@@ -92,9 +122,20 @@ export function updateSigPanel() {
   refs.forEach((r, k) => {
     const s = bus.signals.get(k);
     if (!s) return;
-    const disp = s.max > 10 ? s.value.toFixed(0) : s.value.toFixed(2);
+    // Range picks the precision for a measure: two decimals on a 0–1 openness,
+    // whole degrees on a 0–180 elbow. A velocity's range is four spans of its
+    // source per second, so the same rule would round a real 0.4 m/s of
+    // approach to "0" — its magnitude, not its bounds, is what says how many
+    // digits carry information.
+    const disp = (s.of ? Math.abs(s.value) > 10 : s.max > 10)
+      ? s.value.toFixed(0) : s.value.toFixed(2);
     if (r.valEl.textContent !== disp) r.valEl.textContent = disp;
-    const w = (bus.norm(k) * 100).toFixed(1) + '%';
+    // A velocity is signed, so its normalised value sits mid-scale at rest —
+    // a bar half full while nothing moves reads as "half on". The bar shows
+    // SPEED, filling from empty in either direction, and the number beside it
+    // keeps the sign, which is where the direction belongs.
+    const n = bus.norm(k);
+    const w = ((s.of ? Math.abs(n * 2 - 1) : n) * 100).toFixed(1) + '%';
     if (w !== r.lastW) { r.barEl.style.width = w; r.lastW = w; }
   });
 }

@@ -50,8 +50,12 @@
         <span class="btn-sizer" aria-hidden="true">🔊 SOUND ON</span>
         <span class="btn-text">🔇 MUTED</span>
       </button>
-      <button class="btn" id="dev-btn" aria-pressed="false"
-              title="Developer mode — reveals experimental, under-construction features">DEV</button>
+      <!-- SHARE sits with the top-level controls rather than in the patchbay
+           toolbar beside SAVE/LOAD: those are about a file, this is about
+           handing the whole instrument to the person next to you, and it is
+           not specific to the patchbay any more than the camera is. -->
+      <button class="btn" id="share-btn" aria-haspopup="dialog" aria-expanded="false"
+              title="Show a QR code of this setup — someone can scan it to open the app configured the same way">SHARE</button>
       <button class="btn" id="settings-btn" aria-haspopup="menu" aria-expanded="false"
               title="Settings — theme, hotkeys and other controls for the tool rather than the sound">⚙</button>
       <button class="btn" id="tour-btn" title="Guided tour">?</button>
@@ -254,8 +258,6 @@
         <button class="btn" id="preset-btn">PRESET</button>
         <button class="btn" id="save-btn" title="Download all mappings, audio settings and tuning as a file">SAVE</button>
         <button class="btn" id="load-btn" title="Load mappings and settings from a saved file">LOAD</button>
-        <button class="btn" id="share-btn" aria-haspopup="dialog" aria-expanded="false"
-                title="Show a QR code of this setup — someone can scan it to open the app configured the same way">SHARE</button>
         <input type="file" id="load-file" accept="application/json,.json" hidden>
       </div>
       <div id="mapper-rows"></div>

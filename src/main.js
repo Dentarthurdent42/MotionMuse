@@ -1,6 +1,7 @@
 import { cvSource }                        from './cv.js';
 import { depthSource }                      from './depth.js';
-import { faceSource }                       from './face.js';
+import { faceSource, rememberFaceIntent,
+         savedFaceIntent }                  from './face.js';
 import { micSource }                        from './mic.js';
 import { buildInfo, buildLabel }            from './build.js';
 import { engine }                           from './engine.js';
@@ -21,7 +22,7 @@ import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
-import { initTutorial, maybeOfferTour, offerTourForMode } from './ui/tutorial.js';
+import { initTutorial, maybeOfferTour, offerTourForMode, offerTourForSharedSetup } from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { enhanceSections, colorSections }   from './ui/sections.js';
 import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
@@ -134,6 +135,10 @@ const faceToggle = (btnId, key, setter, label) => {
     try {
       await setter(on);
       btn.classList.toggle('on', on);
+      // Recorded here rather than inside setFace/setGaze: those also run when
+      // the camera stops, and putting the camera down is not a decision to
+      // stop using your eyebrows.
+      rememberFaceIntent(faceSource.faceOn, faceSource.gazeOn);
       syncSigGroups();   // face/gaze groups expand or fold away with their tracker
       toast(on ? `${label} tracking ON` : `${label} tracking off`);
     } catch (err) {
@@ -206,13 +211,11 @@ const syncers = [
 function syncAllTracking() { syncers.forEach(fn => fn()); syncSigGroups(); }
 syncAllTracking();
 
-// ── Developer mode toggle (reveals under-construction features) ──────────
-const devBtn = document.getElementById('dev-btn');
-devmode.onChange(on => {
-  devBtn.classList.toggle('on', on);
-  devBtn.setAttribute('aria-pressed', String(on));
-});
-devBtn.addEventListener('click', () => devmode.toggle());
+// ── Developer mode ───────────────────────────────────────────────────────
+// The toggle itself lives in the settings popover (ui/settings.js), which is
+// built lazily — so the button is wired there, where it exists, rather than
+// looked up here at startup where it does not.
+//
 // Dev mode reveals whole sections (MODELS, Gestures, Chord Mode, Shader).
 // Position hues are derived from measured geometry and skip hidden elements,
 // so anything revealed here has no hue until this recolours the set.
@@ -362,7 +365,12 @@ initPresetMenu({
 // The camera is deliberately not started here: that is the user's call, and
 // the menu says so. Face and gaze intent is remembered until it can be applied,
 // because their model needs a running stream.
-let pendingFace = null;
+// Seeded from the last choice made, so a setup arriving by shared link or
+// saved file brings its trackers with it. The camera is still the user's to
+// start; when they do, applyFaceIntent turns on whatever the patch asked for.
+// Without this the mapping would travel and the model feeding it would not —
+// a patch wired to `brow_raise` that sits there silent.
+let pendingFace = savedFaceIntent();
 async function applyTrackers(want) {
   const changed = [];
   const before = { handsL: cvSource.handsL, handsR: cvSource.handsR, pose: cvSource.poseOn };
@@ -374,6 +382,7 @@ async function applyTrackers(want) {
   if (before.pose !== want.pose) changed.push(want.pose ? 'pose on' : 'pose off');
 
   pendingFace = { face: want.face, gaze: want.gaze };
+  rememberFaceIntent(want.face, want.gaze);
   changed.push(...await applyFaceIntent());
   return changed;
 }
@@ -471,7 +480,10 @@ initShare();              // SHARE → a QR code of this setup
 initModelPanel();         // dev-mode pose model comparison panel
 initTutorial();           // guided tour (? button; auto-offers on first visit)
 const hadSession = preset.restoreLocal();   // last session's mappings + settings
-announceSharedLink();     // …which may have just come from a scanned QR code
+// …which may have just come from a scanned QR code. A setup that arrived that
+// way gets the tour for what it actually is — not the full one, and only the
+// first time this particular link is followed.
+const openedShare = announceSharedLink();
 
 // First visit: ask what to play rather than opening on one oscillator with
 // nothing wired to it. The tour waits its turn — two modals at once is not a
@@ -490,6 +502,12 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
       maybeOfferTour(s.mode);          // the tour for the way of playing chosen
     },
   });
+} else if (openedShare) {
+  // A setup that arrived by link gets the tour for what the link actually
+  // brought — and only the first time that link is followed. Reopening a QR
+  // pinned to a wall, or reloading, lands you on a setup that is already
+  // yours; being walked through it again is something to dismiss.
+  if (openedShare.first) offerTourForSharedSetup();
 } else {
   maybeOfferTour();
 }
