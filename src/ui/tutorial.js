@@ -142,8 +142,10 @@ export const TOUR_STEPS = [
   {
     id: 'signals', section: 'signals', target: '#sig-list', title: 'Signals',
     body: 'Everything the camera measures, live: wrist height, pinch, finger ' +
-          'curl, elbow angle, fingertip touches. Any signal can drive any ' +
-          'sound parameter. Click one to copy its key.',
+          'curl, elbow angle, fingertip touches. Most read on two channels — ' +
+          '<b>displacement</b> is where you are, <b>velocity</b> is how fast ' +
+          'you are moving. A held pose and a flick are different controls. ' +
+          'Any channel can drive any sound parameter; click one to copy its key.',
   },
   {
     id: 'save-load', section: 'patchbay', target: '#save-btn', title: 'Save and load',

@@ -107,10 +107,14 @@ export const micSource = (() => {
     // fixed mapping would make one of them unusable. Pitch is NOT adaptive —
     // its scale is musical, not relative, and a self-calibrating pitch axis
     // would mean the same note moved as you sang.
-    bus.register('mic_level',   { label: 'Mic Level',      group: G, min: 0, max: 1, source: 'mic', smooth: true, adapt: true });
-    bus.register('mic_pitch',   { label: 'Mic Pitch',      group: G, min: 0, max: 1, source: 'mic', smooth: { minCutoff: 2.0, beta: 0.3 } });
+    // Rates of change here are the attack of a note, the speed of a slide and
+    // the sweep of a timbre — all things a player shapes deliberately. Clarity
+    // is left alone: it reports how much to trust the pitch, and how fast that
+    // trust is changing is a diagnostic, not something to play.
+    bus.register('mic_level',   { velocity: true, label: 'Mic Level',      group: G, min: 0, max: 1, source: 'mic', smooth: true, adapt: true });
+    bus.register('mic_pitch',   { velocity: true, label: 'Mic Pitch',      group: G, min: 0, max: 1, source: 'mic', smooth: { minCutoff: 2.0, beta: 0.3 } });
     bus.register('mic_clarity', { label: 'Mic Clarity',    group: G, min: 0, max: 1, source: 'mic', smooth: true });
-    bus.register('mic_bright',  { label: 'Mic Brightness', group: G, min: 0, max: 1, source: 'mic', smooth: true, adapt: true });
+    bus.register('mic_bright',  { velocity: true, label: 'Mic Brightness', group: G, min: 0, max: 1, source: 'mic', smooth: true, adapt: true });
   }
 
   return {
