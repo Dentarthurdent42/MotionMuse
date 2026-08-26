@@ -219,14 +219,16 @@ patch wired to `brow_raise` is silent without the face model: handing someone
 the mapping without the tracker that feeds it hands them an instrument that
 does nothing. The camera is still theirs to start; the trackers come up with it.
 
-**Say what it is.** A QR code is opaque — a photo of one tells you nothing
-about the patch behind it, and a screen showing three is three identical
-squares. The SHARE panel offers a line to describe the setup ("ambient pads,
-left hand opens the filter"), which shows beside the code and travels inside
-the link, so whoever opens it is told what they just loaded. It is capped at 80
-characters, because every character is more payload and payload is QR modules
-— the readout under the code shows the length, and warns when a setup has
-grown dense enough to be worth shortening.
+**Name it.** A QR code is opaque — a photo of one tells you nothing about the
+patch behind it, and a screen showing three is three identical squares. The
+SHARE panel offers a line naming the setup ("ambient pads, left hand opens the
+filter"), which shows beside the code and travels inside the link, so whoever
+opens it is told what they just loaded. It is capped at 80 characters, because
+every character is more payload and payload is QR modules — the readout under
+the code shows the length, and warns when a setup has grown dense enough to be
+worth shortening.
+
+A name also **keeps** it — see [Named configurations](#named-configurations-your-setups).
 
 Opening a shared link applies the state, saves it, and reloads the page without
 the fragment. The reload is not laziness — several modules read their state at
@@ -351,6 +353,9 @@ The handle is there for when the height gets in the way.
 | **Gaze · Look to Play** | camera + FACE + GAZE | Look left/right for pitch, up/down for tone, mouth for volume |
 | **Pose · Whole Body** | camera | Stand back: arm height and torso lean drive everything |
 
+Your own named setups sit **above** this table in the menu, under YOUR SETUPS —
+see [Named configurations](#named-configurations-your-setups).
+
 Each entry lists what still has to be switched on, and picking one says so again
 in the toast — a face patch with the camera off is otherwise just silence with
 no explanation. Presets live in `PRESETS` (`src/mapper.js`) as plain data:
@@ -358,6 +363,47 @@ no explanation. Presets live in `PRESETS` (`src/mapper.js`) as plain data:
 single array entry. A unit test checks every preset references a real parameter
 and a real signal, with ranges inside each parameter's bounds, so a renamed
 signal can't leave a dead patch in the menu.
+
+## Named configurations (Your setups)
+
+Naming a setup in SHARE keeps it. It appears at the top of the **PRESET** menu
+under **YOUR SETUPS**, above the built-in starting patches, and restores the
+whole instrument when you pick it. Following a link somebody named keeps it the
+same way.
+
+The reasoning is that naming a thing is how people mean to keep it. Someone who
+types "ambient pads, left hand opens the filter" has said what this setup *is* —
+and before this, they then watched it evaporate the moment they moved a slider.
+From the other end it was worse: following a named link handed you somebody's
+instrument with no way back to it once you touched anything, short of finding
+the QR code again.
+
+- **A configuration is a whole snapshot**, not a patch. A built-in preset is a
+  set of cables; this is the instrument — audio graph, gestures, chord mode,
+  shader, kit, theme and which trackers were running. Storing less would make
+  "the setup I named" mean something different from "the setup I shared", and
+  those are the same act.
+- **The name is the identity.** Saving under a name you already used replaces
+  that configuration rather than growing a second one with the same label — two
+  rows reading "ambient pads" would be a menu that cannot be used. Names are
+  cleaned and capped exactly as the shared label is, so a link and the SHARE
+  field naming the same thing land on one entry.
+- **Committed when the name is finished**, not while it is being typed: on
+  blur, on Enter, on COPY LINK, and on closing the panel. Typing "ambient" on
+  the way to "ambient pads" is not two configurations.
+- **Restored the way a loaded file is** — `preset.applyAll()`, refresh the
+  panels, reload if it carries UI keys (theme and tracker state are read at
+  startup by the modules that own them). Anything less would bring back only
+  part of what you named.
+- **Capped at 24**, oldest dropped, with a **×** on each row to forget one. A
+  name you have not saved under in months is the one you have stopped using,
+  and a menu nobody can scroll is not a feature.
+
+The store is `src/saved.js`, in localStorage under `motionmuse-saved-v1`. It
+filters what it reads: an entry that is not a named snapshot is dropped rather
+than handed to the menu, which would otherwise render `undefined` and apply
+nothing when clicked. `tests/unit/saved-configs.test.js` covers the round trip,
+the replace-by-name rule, the cap, and what happens to junk in storage.
 
 ## Pitch quantisation (scales & tuning)
 
@@ -1219,6 +1265,7 @@ src/
   qr.js             QR encoder (byte mode, no dependencies)
   ui/firstrun.js    First-run starting-point picker
   share.js          Setup <-> shareable link
+  saved.js          Named configurations (the setups you kept)
   math.js           Geometry helpers (dist3, angles, openness, extension,
                     thumb-out and thumb-to-fingertip contact)
   engine.js         Web Audio API synthesiser
@@ -1257,7 +1304,7 @@ src/
     audio-ui.js     Audio panel (waveform buttons, sliders)
     model-ui.js     Dev-mode pose model comparison panel
     donate.js       Support/donations popover
-    preset-menu.js  PRESET button → named starting-patch menu
+    preset-menu.js  PRESET button → your saved setups + starting patches
     tutorial.js     Guided tour — TOUR_STEPS data + spotlight engine
     viz.js          Waveform oscilloscope canvas
     hotkeys.js      Keyboard shortcuts (mute, default Space) — rebindable,
