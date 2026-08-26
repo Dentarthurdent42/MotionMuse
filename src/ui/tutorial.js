@@ -61,10 +61,10 @@ export const TOUR_STEPS = [
   {
     id: 'welcome', target: null, title: 'Welcome to MotionMuse',
     body: 'Your webcam is the instrument. Two ways to play: <b>Chord Mode</b> ' +
-          '— handshapes play chords — and <b>Tone Mode</b> — movement drives ' +
-          'the synth continuously. Nothing is uploaded; everything runs on ' +
-          'your machine.<br><br>This tour follows the mode you picked. ' +
-          'Re-open it any time with the <b>?</b> button.',
+          '— handshapes play chords, or single notes — and <b>Tone Mode</b> ' +
+          '— movement drives the synth continuously. Nothing is uploaded; ' +
+          'everything runs on your machine.<br><br>This tour follows the mode ' +
+          'you picked. Re-open it any time with the <b>?</b> button.',
   },
 
   // ── Chord Mode ──
@@ -83,6 +83,16 @@ export const TOUR_STEPS = [
           'a 2, up to <b>vii°</b> as a 7. A closed fist releases. Reassign any ' +
           'row you like — a shape already in use swaps. <b>7th</b> adds the ' +
           'seventh; the dot lights while the chord sounds.',
+  },
+  {
+    id: 'chords-voicing', section: 'chord-mode', modes: ['chords'], target: '#ck-voicing', needs: ['audio', 'chord'],
+    title: 'Chords or single notes',
+    body: '<b>PLAY</b> decides what a shape sounds: the whole <b>chord</b> on ' +
+          'that degree, or just that degree’s own <b>note</b>. Everything else ' +
+          '— key, shapes, expression, arpeggiator — applies either way. On ' +
+          'single notes your <b>other hand</b> bends it: one shape for ' +
+          '<b>♯ sharp</b>, one for <b>♭ flat</b>, neither for natural. Seven ' +
+          'shapes plus that is the whole chromatic scale.',
   },
   {
     id: 'chords-express', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
