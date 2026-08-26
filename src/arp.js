@@ -51,10 +51,18 @@ export function stepIndex(i, n, pattern = 'up', rnd = Math.random) {
 
 export const stepSeconds = rate => 1 / Math.max(0.1, Number(rate) || 0.1);
 
-// How long a note sounds within its step. Floored well above zero: a gate of
-// 0.05 at 24 steps/second is 2 ms, which is a click, not a note.
+// A note may ring past its own step (gate above 1) but must be done before its
+// voice comes around again: the engine round-robins four chord voices, so a
+// tail longer than three steps would be cut mid-ring by the fourth-next note
+// reclaiming the voice.
+export const ARP_MAX_GATE = 3;
+
+// How long a note sounds, with `gate` in steps: below 1 is staccato inside the
+// step, 1 is wall-to-wall, above 1 lets each note ring under the ones that
+// follow. Floored well above zero: a gate of 0.05 at 24 steps/second is 2 ms,
+// which is a click, not a note.
 export const noteSeconds = (step, gate) =>
-  Math.max(0.02, step * Math.max(0, Math.min(1, Number(gate) || 0)));
+  Math.max(0.02, step * Math.max(0, Math.min(ARP_MAX_GATE, Number(gate) || 0)));
 
 // Never schedule more than this in one pass. The catch-up rule below should
 // make it unreachable; it is here because the alternative to a wrong number of

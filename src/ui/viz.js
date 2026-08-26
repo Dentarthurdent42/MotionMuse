@@ -36,7 +36,7 @@ export function drawViz() {
   for (let i = 0; i < wave.length; i++) {
     const x = i * step;
     const y = (0.5 + wave[i] * 0.45) * H;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.strokeStyle = '#00e5cc33';
   ctx.lineWidth = 4;

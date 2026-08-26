@@ -166,7 +166,7 @@ test('every preset references real params and real signals', async () => {
 
 test('a preset voiced for more oscillators grows the bank to fit', () => {
   engine.setOscCount(1);
-  const p = PRESETS.find(x => x.mappings.some(m => /^osc2_/.test(m[0])));
+  const p = PRESETS.find(x => x.mappings.some(m => m[0].startsWith('osc2_')));
   assert.ok(p, 'no preset uses a second oscillator — this test has gone stale');
   mapper.applyPreset(p.id);
   assert.ok(engine.getOscCount() >= 2, `bank stayed at ${engine.getOscCount()}`);

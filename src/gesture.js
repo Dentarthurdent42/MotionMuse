@@ -22,8 +22,11 @@ export const FEATURES = [
 // Not every channel is equally informative, and an unweighted metric lets the
 // useless ones drown out the decisive ones. Measured spans across the
 // reference photos justify these:
-//   - `thumb` is fingerExt's thumb, which moves over a 0.09 range in total —
-//     nearly pure noise, kept only so old recordings stay comparable.
+//   - `thumb` was nearly pure noise while extension was a distance: the
+//     thumb's base-to-tip span barely changes as it moves, so it covered a
+//     0.09 range in total. As a joint angle it earns its place — a tucked
+//     thumb reads ~0.45 against ~0.90 carried clear — but the weight is left
+//     low because `thumbOut` already says where the thumb is, more directly.
 //   - `spread` turned out to be unpredictable (a peace sign measured *lower*
 //     spread than a fist), so it gets a light vote.
 //   - the contacts are what separate the ASL number handshapes at all, so
@@ -64,18 +67,22 @@ export const maskFromLength = len => FEATURES.map((_, i) => (i < len ? 1 : 0));
 
 // ── Built-in templates ────────────────────────────────────────────────────
 //
-// `fist`, `peace`, `point` and `thumbs` are *measured*: MediaPipe run over the
-// reference photos in tests/gesture-img, features read straight out of
-// math.js. Run `npm run test:gesture-img -- --calibrate` to reprint them.
+// Every shape with a reference photo in tests/gesture-img is *measured*:
+// MediaPipe run over the photo, features read straight out of math.js. That is
+// now the classics and the whole ASL numeral set, 1 through 10. Run
+// `npm run test:gesture-img -- --calibrate` to reprint them.
 //
-// The rest have no reference photo, so they're derived from a small geometric
-// model built on those same measurements: each shape is described by which
-// fingers are extended, where the thumb sits, and the thumb-to-fingertip
-// distances that implies, then run through the real feature formulas. That
-// makes them good starting points, not ground truth — hands differ, and the
-// ASL number shapes especially are worth recalibrating (Gestures → CALIBRATE)
-// so the templates fit your own hand. Estimated templates are flagged in the
-// UI until you do.
+// Shapes photographed twice — once in a stock photo at arm's length, once on
+// another hand up close — are the AVERAGE of both measurements. They are the
+// same handshape, so a template that only fits one framing of it is a template
+// fitted to a camera rather than to a shape.
+//
+// `horns`, `gun` and `asl0` still have no reference photo, so they keep the
+// small geometric model: each shape described by which fingers are extended
+// and where the thumb sits, run through the real feature formulas. Good
+// starting points, not ground truth — hands differ, so they are worth
+// recalibrating (Gestures → CALIBRATE) to fit your own, and stay flagged in
+// the UI until you do.
 //
 // Distances below are in palm lengths (wrist → middle-finger MCP), the same
 // unit math.js normalizes by. Reference values, all measured:
@@ -85,8 +92,10 @@ export const maskFromLength = len => FEATURES.map((_, i) => (i < len ? 1 : 0));
 //   thumb clear, fingers curled                             0.91 1.07 1.24 1.42
 //   thumb clear, fingers extended                           1.98 2.01 2.05 2.10
 //   pads actually touching                                  0.15
-// Extension levels: extended 0.82/0.90/0.85/0.80 (index…pinky), curled
-// 0.23/0.24/0.19/0.16, half-curled ~0.48. Openness by extended-finger count:
+// Extension is NOT one of them: it is a joint angle now (math.js), so it has
+// no distance to model. Its levels, measured: a straight finger reads ~0.93,
+// one folded into the palm ~0.00–0.20, and the loose half-curl of a peace
+// sign's ring finger ~0.40. Openness by extended-finger count:
 // 0.38 0.50 0.70 0.80 0.87 0.92. Spread is always thumb↔pinky distance / 2.5.
 const BUILTINS = [
   // id        name              ASL   f = [thumb,index,middle,ring,pinky, open,spread, thumbOut, cIdx,cMid,cRing,cPinky]
@@ -99,17 +108,17 @@ const BUILTINS = [
   // care about every contact; 3 and 4 are extension/thumb shapes like the
   // classics.
   { id: 'fist',   name: 'Fist',       asl: 'S',  canned: 'Closed_Fist', m: care(CONTACTS),
-    f: [0.36, 0.21, 0.19, 0.15, 0.13, 0.40, 0.23, 0.04, 0.95, 0.90, 0.19, 0.00] },
+    f: [0.36, 0.20, 0.04, 0.00, 0.06, 0.40, 0.23, 0.04, 0.95, 0.90, 0.19, 0.00] },
   { id: 'point',  name: 'Point',      asl: '1',  canned: 'Pointing_Up', m: care(CONTACTS),
-    f: [0.36, 0.75, 0.27, 0.17, 0.15, 0.50, 0.25, 0.02, 0.00, 0.00, 0.00, 0.00] },
+    f: [0.59, 0.94, 0.28, 0.22, 0.36, 0.49, 0.28, 0.08, 0.00, 0.28, 0.00, 0.00] },
   { id: 'peace',  name: 'Peace',      asl: '2',  canned: 'Victory', m: care([...CONTACTS, 'thumbOut']),
-    f: [0.45, 0.88, 0.94, 0.49, 0.39, 0.71, 0.19, 0.99, 0.00, 0.00, 0.52, 0.00] },
+    f: [0.60, 0.92, 0.88, 0.39, 0.34, 0.65, 0.22, 0.50, 0.00, 0.00, 0.26, 0.00] },
   { id: 'thumbs', name: 'Thumbs Up',  asl: '10', canned: 'Thumb_Up', m: care(CONTACTS),
-    f: [0.40, 0.26, 0.27, 0.25, 0.20, 0.35, 0.57, 0.89, 0.00, 0.00, 0.00, 0.00] },
-  { id: 'palm',   name: 'Open Palm',  asl: '5', canned: 'Open_Palm', est: true, m: care(CONTACTS),
-    f: [0.40, 0.82, 0.90, 0.85, 0.80, 0.92, 0.84, 0.90, 0.00, 0.00, 0.00, 0.00] },
+    f: [0.85, 0.21, 0.00, 0.00, 0.01, 0.51, 0.85, 1.00, 0.00, 0.00, 0.00, 0.00] },
+  { id: 'palm',   name: 'Open Palm',  asl: '5', canned: 'Open_Palm', m: care(CONTACTS),
+    f: [0.90, 0.92, 0.90, 0.90, 0.94, 0.77, 0.87, 1.00, 0.00, 0.00, 0.00, 0.00] },
   { id: 'horns',  name: 'Rock Horns', est: true, m: care(CONTACTS),
-    f: [0.40, 0.82, 0.24, 0.19, 0.80, 0.70, 0.54, 0.04, 0.00, 0.00, 0.00, 0.00] },
+    f: [0.30, 0.93, 0.05, 0.05, 0.93, 0.70, 0.54, 0.04, 0.00, 0.00, 0.00, 0.00] },
   // Thumb and index extended, the rest curled — the ASL "L" handshape.
   // Derived from `point` (same one extended finger) with the thumb carried
   // clear, which is measured on `thumbs`: thumbOut 0.89 and spread 0.57 both
@@ -118,24 +127,24 @@ const BUILTINS = [
   // 0.35 against the 0.38 of a closed hand). thumbOut is what separates it
   // from point, and the extended index is what separates it from thumbs.
   { id: 'gun',    name: 'Finger Gun', asl: 'L', est: true, m: care(CONTACTS),
-    f: [0.45, 0.82, 0.24, 0.19, 0.16, 0.55, 0.55, 0.85, 0.00, 0.00, 0.00, 0.00] },
+    f: [0.90, 0.93, 0.05, 0.05, 0.05, 0.55, 0.55, 0.85, 0.00, 0.00, 0.00, 0.00] },
   // ASL numbers. 1, 2, 5 and 10 are the shapes above — one template each, with
   // both a descriptive name and the numeral, rather than duplicates that would
   // sit on top of each other and make the match a coin toss.
-  { id: 'asl3',   name: 'Three',      asl: '3', est: true, m: care(CONTACTS),
-    f: [0.40, 0.82, 0.90, 0.19, 0.16, 0.72, 0.57, 0.90, 0.00, 0.00, 0.00, 0.00] },
-  { id: 'asl4',   name: 'Four',       asl: '4', est: true, m: care(CONTACTS),
-    f: [0.40, 0.82, 0.90, 0.85, 0.80, 0.87, 0.54, 0.04, 0.00, 0.00, 0.00, 0.00] },
-  { id: 'asl6',   name: 'Pinky Touch',asl: '6', est: true, m: care(),
-    f: [0.40, 0.82, 0.90, 0.85, 0.35, 0.80, 0.06, 0.49, 0.00, 0.00, 0.00, 1.00] },
-  { id: 'asl7',   name: 'Ring Touch', asl: '7', est: true, m: care(),
-    f: [0.40, 0.82, 0.90, 0.35, 0.80, 0.80, 0.48, 0.49, 0.00, 0.00, 1.00, 0.00] },
-  { id: 'asl8',   name: 'Middle Touch', asl: '8', est: true, m: care(),
-    f: [0.40, 0.82, 0.35, 0.85, 0.80, 0.80, 0.54, 0.49, 0.00, 1.00, 0.00, 0.00] },
-  { id: 'asl9',   name: 'Index Touch', asl: '9', est: true, m: care(),
-    f: [0.40, 0.35, 0.90, 0.85, 0.80, 0.80, 0.56, 0.49, 1.00, 0.00, 0.00, 0.00] },
+  { id: 'asl3',   name: 'Three',      asl: '3', m: care(CONTACTS),
+    f: [0.89, 0.92, 0.91, 0.52, 0.52, 0.65, 0.70, 1.00, 0.00, 0.00, 0.00, 0.00] },
+  { id: 'asl4',   name: 'Four',       asl: '4', m: care(CONTACTS),
+    f: [0.48, 0.93, 0.88, 0.86, 0.93, 0.70, 0.28, 0.02, 0.00, 0.00, 0.00, 0.00] },
+  { id: 'asl6',   name: 'Pinky Touch',asl: '6', m: care(),
+    f: [0.58, 0.93, 0.88, 0.84, 0.39, 0.66, 0.04, 0.28, 0.00, 0.00, 0.00, 1.00] },
+  { id: 'asl7',   name: 'Ring Touch', asl: '7', m: care(),
+    f: [0.61, 0.94, 0.91, 0.40, 0.91, 0.67, 0.26, 0.25, 0.00, 0.00, 1.00, 0.00] },
+  { id: 'asl8',   name: 'Middle Touch', asl: '8', m: care(),
+    f: [0.67, 0.93, 0.37, 0.90, 0.93, 0.72, 0.54, 0.65, 0.00, 0.55, 0.00, 0.00] },
+  { id: 'asl9',   name: 'Index Touch', asl: '9', m: care(),
+    f: [0.56, 0.45, 0.94, 0.94, 0.93, 0.69, 0.58, 0.72, 1.00, 0.00, 0.00, 0.00] },
   { id: 'asl0',   name: 'Closed O',   asl: '0', est: true, m: care(),
-    f: [0.40, 0.50, 0.52, 0.48, 0.45, 0.55, 0.14, 0.35, 0.93, 0.78, 0.56, 0.37] },
+    f: [0.45, 0.45, 0.47, 0.43, 0.40, 0.55, 0.14, 0.35, 0.93, 0.78, 0.56, 0.37] },
   // Brought by the classifier. No template: these have never been measured on
   // a hand here, and a made-up vector would be a false match waiting to happen
   // — matchGesture skips a template with no `f`. Record one (the ✎ button) and

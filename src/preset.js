@@ -15,6 +15,7 @@ import { gesture } from './gesture.js';
 import { chordmode } from './chordmode.js';
 import { shader } from './shader.js';
 import { lsGet, lsSet } from './storage.js';
+import { isString, isRecord } from './is.js';
 
 const LS_KEY = 'motionmuse-session-v1';
 const TAG    = 'motionmuse-sound';
@@ -62,10 +63,10 @@ function uiSnapshot() {
 // mean re-implementing each module's init in here — a second code path that
 // would drift. A reload is honest and total.
 function uiApply(ui) {
-  if (!ui || typeof ui !== 'object') return false;
+  if (!isRecord(ui)) return false;
   let any = false;
   for (const [name, key] of Object.entries(UI_KEYS)) {
-    if (typeof ui[name] === 'string') { lsSet(key, ui[name]); any = true; }
+    if (isString(ui[name])) { lsSet(key, ui[name]); any = true; }
   }
   return any;
 }

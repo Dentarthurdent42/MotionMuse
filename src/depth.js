@@ -155,7 +155,7 @@ export const depthSource = {
       this._gl       = gl;
       this._session  = session;
       this._refSpace = await session.requestReferenceSpace('viewer');
-    } catch (e) {
+    } catch {
       try { await session.end(); } catch {}
       toast('Depth session init failed');
       return false;

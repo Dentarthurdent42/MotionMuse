@@ -796,6 +796,53 @@ gestures, calibration and chord assignments are saved with presets. Logic:
 `src/chordmode.js` (gesture→chord glue), with the voice bank in
 `engine.playChord()` / `releaseChord()`.
 
+### Single notes (the off hand says ♮ / ♯ / ♭)
+
+**PLAY** switches what a handshape sounds: **CHORDS**, or **SINGLE NOTES** — the
+degree's own note instead of the chord built on it. It is a *voicing*, not a
+second mode: the same shapes, the same key, the same expression and the same
+arpeggiator, so switching to notes to play a melody over what you were just
+comping costs one select and teaches the app nothing new.
+
+Seven shapes name seven degrees, which leaves the five notes between them out
+of reach — so **the hand that is not naming the note says what to do to it**:
+
+| Off hand | Note |
+|---|---|
+| nothing, or any other shape | **natural** |
+| **Thumbs Up** | **sharp** — up a semitone |
+| **Thumbs Down** | **flat** — down a semitone |
+
+That is the whole chromatic scale from shapes you already know. Either hand can
+name and either can bend — whichever hand is holding a degree shape is the one
+naming it. The accidental is read continuously, so a thumb turning over *under*
+a note that is already sounding re-attacks it at the new pitch rather than
+waiting for you to let go, and a flattened note reads as the flat you played
+(**B♭**, not A♯). The live **♮ / ♯ / ♭** beside the switch is lit while an
+accidental is recognized, which is what separates "flat" from "flat, and the
+camera never saw it".
+
+Both accidental shapes are **settings**, and worth knowing why: they are
+recognized by MediaPipe's bundled classifier rather than by a measured
+template, and **Thumbs Down has no template at all** — with the canned
+classifier off it cannot be recognized until you record one (the **⊙** button
+on its row in Gestures). Pick any other shape instead if you would rather. One
+shape cannot mean both, but a shape already on a degree *can* also be an
+accidental: the two are read from different hands, so they are never asked at
+once.
+
+Two things fall out of the voicing being one note. The **7th** buttons go dead
+— a single note has no 7th — and the **arpeggiator** run becomes the octaves of
+that one note, so `2 OCT` on a single note is an octave trill rather than a
+chord figure. And in **other hand — openness** expression the off hand is
+already playing the volume, so accidentals stand down there and every note
+sounds natural; the panel says so rather than leaving two live-looking pickers
+that quietly do nothing. Handshape and eyebrow expression both leave a hand
+free.
+
+Logic: `diatonicNote()` / `pitchName()` in `src/chords.js` (pure), voicing and
+the hand rule in `src/chordmode.js`.
+
 ### Arpeggiator
 
 **ARP** turns the held chord into a run of single notes instead of a block. It
@@ -811,7 +858,7 @@ owns the rhythm.
 | **Pattern** | `UP`, `DOWN`, `UP · DOWN`, `DOWN · UP`, `RANDOM`. |
 | **Octaves** | 1–3. Two octaves over a seventh chord is an eight-note run. |
 | **RATE** | Notes per second (0.5–24). The readout gives the tempo equivalent, reading steps as eighth notes. |
-| **GATE** | How much of each step the note fills — staccato at the bottom, legato at the top. |
+| **GATE** | How long each note rings, in steps (0.05–3). Below 1 is staccato, 1 runs the notes wall-to-wall, and above 1 each note rings under the ones that follow — the voices overlap, like an arpeggio under a sustain pedal. |
 
 `UP · DOWN` reflects at the ends rather than concatenating an up-run with a
 down-run: over a triad it plays `0 1 2 1`, not `0 1 2 2 1 0`. The naive version
@@ -993,11 +1040,13 @@ own their respective slices of state.
 | `hand_L_open` / `hand_R_open` | Hand openness (0 = fist, 1 = fully open) |
 | `hand_L_spread` / `hand_R_spread` | Thumb-to-pinky spread |
 | `pinch_L` / `pinch_R` | Pinch strength — 1 when the thumb and index tips are together, 0 with the hand open. World-space, so camera-independent |
-| `finger_L_thumb` … `finger_R_pinky` | Individual finger extension (0–1) |
+| `finger_L_thumb` … `finger_R_pinky` | Individual finger extension (0–1), measured as the **joint angle** the finger makes rather than its tip-to-base distance — so the same shape reads the same whether your hand is at the lens or at arm's length |
 | `thumb_out_L` / `thumb_out_R` | How far the thumb is carried from the palm (0 = folded across it, 1 = clear) |
 | `contact_L_index` … `contact_R_pinky` | Thumb-to-fingertip contact (1 = pads touching). Palm-normalised, and tight enough that a merely curled finger doesn't register — a thumb-to-pinky tap makes a clean discrete trigger |
 | `elbow_L` / `elbow_R` | Elbow joint angle in degrees — **self-calibrating**: the observed per-user range (nobody's elbow reaches 0° or 180°) maps to the full control range once ≥25° of motion has been seen |
 | `shoulder_y_L` / `shoulder_y_R` | Shoulder height |
+| `shoulder_elev_L` / `shoulder_elev_R` | How far the arm is **lifted** at the shoulder, in degrees against the torso's own axis: 0° hanging by your side, 90° horizontal, 180° straight overhead. Self-calibrating like the elbows |
+| `shoulder_azim_L` / `shoulder_azim_R` | Where the lifted arm **points**, in degrees: 0° straight out to that side, +90° reaching forward, −90° reaching behind, ±180° folded across the chest. Not self-calibrating — its zero means something exact |
 | `shoulder_width` | Distance between shoulders |
 | `arm_raise_L` / `arm_raise_R` | Arm raise (0 = down, 1 = fully raised) |
 | `torso_tilt` | Lateral torso lean (−1 = left, +1 = right) |
@@ -1104,11 +1153,12 @@ src/
   soundkit.js       Instrument timbre presets (synthesized)
   songs.js          Bundled play-along note charts
   playalong.js      Play-along game logic (scheduler, judging, difficulties)
-  chords.js         Chord construction + diatonic degrees (I–vii in any mode)
+  chords.js         Chord construction + diatonic degrees (I–vii in any mode),
+                    and single notes with an accidental
   arp.js            Arpeggiator pattern order, note pool and step clock (pure)
   gesture.js        Weighted 12-feature gesture recognizer, built-in and ASL
                     templates, calibration store
-  chordmode.js      Gesture → scale-degree chord mapping (hold-to-sound)
+  chordmode.js      Gesture → scale-degree chord/note mapping (hold-to-sound)
   devmode.js        Developer-mode toggle (gates under-construction features)
   shader.js         WebGL visual-output shader (reacts to audio + signals)
   cv.js             MediaPipe Hand + swappable pose source (dev inference HUD)

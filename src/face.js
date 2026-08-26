@@ -226,7 +226,7 @@ export const faceSource = {
         ctx.beginPath();
         idxs.forEach((id, i) => {
           const X = lx(lm[id].x), Y = ly(lm[id].y);
-          i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
+          if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
         });
         if (closed) ctx.closePath();
         ctx.stroke();

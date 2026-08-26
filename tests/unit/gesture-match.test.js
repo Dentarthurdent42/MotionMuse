@@ -144,17 +144,19 @@ test('padTemplate repairs holes as well as short vectors', () => {
 
 test('calibration overrides a built-in in place and survives a round-trip', () => {
   gesture.load({ custom: [], hidden: [], recal: {} });
-  const before = gesture.list().find(g => g.id === 'asl6');
-  assert.equal(before.est, true, 'asl6 ships as an estimate');
-  assert.ok(gesture.estimated().includes('asl6'));
+  // `horns` has no reference photo, so it is still a geometric estimate —
+  // the ASL numerals are measured now and no longer exercise this path.
+  const before = gesture.list().find(g => g.id === 'horns');
+  assert.equal(before.est, true, 'horns ships as an estimate');
+  assert.ok(gesture.estimated().includes('horns'));
 
   const tuned = V(0.42);
-  gesture.load({ custom: [], hidden: [], recal: { asl6: tuned } });
-  const after = gesture.list().find(g => g.id === 'asl6');
+  gesture.load({ custom: [], hidden: [], recal: { horns: tuned } });
+  const after = gesture.list().find(g => g.id === 'horns');
   assert.deepEqual(after.f, tuned);
   assert.equal(after.est, false, 'measured templates lose the estimate flag');
-  assert.ok(!gesture.estimated().includes('asl6'));
-  assert.deepEqual(gesture.serialize().recal.asl6, tuned);
+  assert.ok(!gesture.estimated().includes('horns'));
+  assert.deepEqual(gesture.serialize().recal.horns, tuned);
 
   // An override naming a gesture that no longer exists is dropped, not kept.
   gesture.load({ custom: [], hidden: [], recal: { nosuchgesture: tuned } });
