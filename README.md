@@ -1045,6 +1045,8 @@ own their respective slices of state.
 | `contact_L_index` … `contact_R_pinky` | Thumb-to-fingertip contact (1 = pads touching). Palm-normalised, and tight enough that a merely curled finger doesn't register — a thumb-to-pinky tap makes a clean discrete trigger |
 | `elbow_L` / `elbow_R` | Elbow joint angle in degrees — **self-calibrating**: the observed per-user range (nobody's elbow reaches 0° or 180°) maps to the full control range once ≥25° of motion has been seen |
 | `shoulder_y_L` / `shoulder_y_R` | Shoulder height |
+| `shoulder_elev_L` / `shoulder_elev_R` | How far the arm is **lifted** at the shoulder, in degrees against the torso's own axis: 0° hanging by your side, 90° horizontal, 180° straight overhead. Self-calibrating like the elbows |
+| `shoulder_azim_L` / `shoulder_azim_R` | Where the lifted arm **points**, in degrees: 0° straight out to that side, +90° reaching forward, −90° reaching behind, ±180° folded across the chest. Not self-calibrating — its zero means something exact |
 | `shoulder_width` | Distance between shoulders |
 | `arm_raise_L` / `arm_raise_R` | Arm raise (0 = down, 1 = fully raised) |
 | `torso_tilt` | Lateral torso lean (−1 = left, +1 = right) |
