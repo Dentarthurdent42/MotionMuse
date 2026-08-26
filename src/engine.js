@@ -6,6 +6,7 @@ import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 import { shepardPartials, SHEP_PARTIALS, SHEP_FMIN } from './shepard.js';
 
 export const engine = (() => {
+  let loopTap, loopSum;
   let ctx, analyser, filt, oscVol, lfo, lfog,
       cfilt, chordVol, revb, revgain, drygain, maing, outg;
   let started = false;
@@ -154,6 +155,10 @@ export const engine = (() => {
     lfo_depth:   { label: 'LFO Depth',     min: 0,    max: 1,     val: 0,     snaps: [0.5] },
     reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12,  snaps: [0.25, 0.5] },
     volume:      { label: 'Main Vol',      min: 0,    max: 1,     val: 0.55,  snaps: [0.25, 0.5, 0.75] },
+    // The looper's own level. Separate from Main Vol because the loop returns
+    // downstream of it (see the graph in start()) — and mappable like anything
+    // else, so you can duck a finished loop under what you are playing now.
+    loop_volume: { label: 'Loop Vol',      min: 0,    max: 1.5,   val: 0.9,   snaps: [0.5, 1] },
   };
 
   // Every oscillator param object ever built, by key. A slot's values outlive
@@ -250,6 +255,28 @@ export const engine = (() => {
     oscVol.connect(drygain); oscVol.connect(revb);
     revb.connect(revgain);
     drygain.connect(maing); revgain.connect(maing);
+    // The looper taps and returns HERE, on either side of the analyser, and the
+    // asymmetry is the whole design:
+    //
+    //   … → main ─┬────────────────→ analyser → mute → out
+    //             └→ loopTap (rec)     ↑
+    //                loopSum (play) ───┘
+    //
+    // It records from `main` — the LIVE sound only — and returns into
+    // `analyser`, downstream of the tap. A looper that recorded its own output
+    // would layer on every pass whether you asked or not, and then run away.
+    // Returning before the analyser keeps the loop on the visualiser and under
+    // the mute button, which is what a listener expects of anything audible.
+    //
+    // It also means the loop does NOT pass through Main Vol, and that is
+    // deliberate rather than an oversight: `volume` is a mapped parameter — the
+    // Hands preset drives it from your pinch — so routing playback through it
+    // would make a finished loop swell and duck with whatever your hand is
+    // doing now. The loop gets its own level instead.
+    loopTap = ctx.createGain(); loopTap.gain.value = 1;
+    loopSum = ctx.createGain(); loopSum.gain.value = PARAMS.loop_volume.val;
+    maing.connect(loopTap);
+    loopSum.connect(analyser);
     maing.connect(analyser); analyser.connect(outg); outg.connect(ctx.destination);
 
     // LFO → the *lead* filter's cutoff only. Chords deliberately keep a steady
@@ -434,6 +461,7 @@ export const engine = (() => {
         drygain.gain.linearRampToValueAtTime(1 - p.val, t + sm);
         break;
       case 'volume': maing.gain.linearRampToValueAtTime(p.val, t + sm); break;
+      case 'loop_volume': loopSum.gain.linearRampToValueAtTime(p.val, t + sm); break;
     }
   }
 
@@ -867,6 +895,11 @@ export const engine = (() => {
     setShepard, getShepard,
     getWaveform,
     setMuted, toggleMuted, resume,
+    // Where the looper records from and plays back into. Returned together
+    // because they are only meaningful as a pair — see the graph comment at
+    // the tap — and only once the context exists, so the looper cannot get hold
+    // of half a connection before `start()`.
+    loopIO: () => (started ? { ctx, tap: loopTap, sum: loopSum } : null),
     get started() { return started; },
     get muted() { return muted; },
     get ctxState() { return started ? ctx.state : 'closed'; },

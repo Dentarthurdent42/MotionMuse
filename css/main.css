@@ -414,6 +414,47 @@ body.resizing { cursor: col-resize; user-select: none; }
    push the × off the edge if it were allowed to set the width. */
 .preset-del { flex: 0 0 auto; align-self: flex-start; margin-top: 5px; }
 
+/* ── Loop pedal ──────────────────────────────────────────── */
+/* The transport reads left to right: where the playhead is, then what state
+   the loop is in, then what one more press would do. */
+.loop-transport { display: grid; grid-template-columns: 1fr; gap: 4px; margin-bottom: 5px; }
+.loop-bar {
+  height: 5px;
+  background: var(--faint);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.loop-bar-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--purple-dim), var(--purple));
+  /* No transition: this IS the playhead, and easing it would put the bar
+     somewhere the loop is not. */
+}
+.loop-read { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.loop-state {
+  font-size: 10px; letter-spacing: 2px;
+  color: var(--dim);
+}
+/* Recording is the one state where being wrong about it costs you a take, so
+   it is the one that shouts. */
+.loop-state[data-state="recording"],
+.loop-state[data-state="overdubbing"] { color: var(--red); }
+.loop-state[data-state="playing"] { color: var(--green); }
+.loop-next { font-size: 9px; color: var(--border2); }
+/* How close the last movement came to pressing the pedal. Without it,
+   calibrating the threshold means guessing and nodding. */
+.loop-meter {
+  height: 4px; margin-top: 4px;
+  background: var(--faint); border-radius: 2px; overflow: hidden;
+}
+.loop-meter-fill {
+  height: 100%; width: 0;
+  background: linear-gradient(90deg, var(--cyan), var(--amber));
+  transition: width 60ms linear;
+}
+
 /* ── Developer mode / under-construction gating ──────────── */
 /* Experimental features are hidden until dev mode is on. Using
    `display:none` only in the non-dev state means the element keeps its

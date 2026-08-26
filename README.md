@@ -405,6 +405,91 @@ than handed to the menu, which would otherwise render `undefined` and apply
 nothing when clicked. `tests/unit/saved-configs.test.js` covers the round trip,
 the replace-by-name rule, the cap, and what happens to junk in storage.
 
+## Loop pedal
+
+Play a phrase, drop it, and it repeats under you while you play the next one
+over the top.
+
+**The pedal is a sharp nod.** A loop pedal is a foot switch because the
+player's hands are busy; here the hands *are* the instrument, so the switch had
+to be something else the body can do without interrupting a phrase. A nod is
+read from **`nose_y_vel`** — a velocity, not a position — and that is what makes
+it usable: a head held low is a pose you might hold for a bar, while a head that
+moves down *fast* is a deliberate stab nothing about playing produces. The same
+distinction rescues the eyebrow option (**BROWS**, `brow_raise_vel`), since
+`brow_raise` is a mapped control in two of the shipped presets and triggering on
+a *raised* brow would fire every time somebody played a high note.
+
+The default reads a **pose** signal, so the pedal works with just the camera —
+no face model needed. Hysteresis plus a 700 ms refractory window means one nod
+is one press however many frames it spans, and the return stroke (an equal spike
+the other way) is not counted. **SENSITIVITY** sets the bar, and the meter beside
+it shows how close the last movement came, so calibrating is watching rather
+than guessing.
+
+**One press cycles the transport:**
+
+```
+empty ──▶ recording ──▶ playing ──▶ overdubbing
+                           ▲              │
+                           └──────────────┘
+```
+
+**STOP**, **UNDO** and **CLEAR** are buttons, deliberately: the motion that
+starts a take must never be able to end one.
+
+### What it records, and why
+
+The **audio** — the master bus, exactly as you heard it. Recording your *motion*
+instead is tempting, because a loop would then follow a key change; it also
+means two layers both driving `hand_L_y` fight over one oscillator, which is not
+a loop pedal, it is a race. Audio loops the same way in every mode the app has,
+and layering is simply mixing.
+
+- **Each pass is its own buffer**, mixed on demand. Bouncing straight into one
+  buffer would halve the bookkeeping and make UNDO impossible — and a looper you
+  cannot undo is one where the fourth pass costs you the first three.
+- **Overdubs land where you played them.** Recording starts the instant the
+  pedal goes down, which is somewhere mid-loop, so the samples are written at
+  that phase and wrapped past the end. Dropped in at zero, every overdub would
+  slide to the top of the bar and the layers would drift apart.
+- **Closing an overdub keeps the phase**, so the loop does not stutter back to
+  its top on every pass.
+- **30 s and 8 layers**, because this is uncompressed float audio in memory:
+  30 s of stereo at 48 kHz is ~11 MB per layer.
+
+### The graph
+
+```
+… → main ─┬────────────────→ analyser → mute → out
+          └→ loopTap (rec)     ↑
+             loopSum (play) ───┘
+```
+
+The asymmetry is the design. It records from `main` — the **live** sound only —
+and returns into `analyser`, downstream of the tap. A looper that recorded its
+own output would layer on every pass whether you asked or not, and then run
+away. Returning before the analyser keeps the loop on the visualiser and under
+the mute button.
+
+It also means the loop does **not** pass through Main Vol, which is deliberate:
+`volume` is a mapped parameter — the Hands preset drives it from your pinch — so
+routing playback through it would make a finished loop swell and duck with
+whatever your hand is doing now. The loop gets **`loop_volume`** instead, which
+is mappable like anything else, so you can duck a finished loop under what you
+are playing.
+
+Capture is an **AudioWorklet** (`src/loop-recorder.worklet.js`) so the samples
+come straight off the render quantum, with a ScriptProcessor fallback for older
+Safari. Both are connected through a zero gain to the destination — not
+defensively, but because a node the graph cannot reach from the output is never
+pulled, so `process()` is never called and the loop records silence.
+
+`src/looper.js` holds the transport and the buffer arithmetic, `src/pedal.js`
+the edge detection; `tests/unit/looper.test.js` and `tests/unit/pedal.test.js`
+pin the two things that are easy to get subtly, unlistenably wrong — where an
+overdub lands in the bar, and how many times one nod counts as a press.
+
 ## Pitch quantisation (scales & tuning)
 
 By default the oscillators glide continuously. The **Pitch Quantize** panel
@@ -1266,6 +1351,9 @@ src/
   ui/firstrun.js    First-run starting-point picker
   share.js          Setup <-> shareable link
   saved.js          Named configurations (the setups you kept)
+  looper.js         Loop pedal transport + audio capture/playback
+  pedal.js          Nod / brow-flick edge detection for the pedal
+  loop-recorder.worklet.js  Capture, on the audio thread
   math.js           Geometry helpers (dist3, angles, openness, extension,
                     thumb-out and thumb-to-fingertip contact)
   engine.js         Web Audio API synthesiser
