@@ -166,7 +166,8 @@ guided tour which tour to give you:
 the two **Face** patches, **Gaze**, **Pose**), plus **Blank**, which sits here
 because building from nothing means the patchbay.
 
-**Chords** — handshapes trigger harmony.
+**Handshapes** — a shape names a degree of the key. Listed first: these are the
+entries that play music the moment you make a shape.
 
 In full:
 
@@ -174,6 +175,13 @@ In full:
   oscillator, since a drone under the chords is not what anyone picked this for.
   (It used to switch **DEV** on too, because chord mode was dev-gated. It is not
   any more — see Developer mode.)
+- **Single Notes** — the same seven shapes and the same key, sounding one note
+  each, with your other hand sharpening or flattening it. It is chord mode in
+  **note voicing** rather than a second mode, so it shares every setting; it is
+  offered here because *"I want to play a melody"* is a different intention from
+  *"I want to comp"*, and arriving with the first one should not mean picking
+  the second and then finding the switch that undoes it. Each handshape choice
+  **states** its voicing rather than inheriting whatever was set last.
 - **Blank** — nothing wired, no trackers, and **no oscillator**. Genuinely
   nothing, not a quiet something.
 
