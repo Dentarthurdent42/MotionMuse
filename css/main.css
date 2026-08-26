@@ -586,6 +586,33 @@ body.no-scroll { overflow: hidden; }
   transition: width 40ms linear;
 }
 
+/* A measure that also reports how fast it is changing carries its name on its
+   own line, with both channels on a grid indented under it. That inner grid
+   repeats the outer column widths deliberately: the bar column is the same
+   fixed width in every row of the panel, so any two bars — the two under one
+   measure, or bars under different measures — are read off the same ruler.
+   Sizing a bar to its own row's leftover space would make length mean
+   something different in each row, which is decoration, not a reading. */
+.sig-row-multi { grid-template-columns: 1fr; gap: 2px; }
+.sig-chans {
+  display: grid;
+  grid-template-columns: 1fr 42px 90px;
+  gap: 3px 5px;
+  align-items: center;
+  padding-left: 10px;
+}
+.sig-chan-name {
+  color: var(--border2);
+  font-size: 8px; letter-spacing: 1px;
+  text-transform: uppercase;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Velocity is a different kind of quantity from displacement, not a second
+   helping of it, so it is a different colour — the channel is identifiable
+   at a glance rather than only by reading its label. */
+.sig-val.vel { color: var(--purple); }
+.sig-bar-fill.vel { background: linear-gradient(90deg, var(--purple-dim), var(--purple)); }
+
 /* ── Mapper ──────────────────────────────────────────────── */
 .mapper-thead {
   display: grid;
@@ -2107,6 +2134,9 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   /* Signal list */
   .sig-group { font-size: 10px; padding: 10px 14px 4px; }
   .sig-row { grid-template-columns: 1fr 52px 110px; gap: 7px; padding: 5px 14px; }
+  .sig-row-multi { grid-template-columns: 1fr; gap: 3px; }
+  .sig-chans { grid-template-columns: 1fr 52px 110px; gap: 4px 7px; padding-left: 12px; }
+  .sig-chan-name { font-size: 10px; }
   .sig-name, .sig-val { font-size: 12px; }
   .sig-bar { height: 4px; }
 

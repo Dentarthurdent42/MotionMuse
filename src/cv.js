@@ -120,10 +120,10 @@ export const cvSource = {
     ['L', 'R'].forEach(s => {
       const lbl = s === 'L' ? 'Left' : 'Right';
       const g   = `hand ${s.toLowerCase()}`;
-      bus.register(`hand_${s}_x`,      { label: `${lbl} Wrist X`,  group: g, min: 0, max: 1,   source: 'cv', smooth: true });
-      bus.register(`hand_${s}_y`,      { label: `${lbl} Wrist Y`,  group: g, min: 0, max: 1,   source: 'cv', smooth: true });
-      bus.register(`hand_${s}_open`,   { label: `${lbl} Openness`, group: g, min: 0, max: 1,   source: 'cv', smooth: true });
-      bus.register(`hand_${s}_spread`, { label: `${lbl} Spread`,   group: g, min: 0, max: 1,   source: 'cv', smooth: true });
+      bus.register(`hand_${s}_x`,      { velocity: true, label: `${lbl} Wrist X`,  group: g, min: 0, max: 1,   source: 'cv', smooth: true });
+      bus.register(`hand_${s}_y`,      { velocity: true, label: `${lbl} Wrist Y`,  group: g, min: 0, max: 1,   source: 'cv', smooth: true });
+      bus.register(`hand_${s}_open`,   { velocity: true, label: `${lbl} Openness`, group: g, min: 0, max: 1,   source: 'cv', smooth: true });
+      bus.register(`hand_${s}_spread`, { velocity: true, label: `${lbl} Spread`,   group: g, min: 0, max: 1,   source: 'cv', smooth: true });
       // Pinch drives volume articulation, where lag is the enemy: a note has
       // to start when the fingers open, not 100 ms later. Snappier One-Euro
       // than the default (2.5 Hz base, and beta high enough that the cutoff
@@ -133,16 +133,16 @@ export const cvSource = {
       // is the enemy: a note has to start when the fingers move, not 100 ms
       // later. Snappier One-Euro than the default; anti-jitter is handled
       // downstream by the volume ladder's hysteresis.
-      bus.register(`pinch_${s}`,       { label: `${lbl} Pinch`,    group: g, min: 0, max: 1,   source: 'cv', smooth: { minCutoff: 2.5, beta: 0.4 } });
+      bus.register(`pinch_${s}`,       { velocity: true, label: `${lbl} Pinch`,    group: g, min: 0, max: 1,   source: 'cv', smooth: { minCutoff: 2.5, beta: 0.4 } });
       ['Thumb','Index','Middle','Ring','Pinky'].forEach(fn =>
-        bus.register(`finger_${s}_${fn.toLowerCase()}`, {
+        bus.register(`finger_${s}_${fn.toLowerCase()}`, { velocity: true,
           label: `${lbl} ${fn}`, group: g, min: 0, max: 1, source: 'cv', smooth: true,
         })
       );
       // 0 = thumb folded across the palm, 1 = carried clear of it. The one
       // thumb measure that actually moves (see math.js) — and what separates
       // handshapes that differ only in the thumb.
-      bus.register(`thumb_out_${s}`, { label: `${lbl} Thumb Out`, group: g, min: 0, max: 1, source: 'cv', smooth: true });
+      bus.register(`thumb_out_${s}`, { velocity: true, label: `${lbl} Thumb Out`, group: g, min: 0, max: 1, source: 'cv', smooth: true });
       // Thumb-to-fingertip contacts: 1 when the pads meet. These are what make
       // the ASL number handshapes distinguishable, and they're good triggers
       // in their own right — a thumb-to-pinky tap is an easy discrete gesture.
@@ -157,11 +157,11 @@ export const cvSource = {
     // Elbows self-calibrate: nobody's elbow closes to 0° or opens to a flat
     // 180°, and the usable range differs per user. `adapt` maps the observed
     // range onto the full control range once ≥40° of motion has been seen.
-    bus.register('elbow_L',        { label: 'L Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
-    bus.register('elbow_R',        { label: 'R Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
-    bus.register('shoulder_y_L',   { label: 'L Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
-    bus.register('shoulder_y_R',   { label: 'R Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
-    bus.register('shoulder_width', { label: 'Shoulder Width',    group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('elbow_L',        { velocity: true, label: 'L Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
+    bus.register('elbow_R',        { velocity: true, label: 'R Elbow Angle',     group: g2, min: 0,  max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
+    bus.register('shoulder_y_L',   { velocity: true, label: 'L Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('shoulder_y_R',   { velocity: true, label: 'R Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('shoulder_width', { velocity: true, label: 'Shoulder Width',    group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
     // How far the arm is raised, 0 by your side to 1 straight overhead. This
     // used to publish `1 - shoulder.y` — the SHOULDER's height in frame, which
     // is not the arm at all, and was byte-identical to shoulder_y_*. Raising
@@ -172,22 +172,22 @@ export const cvSource = {
     // It is `shoulder_elev_*` over 180: the same measurement, scaled to the
     // 0..1 a mapping range wants. Keep both — this one for wiring straight to
     // a parameter, the degrees version when you want its self-calibration.
-    bus.register('arm_raise_L',    { label: 'L Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
-    bus.register('arm_raise_R',    { label: 'R Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('arm_raise_L',    { velocity: true, label: 'L Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('arm_raise_R',    { velocity: true, label: 'R Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
     // A shoulder is a ball joint, so it takes two angles: how far the arm is
     // lifted, and where it points once that is taken out. Reaching forward and
     // lifting out to the side are the same elevation and opposite azimuths —
     // one number could not tell them apart. Elevation adapts like the elbows
     // (nobody's arm sweeps the full 180°); azimuth does not, because its zero
     // means something exact — straight out to that side.
-    bus.register('shoulder_elev_L', { label: 'L Shoulder Lift',  group: g2, min: 0,    max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
-    bus.register('shoulder_elev_R', { label: 'R Shoulder Lift',  group: g2, min: 0,    max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
-    bus.register('shoulder_azim_L', { label: 'L Shoulder Swing', group: g2, min: -180, max: 180, source: 'cv', smooth: true });
-    bus.register('shoulder_azim_R', { label: 'R Shoulder Swing', group: g2, min: -180, max: 180, source: 'cv', smooth: true });
-    bus.register('torso_tilt',     { label: 'Torso Tilt',        group: g2, min: -1, max: 1,   source: 'cv', smooth: true });
-    bus.register('head_x',         { label: 'Head X',            group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
-    bus.register('head_y',         { label: 'Head Y',            group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
-    bus.register('nose_y',         { label: 'Nose Dip',          group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('shoulder_elev_L', { velocity: true, label: 'L Shoulder Lift',  group: g2, min: 0,    max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
+    bus.register('shoulder_elev_R', { velocity: true, label: 'R Shoulder Lift',  group: g2, min: 0,    max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
+    bus.register('shoulder_azim_L', { velocity: true, label: 'L Shoulder Swing', group: g2, min: -180, max: 180, source: 'cv', smooth: true });
+    bus.register('shoulder_azim_R', { velocity: true, label: 'R Shoulder Swing', group: g2, min: -180, max: 180, source: 'cv', smooth: true });
+    bus.register('torso_tilt',     { velocity: true, label: 'Torso Tilt',        group: g2, min: -1, max: 1,   source: 'cv', smooth: true });
+    bus.register('head_x',         { velocity: true, label: 'Head X',            group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('head_y',         { velocity: true, label: 'Head Y',            group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    bus.register('nose_y',         { velocity: true, label: 'Nose Dip',          group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
   },
 
   // ── Load models ──────────────────────────────────────────────────────

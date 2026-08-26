@@ -61,29 +61,29 @@ export const faceSource = {
 
   registerSignals() {
     const gf = 'face';
-    bus.register('brow_raise',     { label: 'Brow Raise',      group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('brow_furrow',    { label: 'Brow Furrow',     group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('brow_L',         { label: 'L Brow Up',       group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('brow_R',         { label: 'R Brow Up',       group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('mouth_open',     { label: 'Mouth Open',      group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('smile',          { label: 'Smile',           group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('pucker',         { label: 'Lip Pucker',      group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('lips_funnel',    { label: 'Lip Funnel',      group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('tongue_out',     { label: 'Tongue Out',      group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('cheek_puff',     { label: 'Cheek Puff',      group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('cheek_squint_L', { label: 'L Cheek Squint',  group: gf, min: 0,  max: 1, source: 'face' });
-    bus.register('cheek_squint_R', { label: 'R Cheek Squint',  group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('brow_raise',     { velocity: true, label: 'Brow Raise',      group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('brow_furrow',    { velocity: true, label: 'Brow Furrow',     group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('brow_L',         { velocity: true, label: 'L Brow Up',       group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('brow_R',         { velocity: true, label: 'R Brow Up',       group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('mouth_open',     { velocity: true, label: 'Mouth Open',      group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('smile',          { velocity: true, label: 'Smile',           group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('pucker',         { velocity: true, label: 'Lip Pucker',      group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('lips_funnel',    { velocity: true, label: 'Lip Funnel',      group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('tongue_out',     { velocity: true, label: 'Tongue Out',      group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('cheek_puff',     { velocity: true, label: 'Cheek Puff',      group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('cheek_squint_L', { velocity: true, label: 'L Cheek Squint',  group: gf, min: 0,  max: 1, source: 'face' });
+    bus.register('cheek_squint_R', { velocity: true, label: 'R Cheek Squint',  group: gf, min: 0,  max: 1, source: 'face' });
     // Ears don't articulate — their tracked positions give head orientation.
-    bus.register('ear_L_x',        { label: 'L Ear X',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
-    bus.register('ear_L_y',        { label: 'L Ear Y',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
-    bus.register('ear_R_x',        { label: 'R Ear X',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
-    bus.register('ear_R_y',        { label: 'R Ear Y',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
-    bus.register('head_yaw',       { label: 'Head Yaw (ears)', group: gf, min: -1, max: 1, source: 'face', smooth: true });
-    bus.register('head_roll',      { label: 'Head Roll (ears)',group: gf, min: -1, max: 1, source: 'face', smooth: true });
+    bus.register('ear_L_x',        { velocity: true, label: 'L Ear X',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
+    bus.register('ear_L_y',        { velocity: true, label: 'L Ear Y',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
+    bus.register('ear_R_x',        { velocity: true, label: 'R Ear X',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
+    bus.register('ear_R_y',        { velocity: true, label: 'R Ear Y',         group: gf, min: 0,  max: 1, source: 'face', smooth: true });
+    bus.register('head_yaw',       { velocity: true, label: 'Head Yaw (ears)', group: gf, min: -1, max: 1, source: 'face', smooth: true });
+    bus.register('head_roll',      { velocity: true, label: 'Head Roll (ears)',group: gf, min: -1, max: 1, source: 'face', smooth: true });
 
     const gg = 'gaze';
-    bus.register('gaze_x',         { label: 'Gaze X',          group: gg, min: -1, max: 1, source: 'face', smooth: true });
-    bus.register('gaze_y',         { label: 'Gaze Y',          group: gg, min: -1, max: 1, source: 'face', smooth: true });
+    bus.register('gaze_x',         { velocity: true, label: 'Gaze X',          group: gg, min: -1, max: 1, source: 'face', smooth: true });
+    bus.register('gaze_y',         { velocity: true, label: 'Gaze Y',          group: gg, min: -1, max: 1, source: 'face', smooth: true });
   },
 
   async _load() {

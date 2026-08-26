@@ -336,7 +336,67 @@ const off = await measure();
   await page.waitForTimeout(120);
   const on = await measure();
 
-  results.push({ width, off, on, sections, camSticky });
+  // ── Signals panel ──
+  // The panel is only built once the camera is running, and MediaPipe's model
+  // download needs a network CI does not have. Registration is separable from
+  // the tracker, so take the same code path cvSource.init() takes minus the
+  // download: register, flag the trackers live, build.
+  await page.addScriptTag({ type: 'module', content: `
+    import { cvSource }      from '/src/cv.js';
+    import { faceSource }    from '/src/face.js';
+    import { depthSource }   from '/src/depth.js';
+    import { buildSigPanel } from '/src/ui/signals.js';
+    cvSource.registerSignals();
+    faceSource.registerSignals();
+    depthSource.registerSignals();
+    cvSource.running = true; cvSource.handsL = true; cvSource.handsR = true;
+    cvSource.poseOn = true; faceSource.faceOn = true; faceSource.gazeOn = true;
+    buildSigPanel();
+    window.__sigBuilt = true;
+  ` });
+  await page.waitForFunction(() => window.__sigBuilt, null, { timeout: 20000 });
+  await page.waitForTimeout(150);
+  const sigPanel = await page.evaluate(() => {
+    // Every group open, or the collapsed ones measure zero and prove nothing.
+    document.querySelectorAll('.sig-sec').forEach(d => { d.open = true; });
+    const rows  = [...document.querySelectorAll('.sig-row')];
+    const multi = rows.filter(r => r.classList.contains('sig-row-multi'));
+    const bars  = [...document.querySelectorAll('.sig-bar')];
+    const copied = [];
+    const clickCopy = el => {
+      copied.length = 0;
+      // Read the key the way the handler does rather than through the
+      // clipboard, which needs a permission this suite does not grant.
+      return el.closest('[data-key]')?.dataset.key
+          ?? el.closest('.sig-row')?.dataset.key ?? '';
+    };
+    const first = multi[0];
+    return {
+      rows: rows.length,
+      multi: multi.length,
+      // The whole promise of the two-channel layout: bar length means one
+      // thing across the entire panel, so any two bars can be compared.
+      barWidths: [...new Set(bars.map(b => Math.round(b.getBoundingClientRect().width)))],
+      zeroWidth: bars.filter(b => b.getBoundingClientRect().width < 8).length,
+      chans: first ? [...first.querySelectorAll('.sig-chan-name')].map(e => e.textContent) : [],
+      // Each channel copies ITS key; the measure's name copies the measure's.
+      keys: first ? {
+        base: first.dataset.key,
+        vel:  clickCopy(first.querySelector('.sig-bar-fill.vel')),
+        disp: clickCopy(first.querySelector('.sig-bar-fill:not(.vel)')),
+        name: clickCopy(first.querySelector('.sig-name')),
+      } : null,
+      // Group headings count measures, not channels — a reader counts the
+      // things being measured.
+      counts: [...document.querySelectorAll('.sig-sec')].map(d =>
+        [d.dataset.group, +d.querySelector('.sig-group-meta').textContent.trim().split(' ')[0],
+         d.querySelectorAll('.sig-row').length, d.querySelectorAll('.sig-val').length]),
+      pans: (() => { const p = document.getElementById('sig-list');
+                     return p.scrollWidth > p.clientWidth + 1; })(),
+    };
+  });
+
+  results.push({ width, off, on, sections, camSticky, sigPanel });
   await page.close();
 }
 
@@ -770,7 +830,7 @@ check(reset.after.keys === 0, 'reset: and forgets every stored layout key',
 check(reset.reloaded.order === 'camera mic patchbay',
   'reset: and it survives a reload', reset.reloaded.order);
 
-for (const { width, off, on, sections, camSticky } of results) {
+for (const { width, off, on, sections, camSticky, sigPanel } of results) {
   const w = `${width}px`;
 
   check(sections.total >= 12, `${w}: sections are wrapped`, `${sections.total} found`);
@@ -820,6 +880,36 @@ for (const { width, off, on, sections, camSticky } of results) {
     `gestures ${pl.gestures}, chords ${pl.chords}`);
   check(pl.badges === 0, `${w}: and carry no under-construction badge`, String(pl.badges));
   check(!pl.models, `${w}: while MODELS is still dev-only`);
+
+  // ── Signals panel: two channels per measure, one ruler ──
+  const sp = sigPanel;
+  check(sp.rows > 60, `${w}: the signals panel lists its signals`, `${sp.rows} rows`);
+  check(sp.multi > 40, `${w}: most measures carry a velocity channel`,
+    `${sp.multi} of ${sp.rows}`);
+  // The point of the nested layout: every bar in the panel is the same length,
+  // so two bars under one measure — and bars under different measures — are
+  // read off the same ruler. A bar sized to its own row's leftover space would
+  // make length mean something different in each row.
+  check(sp.barWidths.length === 1, `${w}: every signal bar is the same length`,
+    sp.barWidths.join(' / '));
+  check(sp.zeroWidth === 0, `${w}: no bar is squeezed to nothing`, String(sp.zeroWidth));
+  check(sp.chans.join(',') === 'displacement,velocity',
+    `${w}: a two-channel measure names both channels`, sp.chans.join(','));
+  check(sp.keys && sp.keys.vel === `${sp.keys.base}_vel`,
+    `${w}: clicking the velocity channel copies the velocity key`, sp.keys?.vel);
+  check(sp.keys && sp.keys.disp === sp.keys.base && sp.keys.name === sp.keys.base,
+    `${w}: the displacement channel and the measure's name copy the measure`,
+    `${sp.keys?.disp} / ${sp.keys?.name}`);
+  // A heading that counted channels would say "30" over fifteen hand measures.
+  const miscount = sp.counts.filter(([, said, rows]) => said !== rows);
+  check(miscount.length === 0, `${w}: group headings count measures, not channels`,
+    sp.counts.map(([g, said, rows, ch]) => `${g} says ${said}, ${rows} rows / ${ch} channels`).join(' | '));
+  // …and at least one group really does have more channels than measures, or
+  // the check above passes on a panel with no velocities in it at all.
+  check(sp.counts.some(([, , rows, ch]) => ch > rows),
+    `${w}: and at least one group carries more channels than measures`,
+    sp.counts.map(([g, , rows, ch]) => `${g} ${ch}/${rows}`).join(' '));
+  check(!sp.pans, `${w}: the signals panel does not pan sideways`);
 
   const v = sections.viz;
   check(v.exists && v.hasCanvas, `${w}: the oscilloscope is its own section`);

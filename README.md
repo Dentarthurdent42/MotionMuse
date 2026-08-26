@@ -35,7 +35,7 @@ button in the app header links to:
 Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engine
 ```
 
-- **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1.
+- **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1. Registering with `velocity: true` also creates a `<key>_vel` sibling the bus keeps fed with the rate of change — see [Velocities](#velocities--every-measure-also-reports-how-fast-it-is-changing).
 - **Tracking toggles**: **✋ L**, **R ✋** and **🧍 POSE** in the header (once the camera is on) switch each model off outright. Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` plus a swappable **pose backend** (`src/posebackends.js` — MediaPipe lite/full/heavy or TF.js MoveNet), extracts ~30 signals per frame, and writes them into the bus. Hand and pose inference **alternate frames** (each still ≥15 Hz at a 30 fps camera) so per-frame cost stays half of running both, and every positional signal passes through a per-signal **One-Euro filter** (`src/filter.js`, applied in `bus.update`) — the standard low-latency jitter filter: heavy smoothing on a held pose, light smoothing on fast moves.
 - **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert, invert+ease), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **inverted** with its `⇅ INVERT` toggle — the input's high end then drives the output's low end, which composes with (rather than replaces) the curve, so any response shape can run either way round. A cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired. An output also *remembers* its range, curve, steps and invert flag, so re-wiring a different input into it (or unplugging and re-plugging) doesn't reset them. Each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
@@ -1078,6 +1078,62 @@ own their respective slices of state.
 | `head_yaw` / `head_roll` | Head orientation derived from the ears, −1..1 (FACE) |
 | `gaze_x` / `gaze_y` | Pupil orientation, −1..1, subject's frame (GAZE) |
 
+### Velocities — every measure also reports how fast it is changing
+
+Where a signal says *where something is*, its velocity says *how fast that is
+moving*, and the two play like different instruments. A displacement is a
+slider you hold; a velocity is a gesture you throw. An eyebrow held raised is a
+sustained value — the same eyebrow **flicked** is a transient, and only the
+first of those was reachable before.
+
+Every continuous signal in the table above therefore has a sibling **`<key>_vel`**
+— `hand_R_open_vel`, `brow_raise_vel`, `mic_level_vel`. For a signal measured in
+degrees the twin is an **angular velocity**: `elbow_L_vel` and
+`shoulder_azim_R_vel` are degrees per second, and need no separate machinery,
+because degrees per second is spans per second like anything else.
+
+They are ordinary bus signals rather than a special case, so everything that
+already walks the bus picks them up for free — the patchbay's input picker
+(listed beside their measure, labelled `… Δ`), the shader's axis pickers, the
+signals panel, saved patches, and `trackersFor()`, which knows a velocity needs
+the same model its measure does.
+
+- **Signed.** Which *way* something is moving is half of what it tells you, so
+  the range is symmetric about zero: full scale is four spans of the source per
+  second in each direction. Wired into a mapping, that puts the parameter
+  mid-range at rest and drives it either way — a bipolar control.
+- **Self-calibrating.** How fast a given person moves is not something a
+  constant can know, and it varies between players far more than displacement
+  does, so velocities `adapt` with a low bar to engage.
+- **Filtered harder than their source.** Differencing amplifies whatever jitter
+  survived the source's own filter, and a velocity that flickers is unusable as
+  a control even when it is accurate.
+- **Measured against the wall clock**, not per frame, so a dropped frame reports
+  a slower move rather than a bigger one. When tracking is lost the velocity
+  decays with its measure and forgets when it last sampled — the gap is not a
+  slow movement, and differencing across it would read as a violent one.
+
+Signals that are already discrete or already a rate get no twin: gesture
+matches and thumb contacts are on/off, `hand_dz` is itself a difference (its
+derivative would be an acceleration), and `mic_clarity` reports how much to
+trust the pitch, which is a diagnostic rather than something to play.
+
+In the signals panel a measure with a velocity puts its name on its own line
+with both channels indented beneath it, each with its own number and bar:
+
+```
+L Hand Depth
+    DISPLACEMENT   0.72  ▓▓▓▓▓▓▓▓░░░░
+    VELOCITY       1.90  ▓▓▓▓▓░░░░░░░
+```
+
+The bar column is a fixed width in **every** row of the panel, so any two bars
+are read off the same ruler. The velocity bar shows **speed**, filling from
+empty in either direction — a signed value drawn straight would sit half-full
+while nothing moved — and the number beside it keeps the sign, which is where
+the direction belongs. Clicking either channel copies that channel's key;
+clicking the measure's name copies the measure's.
+
 ## Face & gaze tracking (opt-in)
 
 Once the camera is running, two toggles appear under the LiDAR button:
@@ -1139,7 +1195,7 @@ silently falls back to the monocular estimate. The pluggable backend lives in
 
 ## Adding a new signal source
 
-1. In your source module, call `bus.register(key, { label, group, min, max, source })` for each signal in `init()`.
+1. In your source module, call `bus.register(key, { label, group, min, max, source })` for each signal in `init()`. Add `velocity: true` for any signal that is a continuous *position* and the bus registers its `<key>_vel` twin and keeps it fed; leave it off for anything discrete or already a rate.
 2. Call `bus.update(key, value)` each sample.
 3. Call `bus.decay(key)` when the source is absent to fade signals smoothly to zero.
 
