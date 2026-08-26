@@ -26,6 +26,7 @@
 import { lsGet, lsSet } from '../storage.js';
 import { isString }     from '../is.js';
 import { chordmode }    from '../chordmode.js';
+import { mapper }       from '../mapper.js';
 
 // Each step:
 //   id      stable unique key (drives "seen"/"new" tracking — never reuse)
@@ -212,11 +213,21 @@ export const TOUR_STEPS = [
           'with whatever plays pitch. Best scores are kept.',
   },
   {
-    id: 'dev', target: '#dev-btn', title: 'DEV',
-    body: 'Everything marked 🚧 <b>under construction</b> lives in <b>DEV</b>: ' +
-          'the hand cursor and gesture stage, pose-model comparison, the ' +
-          'shader, EEG/EMG, LiDAR, inference timings. Switch it off and they ' +
-          'go away — and stop running.',
+    id: 'share', target: '#share-btn', title: 'SHARE',
+    body: '<b>SHARE</b> turns everything you have set up into a QR code — ' +
+          'point a phone at it and the app opens configured the same way. ' +
+          'No file, no account, no server: the setup rides in the link. ' +
+          'Add a line describing it, so the person scanning knows what they ' +
+          'are getting, and it travels with the code. Which trackers are ' +
+          'running goes too — hands, pose, face and gaze — because a patch ' +
+          'wired to your eyebrows is silent without the face model.',
+  },
+  {
+    id: 'dev', target: '#settings-btn', title: 'DEV',
+    body: 'Everything marked 🚧 <b>under construction</b> lives in <b>DEV</b>, ' +
+          'inside <b>⚙</b>: the hand cursor and gesture stage, pose-model ' +
+          'comparison, the shader, EEG/EMG, LiDAR, inference timings. Switch ' +
+          'it off and they go away — and stop running.',
   },
   {
     id: 'gestures', section: 'gestures', target: '#gesture-list', needs: ['audio'], title: 'Gestures',
@@ -504,6 +515,34 @@ export function startSectionHelp(sectionId) {
   if (!steps.length) return false;
   if (tour.open) tour.close();
   tour.start({ steps });
+  return true;
+}
+
+// ── The tour for a setup that arrived by link ────────────────────────────
+//
+// Following a link is not opening the app for the first time. The link already
+// chose the way of playing and brought a patch with it, so the welcome that
+// asks which mode you want is answering a question nobody asked, and the
+// panels this particular setup never touches are noise standing in front of
+// the thing you were actually handed.
+//
+// What is left is the mode's own tour minus both — and steps whose target is
+// missing or hidden are skipped at runtime anyway, so a setup with no face
+// tracking never reaches the face step without this having to know about it.
+export const stepsForSharedSetup = () => stepsForMode(currentMode()).filter(t =>
+  t.id !== 'welcome' && !(t.section === 'patchbay' && !mapper.mappings.length));
+
+// Offered only on the FIRST open of a given link (share.js fingerprints them)
+// and only when it has something to say: someone who has already seen these
+// steps does not need them again because a friend sent the same patch.
+export function offerTourForSharedSetup() {
+  if (navigator.webdriver) return false;
+  const steps = stepsForSharedSetup();
+  const seen = new Set(loadState().seen);
+  if (!steps.some(t => !seen.has(t.id))) return false;
+  // Longer than the picker's wait: a shared link reloads the page and toasts
+  // what it opened, and a modal landing on top of that reads as a glitch.
+  setTimeout(() => tour.start({ steps }), 1200);
   return true;
 }
 

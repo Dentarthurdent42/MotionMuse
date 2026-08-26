@@ -162,6 +162,16 @@ export const cvSource = {
     bus.register('shoulder_y_L',   { label: 'L Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
     bus.register('shoulder_y_R',   { label: 'R Shoulder Height', group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
     bus.register('shoulder_width', { label: 'Shoulder Width',    group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    // How far the arm is raised, 0 by your side to 1 straight overhead. This
+    // used to publish `1 - shoulder.y` — the SHOULDER's height in frame, which
+    // is not the arm at all, and was byte-identical to shoulder_y_*. Raising
+    // your arm moved it not at all; crouching moved it a lot. The Pose preset
+    // maps pitch to it under the hint "arm height drives everything", so the
+    // one control the preset advertises was the one thing it did not do.
+    //
+    // It is `shoulder_elev_*` over 180: the same measurement, scaled to the
+    // 0..1 a mapping range wants. Keep both — this one for wiring straight to
+    // a parameter, the degrees version when you want its self-calibration.
     bus.register('arm_raise_L',    { label: 'L Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
     bus.register('arm_raise_R',    { label: 'R Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
     // A shoulder is a ball joint, so it takes two angles: how far the arm is
@@ -570,14 +580,8 @@ export const cvSource = {
     //          14=Relbow, 15=Lwrist, 16=Rwrist, 23=Lhip, 24=Rhip
     const [ls, rs, le, re, lw, rw, lh, rh, nose] = [11,12,13,14,15,16,23,24,0].map(i => lm[i]);
 
-    if (ls && le && lw) {
-      bus.update('elbow_L',     angleBetween(ls, le, lw));
-      bus.update('arm_raise_L', Math.max(0, 1 - ls.y));
-    }
-    if (rs && re && rw) {
-      bus.update('elbow_R',     angleBetween(rs, re, rw));
-      bus.update('arm_raise_R', Math.max(0, 1 - rs.y));
-    }
+    if (ls && le && lw) bus.update('elbow_L', angleBetween(ls, le, lw));
+    if (rs && re && rw) bus.update('elbow_R', angleBetween(rs, re, rw));
     if (ls && rs) {
       bus.update('shoulder_y_L',   1 - ls.y);
       bus.update('shoulder_y_R',   1 - rs.y);
@@ -594,11 +598,13 @@ export const cvSource = {
         const a = shoulderAngles('L', ls, le, frame);
         bus.update('shoulder_elev_L', a.elevation);
         bus.update('shoulder_azim_L', a.azimuth);
+        bus.update('arm_raise_L', a.elevation / 180);
       }
       if (re) {
         const a = shoulderAngles('R', rs, re, frame);
         bus.update('shoulder_elev_R', a.elevation);
         bus.update('shoulder_azim_R', a.azimuth);
+        bus.update('arm_raise_R', a.elevation / 180);
       }
     }
     if (nose) {
