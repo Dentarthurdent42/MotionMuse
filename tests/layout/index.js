@@ -45,6 +45,18 @@ const port = server.address().port;
 // (the mobile block, and the >=1200px desktop-sizing block).
 const WIDTHS = [320, 375, 390, 430, 768, 1024, 1199, 1200, 1440, 1920];
 
+// DEV moved into the settings popover, so reaching it is two clicks: open ⚙,
+// hit the toggle, and close the menu again so it does not sit over the layout
+// being measured.
+const toggleDev = async page => {
+  await page.evaluate(() => document.getElementById('settings-btn').click());
+  await page.waitForTimeout(120);
+  await page.evaluate(() => document.getElementById('dev-btn').click());
+  await page.waitForTimeout(120);
+  await page.evaluate(() => document.getElementById('settings-btn').click());
+  await page.waitForTimeout(120);
+};
+
 const b = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
 const results = [];
 
@@ -558,8 +570,7 @@ const hud = await (async () => {
   // shape cannot be a chord and the release at once. That was possible before,
   // and the panel showed it while the tick loop played something else.
   const chords = await (async () => {
-    await page.evaluate(() => document.getElementById('dev-btn').click());
-    await page.waitForTimeout(150);
+    await toggleDev(page);
     await page.evaluate(() => document.getElementById('chord-toggle')?.click());
     await page.waitForTimeout(250);
     const read = () => page.evaluate(() =>
@@ -610,8 +621,7 @@ const hud = await (async () => {
                releaseHasChord: !!chordmode.chordFor(chordmode.getReleaseGesture()),
                degrees: Object.values(a), ids: Object.keys(a) };
     });
-    await page.evaluate(() => document.getElementById('dev-btn').click());
-    await page.waitForTimeout(120);
+    await toggleDev(page);
     return { initial, after, taken, state, expr, live };
   })();
 
@@ -647,8 +657,7 @@ const hud = await (async () => {
   const all = { handsL: true, handsR: true, pose: true, face: true };
   await set(all);
   const nodev = await read();                       // camera "on", DEV off
-  await page.click('#dev-btn');
-  await page.waitForTimeout(120);
+  await toggleDev(page);
   const dev = await read();
   await set({ handsL: false, handsR: false, pose: false, face: true });
   const faceOnly = await read();

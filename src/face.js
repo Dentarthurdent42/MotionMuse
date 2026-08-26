@@ -7,6 +7,7 @@
 
 import { bus } from './bus.js';
 import { push30 } from './math.js';
+import { lsGet, lsSet } from './storage.js';
 
 // Face-oval landmarks nearest the ears (tragus region) in the 468-pt mesh.
 const EAR_R = 234, EAR_L = 454;   // subject's right / left
@@ -25,6 +26,24 @@ const CONTOURS = {
   lipsO:  [61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146],
   lipsI:  [78,191,80,81,82,13,312,311,310,415,308,324,318,402,317,14,87,178,88,95],
   nose:   [168,6,197,195,5,4,1],
+};
+
+// Whether face and gaze were ASKED for, which is not the same as whether they
+// are running. Stopping the camera switches both off mechanically — they read
+// its stream — and that must not be mistaken for having chosen to turn them
+// off, or putting the camera down would quietly drop them from your saved
+// setup and from anything you shared afterwards. So the choice is recorded
+// where it is made, and re-applied when a camera next comes up.
+const FACE_KEY = 'motionmuse-face';
+
+export const rememberFaceIntent = (face, gaze) =>
+  lsSet(FACE_KEY, JSON.stringify({ face: !!face, gaze: !!gaze }));
+
+export const savedFaceIntent = () => {
+  try {
+    const s = JSON.parse(lsGet(FACE_KEY) || '{}');
+    return { face: !!s.face, gaze: !!s.gaze };
+  } catch { return { face: false, gaze: false }; }
 };
 
 export const faceSource = {

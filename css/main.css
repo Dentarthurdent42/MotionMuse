@@ -300,6 +300,9 @@ body.resizing { cursor: col-resize; user-select: none; }
   border-color: var(--amber); color: var(--amber); background: rgba(240, 165, 0, 0.12);
 }
 .btn:disabled { opacity: 0.3; cursor: default; }
+/* DEV moved into the settings popover, where it is a .wave-btn like the other
+   toggles — but it stays amber, because it is the one switch that changes what
+   the whole app shows rather than what it does. */
 #dev-btn.on { border-color: var(--amber); color: var(--amber); background: rgba(240,165,0,0.12); }
 
 /* ── Dev Models panel (pose backend comparison) ──────────── */
@@ -911,16 +914,40 @@ option { background: var(--panel); }
   gap: 8px;
   padding: 14px;
   max-width: min(92vw, 360px);
+  /* Never taller than the screen: the QR is the top item, so when the popover
+     does have to scroll the code is still the part you can see. JS narrows
+     this further to the visual viewport once a keyboard is up. */
+  max-height: 100dvh;
+  overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: var(--shadow-lg);
 }
 #share-pop.open { display: flex; }
+/* The sharer's one-line description of the setup, which travels in the link.
+   A QR code says nothing about what is behind it, so this is what makes a
+   screen showing one legible to the person pointing a camera at it. */
+.share-label {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 6px 0;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--faint);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.share-label::placeholder { color: var(--dim); }
+.share-label:focus { outline: 1px solid var(--cyan); outline-offset: -1px; }
 .share-qr {
   display: block;
   width: 100%;
-  max-width: 300px;
+  /* Shrinks on a short screen rather than being cut off — a partly visible QR
+     code scans as well as no QR code at all. */
+  max-width: min(300px, 52dvh);
   margin: 0 auto;
   /* The code is drawn at whole-pixel modules; letting the browser resample it
      to a fractional size is what makes a QR stop scanning. */

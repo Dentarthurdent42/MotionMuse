@@ -204,8 +204,21 @@ heights, section order and which column you dragged something to describe the
 screen you arranged them on, and pushing a phone's layout onto a laptop is not
 "the same settings". The pose-model choice is left behind for the same reason: a
 MoveNet variant picked for one machine's GPU is not a recommendation for
-someone else's. Theme, tracking toggles and dev mode do travel, along with every
-mapping, gesture, chord assignment and audio parameter.
+someone else's. Theme, dev mode and **which models are running** — hands (each
+side separately), pose, face and gaze — do travel, along with every mapping,
+gesture, chord assignment and audio parameter. The trackers travel because a
+patch wired to `brow_raise` is silent without the face model: handing someone
+the mapping without the tracker that feeds it hands them an instrument that
+does nothing. The camera is still theirs to start; the trackers come up with it.
+
+**Say what it is.** A QR code is opaque — a photo of one tells you nothing
+about the patch behind it, and a screen showing three is three identical
+squares. The SHARE panel offers a line to describe the setup ("ambient pads,
+left hand opens the filter"), which shows beside the code and travels inside
+the link, so whoever opens it is told what they just loaded. It is capped at 80
+characters, because every character is more payload and payload is QR modules
+— the readout under the code shows the length, and warns when a setup has
+grown dense enough to be worth shortening.
 
 Opening a shared link applies the state, saves it, and reloads the page without
 the fragment. The reload is not laziness — several modules read their state at
@@ -1048,7 +1061,7 @@ own their respective slices of state.
 | `shoulder_elev_L` / `shoulder_elev_R` | How far the arm is **lifted** at the shoulder, in degrees against the torso's own axis: 0° hanging by your side, 90° horizontal, 180° straight overhead. Self-calibrating like the elbows |
 | `shoulder_azim_L` / `shoulder_azim_R` | Where the lifted arm **points**, in degrees: 0° straight out to that side, +90° reaching forward, −90° reaching behind, ±180° folded across the chest. Not self-calibrating — its zero means something exact |
 | `shoulder_width` | Distance between shoulders |
-| `arm_raise_L` / `arm_raise_R` | Arm raise (0 = down, 1 = fully raised) |
+| `arm_raise_L` / `arm_raise_R` | How far the arm is raised — 0 hanging by your side, 0.5 horizontal, 1 straight overhead. The same measurement as `shoulder_elev_*`, scaled to the 0–1 a mapping range wants |
 | `torso_tilt` | Lateral torso lean (−1 = left, +1 = right) |
 | `head_x` / `head_y` | Nose position |
 | `nose_y` | Raw nose Y (high = head dipped) |

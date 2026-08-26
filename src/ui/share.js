@@ -6,9 +6,11 @@
 
 import { snapshot, applyAll, saveLocal } from '../preset.js';
 import { shareableSnapshot, encodeState, decodeState, shareUrl, readShareUrl,
+         cleanShareLabel, SHARE_LABEL_MAX, shareFingerprint,
          QR_COMFORTABLE_VERSION } from '../share.js';
 import { encodeQR, drawQR } from '../qr.js';
 import { toast } from './status.js';
+import { lsGet, lsSet } from '../storage.js';
 
 let pop = null;
 
@@ -20,22 +22,46 @@ function build() {
     <div class="donate-title">SHARE THIS SETUP</div>
     <canvas id="share-qr" class="share-qr"></canvas>
     <div id="share-note" class="share-note"></div>
+    <input id="share-label" class="share-label" type="text"
+           maxlength="${SHARE_LABEL_MAX}" autocomplete="off"
+           aria-label="Describe this setup, sent with the link"
+           placeholder="Say what this is — e.g. ambient pads, left hand opens the filter">
     <div class="wave-btns">
       <button class="wave-btn" id="share-copy" type="button">COPY LINK</button>
       <button class="wave-btn" id="share-close" type="button">CLOSE</button>
     </div>`;
   document.body.appendChild(el);
   el.querySelector('#share-close').addEventListener('click', () => setOpen(false));
+  // Every character changes the payload, so the code has to be redrawn — but
+  // not per keystroke: encoding compresses the whole state and then lays out a
+  // QR, which is far more work than a keypress is worth. A short idle is
+  // imperceptible while typing and coalesces a sentence into one redraw.
+  const input = el.querySelector('#share-label');
+  input.value = label;
+  let typing = null;
+  input.addEventListener('input', () => {
+    label = input.value;
+    clearTimeout(typing);
+    typing = setTimeout(render, 250);
+  });
   return el;
 }
 
 let currentUrl = '';
+// Kept for the session rather than persisted: it describes the setup you are
+// sharing now, and reopening SHARE after a tweak should not make you retype
+// it — but it is not a property of the instrument, so it does not belong in a
+// preset or in localStorage.
+let label = '';
 
 async function render() {
   const canvas = pop.querySelector('#share-qr');
   const note = pop.querySelector('#share-note');
   try {
-    const payload = await encodeState(shareableSnapshot(snapshot()));
+    const described = cleanShareLabel(label);
+    const state = shareableSnapshot(snapshot());
+    if (described) state.label = described;
+    const payload = await encodeState(state);
     currentUrl = shareUrl(payload);
     // Level L: the most payload per module, and the trade it gives up —
     // tolerance of a torn or dirty code — does not apply to a picture on a
@@ -47,7 +73,7 @@ async function render() {
       light: getComputedStyle(document.body).getPropertyValue('--panel').trim() || '#fff',
     });
     note.textContent = qr.version > QR_COMFORTABLE_VERSION
-      ? `Dense code (v${qr.version}) — hold steady, or use COPY LINK`
+      ? `Dense code (v${qr.version}) — hold steady, shorten the description, or use COPY LINK`
       : `${currentUrl.length} characters · point a camera at it`;
     note.classList.toggle('warn', qr.version > QR_COMFORTABLE_VERSION);
   } catch (err) {
@@ -59,11 +85,39 @@ async function render() {
   }
 }
 
+// Keep the popover inside the part of the screen that is actually visible.
+//
+// A phone's keyboard does not shrink the layout viewport, so a dialog centred
+// in it sits half behind the keyboard the moment the description field takes
+// focus — and the QR code is what ends up covered, which is the one thing that
+// has to stay on screen for someone to point a camera at. visualViewport is
+// the only thing that reports the area the keyboard has left, so the popover
+// is centred in THAT and capped to its height.
+function fitToViewport() {
+  const vv = globalThis.visualViewport;
+  if (!pop || !vv) return;
+  pop.style.top = `${vv.offsetTop + vv.height / 2}px`;
+  pop.style.maxHeight = `${Math.max(0, vv.height - 16)}px`;
+}
+
 function setOpen(open) {
   pop ??= build();
   pop.classList.toggle('open', open);
   document.getElementById('share-btn')?.setAttribute('aria-expanded', String(open));
-  if (open) render();
+  const vv = globalThis.visualViewport;
+  if (open) {
+    render();
+    fitToViewport();
+    vv?.addEventListener('resize', fitToViewport);
+    vv?.addEventListener('scroll', fitToViewport);
+  } else {
+    vv?.removeEventListener('resize', fitToViewport);
+    vv?.removeEventListener('scroll', fitToViewport);
+    // Hand the position back to the stylesheet, so a resize while closed
+    // cannot leave it pinned where a keyboard once was.
+    pop.style.top = '';
+    pop.style.maxHeight = '';
+  }
 }
 
 export function initShare() {
@@ -115,6 +169,9 @@ export function initShare() {
 let consuming = false;
 export const isConsumingShare = () => consuming;
 
+// The last shared link this browser opened, by fingerprint.
+const SEEN_KEY = 'motionmuse-shared-seen';
+
 export async function consumeSharedLink() {
   const payload = readShareUrl(location.href);
   if (!payload) return false;
@@ -126,7 +183,17 @@ export async function consumeSharedLink() {
     const data = await decodeState(payload);
     if (!applyAll(data).ok) throw new Error('not a MotionMuse setup');
     saveLocal();
-    sessionStorage.setItem('motionmuse-shared', '1');
+    // Is this the first time this particular link has been followed? Only a
+    // first open is worth a tour: reopening a pinned QR, or reloading, lands
+    // you on a setup that is already yours.
+    const fp = shareFingerprint(payload);
+    const first = lsGet(SEEN_KEY) !== fp;
+    lsSet(SEEN_KEY, fp);
+    // Carried across the reload below, because the toast that announces the
+    // setup happens on the far side of it. Re-cleaned rather than trusted:
+    // this string came out of somebody else's URL.
+    sessionStorage.setItem('motionmuse-shared',
+      JSON.stringify({ label: cleanShareLabel(data.label), first }));
     location.reload();
     return true;
   } catch (err) {
@@ -140,8 +207,15 @@ export async function consumeSharedLink() {
 
 // Say so once, after the reload — otherwise the app silently looks different
 // from the one the person left.
+// Returns what just arrived, or null — main.js uses it to decide whether the
+// setup is new enough to be worth a tour.
 export function announceSharedLink() {
-  if (sessionStorage.getItem('motionmuse-shared') !== '1') return;
+  const mark = sessionStorage.getItem('motionmuse-shared');
+  if (!mark) return null;
   sessionStorage.removeItem('motionmuse-shared');
-  toast('Opened a shared setup');
+  let opened;
+  try { opened = JSON.parse(mark); } catch { opened = { label: '', first: true }; }
+  const label = cleanShareLabel(opened?.label);
+  toast(label ? `Opened: ${label}` : 'Opened a shared setup');
+  return { label, first: opened?.first !== false };
 }
