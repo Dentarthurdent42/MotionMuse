@@ -27,15 +27,21 @@ const clamp = v => Math.max(0, Math.min(1, v));
 const CIDX = ['cIndex', 'cMiddle', 'cRing', 'cPinky'];
 
 // Live-hand degradation model (matches the analysis that set the threshold):
-//  - extended fingers read compressed: ×0.7–1.0
-//  - openness compresses similarly
+//  - extended fingers vary ±15%, symmetrically. They used to be modelled as
+//    compressing one-way (×0.7–1.0), which was right when extension was a
+//    base-to-tip DISTANCE: the same finger genuinely measured shorter the
+//    closer it came to the lens. Measured by joint angle it does not — the
+//    same peace sign shot at arm's length and at 20 cm reads within 0.05 on
+//    index, middle and ring — so what is left is that nobody holds a finger
+//    at exactly the same bend twice, which cuts both ways.
+//  - openness is still a distance ratio, so it still compresses one-way
 //  - a genuine thumb contact loosens; a curled finger near the thumb reads a
 //    spurious contact anywhere in 0–0.7
 //  - thumbOut wobbles ±0.2, spread ±0.15, everything ±0.08 frame noise
 const degrade = f => f.map((v, i) => {
   const name = FEATURES[i];
   let x = v;
-  if (i >= 1 && i <= 4 && v > 0.5) x = v * (0.7 + 0.3 * rnd());
+  if (i >= 1 && i <= 4 && v > 0.5) x = v * (0.85 + 0.3 * rnd());
   if (name === 'open') x = v * (0.8 + 0.25 * rnd());
   if (name.startsWith('c')) {
     x = v > 0.5 ? clamp(v - 0.35 * rnd())

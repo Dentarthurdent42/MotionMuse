@@ -24,8 +24,23 @@ const MP   = join(ROOT, 'node_modules/@mediapipe/tasks-vision');
 const CHROME = process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const MODEL = join(HERE, 'hand_landmarker.task');   // provide locally to run offline
 
-// image file → expected built-in gesture id
-const CASES = { fist: 'fist', victory: 'peace', point: 'point', thumb: 'thumbs' };
+// image file → expected built-in gesture id. The `asl*` photos are the
+// reference set the ASL number handshapes are measured from — one per numeral,
+// shot on one hand — and the four originals are a second hand's take on the
+// shapes they overlap, which is what keeps a template from being fitted so
+// tightly to one photo that nobody else's hand matches it.
+//
+// `thumb` is deliberately absent: it is a stock photo where the hand is a
+// fraction of the frame and turned edge-on, so the folded fingers are hidden
+// behind it and MediaPipe can only guess their joints — it reports them
+// half-straight. That was survivable when extension was a base-to-tip
+// distance; measuring the joints themselves means the photo has to actually
+// show them. `asl10` is the same handshape with the fingers in view.
+const CASES = {
+  fist: 'fist', victory: 'peace', point: 'point',
+  asl1: 'point', asl2: 'peace',  asl3: 'asl3', asl4: 'asl4', asl5: 'palm',
+  asl6: 'asl6',  asl7: 'asl7',   asl8: 'asl8', asl9: 'asl9', asl10: 'thumbs',
+};
 
 if (!existsSync(MP)) { console.log('SKIP: @mediapipe/tasks-vision not installed'); process.exit(0); }
 if (!existsSync(MODEL)) { console.log('SKIP: hand_landmarker.task not present next to this test'); process.exit(0); }
