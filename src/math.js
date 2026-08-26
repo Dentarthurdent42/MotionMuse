@@ -50,10 +50,45 @@ export const pinchStrength = (thumbTip, indexTip,
 
 export const TIPS = [4, 8, 12, 16, 20];   // thumb, index, middle, ring, pinky
 
+// ── Finger extension, by joint angle ─────────────────────────────────────
+//
+// How straight a finger is, 0..1. Measured as the angle its joints make, not
+// as the distance from base to tip, because distances FORESHORTEN: the same
+// handshape held near the lens measures shorter fingers, since the palm is
+// magnified while the fingertips angle away from it. That is not a small
+// effect — the reference peace sign shot at arm's length measured 0.88 on the
+// index where the same shape shot close up measured 0.58, a bigger gap than
+// the one between genuinely different handshapes, which made a template
+// measured at one distance useless at another.
+//
+// A bent joint is bent from any distance. On the same two photos the angle
+// measure reads 345° and 344°.
+//
+// Two joints per finger, summed: the knuckle (MCP) is left out on purpose,
+// because measuring it needs the wrist, which drags the palm's own geometry
+// back into a number that should describe only the finger. For the thumb the
+// two are its MCP and IP, which is where a thumb actually folds.
+const CURL_CHAIN = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]];
+
+// The window: 160° from the tightest curl measured over the reference photos
+// in tests/gesture-img, 360° from geometry — two perfectly straight joints.
+//
+// The ceiling is the geometric maximum on purpose rather than the ~350° a real
+// straight finger measures. Ending the scale at what a hand actually reaches
+// pins every extended finger to exactly 1, and a channel sitting on a rail
+// carries no information: shapes that differ only in how straight a finger is
+// become indistinguishable, and jitter can then only push the reading DOWN,
+// which biases an open palm towards every less-open shape. Leaving the last
+// few degrees unused keeps straight fingers at ~0.93 with room either side.
+export const CURL_CURLED   = 160;
+export const CURL_STRAIGHT = 360;
+
 export const fingerExt = (lm, f) => {
-  const bases = [2, 5, 9, 13, 17];
-  const norm  = dist3(lm[0], lm[9]);
-  return norm < 1e-4 ? 0 : Math.min(1, dist3(lm[bases[f]], lm[TIPS[f]]) / (norm * 1.5));
+  const c = CURL_CHAIN[f];
+  if (!c || !lm?.[c[3]]) return 0;
+  const sum = angleBetween(lm[c[0]], lm[c[1]], lm[c[2]])
+            + angleBetween(lm[c[1]], lm[c[2]], lm[c[3]]);
+  return Math.max(0, Math.min(1, (sum - CURL_CURLED) / (CURL_STRAIGHT - CURL_CURLED)));
 };
 
 const unit = (d, lo, hi) => Math.max(0, Math.min(1, (hi - d) / (hi - lo)));

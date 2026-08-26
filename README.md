@@ -1040,7 +1040,7 @@ own their respective slices of state.
 | `hand_L_open` / `hand_R_open` | Hand openness (0 = fist, 1 = fully open) |
 | `hand_L_spread` / `hand_R_spread` | Thumb-to-pinky spread |
 | `pinch_L` / `pinch_R` | Pinch strength — 1 when the thumb and index tips are together, 0 with the hand open. World-space, so camera-independent |
-| `finger_L_thumb` … `finger_R_pinky` | Individual finger extension (0–1) |
+| `finger_L_thumb` … `finger_R_pinky` | Individual finger extension (0–1), measured as the **joint angle** the finger makes rather than its tip-to-base distance — so the same shape reads the same whether your hand is at the lens or at arm's length |
 | `thumb_out_L` / `thumb_out_R` | How far the thumb is carried from the palm (0 = folded across it, 1 = clear) |
 | `contact_L_index` … `contact_R_pinky` | Thumb-to-fingertip contact (1 = pads touching). Palm-normalised, and tight enough that a merely curled finger doesn't register — a thumb-to-pinky tap makes a clean discrete trigger |
 | `elbow_L` / `elbow_R` | Elbow joint angle in degrees — **self-calibrating**: the observed per-user range (nobody's elbow reaches 0° or 180°) maps to the full control range once ≥25° of motion has been seen |
