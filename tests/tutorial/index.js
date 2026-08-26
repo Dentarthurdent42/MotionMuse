@@ -40,7 +40,11 @@ await p.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' }
 // Put the app in every state a step can declare via `needs`. Playwright
 // clicks count as user gestures, so this genuinely resumes the audio context
 // (the engine itself now starts with the page, muted).
+// DEV lives inside the settings popover now, so 'dev' takes two clicks.
+await p.click('#settings-btn');
+await p.waitForTimeout(120);
 await p.click('#dev-btn');        // 'dev'
+await p.click('#settings-btn');   // and close it again
 await p.click('#audio-btn');      // 'audio' — builds the audio panel sections
 await p.waitForTimeout(400);
 await p.click('#chord-toggle');   // 'chord'

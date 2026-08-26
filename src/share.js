@@ -18,13 +18,38 @@ import { isString } from './is.js';
 export const SHARE_PARAM = 's';
 
 // UI keys that travel. Everything else in `ui` is geometry — see above.
-const SHARE_UI_KEYS = ['theme', 'tracking', 'dev'];
+//
+// `tracking` and `face` are which MODELS are running — hands (per side), pose,
+// face and gaze. They belong in a shared setup because a patch wired to
+// `brow_raise` is silent without the face model: handing someone the mapping
+// without the tracker that feeds it hands them an instrument that does
+// nothing. The pose MODEL choice stays out, for the reason at the top of this
+// file — that is a judgement about one machine's GPU, not about the music.
+const SHARE_UI_KEYS = ['theme', 'tracking', 'face', 'dev'];
 
 export function shareableSnapshot(snap = snapshot()) {
   const ui = {};
   for (const k of SHARE_UI_KEYS) if (snap.ui?.[k] !== undefined) ui[k] = snap.ui[k];
   return { ...snap, ui };
 }
+
+// ── The sharer's own description ─────────────────────────────────────────
+//
+// A QR code is opaque: a photo of one says nothing about the setup behind it,
+// so a screen showing three of them is three identical squares. The sharer
+// gets a line to say what this one is ("ambient pads, left hand opens the
+// filter"), which shows on the screen beside the code and travels inside the
+// link, so whoever opens it is told what they just loaded.
+//
+// Capped, because every character is more payload and payload is QR modules —
+// a description long enough to need scrolling is long enough to push the code
+// into a denser version that is harder to scan.
+export const SHARE_LABEL_MAX = 80;
+
+// Collapsed to a single line: the payload is JSON in a URL fragment, and a
+// newline in the middle of it buys nothing a space does not.
+export const cleanShareLabel = text =>
+  String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, SHARE_LABEL_MAX);
 
 // ── base64url ─────────────────────────────────────────────────────────────
 // URL-safe and unpadded, so the payload survives a fragment without escaping —
@@ -72,6 +97,26 @@ export async function decodeState(payload) {
   } else throw new Error('unrecognised share link');
   return JSON.parse(new TextDecoder().decode(json));
 }
+
+// ── Have we opened this one before? ──────────────────────────────────────
+//
+// A link is worth explaining the first time it is followed and not after. Open
+// the same QR twice — because it is pinned to a wall, or because you reloaded
+// — and the setup is already yours; a tour of it is something to dismiss.
+//
+// A fingerprint rather than the payload itself: the payload is most of a
+// kilobyte and this only ever has to answer "the same one again?".
+export const shareFingerprint = payload => {
+  // FNV-1a, 32-bit. Not a security hash — a collision here costs one tour that
+  // did not open, which is the same thing that happens on purpose.
+  let h = 0x811c9dc5;
+  const t = String(payload ?? '');
+  for (let i = 0; i < t.length; i++) {
+    h ^= t.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+};
 
 // ── URLs ──────────────────────────────────────────────────────────────────
 export function shareUrl(payload, base) {

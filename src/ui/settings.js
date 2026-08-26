@@ -10,6 +10,7 @@
 // the sound.
 
 import { THEMES, getTheme, setTheme } from './theme.js';
+import { devmode }                   from '../devmode.js';
 import { buildInfo, buildLabel }        from '../build.js';
 import { keyLabel, getBinding, setBinding, captureNextKey } from './hotkeys.js';
 import { uicontrol } from '../uicontrol.js';
@@ -27,6 +28,15 @@ function build() {
       <select id="theme-select" title="Colour theme — every one is contrast-checked in CI">
         ${THEMES.map(t => `<option value="${t.id}"${t.id === getTheme() ? ' selected' : ''}>${t.label} · ${t.dark ? 'dark' : 'light'}</option>`).join('')}
       </select>
+    </label>
+    <!-- DEV lives here rather than in the header. It is a control for the
+         TOOL — what the app shows you — which is exactly what this panel is
+         for, and a permanent top-level button for a mode most people never
+         turn on spent header room on the rarest thing in it. -->
+    <label class="set-row">DEV MODE
+      <button class="wave-btn${devmode.enabled ? ' on' : ''}" id="dev-btn" type="button"
+              aria-pressed="${devmode.enabled}"
+              title="Developer mode — reveals experimental, under-construction features">${devmode.enabled ? 'ON' : 'OFF'}</button>
     </label>
     <label class="set-row">MUTE KEY
       <button class="wave-btn" id="mute-key-btn" type="button"
@@ -99,6 +109,17 @@ function build() {
   };
   wireKeyBtn('#mute-key-btn', 'mute');
   wireKeyBtn('#cursor-key-btn', 'cursor');
+
+  // Reflect dev mode both ways: the toggle sets it, and `onChange` keeps the
+  // button honest when something else does — the tour turns it on to show the
+  // sections it reveals, and a stale OFF caption here would be a lie.
+  const devBtn = el.querySelector('#dev-btn');
+  devBtn.addEventListener('click', () => devmode.toggle());
+  devmode.onChange(on => {
+    devBtn.classList.toggle('on', on);
+    devBtn.setAttribute('aria-pressed', String(on));
+    devBtn.textContent = on ? 'ON' : 'OFF';
+  });
 
   const uicBtn = el.querySelector('#uic-toggle');
   uicBtn.addEventListener('click', () => {
