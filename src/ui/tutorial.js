@@ -124,7 +124,10 @@ export const TOUR_STEPS = [
   {
     id: 'preset', section: 'patchbay', modes: ['osc'], target: '#preset-btn', title: 'Presets',
     body: '<b>PRESET</b> loads a complete patch: right hand height plays ' +
-          'pitch, pinch controls volume.',
+          'pitch, pinch controls volume. <b>Your setups</b> sit above the ' +
+          'built-in ones — anything you named in SHARE, or opened from a ' +
+          'named link, is kept there and restores the whole instrument. ' +
+          'The <b>×</b> forgets one.',
   },
 
   // ── The app around both ──
@@ -229,10 +232,11 @@ export const TOUR_STEPS = [
     body: '<b>SHARE</b> turns everything you have set up into a QR code — ' +
           'point a phone at it and the app opens configured the same way. ' +
           'No file, no account, no server: the setup rides in the link. ' +
-          'Add a line describing it, so the person scanning knows what they ' +
-          'are getting, and it travels with the code. Which trackers are ' +
-          'running goes too — hands, pose, face and gaze — because a patch ' +
-          'wired to your eyebrows is silent without the face model.',
+          '<b>Name it</b> and two things happen: the name travels with the ' +
+          'code, so whoever scans it knows what they got, and the setup is ' +
+          'kept in <b>PRESET</b> under that name. Which trackers are running ' +
+          'goes too — hands, pose, face and gaze — because a patch wired to ' +
+          'your eyebrows is silent without the face model.',
   },
   {
     id: 'dev', target: '#settings-btn', title: 'DEV',

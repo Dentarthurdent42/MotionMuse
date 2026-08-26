@@ -9,6 +9,7 @@ import { shareableSnapshot, encodeState, decodeState, shareUrl, readShareUrl,
          cleanShareLabel, SHARE_LABEL_MAX, shareFingerprint,
          QR_COMFORTABLE_VERSION } from '../share.js';
 import { encodeQR, drawQR } from '../qr.js';
+import { saveConfig } from '../saved.js';
 import { toast } from './status.js';
 import { lsGet, lsSet } from '../storage.js';
 
@@ -24,8 +25,9 @@ function build() {
     <div id="share-note" class="share-note"></div>
     <input id="share-label" class="share-label" type="text"
            maxlength="${SHARE_LABEL_MAX}" autocomplete="off"
-           aria-label="Describe this setup, sent with the link"
-           placeholder="Say what this is — e.g. ambient pads, left hand opens the filter">
+           aria-label="Name this setup — kept in PRESET and sent with the link"
+           placeholder="Name it — e.g. ambient pads, left hand opens the filter">
+    <div class="share-kept" id="share-kept"></div>
     <div class="wave-btns">
       <button class="wave-btn" id="share-copy" type="button">COPY LINK</button>
       <button class="wave-btn" id="share-close" type="button">CLOSE</button>
@@ -44,15 +46,45 @@ function build() {
     clearTimeout(typing);
     typing = setTimeout(render, 250);
   });
+  // Keeping it is committed on `change` — blur, or Enter — rather than on the
+  // same debounce that redraws the code. Typing "ambient" on the way to
+  // "ambient pads" is not two configurations, and a store that recorded every
+  // prefix someone typed would be a menu of half-names.
+  input.addEventListener('change', () => keep());
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') keep(); });
   return el;
 }
 
 let currentUrl = '';
-// Kept for the session rather than persisted: it describes the setup you are
+// Kept for the session rather than persisted: it names the setup you are
 // sharing now, and reopening SHARE after a tweak should not make you retype
-// it — but it is not a property of the instrument, so it does not belong in a
-// preset or in localStorage.
+// it — the stored copy lives in the saved-configuration list, under this name.
 let label = '';
+// The name this popover has already stored, so committing twice — blur, then
+// COPY LINK, then close — does not re-announce it three times.
+let kept = '';
+
+// Naming a setup keeps it: it shows up in PRESET under that name, and stays
+// there after the link is gone. Called from every point where the name is
+// finished rather than still being typed.
+function keep() {
+  const name = cleanShareLabel(label);
+  if (!name) return null;
+  // The snapshot is taken NOW, not when the popover opened: the point of a
+  // named configuration is the instrument as it stands at the moment you named
+  // it, and this is the same state the link is being built from.
+  const entry = saveConfig(name, shareableSnapshot(snapshot()));
+  if (entry && name !== kept) {
+    kept = name;
+    toast(`Kept as “${name}” — it is in PRESET`);
+  }
+  const note = pop?.querySelector('#share-kept');
+  if (note) note.textContent = name ? `Kept in PRESET as “${name}”` : '';
+  return entry;
+}
+
+// Nothing has to be told: the PRESET menu re-reads the store every time it
+// opens, so a setup named here is in the list the next time anyone looks.
 
 async function render() {
   const canvas = pop.querySelector('#share-qr');
@@ -73,7 +105,7 @@ async function render() {
       light: getComputedStyle(document.body).getPropertyValue('--panel').trim() || '#fff',
     });
     note.textContent = qr.version > QR_COMFORTABLE_VERSION
-      ? `Dense code (v${qr.version}) — hold steady, shorten the description, or use COPY LINK`
+      ? `Dense code (v${qr.version}) — hold steady, shorten the name, or use COPY LINK`
       : `${currentUrl.length} characters · point a camera at it`;
     note.classList.toggle('warn', qr.version > QR_COMFORTABLE_VERSION);
   } catch (err) {
@@ -111,6 +143,7 @@ function setOpen(open) {
     vv?.addEventListener('resize', fitToViewport);
     vv?.addEventListener('scroll', fitToViewport);
   } else {
+    keep();
     vv?.removeEventListener('resize', fitToViewport);
     vv?.removeEventListener('scroll', fitToViewport);
     // Hand the position back to the stylesheet, so a resize while closed
@@ -137,6 +170,7 @@ export function initShare() {
   // Delegated so it works on the popover built lazily above.
   document.addEventListener('click', async e => {
     if (e.target?.id !== 'share-copy' || !currentUrl) return;
+    keep();
     try {
       await navigator.clipboard.writeText(currentUrl);
       toast('Link copied');
@@ -183,6 +217,12 @@ export async function consumeSharedLink() {
     const data = await decodeState(payload);
     if (!applyAll(data).ok) throw new Error('not a MotionMuse setup');
     saveLocal();
+    // A named link is a named configuration. Whoever sent it already said what
+    // this is, and without keeping it the setup is yours only until you touch a
+    // slider — there would be no way back to what arrived short of finding the
+    // QR code again. Stored before the reload below, because localStorage is
+    // what survives it.
+    saveConfig(data.label, shareableSnapshot(data));
     // Is this the first time this particular link has been followed? Only a
     // first open is worth a tour: reopening a pinned QR, or reloading, lands
     // you on a setup that is already yours.
