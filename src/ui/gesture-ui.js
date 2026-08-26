@@ -3,7 +3,8 @@
 // audio-ui.js stays focused on the synth panel.
 
 import { gesture, gestureLabel } from '../gesture.js';
-import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS } from '../chordmode.js';
+import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS,
+         VOICINGS, accidentalSign } from '../chordmode.js';
 import { ARP_PATTERNS, ARP_MAX_OCTAVES } from '../arp.js';
 import { diatonicChord, DIATONIC_SCALES } from '../chords.js';
 import { NOTE_NAMES } from '../scale.js';
@@ -13,6 +14,14 @@ import { toast }      from './status.js';
 import { buildSigPanel } from './signals.js';
 
 const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`;
+
+// Whether the ASL NUMBERS group is unfolded. Module state rather than markup
+// state because the panel is rebuilt wholesale — and calibrating one of those
+// handshapes ends in exactly such a rebuild, which used to fold the group shut
+// under you the moment the pose was captured, hiding the row you had just
+// calibrated (and the next one you were working towards). Deliberately not
+// persisted: it is about where you are in this session, not a setting.
+let aslGroupOpen = false;
 
 // The key select is narrow; scale.js's full names ("major (ionian)") get
 // clipped mid-word, so shorten them for this one control.
@@ -106,7 +115,7 @@ export function gestureSections() {
   const est   = gesture.estimated().length;
   const gestureRows = gestures.filter(g => !isNum(g)).map(row).join('')
     + (nums.length ? `
-    <details class="gesture-group" id="asl-group">
+    <details class="gesture-group" id="asl-group"${aslGroupOpen ? ' open' : ''}>
       <summary>ASL NUMBERS <span class="gesture-tag">${nums.length}</span></summary>
       ${nums.map(row).join('')}
     </details>` : '');
@@ -136,6 +145,57 @@ export function gestureSections() {
                 : 'Take the key from Pitch Quantize, so chords match the melody'}">FOLLOW</button>
     </div>` : '';
 
+  // ── Voicing: the chord, or the single note it is built on ───────────────
+  //
+  // The switch is deliberately here rather than in its own panel section: it
+  // changes what the rows below SOUND, not what they mean, and every setting
+  // around it — the key, the shapes, the expression, the arpeggiator — applies
+  // either way.
+  const ex = chordmode.expression();
+  const voicing = chordmode.getVoicing();
+  const isNote = voicing === 'note';
+  const accG = chordmode.accidentalGestures();
+  const VOICING_LABEL = { chord: 'CHORDS', note: 'SINGLE NOTES' };
+  // Every shape is offered, including ones already on a degree: the accidental
+  // is read from the hand that is NOT naming the note, so one shape can do
+  // both jobs without the two ever being asked at once.
+  const accOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
+    + gestures.map(g =>
+        `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
+        + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
+  // Accidentals need a free hand, and in 'other hand — openness' expression
+  // there is not one: that hand is already the volume. Say so rather than
+  // leaving two live-looking selects that quietly do nothing.
+  const accBusy = ex.mode === 'hand';
+  const voicingRow = !on ? '' : `
+    <div class="chord-voicing">
+      <span class="chord-key-lbl">PLAY</span>
+      <select id="ck-voicing" aria-label="Whether a handshape sounds a chord or one note"
+              title="The same handshapes and the same key, sounding either the whole chord on a degree or just that degree's own note.">
+        ${VOICINGS.map(v => `<option value="${v}"${v === voicing ? ' selected' : ''}>${VOICING_LABEL[v]}</option>`).join('')}
+      </select>
+      <span class="acc-read" id="ck-acc-read"
+            title="What your other hand is saying about the note right now.">${isNote ? '♮' : '—'}</span>
+    </div>
+    ${!isNote ? '' : `
+    <div class="chord-expr-cal chord-acc">
+      <label class="ctrl-lbl" title="${accBusy
+        ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
+        : 'Hold this on your other hand to raise the note a semitone'}">♯ SHARP
+        <select id="ck-acc-sharp" ${accBusy ? 'disabled' : ''}
+                aria-label="Handshape that sharpens the note">${accOptions(accG.sharp)}</select>
+      </label>
+      <label class="ctrl-lbl" title="${accBusy
+        ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
+        : 'Hold this on your other hand to lower the note a semitone'}">♭ FLAT
+        <select id="ck-acc-flat" ${accBusy ? 'disabled' : ''}
+                aria-label="Handshape that flattens the note">${accOptions(accG.flat)}</select>
+      </label>
+      <div class="quant-notes" style="grid-column:1 / -1;margin:0;">${accBusy
+        ? 'The other hand is playing the volume, so every note sounds natural.'
+        : 'Neither shape held is natural. The hand that is not naming the note is the one that bends it.'}</div>
+    </div>`}`;
+
   // One row per CHORD, not per handshape.
   //
   // It was the other way round, and that let the same shape be a chord *and*
@@ -147,7 +207,7 @@ export function gestureSections() {
   // `· est` rides along with the name: whether a shape is calibrated is exactly
   // what you want to know at the moment you assign it to a chord, and it used
   // to live only in the Gestures panel, one section away.
-  const shapeOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
+  const handshapeOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
     + gesture.list().map(g =>
         `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
         + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
@@ -155,20 +215,28 @@ export function gestureSections() {
   const chordRow = i => {
     const c = diatonicChord(eff.root, eff.octave, eff.mode, i, sevenths[i]);
     const gid = chordmode.gestureFor(i);
+    // In note voicing the row shows the pitch that will sound, octave and all
+    // — the degree is the same, but "C4" is the answer to what you are about
+    // to hear and "C major" is not.
+    // …and by the note's OWN numeral, which carries no 7th: the row would
+    // otherwise read "iii7 · E4" while sounding one E.
+    const n = isNote ? chordmode.noteAt(i) : null;
     return `
     <div class="chord-assign" data-degree="${i}">
       <span class="gesture-dot" id="cdot-${i}"></span>
-      <span class="chord-degree" title="${c.numeral} · ${c.rootName} ${c.quality}"
-        >${c.numeral} · ${c.rootName}</span>
+      <span class="chord-degree" title="${n ? `${n.numeral} · ${n.name}` : `${c.numeral} · ${c.rootName} ${c.quality}`}"
+        >${n ? `${n.numeral} · ${n.name}` : `${c.numeral} · ${c.rootName}`}</span>
       <select class="ch-shape" data-degree="${i}"
               aria-label="Handshape that plays ${c.numeral}"
-        >${shapeOptions(gid)}</select>
+        >${handshapeOptions(gid)}</select>
       <button class="wave-btn ch-sev${sevenths[i] ? ' on' : ''}" data-degree="${i}"
-              aria-pressed="${sevenths[i]}" title="Add the diatonic 7th">7th</button>
+              aria-pressed="${sevenths[i]}" ${isNote ? 'disabled' : ''}
+              title="${isNote
+                ? 'A single note has no 7th to add — switch back to CHORDS for this'
+                : 'Add the diatonic 7th'}">7th</button>
     </div>`;
   };
 
-  const ex = chordmode.expression();
   const MODE_LABEL = {
     gesture: 'Handshape holds it',
     hand:    'Other hand — openness',
@@ -235,7 +303,7 @@ export function gestureSections() {
       <label class="ctrl-lbl" title="Notes per second. Also a patchbay output — wire a signal to Arp Rate and your hand drives the tempo.">RATE
         <input type="range" id="ck-arp-rate" min="${arpRate.min}" max="${arpRate.max}" step="0.1" value="${arpRate.val}">
       </label>
-      <label class="ctrl-lbl" title="How much of each step the note fills: short is staccato, full is legato. Also a patchbay output.">GATE
+      <label class="ctrl-lbl" title="How long each note rings, in steps: below 1 is staccato, 1 runs notes wall-to-wall, above 1 lets each note ring under the ones that follow. Also a patchbay output.">GATE
         <input type="range" id="ck-arp-gate" min="${arpGate.min}" max="${arpGate.max}" step="0.01" value="${arpGate.val}">
       </label>
       <div class="arp-read quant-notes" id="ck-arp-read">—</div>
@@ -251,7 +319,7 @@ export function gestureSections() {
         >RELEASE</span>
       <select class="ch-shape" data-degree="release" ${ex.mode === 'gesture' ? '' : 'disabled'}
               aria-label="Handshape that releases a held chord"
-        >${shapeOptions(relId)}</select>
+        >${handshapeOptions(relId)}</select>
       <span class="ch-sev-gap"></span>
     </div>`;
 
@@ -279,6 +347,7 @@ export function gestureSections() {
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</button>
       </div>
       ${keyRow}
+      ${voicingRow}
       ${exprRow}
       <div id="chord-assigns">${assignRows}</div>
       ${arpRow}
@@ -304,7 +373,7 @@ export function gestureSections() {
           <span class="chord-vol-read" id="chord-vol-read">—</span>
         </div>
       </div>
-      ${on ? '' : '<div class="quant-notes">hold a gesture to play its chord</div>'}
+      ${on ? '' : `<div class="quant-notes">hold a gesture to play its ${isNote ? 'note' : 'chord'}</div>`}
     </div>`;
 
   return { gestures: gesturesHTML, chordMode: chordModeHTML };
@@ -346,6 +415,10 @@ function runCalibration(id, statusEl, onDone) {
 export function wireGestureSections(rerender) {
   const recBtn = document.getElementById('record-gesture-btn');
   const status = document.getElementById('gesture-cal-status');
+
+  // Remember the fold so a re-render puts it back the way you left it.
+  document.getElementById('asl-group')
+    ?.addEventListener('toggle', e => { aslGroupOpen = e.target.open; });
 
   const calGuard = () => {
     if (gesture.recordingActive) return false;
@@ -456,6 +529,21 @@ export function wireGestureSections(rerender) {
     engine.set('arp_gate', +e.target.value);
   });
 
+  // Re-renders: the accidental pickers appear with SINGLE NOTES, the 7ths go
+  // dead, and every row relabels from a chord to the pitch it will sound.
+  document.getElementById('ck-voicing')?.addEventListener('change', e => {
+    chordmode.setVoicing(e.target.value);
+    rerender();
+  });
+  document.getElementById('ck-acc-sharp')?.addEventListener('change', e => {
+    chordmode.setAccidentalGestures({ sharp: e.target.value || null });
+    rerender();   // taking a shape for ♯ may have freed it from ♭
+  });
+  document.getElementById('ck-acc-flat')?.addEventListener('change', e => {
+    chordmode.setAccidentalGestures({ flat: e.target.value || null });
+    rerender();
+  });
+
   document.getElementById('ck-follow')?.addEventListener('click', () => {
     // Turning follow off keeps whatever key was being followed, so the sound
     // doesn't jump the moment you take manual control.
@@ -493,7 +581,10 @@ export function wireGestureSections(rerender) {
       rerender?.();
     }));
 
-  // The 7th belongs to the chord, so it needs no re-render — nothing else moves.
+  // The 7th belongs to the chord, so no re-render — but two things DO carry the
+  // numeral it changes, and both are patched in place. Rebuilding the panel
+  // instead would drop the pointer mid-click and reset the scroll position of
+  // a list you are working down.
   document.querySelectorAll('.ch-sev').forEach(btn =>
     btn.addEventListener('click', () => {
       const d = Number(btn.dataset.degree);
@@ -505,6 +596,12 @@ export function wireGestureSections(rerender) {
       const lbl = btn.parentElement?.querySelector('.chord-degree');
       const c = chordmode.chordAt(d);
       if (lbl && c) { lbl.textContent = `${c.numeral} · ${c.rootName}`; lbl.title = `${c.numeral} · ${c.rootName} ${c.quality}`; }
+      // …and so does the chip on the handshape's row in the Gestures section,
+      // one section away. It said "V" while the chord panel said "V7" — the
+      // two lists describing the same assignment, disagreeing about it.
+      const gid = chordmode.gestureFor(d);
+      const chip = gid && document.querySelector(`.gesture-row[data-gid="${gid}"] .gesture-chord`);
+      if (chip && c) { chip.textContent = c.numeral; chip.title = `Chord Mode: plays ${c.numeral}`; }
     }));
 }
 
@@ -539,6 +636,20 @@ export function updateGesturePanel() {
     const rel = document.getElementById('cdot-release');
     if (rel) rel.classList.toggle('on', chordmode.releaseHeld());
 
+    // What the off hand is saying, live. Worth its own indicator rather than
+    // only appearing inside the readout: a sharp that is not being recognized
+    // is invisible until you play a note and hear the wrong one, and this says
+    // so while your hand is still up.
+    const accEl = document.getElementById('ck-acc-read');
+    if (accEl) {
+      const a = chordmode.currentAccidental();
+      // An em dash in chord voicing: there is no accidental to be at, and a
+      // standing ♮ would claim otherwise.
+      const txt = chordmode.getVoicing() === 'note' ? accidentalSign(a) || '♮' : '—';
+      if (accEl.textContent !== txt) accEl.textContent = txt;
+      accEl.classList.toggle('on', a !== 0);
+    }
+
     // …and how loud it actually is. The expression meter above shows the input;
     // this shows the result, which is not the same number once an ADSR is in
     // between — during a release the input is already at zero and the chord is
@@ -565,7 +676,10 @@ export function updateGesturePanel() {
       const pool = chordmode.arpPoolSize();
       const step = chordmode.arpSounding();
       const where = pool ? ` · ${step >= 0 ? step + 1 : '–'}/${pool}` : '';
-      const txt = `${rate.toFixed(1)}/s · ≈${Math.round(rate * 30)} BPM · gate ${Math.round(gate * 100)}%${where}`;
+      // Percent while the note lives inside its step; multiples once it rings
+      // past it, because "gate 250%" reads as an error and "×2.5" as a length.
+      const gateTxt = gate <= 1 ? `${Math.round(gate * 100)}%` : `×${gate.toFixed(1)}`;
+      const txt = `${rate.toFixed(1)}/s · ≈${Math.round(rate * 30)} BPM · gate ${gateTxt}${where}`;
       if (arpRead.textContent !== txt) arpRead.textContent = txt;
       // A slider left behind by a cable driving the same parameter is worse
       // than no slider: it says the rate is one thing while you hear another.

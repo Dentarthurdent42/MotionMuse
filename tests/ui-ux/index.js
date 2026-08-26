@@ -59,13 +59,14 @@ const STATES = [
 
 // ── Screenshot capture ─────────────────────────────────────────────────────────
 async function captureAll(port) {
-  const browser = await chromium.launch({
-    ...(CHROME ? { executablePath: CHROME } : {}),
+  const launchOptions = {
     args: [
       '--use-fake-device-for-media-stream',
       '--use-fake-ui-for-media-stream',
     ],
-  });
+  };
+  if (CHROME) launchOptions.executablePath = CHROME;
+  const browser = await chromium.launch(launchOptions);
 
   const captures = [];
 

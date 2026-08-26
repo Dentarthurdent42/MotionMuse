@@ -94,7 +94,7 @@ const results = await page.evaluate(async () => {
 
   const rig = buildRig(THREE);
   const all = gesture.list().filter(g => g.f);
-  const out = { features: FEATURES, shapes: [] };
+  const out = { features: FEATURES, handshapes: [] };
   for (const t of all) {
     rig.pose(t);
     const lm = rig.landmarks();
@@ -106,7 +106,7 @@ const results = await page.evaluate(async () => {
       thumbContact(lm,1), thumbContact(lm,2), thumbContact(lm,3), thumbContact(lm,4),
     ].map(x => +x.toFixed(3));
     const m = matchGesture(f, all);
-    out.shapes.push({
+    out.handshapes.push({
       id: t.id, est: !!t.est, f,
       // Drift is measured with the template's OWN mask, because a channel the
       // matcher ignores is one the render was never asked to reproduce.
@@ -125,7 +125,7 @@ await b.close(); server.close();
 
 const VERBOSE = process.argv.includes('--verbose');
 let fail = 0;
-const rows = results.shapes.slice().sort((a, b) => (a.est ? 1 : 0) - (b.est ? 1 : 0));
+const rows = results.handshapes.slice().sort((a, b) => (a.est ? 1 : 0) - (b.est ? 1 : 0));
 console.log("\nHandshape render round-trip   f → pose(rig) → landmarks → math.js → f'\n");
 for (const r of rows) {
   const ok = r.drift <= DRIFT_MAX && r.match === r.id;

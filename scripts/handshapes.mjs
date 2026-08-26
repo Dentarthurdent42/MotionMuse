@@ -77,7 +77,7 @@ page.on('console', m => { if (m.type() === 'error') console.error('  page:', m.t
 
 await page.goto(`http://127.0.0.1:${port}${RIG_PATH}`);
 
-const shapes = await page.evaluate(async ({ SIZE }) => {
+const handshapes = await page.evaluate(async ({ SIZE }) => {
   const THREE = await import('three');
   const { gesture } = await import('/src/gesture.js');
   // The rig and the decode live in scripts/handrig.js, shared with
@@ -118,12 +118,12 @@ const shapes = await page.evaluate(async ({ SIZE }) => {
 }, { SIZE });
 
 mkdirSync(OUT, { recursive: true });
-for (const s of shapes) {
+for (const s of handshapes) {
   writeFileSync(join(OUT, `${s.id}.png`),
                 Buffer.from(s.png.split(',')[1], 'base64'));
   console.log(`  ${s.id.padEnd(10)} ${s.asl ? 'ASL ' + s.asl : ''}`);
 }
-console.log(`\n${shapes.length} handshapes → icons/handshapes/`);
+console.log(`\n${handshapes.length} handshapes → icons/handshapes/`);
 
 await b.close();
 server.close();

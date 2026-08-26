@@ -28,20 +28,15 @@ export function buildRig(THREE) {
 
   // len/radius per finger, and where each knuckle sits across the palm.
   //
-  // Lengths are scaled so a STRAIGHT middle finger measures fingerExt 0.94 —
-  // the largest extension anywhere in the template set, measured off the
-  // `victory` reference photo. Anything the templates ask for is then within
-  // reach instead of saturating: the fingers used to be a third too short for
-  // their palm, so every open-handed shape rendered at maximum extension and
-  // still measured 0.17 low, and the round-trip could not tell "the decode is
-  // wrong" from "this rig cannot make that shape".
+  // The scale below dates from when fingerExt was a base-to-tip DISTANCE
+  // normalised by palm length, where a rig with short fingers could not reach
+  // the extensions the templates asked for however straight it posed them.
+  // Extension is a joint angle now, which does not depend on finger length at
+  // all: a straight finger reads ~0.93 whatever its proportions. The scale is
+  // left as it is because it also sets how the renders LOOK, and the renders
+  // are under construction for reasons of thumb placement rather than reach.
   //
-  // Relative proportions are anatomical and deliberately left alone. fingerExt
-  // normalises by PALM length, not finger length, so it encodes how long a
-  // finger is — which means a template claiming 0.80 for a straight pinky and
-  // 0.82 for a straight index is describing a hand whose pinky is as long as
-  // its index. Stretching the rig's pinky to match would hide that; leaving it
-  // anatomical makes the round-trip report it.
+  // Relative proportions are anatomical and deliberately left alone.
   const SCALE = 1.295;
   const seg = a => a.map(v => +(v * SCALE).toFixed(4));
   const FINGERS = [
@@ -118,9 +113,9 @@ export function buildRig(THREE) {
   // ── Pose from the feature vector ───────────────────────────────────────
   // f = [thumb, index, middle, ring, pinky, open, spread, thumbOut, cIdx, cMid, cRing, cPinky]
   //
-  // There is no inverse to invert: fingerExt is a base-to-tip DISTANCE, so
-  // many joint configurations share one value and 12 numbers cannot specify 21
-  // landmarks. What there IS, though, is a well-defined question — "which pose
+  // There is no inverse to invert: fingerExt is the SUM OF TWO JOINT ANGLES,
+  // so many joint configurations share one value and 12 numbers cannot specify
+  // 21 landmarks. What there IS, though, is a well-defined question — "which pose
   // measures most like this template?" — and that has an answer you can search
   // for rather than guess at.
   //

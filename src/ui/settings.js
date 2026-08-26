@@ -133,7 +133,7 @@ export function initSettings() {
 
   btn.addEventListener('click', e => {
     e.stopPropagation();
-    pop?.classList.contains('open') ? close() : open();
+    if (pop?.classList.contains('open')) close(); else open();
   });
   document.addEventListener('click', e => {
     if (pop?.classList.contains('open') && !pop.contains(e.target)) close();

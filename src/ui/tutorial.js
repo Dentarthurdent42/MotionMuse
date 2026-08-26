@@ -24,6 +24,7 @@
 // ═════════════════════════════════════════════════════════════════════════
 
 import { lsGet, lsSet } from '../storage.js';
+import { isString }     from '../is.js';
 import { chordmode }    from '../chordmode.js';
 
 // Each step:
@@ -457,7 +458,7 @@ export const tour = (() => {
   function start(what) {
     if (els) return;                    // already open
     steps = Array.isArray(what?.steps) ? what.steps
-          : stepsForMode(typeof what === 'string' ? what : currentMode());
+          : stepsForMode(isString(what) ? what : currentMode());
     if (!steps.length) return;
     seenThisRun = new Set();
     build();

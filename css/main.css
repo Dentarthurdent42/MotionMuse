@@ -1186,7 +1186,10 @@ option { background: var(--panel); }
 .chord-expr,
 /* Same four-column shape — a label then three controls — so the two rows read
    as one block of "how it plays" rather than two. */
-.chord-arp {
+.chord-arp,
+/* And the same again for the voicing switch, so "what it plays" lines up with
+   "how it plays" instead of sitting at its own margins. */
+.chord-voicing {
   display: grid;
   grid-template-columns: auto 1.6fr minmax(74px, 0.9fr) minmax(74px, 0.9fr);
   gap: 4px; align-items: center;
@@ -1197,8 +1200,23 @@ option { background: var(--panel); }
    is a pattern name ("DOWN · UP"). Give the width to the select that needs it
    and the row still starts and ends flush with the one above. */
 .chord-arp { grid-template-columns: auto minmax(58px, 0.55fr) 1.6fr minmax(74px, 0.9fr); }
+/* Three columns, not four: a label, the switch, and the live accidental. */
+.chord-voicing { grid-template-columns: auto 1.6fr minmax(74px, 0.9fr); }
 .chord-expr select:disabled,
-.chord-arp select:disabled { opacity: 0.45; cursor: not-allowed; }
+.chord-arp select:disabled,
+.chord-voicing select:disabled { opacity: 0.45; cursor: not-allowed; }
+/* ♮ until the off hand says otherwise, and lit when it does — the one piece
+   of feedback that separates "flat" from "flat, not being recognized". */
+.acc-read {
+  text-align: center;
+  font-size: 12px;
+  color: var(--dim);
+  transition: color 0.1s;
+}
+.acc-read.on { color: var(--cyan); }
+/* The accidental pickers sit in the same two-column block the range
+   calibrators use, so the select takes the room the sliders there do. */
+.chord-acc .ctrl-lbl select { flex: 1 1 auto; min-width: 0; }
 /* A row whose control does not apply in the current mode — present, so the
    setting is not mysteriously missing, but visibly not in play. */
 .chord-assign.dimmed { opacity: 0.45; }

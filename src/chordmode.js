@@ -11,7 +11,8 @@
 import { bus }                        from './bus.js';
 import { engine }                     from './engine.js';
 import { gesture, gestureLabel }      from './gesture.js';
-import { diatonicChord, isDiatonic }  from './chords.js';
+import { diatonicChord, diatonicNote, isDiatonic,
+         NATURAL, SHARP, FLAT }       from './chords.js';
 import { NOTE_NAMES }                 from './scale.js';
 import { ARP_PATTERNS, ARP_MAX_OCTAVES, ARP_DEFAULTS,
          notePool, stepIndex, stepSeconds, noteSeconds, dueSteps } from './arp.js';
@@ -55,6 +56,34 @@ const DEFAULT_ASSIGNMENTS = {
 const DEFAULT_SEVENTHS = [false, false, true, false, true, false, false];
 
 export const DEGREES = 7;
+
+// ── Voicing: what a degree sounds as ──────────────────────────────────────
+//
+// The same handshapes, the same key, the same expression — sounding either the
+// whole chord on a degree or just that degree's own note. A voicing rather
+// than a second mode with its own assignments, because "play the melody over
+// what I was just comping" should not mean teaching the app the seven shapes
+// again; every setting made for chords is already the right setting for notes.
+//
+// Seven shapes name seven degrees, which leaves the five notes between them
+// out of reach — so the hand that is NOT naming the note says what to do to
+// it: nothing, sharp, or flat. That is the whole chromatic scale from shapes
+// you already know, and it is the off hand's only job, so it can say it at any
+// time, including under a note that is already sounding.
+export const VOICINGS = ['chord', 'note'];
+
+// Thumb up for sharp, thumb down for flat: the two shapes whose everyday
+// meaning is already "raise" and "lower", and neither is a numeral, so the
+// degree shapes keep every ASL number to themselves.
+//
+// Both are classifier-backed rather than template-matched, and `thumbsdown`
+// has no measured template at all — with MediaPipe's canned classifier off it
+// cannot be recognized until someone records one. That is why these are
+// settings and not constants.
+export const DEFAULT_ACCIDENTAL_GESTURES = { sharp: 'thumbs', flat: 'thumbsdown' };
+
+// ♯ / ♭ / nothing, for a readout.
+export const accidentalSign = a => (a > 0 ? '♯' : a < 0 ? '♭' : '');
 
 // ── Expression ────────────────────────────────────────────────────────────
 //
@@ -134,7 +163,11 @@ export const chordmode = (() => {
   let sevenths = [...DEFAULT_SEVENTHS];
   let playing = null;   // gestureId currently sounding
   let expr = { ...DEFAULT_EXPRESSION };
+  let voicing = 'chord';
+  let accGestures = { ...DEFAULT_ACCIDENTAL_GESTURES };
+  let playingAcc = NATURAL;   // accidental the sounding note was voiced with
   let latched = null;   // chord handshape held over, in hand/brow modes
+  let latchedSide = null;     // which hand latched it — the OTHER one bends it
   let gateOpen = false; // gate control: is the envelope currently attacked
   let voiced = null;    // what the voice bank is currently pointed at
   let exprRaw = 0, exprLevel = 0;   // last read, for the panel's readout
@@ -237,11 +270,68 @@ export const chordmode = (() => {
   const gestureFor = degree =>
     Object.keys(assignments).find(id => assignments[id] === normDegree(degree)) ?? null;
 
+  // ── Notes and accidentals ───────────────────────────────────────────────
+
+  const noteAt = (degree, accidental = NATURAL) => {
+    const k = effectiveKey();
+    return diatonicNote(k.root, k.octave, k.mode, normDegree(degree), accidental);
+  };
+  const noteFor = (id, accidental = NATURAL) => {
+    const d = assignments[id];
+    return d === undefined ? null : noteAt(d, accidental);
+  };
+
+  // What the voice bank should be pointed at for this handshape — the whole
+  // chord, or the one note. The single place the voicing decides anything;
+  // everything downstream just plays the frequencies it is given.
+  const soundFreqs = (id, accidental = NATURAL) => {
+    if (voicing !== 'note') return chordFor(id)?.freqs ?? null;
+    const n = noteFor(id, accidental);
+    return n ? [n.freq] : null;
+  };
+
+  // The accidental a hand is signalling, or NATURAL for any other shape —
+  // including no shape at all, which is what makes "natural" the resting
+  // state rather than a third thing to hold.
+  const accidentalOn = side => {
+    const held = gesture.activeOn(side);
+    if (held === null) return NATURAL;
+    if (held === accGestures.sharp) return SHARP;
+    if (held === accGestures.flat) return FLAT;
+    return NATURAL;
+  };
+
+  // Read from whichever hand is not naming the note. In 'hand' expression that
+  // hand is already playing the note's loudness — asking it to hold a thumb as
+  // well would be asking for a specific openness, i.e. a specific volume — so
+  // there the accidental stays natural and the panel says so.
+  const accidentalFor = namingSide => {
+    if (voicing !== 'note' || namingSide === null) return NATURAL;
+    if (expr.mode === 'hand') return NATURAL;
+    return accidentalOn(namingSide === 'L' ? 'R' : 'L');
+  };
+
+  // The held shape that names a degree, and the hand holding it. Same L-then-R
+  // precedence as gesture.current(), so which shape wins is unchanged — this
+  // just also reports where it is, which is what the off hand is measured
+  // against.
+  const namedWithSide = () => {
+    for (const side of ['L', 'R']) {
+      const id = gesture.activeOn(side);
+      if (id !== null && assignments[id] !== undefined) return { id, side };
+    }
+    return null;
+  };
+
   return {
     get enabled() { return enabled; },
     setEnabled(on) {
       enabled = !!on;
-      if (!enabled) { engine.releaseChord(); stopArp(); playing = null; latched = null; gateOpen = false; voiced = null; }
+      if (!enabled) {
+        engine.releaseChord(); stopArp();
+        playing = null; latched = null; latchedSide = null;
+        gateOpen = false; voiced = null; playingAcc = NATURAL;
+      }
     },
 
     key: () => ({ ...key }),
@@ -260,6 +350,50 @@ export const chordmode = (() => {
     chordFor,
     chordAt,
     gestureFor,
+    noteAt,
+    noteFor,
+
+    // ── Voicing ───────────────────────────────────────────────────────────
+    getVoicing: () => voicing,
+    setVoicing(next) {
+      const v = VOICINGS.includes(next) ? next : 'chord';
+      if (v === voicing) return voicing;
+      voicing = v;
+      // A triad and a single note are two different sounds on the same four
+      // voices, so the switch hands the bank over cleanly instead of leaving
+      // the other one's notes ringing underneath.
+      engine.releaseChord(); stopArp();
+      playing = null; latched = null; latchedSide = null;
+      gateOpen = false; voiced = null; playingAcc = NATURAL;
+      return voicing;
+    },
+
+    accidentalGestures: () => ({ ...accGestures }),
+    // One shape cannot mean both, or whichever were read second would be
+    // unreachable. The shape just set wins and the other goes free — the same
+    // rule the chord assignments use, for the same reason.
+    setAccidentalGestures(partial) {
+      const next = { ...accGestures, ...partial };
+      for (const k of ['sharp', 'flat']) next[k] = next[k] || null;
+      if (next.sharp && next.sharp === next.flat) {
+        if (partial.sharp !== undefined) next.flat = null;
+        else next.sharp = null;
+      }
+      accGestures = next;
+      return { ...accGestures };
+    },
+    // What the off hand is saying right now, for the panel's indicator.
+    currentAccidental() {
+      if (voicing !== 'note') return NATURAL;
+      if (playing) return playingAcc;
+      if (latchedSide !== null) return accidentalFor(latchedSide);
+      // Nothing is named yet, so neither hand is the off hand — report either
+      // of them. The indicator's job before you commit to a note is to say
+      // that the shape is being recognized at all, and which hand will end up
+      // holding it is not decided until the other one names a degree.
+      if (expr.mode === 'hand') return NATURAL;
+      return accidentalOn('L') || accidentalOn('R');
+    },
 
     // Put a handshape on a chord. Every write goes through here, so the
     // bijection cannot be broken.
@@ -301,24 +435,36 @@ export const chordmode = (() => {
 
     // Human-readable "gesture → chord" for the live readout ('' when silent).
     currentLabel() {
-      const c = playing && chordFor(playing);
-      if (!c) return '';
+      if (!playing) return '';
       const g = gesture.list().find(x => x.id === playing);
-      return `${g ? gestureLabel(g) : playing} → ${c.numeral} · ${c.rootName} ${c.quality}`;
+      const who = g ? gestureLabel(g) : playing;
+      if (voicing === 'note') {
+        const n = noteFor(playing, playingAcc);
+        return n ? `${who} → ${n.numeral}${accidentalSign(n.accidental)} · ${n.name}` : '';
+      }
+      const c = chordFor(playing);
+      return c ? `${who} → ${c.numeral} · ${c.rootName} ${c.quality}` : '';
     },
 
-    // The chord sounding right now, for anything that wants to DRAW it rather
-    // than name it (the fullscreen keyboard overlay). Null when nothing is held.
-    currentChord() { return playing ? chordFor(playing) : null; },
+    // What is sounding right now, for anything that wants to DRAW it rather
+    // than name it (the fullscreen keyboard overlay). Null when nothing is
+    // held. A single note reports as a one-note chord: the overlay lights the
+    // keys it is given, and one is a legal number of keys.
+    currentChord() {
+      if (!playing) return null;
+      if (voicing !== 'note') return chordFor(playing);
+      const n = noteFor(playing, playingAcc);
+      return n ? { ...n, midi: [n.midi], freqs: [n.freq], rootName: n.name, quality: 'note' } : null;
+    },
 
     // `restart: false` for a chord that is already sounding and has merely
     // been transposed or re-voiced — the arpeggio should carry on in time
     // rather than jumping back to the root, which would be heard as a stumble
     // every time the key select moves.
-    _sound(id, { restart = true } = {}) {
-      const c = chordFor(id);
-      if (!c) return;
-      if (!arp.enabled) { engine.playChord(c.freqs); return; }
+    _sound(id, { restart = true, accidental = playingAcc } = {}) {
+      const freqs = soundFreqs(id, accidental);
+      if (!freqs) return;
+      if (!arp.enabled) { engine.playChord(freqs); return; }
       if (restart) restartArp();
       engine.attackChord();
     },
@@ -354,30 +500,49 @@ export const chordmode = (() => {
       }
 
       // First currently-held gesture that has a chord assigned wins.
-      // `!== undefined`, not truthy: degree 0 is the tonic.
-      const id = held.find(g => assignments[g] !== undefined) ?? null;
-      if (id !== playing) {
-        if (id) this._sound(id);
+      // `!== undefined`, not truthy: degree 0 is the tonic — which is why this
+      // is resolved by namedWithSide rather than by scanning `held`.
+      const named = namedWithSide();
+      const id = named?.id ?? null;
+      const acc = accidentalFor(named?.side ?? null);
+      // In note voicing the accidental is part of WHICH note this is, so a
+      // thumb turning over under a held shape is a new note and re-attacks. In
+      // chord voicing it is always natural and this reads as it always did.
+      if (id !== playing || acc !== playingAcc) {
+        if (id) this._sound(id, { restart: id !== playing, accidental: acc });
         else { engine.releaseChord(); stopArp(); }
         playing = id;
+        playingAcc = id ? acc : NATURAL;
       }
       // A block chord is set up once and sustains itself; an arpeggio has to be
       // fed. This is why the early-out above became a branch — the state may be
       // unchanged and there can still be notes owed.
-      if (playing && arp.enabled) runArp(chordFor(playing)?.freqs);
+      if (playing && arp.enabled) runArp(soundFreqs(playing, playingAcc));
     },
 
     // hand / brow modes. The handshape names the chord and LATCHES — dropping
     // it does not stop the sound, because the sound is not what it controls.
     // That separation is the point: one hand chooses, the other plays.
     _tickExpressed() {
-      const named = expr.mode === 'brow'
-        ? (gesture.activeOn('R') ?? gesture.activeOn('L'))
-        : gesture.activeOn(chordHand());
+      // Which hand named it is remembered, not re-read: the shape latches, so
+      // by the time the accidental matters the naming hand may have relaxed —
+      // and the off hand is defined against the hand that CHOSE the note.
+      let named = null, namedSide = null;
+      if (expr.mode === 'brow') {
+        for (const side of ['R', 'L']) {
+          const id = gesture.activeOn(side);
+          if (id !== null) { named = id; namedSide = side; break; }
+        }
+      } else {
+        namedSide = chordHand();
+        named = gesture.activeOn(namedSide);
+      }
       if (named !== null && assignments[named] !== undefined && named !== latched) {
         latched = named;
+        latchedSide = namedSide;
         voiced = null;                 // the new chord has not been sounded yet
       }
+      const acc = accidentalFor(latchedSide);
       const level = readExpression();
       playing = latched;
       if (!latched) return;
@@ -385,12 +550,13 @@ export const chordmode = (() => {
       if (expr.control === 'volume') {
         engine.setChordLevel(level);
         gateOpen = level > 0;
+        playingAcc = acc;
         if (arp.enabled) {
           // The hand owns loudness on the shared gain and the arp owns rhythm
           // underneath it, so the notes go out at full voice level. Silence is
           // a real state here, not a quiet one: at zero the run stops and
           // restarts from the root when the hand opens again.
-          if (level > 0) runArp(chordFor(latched)?.freqs);
+          if (level > 0) runArp(soundFreqs(latched, acc));
           else stopArp();
           voiced = null;         // block-chord voicing is stale while the arp drives
           return;
@@ -398,8 +564,11 @@ export const chordmode = (() => {
         // Only re-point the voices when the chord actually changes. Ramping
         // four oscillator frequencies every frame is the same never-settling
         // glide that made continuous volume unplayable in the first place.
-        const sig = `${latched}|${assignments[latched]}|${sevenths[assignments[latched]]}|${JSON.stringify(effectiveKey())}`;
-        if (sig !== voiced) { engine.setChordVoices(chordFor(latched)?.freqs); voiced = sig; }
+        // The accidental is in the signature because bending a note IS the
+        // chord changing, and it is the one part of it the off hand can move
+        // without touching the naming hand.
+        const sig = `${latched}|${assignments[latched]}|${sevenths[assignments[latched]]}|${acc}|${JSON.stringify(effectiveKey())}`;
+        if (sig !== voiced) { engine.setChordVoices(soundFreqs(latched, acc)); voiced = sig; }
         return;
       }
       // Gate: one attack on the way up, one release on the way down, with a
@@ -409,16 +578,23 @@ export const chordmode = (() => {
                           : level > expr.trigger + TRIGGER_HYST;
       // A chord swapped while the gate is already open re-attacks on the new
       // one, which is what playing a progression through a held note means.
-      const changed = on && gateOpen && voiced !== latched;
+      // A note bent while the gate is open is the same swap as a chord changed
+      // under a held hand, so it re-attacks on the new pitch rather than
+      // waiting for the gate to close and open again.
+      const changed = on && gateOpen && (voiced !== latched || playingAcc !== acc);
       if (on !== gateOpen || changed) {
         gateOpen = on;
         // A swap mid-gate is one chord becoming another under a hand that never
         // let go, so the arpeggio carries on in time; a fresh attack starts the
         // pattern at the root.
-        if (on) { this._sound(latched, { restart: !changed }); voiced = latched; }
+        if (on) {
+          this._sound(latched, { restart: !changed, accidental: acc });
+          voiced = latched;
+          playingAcc = acc;
+        }
         else { engine.releaseChord(); stopArp(); voiced = null; }
       }
-      if (gateOpen && arp.enabled) runArp(chordFor(latched)?.freqs);
+      if (gateOpen && arp.enabled) runArp(soundFreqs(latched, playingAcc));
     },
 
     // Which degree is sounding, or -1 — for the row indicators. `playing` is a
@@ -452,8 +628,8 @@ export const chordmode = (() => {
     // How many notes the current chord gives the pattern to walk, so the panel
     // can say "3 of 6" rather than leaving the octave setting abstract.
     arpPoolSize() {
-      const c = playing ? chordFor(playing) : (latched ? chordFor(latched) : null);
-      return notePool(c?.freqs ?? [], arp.octaves).length;
+      const id = playing ?? latched;
+      return notePool(id ? soundFreqs(id, playingAcc) ?? [] : [], arp.octaves).length;
     },
     setArp(partial) {
       const next = { ...arp, ...partial };
@@ -499,7 +675,8 @@ export const chordmode = (() => {
       // Leaving an expressed chord ringing after switching away from it would
       // be a note nothing can now stop.
       engine.releaseChord();
-      latched = null; gateOpen = false; playing = null; voiced = null;
+      latched = null; latchedSide = null;
+      gateOpen = false; playing = null; voiced = null; playingAcc = NATURAL;
       return { ...expr };
     },
 
@@ -515,12 +692,12 @@ export const chordmode = (() => {
     serialize() {
       return { enabled, key: { ...key }, assignments: { ...assignments },
                sevenths: sevenths.slice(), releaseGesture, expression: { ...expr },
-               arp: { ...arp } };
+               arp: { ...arp }, voicing, accidentals: { ...accGestures } };
     },
 
     load(data) {
       if (!data) return;
-      key = { ...DEFAULT_KEY, ...(data.key ?? {}) };
+      key = { ...DEFAULT_KEY, ...data.key };
       sevenths = Array.isArray(data.sevenths)
         ? Array.from({ length: DEGREES }, (_, i) => !!data.sevenths[i])
         : [...DEFAULT_SEVENTHS];
@@ -530,7 +707,7 @@ export const chordmode = (() => {
         // in a later version still arrive with a chord for existing users.
         const merged = { ...DEFAULT_ASSIGNMENTS };
         for (const [id, a] of Object.entries(data.assignments)) {
-          if (typeof a === 'number') { merged[id] = normDegree(a); continue; }
+          if (Number.isFinite(a)) { merged[id] = normDegree(a); continue; }
           // Older formats: { degree, seventh } and, older still, an absolute
           // { root, octave, quality }. The 7th moves from the handshape to the
           // chord it plays, which is where it now lives.
@@ -545,10 +722,14 @@ export const chordmode = (() => {
       if (data.releaseGesture !== undefined) releaseGesture = data.releaseGesture || null;
       // Absent in setups saved before expression existed, which were all
       // gesture-driven — so the default is the old behaviour exactly.
-      this.setExpression({ ...DEFAULT_EXPRESSION, ...(data.expression ?? {}) });
+      this.setExpression({ ...DEFAULT_EXPRESSION, ...data.expression });
       // Absent in setups saved before the arpeggiator existed, which all played
       // block chords — so the default is off, and the old behaviour exactly.
-      this.setArp({ ...ARP_DEFAULTS, ...(data.arp ?? {}) });
+      this.setArp({ ...ARP_DEFAULTS, ...data.arp });
+      // Same for the voicing: everything saved before single notes existed was
+      // playing chords, which is what the default says.
+      this.setVoicing(data.voicing ?? 'chord');
+      this.setAccidentalGestures({ ...DEFAULT_ACCIDENTAL_GESTURES, ...data.accidentals });
 
       // Enforce the bijection on the way in. Loaded data predates it — the same
       // shape could be a chord and the release, and two shapes could share a

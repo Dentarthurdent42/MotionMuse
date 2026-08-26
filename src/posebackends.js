@@ -107,7 +107,7 @@ function movenetBackend(spec) {
       if (detector && !inflight) {
         inflight = true;
         detector.estimatePoses(video)
-          .then(poses => { latest = toMpShape(poses, video); })
+          .then(poses => { latest = toMpResult(poses, video); })
           .catch(() => {})
           .finally(() => { inflight = false; });
       }
@@ -117,7 +117,7 @@ function movenetBackend(spec) {
   };
 }
 
-function toMpShape(poses, video) {
+function toMpResult(poses, video) {
   if (!poses?.length) return { landmarks: [] };
   const vw = video.videoWidth || 640, vh = video.videoHeight || 480;
   const lm = [];
