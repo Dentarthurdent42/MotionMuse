@@ -91,6 +91,68 @@ export const fingerExt = (lm, f) => {
   return Math.max(0, Math.min(1, (sum - CURL_CURLED) / (CURL_STRAIGHT - CURL_CURLED)));
 };
 
+// ── Shoulder geometry ────────────────────────────────────────────────────
+//
+// A shoulder is a ball joint: the upper arm can point anywhere on a hemisphere,
+// which one number cannot describe. Reaching straight forward and lifting
+// straight out to the side both raise the arm the same amount, and an elbow
+// angle says nothing about either — it only reports how far the forearm is
+// folded against the upper arm.
+//
+// So two angles, in a frame built from the torso itself rather than from the
+// image, which is what keeps them meaningful when the player turns, leans, or
+// steps closer to the camera:
+//
+//   elevation  angle between the upper arm and the torso's own downward axis.
+//              0° arm hanging by the side, 90° horizontal, 180° straight up.
+//   azimuth    where the arm points once elevation is taken out: 0° straight
+//              out to that side, +90° reaching forward, -90° reaching behind,
+//              ±180° folded across the chest.
+
+const vsub = (a, b) => [a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0)];
+const vdot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const vlen = a => Math.sqrt(vdot(a, a));
+const vunit = a => { const l = vlen(a); return l < 1e-9 ? [0, 0, 0] : [a[0] / l, a[1] / l, a[2] / l]; };
+const vcross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const vmid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: ((a.z || 0) + (b.z || 0)) / 2 });
+// The part of `a` that is perpendicular to the unit vector `n`.
+const vreject = (a, n) => { const k = vdot(a, n); return [a[0] - k * n[0], a[1] - k * n[1], a[2] - k * n[2]]; };
+
+/**
+ * Orthonormal frame of the trunk: down the spine, across the shoulders, and
+ * out of the chest.
+ *
+ * `forward` comes from cross(down, across) with `across` running right
+ * shoulder → left shoulder. In MediaPipe's axes (x right, y down, z away from
+ * the camera) that lands on -z for someone facing the camera, i.e. out of the
+ * chest rather than the back — and it stays chest-relative when they turn,
+ * because every axis is built from their own landmarks.
+ */
+export function torsoFrame(lShoulder, rShoulder, lHip, rHip) {
+  const down = vunit(vsub(vmid(lHip, rHip), vmid(lShoulder, rShoulder)));
+  // Orthogonalized against `down` so a leaning torso does not skew the azimuth.
+  const across = vunit(vreject(vunit(vsub(lShoulder, rShoulder)), down));
+  return { down, across, forward: vunit(vcross(down, across)) };
+}
+
+/**
+ * The two shoulder angles, in degrees.
+ *
+ * @param {'L'|'R'} side  which shoulder — the lateral axis flips with it, so
+ *                        that 0° azimuth is "out to your own side" for both.
+ */
+export function shoulderAngles(side, shoulder, elbow, frame) {
+  const arm = vsub(elbow, shoulder);
+  if (vlen(arm) < 1e-9) return { elevation: 0, azimuth: 0 };
+  const armU = vunit(arm);
+  const elevation = Math.acos(Math.max(-1, Math.min(1, vdot(armU, frame.down)))) * (180 / Math.PI);
+  const lateral = side === 'L' ? frame.across : frame.across.map(v => -v);
+  const flat = vreject(armU, frame.down);
+  if (vlen(flat) < 1e-6) return { elevation, azimuth: 0 };   // straight up or down
+  const azimuth = Math.atan2(vdot(flat, frame.forward), vdot(flat, lateral)) * (180 / Math.PI);
+  return { elevation, azimuth };
+}
+
 const unit = (d, lo, hi) => Math.max(0, Math.min(1, (hi - d) / (hi - lo)));
 
 // ── Thumb geometry ────────────────────────────────────────────────────────

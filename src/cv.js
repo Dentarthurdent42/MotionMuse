@@ -1,5 +1,6 @@
 import { bus }                                             from './bus.js';
 import { push30, dist3, angleBetween, handOpenness, fingerExt, pinchStrength,
+         torsoFrame, shoulderAngles,
          thumbOut, thumbContact }                          from './math.js';
 import { setStatus }                                        from './ui/status.js';
 import { depthSource }                                      from './depth.js';
@@ -163,6 +164,16 @@ export const cvSource = {
     bus.register('shoulder_width', { label: 'Shoulder Width',    group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
     bus.register('arm_raise_L',    { label: 'L Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
     bus.register('arm_raise_R',    { label: 'R Arm Raise',       group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
+    // A shoulder is a ball joint, so it takes two angles: how far the arm is
+    // lifted, and where it points once that is taken out. Reaching forward and
+    // lifting out to the side are the same elevation and opposite azimuths —
+    // one number could not tell them apart. Elevation adapts like the elbows
+    // (nobody's arm sweeps the full 180°); azimuth does not, because its zero
+    // means something exact — straight out to that side.
+    bus.register('shoulder_elev_L', { label: 'L Shoulder Lift',  group: g2, min: 0,    max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
+    bus.register('shoulder_elev_R', { label: 'R Shoulder Lift',  group: g2, min: 0,    max: 180, source: 'cv', smooth: true, adapt: true, adaptSpan: 40 });
+    bus.register('shoulder_azim_L', { label: 'L Shoulder Swing', group: g2, min: -180, max: 180, source: 'cv', smooth: true });
+    bus.register('shoulder_azim_R', { label: 'R Shoulder Swing', group: g2, min: -180, max: 180, source: 'cv', smooth: true });
     bus.register('torso_tilt',     { label: 'Torso Tilt',        group: g2, min: -1, max: 1,   source: 'cv', smooth: true });
     bus.register('head_x',         { label: 'Head X',            group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
     bus.register('head_y',         { label: 'Head Y',            group: g2, min: 0,  max: 1,   source: 'cv', smooth: true });
@@ -548,6 +559,7 @@ export const cvSource = {
       // Decay pose signals like the hand path does — otherwise they freeze at
       // their last value when the subject leaves the frame.
       ['elbow_L','elbow_R','shoulder_y_L','shoulder_y_R','shoulder_width',
+       'shoulder_elev_L','shoulder_elev_R','shoulder_azim_L','shoulder_azim_R',
        'arm_raise_L','arm_raise_R','torso_tilt','head_x','head_y','nose_y']
         .forEach(k => bus.decay(k));
       depthSource.feedPose(null);
@@ -574,6 +586,20 @@ export const cvSource = {
     if (ls && rs && lh && rh) {
       const smx = (ls.x + rs.x) / 2, hmx = (lh.x + rh.x) / 2;
       bus.update('torso_tilt', Math.max(-1, Math.min(1, (smx - hmx) * 5)));
+
+      // Both shoulders share one torso frame, so the two arms are described
+      // against the same body rather than each against the camera.
+      const frame = torsoFrame(ls, rs, lh, rh);
+      if (le) {
+        const a = shoulderAngles('L', ls, le, frame);
+        bus.update('shoulder_elev_L', a.elevation);
+        bus.update('shoulder_azim_L', a.azimuth);
+      }
+      if (re) {
+        const a = shoulderAngles('R', rs, re, frame);
+        bus.update('shoulder_elev_R', a.elevation);
+        bus.update('shoulder_azim_R', a.azimuth);
+      }
     }
     if (nose) {
       bus.update('head_x', nose.x);
