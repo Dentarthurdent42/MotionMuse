@@ -15,6 +15,14 @@ import { buildSigPanel } from './signals.js';
 
 const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`;
 
+// Whether the ASL NUMBERS group is unfolded. Module state rather than markup
+// state because the panel is rebuilt wholesale — and calibrating one of those
+// handshapes ends in exactly such a rebuild, which used to fold the group shut
+// under you the moment the pose was captured, hiding the row you had just
+// calibrated (and the next one you were working towards). Deliberately not
+// persisted: it is about where you are in this session, not a setting.
+let aslGroupOpen = false;
+
 // The key select is narrow; scale.js's full names ("major (ionian)") get
 // clipped mid-word, so shorten them for this one control.
 const MODE_LABELS = {
@@ -107,7 +115,7 @@ export function gestureSections() {
   const est   = gesture.estimated().length;
   const gestureRows = gestures.filter(g => !isNum(g)).map(row).join('')
     + (nums.length ? `
-    <details class="gesture-group" id="asl-group">
+    <details class="gesture-group" id="asl-group"${aslGroupOpen ? ' open' : ''}>
       <summary>ASL NUMBERS <span class="gesture-tag">${nums.length}</span></summary>
       ${nums.map(row).join('')}
     </details>` : '');
@@ -408,6 +416,10 @@ export function wireGestureSections(rerender) {
   const recBtn = document.getElementById('record-gesture-btn');
   const status = document.getElementById('gesture-cal-status');
 
+  // Remember the fold so a re-render puts it back the way you left it.
+  document.getElementById('asl-group')
+    ?.addEventListener('toggle', e => { aslGroupOpen = e.target.open; });
+
   const calGuard = () => {
     if (gesture.recordingActive) return false;
     if (!cvSource.running) { toast('Start the camera first'); return false; }
@@ -569,7 +581,10 @@ export function wireGestureSections(rerender) {
       rerender?.();
     }));
 
-  // The 7th belongs to the chord, so it needs no re-render — nothing else moves.
+  // The 7th belongs to the chord, so no re-render — but two things DO carry the
+  // numeral it changes, and both are patched in place. Rebuilding the panel
+  // instead would drop the pointer mid-click and reset the scroll position of
+  // a list you are working down.
   document.querySelectorAll('.ch-sev').forEach(btn =>
     btn.addEventListener('click', () => {
       const d = Number(btn.dataset.degree);
@@ -581,6 +596,12 @@ export function wireGestureSections(rerender) {
       const lbl = btn.parentElement?.querySelector('.chord-degree');
       const c = chordmode.chordAt(d);
       if (lbl && c) { lbl.textContent = `${c.numeral} · ${c.rootName}`; lbl.title = `${c.numeral} · ${c.rootName} ${c.quality}`; }
+      // …and so does the chip on the handshape's row in the Gestures section,
+      // one section away. It said "V" while the chord panel said "V7" — the
+      // two lists describing the same assignment, disagreeing about it.
+      const gid = chordmode.gestureFor(d);
+      const chip = gid && document.querySelector(`.gesture-row[data-gid="${gid}"] .gesture-chord`);
+      if (chip && c) { chip.textContent = c.numeral; chip.title = `Chord Mode: plays ${c.numeral}`; }
     }));
 }
 
