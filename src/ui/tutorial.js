@@ -161,6 +161,18 @@ export const TOUR_STEPS = [
           'Any channel can drive any sound parameter; click one to copy its key.',
   },
   {
+    id: 'looper', section: 'looper', target: '#loop-state', needs: ['audio'], title: 'Loop pedal',
+    body: 'Play a phrase, drop it, and it repeats under you while you play the ' +
+          'next one over the top. The pedal is a <b>sharp nod</b> — a real loop ' +
+          'pedal is a foot switch because your hands are busy, and here your ' +
+          'hands <i>are</i> the instrument. One press cycles ' +
+          '<b>record → play → overdub</b>; <b>STOP</b>, <b>UNDO</b> and ' +
+          '<b>CLEAR</b> are buttons, so the motion that starts a take can never ' +
+          'end one. It reads how <i>fast</i> you move, not where you are, so ' +
+          'holding a pose never trips it — nudge <b>SENSITIVITY</b> while ' +
+          'watching the meter to set it for your neck.',
+  },
+  {
     id: 'save-load', section: 'patchbay', target: '#save-btn', title: 'Save and load',
     body: '<b>SAVE</b> downloads the whole setup as one file; <b>LOAD</b> ' +
           'restores it. The session also auto-saves locally.',

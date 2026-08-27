@@ -35,6 +35,8 @@ import { uicontrol }                        from './uicontrol.js';
 import { initUidriver }                     from './ui/uidriver.js';
 import { initUicontrol, updateUicOverlay }  from './ui/uicontrol-ui.js';
 import { initStage, updateStage }           from './ui/stage-ui.js';
+import { tickLooperUI, pedalPressed }       from './ui/looper-ui.js';
+import { looper }                           from './looper.js';
 import * as preset                          from './preset.js';
 
 // ── A shared setup, if this page was opened from a QR code / link ────────
@@ -56,6 +58,11 @@ function loop() {
   if (devmode.enabled) uicontrol.tick();
   chordmode.tick();      // cheap no-op unless chord mode is enabled
   playalong.tick();      // cheap no-op unless a song is running
+  // The pedal, after the trackers have published this frame's signals and
+  // before anything draws: a nod detected now should move the transport now,
+  // not one frame late — a loop point is a moment, and a frame is 33 ms of it.
+  if (pedalPressed()) looper.pedal();
+  tickLooperUI();
   updateSigPanel();
   // Mic meter: the one piece of feedback that tells you the browser is actually
   // hearing you, which is otherwise invisible until you have wired a cable.

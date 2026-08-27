@@ -49,7 +49,7 @@ export const PARAM_CATS = () => [
   ['Filter',      ['filter_freq', 'filter_q', 'osc_volume']],
   ['Chord Mode',  ['chord_filter_freq', 'chord_filter_q', 'chord_volume', 'arp_rate', 'arp_gate']],
   ['LFO',         ['lfo_rate', 'lfo_depth']],
-  ['Output',      ['reverb_mix', 'volume']],
+  ['Output',      ['reverb_mix', 'volume', 'loop_volume']],
 ];
 
 // Grouped <optgroup> option lists so the pickers stay categorized, not flat.
