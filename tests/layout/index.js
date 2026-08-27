@@ -736,8 +736,41 @@ const hud = await (async () => {
     cvSource.setTracking({ hands: false, pose: true });
   });
   const viaToggle = await read();
+
+  // The screens — the camera stage and the oscilloscope — used to be a fixed
+  // near-black, which is a hole punched in a light theme. They read --glass
+  // now, so this walks every theme and asks the browser what each screen
+  // actually resolved to: a re-hardcoded colour would sit still while the
+  // palette moved, which is exactly what this catches.
+  const themes = await page.evaluate(async () => {
+    const { THEMES, setTheme } = await import('/src/ui/theme.js');
+    const { drawViz } = await import('/src/ui/viz.js');
+    const lum = css => {
+      const c = document.createElement('canvas').getContext('2d');
+      c.fillStyle = css; c.fillRect(0, 0, 1, 1);
+      const [r, g, bl] = c.getImageData(0, 0, 1, 1).data;
+      return (0.2126 * r + 0.7152 * g + 0.0722 * bl) / 255;
+    };
+    const out = [];
+    for (const t of THEMES) {
+      setTheme(t.id, { persist: false });
+      drawViz();   // the scope paints its own ground, so read the pixel it drew
+      const scope = document.getElementById('viz-canvas');
+      const px = scope.getContext('2d').getImageData(2, 2, 1, 1).data;
+      out.push({
+        id: t.id,
+        dark: t.dark,
+        stage: lum(getComputedStyle(document.getElementById('video-wrap')).backgroundColor),
+        scope: (0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2]) / 255,
+        ink:   lum(getComputedStyle(document.documentElement).getPropertyValue('--glass-ink').trim()),
+      });
+    }
+    setTheme('midnight', { persist: false });
+    return out;
+  });
+
   await page.close();
-  return { nodev, dev, faceOnly, poseOnly, viaToggle, params, share, chords, errs };
+  return { nodev, dev, faceOnly, poseOnly, viaToggle, params, share, chords, themes, errs };
 })();
 
 // First run: the app asks what to play instead of opening on one oscillator
@@ -1177,6 +1210,20 @@ console.log('\nParameter grouping\n');
   check(JSON.stringify(z.groups) === JSON.stringify(z.picker),
     'with no oscillators the Oscillators group is absent from both lists',
     `panel ${JSON.stringify(z.groups.map(g => g[0]))} vs picker ${JSON.stringify(z.picker.map(g => g[0]))}`);
+}
+
+// ── The screens follow the theme ──
+console.log('\nGlass (camera stage + oscilloscope)\n');
+for (const t of hud.themes) {
+  const want = t.dark ? 'dark' : 'light';
+  check(t.dark ? t.stage < 0.1 : t.stage > 0.7,
+    `${t.id}: the camera stage is ${want}`, `luminance ${t.stage.toFixed(3)}`);
+  check(t.dark ? t.scope < 0.1 : t.scope > 0.7,
+    `${t.id}: the oscilloscope paints on ${want} glass`, `luminance ${t.scope.toFixed(3)}`);
+  // The one neutral mark on the camera overlay has to move against the stage,
+  // not with it, or it disappears into the feed the stage has tinted.
+  check(t.dark ? t.ink > 0.7 : t.ink < 0.3,
+    `${t.id}: the overlay's neutral ink opposes the stage`, `luminance ${t.ink.toFixed(3)}`);
 }
 
 console.log(`\n${fail} failure(s)\n`);

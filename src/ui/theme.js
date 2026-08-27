@@ -10,6 +10,22 @@ import { lsGet, lsSet } from '../storage.js';
 
 const KEY = 'motionmuse-theme';
 
+// Canvas painters can't use a CSS variable — they need a colour string — so
+// they read tokens through here. Cached rather than read per frame:
+// getComputedStyle forces a style flush, and at 60 fps across the camera
+// overlay, the face mesh and the scope that is a real cost for values that
+// change only when the theme does. setTheme() empties the cache, so the next
+// frame after a switch refills it.
+const tokenCache = new Map();
+export function themeToken(name, fallback) {
+  let val = tokenCache.get(name);
+  if (val === undefined) {
+    val = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+    tokenCache.set(name, val);
+  }
+  return val;
+}
+
 export const THEMES = [
   { id: 'midnight', label: 'Midnight',  dark: true  },
   { id: 'contrast', label: 'High Contrast', dark: true },
@@ -29,6 +45,7 @@ export function getTheme() {
 export function setTheme(id, { persist = true } = {}) {
   const theme = isTheme(id) ? id : DEFAULT_THEME;
   document.documentElement.dataset.theme = theme;
+  tokenCache.clear();
   // The address-bar / status-bar colour is part of the theme on mobile; a dark
   // chrome above a light page looks like a rendering fault.
   const meta = document.querySelector('meta[name="theme-color"]');

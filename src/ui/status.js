@@ -3,6 +3,9 @@ export function setStatus(state, text) {
   const lbl = document.getElementById('status-lbl');
   const cls = state === 'active' ? 'on' : state === 'loading' ? 'warn' : state === 'error' ? 'err' : '';
   dot.className = `dot ${cls}`;
+  // The label is coloured per state in CSS, so the whole chip reads as an
+  // indicator rather than a lit dot beside inert text.
+  lbl.dataset.state = state;
   lbl.textContent = text;
 }
 
