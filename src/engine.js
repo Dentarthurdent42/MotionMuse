@@ -19,7 +19,7 @@ export const engine = (() => {
   // make noise now, and the state is one keypress to change.
   let muted = true;
 
-  // Chord voice bank (chord mode): 4 oscillators with per-voice gains into a
+  // Chord voice bank (gesture mode): 4 oscillators with per-voice gains into a
   // shared gain, feeding the same filter/reverb chain as the main oscillators.
   const CHORD_VOICES = 4;
   let chordOscs = [], chordVGains = [], chordGain = null, chordOn = false;
@@ -406,7 +406,7 @@ export const engine = (() => {
   // the engine is running, so this works before start() too (the panel is
   // interactive from the first paint).
   //
-  // Zero is a legal size: chord mode has its own voice bank, filter and level,
+  // Zero is a legal size: gesture mode has its own voice bank, filter and level,
   // so it is a complete instrument on its own, and leaving a lead oscillator
   // running under it is a drone nobody asked for. `|| 1` on the parse would
   // quietly turn 0 into 1, hence the explicit finite check.
@@ -635,7 +635,7 @@ export const engine = (() => {
   // Audio-clock now (seconds) — the play-along scheduler's timeline anchor.
   function now() { return started ? ctx.currentTime : 0; }
 
-  // ── Chord voice bank (chord mode) ────────────────────────────────────
+  // ── Chord voice bank (gesture mode) ────────────────────────────────────
   // Sustains a chord while a gesture is held. Voices ride the same timbre
   // as oscillator 1 and run through the filter/reverb/main chain, so the sound
   // kit and gesture-driven filter sweeps shape chords too.

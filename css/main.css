@@ -1256,20 +1256,9 @@ option { background: var(--panel); }
   color: var(--dim);
   user-select: text;
 }
-/* What a handshape plays in Chord Mode, shown on the row that defines it.
-   Reads as a chip rather than more text so it does not compete with the name,
-   and RELEASE is amber because it is the one that stops sound rather than
-   making it — the distinction matters mid-performance. */
-.gesture-chord {
-  flex-shrink: 0;
-  font-size: 9px;
-  letter-spacing: 1px;
-  padding: 1px 5px;
-  border: 1px solid var(--cyan);
-  color: var(--cyan);
-  border-radius: 2px;
-  background: var(--cyan-dim);
-}
+/* The microphone's input level. It sat between the two .gesture-chord rules
+   the Gesture Mode merge deleted, so it left with them — an unstyled meter is
+   an invisible one, and index.html still draws it. */
 .mic-meter {
   height: 6px;
   margin: 5px 0 3px;
@@ -1282,7 +1271,6 @@ option { background: var(--panel); }
   background: var(--led-accent);
   transition: width 0.06s linear;
 }
-.gesture-chord.rel { border-color: var(--amber); color: var(--amber); background: #f0a50022; }
 .gesture-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--border2); flex-shrink: 0;
@@ -2326,7 +2314,13 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   /* Gestures & chord mode */
   .gesture-row { font-size: 12px; gap: 9px; padding: 5px 0; }
   .gesture-dot { width: 9px; height: 9px; }
-  .gesture-tag { font-size: 10px; }
+  /* The handshape library's fold header: name and counts left, ● REC right.
+   A summary is not a flex container by default, and without it the button
+   would sit in the text flow instead of at the edge where buttons live. */
+.handshape-lib-summary { display: flex; align-items: center; gap: 6px; }
+.handshape-lib-summary::-webkit-details-marker { display: none; }
+
+.gesture-tag { font-size: 10px; }
   .chord-assign { gap: 6px; margin-top: 6px; }
   .chord-assign .gesture-name { font-size: 11px; }
   .chord-key { gap: 6px; }

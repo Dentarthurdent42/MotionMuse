@@ -1,6 +1,16 @@
-// UI for the Gestures and Chord Mode panel sections. Markup + handlers +
-// cheap per-frame live updates (match dots, chord readout). Kept separate so
-// audio-ui.js stays focused on the synth panel.
+// UI for the Gesture Mode panel section. Markup + handlers + cheap per-frame
+// live updates (match dots, chord readout). Kept separate so audio-ui.js stays
+// focused on the synth panel.
+//
+// Gesture Mode and the handshape library used to be two sections — "Chord
+// Mode" assigned shapes to degrees, "Gestures" defined the shapes — and each
+// grew read-only echoes of the other to stay legible: chips on the shape rows
+// saying what a shape played, `· est` riding along in the assignment selects.
+// They are one section now, because they were always one subject: what your
+// hands mean. The assignments sit on top (they are the instrument); the
+// library folds away underneath as HANDSHAPES, where a shape is calibrated,
+// recorded and removed. The chips died with the split that made them
+// necessary.
 
 import { gesture, gestureLabel } from '../gesture.js';
 import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS,
@@ -23,6 +33,14 @@ const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v
 // persisted: it is about where you are in this session, not a setting.
 let aslGroupOpen = false;
 
+// Whether the HANDSHAPES library is unfolded, same pattern as above. Starts
+// unresolved rather than false: until the user has an opinion it follows the
+// mode — folded while the mode is on (the assignments above are the playing
+// surface, and doubling the section's length by default buries the ADSR),
+// open while it is off (with no assignments showing, the library IS the
+// section).
+let handshapeLibOpen = null;
+
 // The key select is narrow; scale.js's full names ("major (ionian)") get
 // clipped mid-word, so shorten them for this one control.
 const MODE_LABELS = {
@@ -31,34 +49,11 @@ const MODE_LABELS = {
   'harmonic minor': 'harm min',
 };
 
-// Returns the two sections separately — see the note beside the templates.
-export function gestureSections() {
+export function gestureModeSection() {
   const gestures = gesture.list();
   const relId = chordmode.getReleaseGesture();
   const env = engine.getChordEnv();
   const on = chordmode.enabled;
-
-  // What each handshape is currently wired to in Chord Mode. The Gestures
-  // panel is where a handshape is DEFINED — calibrated, illustrated, named —
-  // and it used to say nothing about what that shape does, while Chord Mode
-  // assigned shapes without showing whether they were calibrated. Two lists of
-  // the same sixteen things, neither referring to the other. This is the
-  // read-only half of the fix: Chord Mode still owns the assignment.
-  //
-  // Shown whether or not chord mode is switched on, because the chip answers
-  // "what is this shape wired to", not "is it sounding". Hiding it when the
-  // mode is off would read as having lost the assignment.
-  const chordChips = (() => {
-    const m = new Map();
-    const k = chordmode.effectiveKey();
-    const sev = chordmode.sevenths();
-    for (const [gid, deg] of Object.entries(chordmode.assignments())) {
-      m.set(gid, diatonicChord(k.root, k.octave, k.mode, deg, sev[deg]).numeral);
-    }
-    const rel = chordmode.getReleaseGesture();
-    if (rel) m.set(rel, 'RELEASE');
-    return m;
-  })();
 
   const row = g => {
     const label = gestureLabel(g);
@@ -97,10 +92,6 @@ export function gestureSections() {
       <span class="gesture-dot" id="gdot-${g.id}"></span>
       ${pic}
       <span class="gesture-name">${short}</span>
-      ${chordChips.has(g.id)
-        ? `<span class="gesture-chord${chordChips.get(g.id) === 'RELEASE' ? ' rel' : ''}"
-                 title="Chord Mode: plays ${chordChips.get(g.id)}">${chordChips.get(g.id)}</span>`
-        : ''}
       ${tag}
       <button class="rm-btn gesture-cal" data-gid="${g.id}"
               title="Calibrate ${label} on your own hand" aria-label="Calibrate ${label}">⊙</button>
@@ -124,6 +115,18 @@ export function gestureSections() {
   const calibrate = est
     ? `<button class="btn gesture-cal-all" style="margin-top:4px;width:100%;"
                title="Record each estimated handshape from your own hand, one at a time">CALIBRATE ${est} HANDSHAPE${est > 1 ? 'S' : ''}</button>` : '';
+
+  // One option list serves every picker — degrees, RELEASE and the two
+  // accidentals — because they all ask the same question of the same shapes.
+  // Every shape is offered everywhere, including ones already on a degree: an
+  // accidental is read from the hand that is NOT naming the note, so one shape
+  // can do both jobs without the two ever being asked at once. `· est` rides
+  // along with the name: whether a shape is calibrated is exactly what you
+  // want to know at the moment you wire it to something.
+  const handshapeOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
+    + gestures.map(g =>
+        `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
+        + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
 
   const key  = chordmode.key();
   const eff  = chordmode.effectiveKey();
@@ -156,13 +159,6 @@ export function gestureSections() {
   const isNote = voicing === 'note';
   const accG = chordmode.accidentalGestures();
   const VOICING_LABEL = { chord: 'CHORDS', note: 'SINGLE NOTES' };
-  // Every shape is offered, including ones already on a degree: the accidental
-  // is read from the hand that is NOT naming the note, so one shape can do
-  // both jobs without the two ever being asked at once.
-  const accOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
-    + gestures.map(g =>
-        `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
-        + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
   // Accidentals need a free hand, and in 'other hand — openness' expression
   // there is not one: that hand is already the volume. Say so rather than
   // leaving two live-looking selects that quietly do nothing.
@@ -183,13 +179,13 @@ export function gestureSections() {
         ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
         : 'Hold this on your other hand to raise the note a semitone'}">♯ SHARP
         <select id="ck-acc-sharp" ${accBusy ? 'disabled' : ''}
-                aria-label="Handshape that sharpens the note">${accOptions(accG.sharp)}</select>
+                aria-label="Handshape that sharpens the note">${handshapeOptions(accG.sharp)}</select>
       </label>
       <label class="ctrl-lbl" title="${accBusy
         ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
         : 'Hold this on your other hand to lower the note a semitone'}">♭ FLAT
         <select id="ck-acc-flat" ${accBusy ? 'disabled' : ''}
-                aria-label="Handshape that flattens the note">${accOptions(accG.flat)}</select>
+                aria-label="Handshape that flattens the note">${handshapeOptions(accG.flat)}</select>
       </label>
       <div class="quant-notes" style="grid-column:1 / -1;margin:0;">${accBusy
         ? 'The other hand is playing the volume, so every note sounds natural.'
@@ -204,13 +200,6 @@ export function gestureSections() {
   // Listing the chords instead makes the mapping a function by construction:
   // seven degrees plus RELEASE, one handshape each, and choosing a shape takes
   // it off whatever it was doing before.
-  // `· est` rides along with the name: whether a shape is calibrated is exactly
-  // what you want to know at the moment you assign it to a chord, and it used
-  // to live only in the Gestures panel, one section away.
-  const handshapeOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
-    + gesture.list().map(g =>
-        `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
-        + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
 
   const chordRow = i => {
     const c = diatonicChord(eff.root, eff.octave, eff.mode, i, sevenths[i]);
@@ -323,26 +312,15 @@ export function gestureSections() {
       <span class="ch-sev-gap"></span>
     </div>`;
 
-  // Returned separately rather than as one blob: the two sections are built
-  // from the same handshape data, but the panel places them apart — Chord Mode
-  // leads the panel, Gestures sits further down with the rest of the setup.
-  const gesturesHTML = `
-    <div class="audio-section" data-sec="gestures">
+  // The instrument on top, the library folded underneath. The mode's rows are
+  // what you look at while playing; HANDSHAPES is where a shape is defined —
+  // calibrated, illustrated, recorded, removed — which is setup, not
+  // performance, so it earns a fold rather than a second section.
+  const libOpen = handshapeLibOpen ?? !on;
+  return `
+    <div class="audio-section" data-sec="gesture-mode">
       <div class="audio-section-label">
-        Gestures
-        <button type="button" class="wave-btn" id="record-gesture-btn"
-             style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">● REC</button>
-      </div>
-      <div id="gesture-list">${gestureRows}</div>
-      <div id="gesture-cal-status" class="quant-notes"></div>
-      ${calibrate}
-      ${restore}
-    </div>`;
-
-  const chordModeHTML = `
-    <div class="audio-section" data-sec="chord-mode">
-      <div class="audio-section-label">
-        Chord Mode
+        Gesture Mode
         <button class="wave-btn${on ? ' on' : ''}" id="chord-toggle" aria-pressed="${on}"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</button>
       </div>
@@ -351,6 +329,7 @@ export function gestureSections() {
       ${exprRow}
       <div id="chord-assigns">${assignRows}</div>
       ${arpRow}
+      ${!on ? '' : `
       <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;">
         ${['attack', 'decay', 'sustain', 'release'].map(k => `
           <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
@@ -365,7 +344,7 @@ export function gestureSections() {
         <button type="button" class="wave-btn${engine.getShepard().chord ? ' on' : ''}" id="shep-chord"
              aria-pressed="${engine.getShepard().chord}"
              title="Shepard tones: every chord note becomes a stack of octaves under a fixed loudness curve, so a progression can climb without ever running out of register.">SHEPARD</button>
-      </div>
+      </div>`}
       <div class="chord-live" id="chord-live" style="display:${on ? 'grid' : 'none'}">
         <div id="chord-readout" class="quant-notes" role="status" aria-live="polite">—</div>
         <div class="chord-vol" title="How loud the chord is right now">
@@ -373,10 +352,21 @@ export function gestureSections() {
           <span class="chord-vol-read" id="chord-vol-read">—</span>
         </div>
       </div>
-      ${on ? '' : `<div class="quant-notes">hold a gesture to play its ${isNote ? 'note' : 'chord'}</div>`}
+      ${on ? '' : `<div class="quant-notes">switch on to play a ${isNote ? 'note' : 'chord'} by holding its handshape</div>`}
+      <details class="gesture-group" id="handshape-lib"${libOpen ? ' open' : ''}>
+        <summary class="handshape-lib-summary">HANDSHAPES
+          <span class="gesture-tag">${gestures.length}</span>
+          ${est ? `<span class="gesture-tag est" title="${est} still estimated — calibrate them on your own hand">${est} est</span>` : ''}
+          <button type="button" class="wave-btn" id="record-gesture-btn"
+               title="Record a new handshape from the camera"
+               style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">● REC</button>
+        </summary>
+        <div id="gesture-list">${gestureRows}</div>
+        <div id="gesture-cal-status" class="quant-notes"></div>
+        ${calibrate}
+        ${restore}
+      </details>
     </div>`;
-
-  return { gestures: gesturesHTML, chordMode: chordModeHTML };
 }
 
 // How to make each shape, shown during calibration. A template recorded from
@@ -416,9 +406,18 @@ export function wireGestureSections(rerender) {
   const recBtn = document.getElementById('record-gesture-btn');
   const status = document.getElementById('gesture-cal-status');
 
-  // Remember the fold so a re-render puts it back the way you left it.
+  // Remember the folds so a re-render puts them back the way you left them.
   document.getElementById('asl-group')
     ?.addEventListener('toggle', e => { aslGroupOpen = e.target.open; });
+  // The library records on summary CLICK, not on the toggle event: a details
+  // rendered with the `open` attribute fires toggle too, which would take the
+  // adaptive default for a user's choice on the very first paint and pin it
+  // forever. A click is a person by definition. (`open` still holds the
+  // pre-toggle value inside the click handler, so the choice being made is
+  // its negation. REC lives in this summary and stops propagation, so a
+  // recording press never reads as a fold.)
+  document.querySelector('#handshape-lib > summary')
+    ?.addEventListener('click', e => { handshapeLibOpen = !e.currentTarget.parentElement.open; });
 
   const calGuard = () => {
     if (gesture.recordingActive) return false;
@@ -448,7 +447,9 @@ export function wireGestureSections(rerender) {
     };
     step();
   });
-  recBtn?.addEventListener('click', () => {
+  recBtn?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
     if (gesture.recordingActive) return;
     if (!cvSource.running) { toast('Start the camera first'); return; }
     const name = prompt('Name this gesture:');
@@ -596,12 +597,6 @@ export function wireGestureSections(rerender) {
       const lbl = btn.parentElement?.querySelector('.chord-degree');
       const c = chordmode.chordAt(d);
       if (lbl && c) { lbl.textContent = `${c.numeral} · ${c.rootName}`; lbl.title = `${c.numeral} · ${c.rootName} ${c.quality}`; }
-      // …and so does the chip on the handshape's row in the Gestures section,
-      // one section away. It said "V" while the chord panel said "V7" — the
-      // two lists describing the same assignment, disagreeing about it.
-      const gid = chordmode.gestureFor(d);
-      const chip = gid && document.querySelector(`.gesture-row[data-gid="${gid}"] .gesture-chord`);
-      if (chip && c) { chip.textContent = c.numeral; chip.title = `Chord Mode: plays ${c.numeral}`; }
     }));
 }
 

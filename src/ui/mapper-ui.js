@@ -47,7 +47,7 @@ export const PARAM_CATS = () => [
   ['Oscillators', Array.from({ length: engine.getOscCount() }, (_, i) =>
     [`osc${i + 1}_freq`, `osc${i + 1}_detune`, `osc${i + 1}_volume`]).flat()],
   ['Filter',      ['filter_freq', 'filter_q', 'osc_volume']],
-  ['Chord Mode',  ['chord_filter_freq', 'chord_filter_q', 'chord_volume', 'arp_rate', 'arp_gate']],
+  ['Gesture Mode', ['chord_filter_freq', 'chord_filter_q', 'chord_volume', 'arp_rate', 'arp_gate']],
   ['LFO',         ['lfo_rate', 'lfo_depth']],
   ['Output',      ['reverb_mix', 'volume', 'loop_volume']],
 ];

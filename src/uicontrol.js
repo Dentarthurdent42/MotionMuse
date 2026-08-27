@@ -12,7 +12,7 @@
 // Contention with the instrument is resolved by *claiming* a hand: while a
 // side is armed (or briefly after a clap), cv.js routes it through its
 // existing hand-absent branch — positional signals decay, pinch reads 1
-// (fail-quiet), the gesture matcher releases, chord mode sees nothing. One
+// (fail-quiet), the gesture matcher releases, gesture mode sees nothing. One
 // suppression point, and neither gesture.js nor chordmode.js knows this
 // modality exists.
 //

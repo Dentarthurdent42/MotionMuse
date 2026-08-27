@@ -34,7 +34,7 @@ import { mapper }       from '../mapper.js';
 //   title   short heading
 //   body    1–3 sentences; plain text with occasional <b>/<br>
 //   needs   optional list of app states the target only exists in, from:
-//           'audio' (synth started), 'dev' (dev mode), 'chord' (chord mode
+//           'audio' (synth started), 'dev' (dev mode), 'chord' (gesture mode
 //           toggled on). The tour itself NEVER changes app state — at runtime
 //           a step whose target is absent or hidden is simply skipped, and
 //           shows up when the user re-runs the tour with that state active.
@@ -49,35 +49,35 @@ import { mapper }       from '../mapper.js';
 //           buttons, the welcome and the sign-off), and it belongs to the
 //           header's own `?` instead.
 //
-// One tour covering everything meant a first-timer who picked chord mode sat
+// One tour covering everything meant a first-timer who picked gesture mode sat
 // through the patchbay, the cable editor and the play-along game before
 // reaching the one panel they were going to use. The tour is now scoped to the
 // mode you chose, and the mode is what the starting-point picker sets.
 export const TOUR_STEPS = [
-  // Welcome, then the split: Chord Mode and Tone Mode are the two output
+  // Welcome, then the split: Gesture Mode and Tone Mode are the two output
   // types, so each mode's block comes first in its own tour and the shared
   // app steps follow. stepsForMode() keeps array order, which is what makes
   // this ordering BE the structure.
   {
     id: 'welcome', target: null, title: 'Welcome to MotionMuse',
-    body: 'Your webcam is the instrument. Two ways to play: <b>Chord Mode</b> ' +
+    body: 'Your webcam is the instrument. Two ways to play: <b>Gesture Mode</b> ' +
           '— handshapes play chords, or single notes — and <b>Tone Mode</b> ' +
           '— movement drives the synth continuously. Nothing is uploaded; ' +
           'everything runs on your machine.<br><br>This tour follows the mode ' +
           'you picked. Re-open it any time with the <b>?</b> button.',
   },
 
-  // ── Chord Mode ──
+  // ── Gesture Mode ──
   {
-    id: 'chords-key', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
-    title: 'Chord Mode',
+    id: 'chords-key', section: 'gesture-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    title: 'Gesture Mode',
     body: 'Handshapes play chords, always in key. Set <b>root, mode and ' +
           'octave</b>; the panel lists the seven chords in that key ' +
           '(<b>I ii iii IV V vi vii°</b>). Change the key and they all ' +
           'transpose. <b>FOLLOW</b> uses the melody’s key.',
   },
   {
-    id: 'chords-assign', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    id: 'chords-assign', section: 'gesture-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
     title: 'Assign handshapes',
     body: 'By default the degree is the ASL number: <b>I</b> is a 1, <b>ii</b> ' +
           'a 2, up to <b>vii°</b> as a 7. A closed fist releases. Reassign any ' +
@@ -85,7 +85,7 @@ export const TOUR_STEPS = [
           'seventh; the dot lights while the chord sounds.',
   },
   {
-    id: 'chords-voicing', section: 'chord-mode', modes: ['chords'], target: '#ck-voicing', needs: ['audio', 'chord'],
+    id: 'chords-voicing', section: 'gesture-mode', modes: ['chords'], target: '#ck-voicing', needs: ['audio', 'chord'],
     title: 'Chords or single notes',
     body: '<b>PLAY</b> decides what a shape sounds: the whole <b>chord</b> on ' +
           'that degree, or just that degree’s own <b>note</b>. Everything else ' +
@@ -95,14 +95,14 @@ export const TOUR_STEPS = [
           'shapes plus that is the whole chromatic scale.',
   },
   {
-    id: 'chords-express', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    id: 'chords-express', section: 'gesture-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
     title: 'Play it',
     body: '<b>PLAY WITH</b> sets what sounds the chord: hold the handshape, ' +
           'open and close the <b>other hand</b> (the chord latches while you ' +
           'pick the next one), or raise your <b>eyebrows</b>.',
   },
   {
-    id: 'chords-range', section: 'chord-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
+    id: 'chords-range', section: 'gesture-mode', modes: ['chords'], target: '#chord-assigns', needs: ['audio', 'chord'],
     title: 'Set your range',
     body: '<b>OFF AT</b> and <b>FULL AT</b> map your hand’s real travel onto ' +
           'silence-to-full. Open and close while watching the meter; if it ' +
@@ -258,10 +258,12 @@ export const TOUR_STEPS = [
           'it off and they go away — and stop running.',
   },
   {
-    id: 'gestures', section: 'gestures', target: '#gesture-list', needs: ['audio'], title: 'Gestures',
-    body: 'Hold a handshape to trigger it — each row shows its shape. ' +
-          '<b>est</b> marks an estimated template; <b>CALIBRATE</b> records ' +
-          'the shape from your own hand and sharpens recognition.',
+    id: 'gestures', section: 'gesture-mode', target: '#handshape-lib', needs: ['audio'], title: 'Handshapes',
+    body: 'The library behind Gesture Mode — unfold it to see every shape the ' +
+          'app knows. The dot lights while you hold one. <b>est</b> marks an ' +
+          'estimated template; <b>CALIBRATE</b> records the shape from your ' +
+          'own hand and sharpens recognition. <b>● REC</b> adds a shape of ' +
+          'your own, which also becomes a signal the patchbay can wire.',
   },
   {
     id: 'donate', target: '#donate-btn', title: 'Support the project',
@@ -307,7 +309,7 @@ export const stepsForMode = mode =>
   TOUR_STEPS.filter(t => !t.modes || t.modes.includes(mode));
 
 // Which way of playing the app is currently set up for. Read from state rather
-// than remembered from the picker: a user who turned chord mode on afterwards
+// than remembered from the picker: a user who turned gesture mode on afterwards
 // should get the chord tour from the ? button, not the one they first chose.
 const currentMode = () => chordmode.enabled ? 'chords' : 'osc';
 
@@ -317,7 +319,7 @@ export const tour = (() => {
   let raf = 0;           // rect-tracking loop, alive only while open
   let lastBox = '';      // last target rect the ring was drawn against
   let seenThisRun = new Set();
-  // The steps this run walks. Scoped by mode, so picking chord mode does not
+  // The steps this run walks. Scoped by mode, so picking gesture mode does not
   // march you through the patchbay and the falling-note game first.
   let steps = TOUR_STEPS;
 
