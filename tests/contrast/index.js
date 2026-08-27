@@ -16,17 +16,34 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 // fine right up until someone selects it.
 function parseThemes(cssPath) {
   const src = readFileSync(cssPath, 'utf8');
-  const themes = new Map();
-  const declRe = /--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6}|oklch\([^)]*\))\s*;/g;
+  const declRe = /--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6}|oklch\([^)]*\)|var\(--[a-z0-9-]+\))\s*;/g;
   // Each block is `<selector-list> { ... }` where the selector mentions :root.
   const blockRe = /(:root[^{]*)\{([^}]*)\}/g;
+  const blocks = [];
   for (const [, selector, body] of src.matchAll(blockRe)) {
     const ids = [...selector.matchAll(/\[data-theme="([a-z-]+)"\]/g)].map(m => m[1]);
-    const names = ids.length ? ids : ['(default)'];
+    // A bare `:root` in the selector list matches whatever theme is active, so
+    // its tokens are the base every theme block overrides — exactly the
+    // cascade the browser applies (`:root[data-theme]` wins on specificity).
+    const base = selector.split(',').some(s => !s.includes('[data-theme'));
     const vars = {};
     for (const [, name, val] of body.matchAll(declRe)) vars[`--${name}`] = val.trim();
-    if (!Object.keys(vars).length) continue;
-    for (const n of names) themes.set(n, { ...themes.get(n), ...vars });
+    if (Object.keys(vars).length) blocks.push({ ids, base, vars });
+  }
+  const names = [...new Set(blocks.flatMap(b => b.ids))];
+  const themes = new Map();
+  for (const n of names) {
+    const vars = {};
+    for (const b of blocks) if (b.base) Object.assign(vars, b.vars);
+    for (const b of blocks) if (b.ids.includes(n)) Object.assign(vars, b.vars);
+    // Aliases like `--led-accent: var(--cyan)` resolve against the merged
+    // palette, after every override has landed — again what the browser does.
+    for (const key of Object.keys(vars)) {
+      let val = vars[key], hops = 0;
+      while (val?.startsWith('var(') && hops++ < 8) val = vars[val.slice(4, -1)];
+      vars[key] = val;
+    }
+    themes.set(n, vars);
   }
   return themes;
 }
@@ -93,10 +110,21 @@ const PAIRS = [
   ['--amber',   '--panel',   'Amber text on panel (note-badge, wave-btn.on)'],
   ['--amber',   '--surface', 'Amber text on header (audio-btn while muted)'],
   ['--green',   '--panel',   'Green status dot label on panel'],
+  ['--green',   '--surface', 'Status label text on header (CV ACTIVE)'],
   ['--red',     '--panel',   'Red text on panel'],
+  ['--red',     '--surface', 'Status label text on header (ERROR)'],
+
+  // LED tokens colour lit glyphs (status dot, gesture dots, meter and bar
+  // fills), never text — so the bar is WCAG 1.4.11 non-text contrast, 3:1.
+  ['--led-accent', '--panel',   'Lit gesture dot / bar fill on panel', 3],
+  ['--led-accent', '--surface', 'LED accent glyph on header',          3],
+  ['--led-green',  '--surface', 'CV ACTIVE dot on header',             3],
+  ['--led-amber',  '--surface', 'Loading dot on header',               3],
+  ['--led-red',    '--surface', 'Error dot on header',                 3],
+  ['--led-purple', '--panel',   'Velocity bar fill on panel',          3],
 ];
 
-const THRESHOLD = 4.5; // WCAG AA normal text
+const THRESHOLD = 4.5; // WCAG AA normal text; LED pairs carry their own 3:1
 
 // ── Run ───────────────────────────────────────────────────────────────────────
 const themes = parseThemes(join(ROOT, 'css/main.css'));
@@ -110,7 +138,7 @@ for (const [themeName, vars] of themes) {
 }
 
 function runTheme(themeName, vars) {
-const rows   = PAIRS.map(([fg, bg, usage]) => {
+const rows   = PAIRS.map(([fg, bg, usage, threshold = THRESHOLD]) => {
   const fgHex = vars[fg];
   const bgHex = vars[bg];
   if (!fgHex || !bgHex) {
@@ -118,7 +146,7 @@ const rows   = PAIRS.map(([fg, bg, usage]) => {
     return null;
   }
   const ratio  = contrastRatio(fgHex, bgHex);
-  const passes = ratio >= THRESHOLD;
+  const passes = ratio >= threshold;
   if (!passes) failures++;
   return { fg, bg, fgHex, bgHex, ratio, passes, usage };
 }).filter(Boolean);
