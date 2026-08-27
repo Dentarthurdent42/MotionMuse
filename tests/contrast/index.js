@@ -122,6 +122,14 @@ const PAIRS = [
   ['--led-amber',  '--surface', 'Loading dot on header',               3],
   ['--led-red',    '--surface', 'Error dot on header',                 3],
   ['--led-purple', '--panel',   'Velocity bar fill on panel',          3],
+
+  // The glass — the camera stage and the oscilloscope — is a ground in its
+  // own right, and it inverts with the theme, so text placed on it needs
+  // checking there rather than only on the panel it sits inside.
+  ['--dim',        '--glass',   'START CAMERA placeholder on the stage'],
+  ['--amber',      '--glass',   'MUTED banner over the oscilloscope'],
+  ['--led-accent', '--glass',   'Scope trace on the glass',            3],
+  ['--glass-ink',  '--glass',   'Neutral overlay mark on the stage',   3],
 ];
 
 const THRESHOLD = 4.5; // WCAG AA normal text; LED pairs carry their own 3:1
