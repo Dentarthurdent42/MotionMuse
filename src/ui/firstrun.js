@@ -25,7 +25,7 @@ export const STARTERS = [
   ...PRESETS.map(p => ({ id: p.id, kind: 'preset', mode: 'osc',
                          name: p.name, hint: p.hint })),
   {
-    id: 'chords', kind: 'chords', mode: 'chords', voicing: 'chord', name: 'Chord Mode',
+    id: 'chords', kind: 'chords', mode: 'chords', voicing: 'chord', name: 'Chords',
     hint: 'Handshapes play chords in a key — no lead oscillator, no wiring',
   },
   // The same seven shapes, the same key, one note at a time. Offered here
@@ -53,7 +53,7 @@ export const STARTERS = [
 // shape, so they are the best first thing to hand someone who has just arrived
 // — and chords were bottom of the list, below a scroll on a phone.
 export const STARTER_GROUPS = [
-  { mode: 'chords', label: 'HANDSHAPES — a shape names a degree of the key' },
+  { mode: 'chords', label: 'GESTURE MODE — a shape names a degree of the key' },
   { mode: 'osc',    label: 'OSCILLATOR — signals drive pitch and tone' },
 ];
 
@@ -89,7 +89,7 @@ export function applyStarter(id, { applyTrackers }) {
     // Stated rather than left at whatever it was: a starting point that only
     // half-decides is one the next choice inherits from the last.
     chordmode.setVoicing(s.voicing ?? 'chord');
-    // No lead oscillator: chord mode has its own voice bank, filter and level,
+    // No lead oscillator: gesture mode has its own voice bank, filter and level,
     // and a drone underneath the chords is not what anyone picked this for.
     engine.setOscCount(0);
     return applyTrackers({ handsL: true, handsR: true, pose: false, face: false, gaze: false })

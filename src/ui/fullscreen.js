@@ -114,8 +114,8 @@ export function updateFsOverlay() {
   kbdCanvas.classList.add('shown');
   const t = engine.getTuning();
   // Chord tones go on the same keyboard as the oscillator markers, because in
-  // chord mode the keyboard is otherwise inert — the markers track oscillators,
-  // and chord mode typically runs with none. Fullscreen is exactly where you
+  // gesture mode the keyboard is otherwise inert — the markers track oscillators,
+  // and gesture mode typically runs with none. Fullscreen is exactly where you
   // cannot see the panel, so this is the only place the harmony is visible
   // while you are playing it.
   const c = chordmode.enabled ? chordmode.currentChord() : null;
