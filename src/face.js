@@ -8,6 +8,7 @@
 import { bus } from './bus.js';
 import { push30 } from './math.js';
 import { lsGet, lsSet } from './storage.js';
+import { themeToken } from './ui/theme.js';
 
 // Face-oval landmarks nearest the ears (tragus region) in the 468-pt mesh.
 const EAR_R = 234, EAR_L = 454;   // subject's right / left
@@ -235,6 +236,10 @@ export const faceSource = {
     const lx = x => ox + x * vw * scale, ly = y => oy + y * vh * scale;
 
     if (this.faceOn) {
+      // The nose contour is the mesh's one neutral line, so it follows the
+      // stage the way the wrist anchor does — dark ink on a light stage. The
+      // feature colours stay fixed: they name the feature, not the theme.
+      const ink = themeToken('--glass-ink', '#fff');
       // Faint full-mesh dots for density, then bright feature contours on top.
       ctx.fillStyle = 'rgba(240,165,0,0.22)';
       for (let i = 0; i < 468; i++) ctx.fillRect(lx(lm[i].x) - 0.5, ly(lm[i].y) - 0.5, 1, 1);
@@ -256,7 +261,9 @@ export const faceSource = {
       };
 
       stroke(CONTOURS.oval,  'rgba(240,165,0,0.55)', 1.5, true);
-      stroke(CONTOURS.nose,  'rgba(255,255,255,0.4)', 1,  false);
+      ctx.globalAlpha = 0.4;
+      stroke(CONTOURS.nose,  ink, 1,  false);
+      ctx.globalAlpha = 1;
       stroke(CONTOURS.browR, '#f0a500', 2, false);
       stroke(CONTOURS.browL, '#f0a500', 2, false);
       stroke(CONTOURS.eyeR,  '#00e5cc', 1.5, true);
