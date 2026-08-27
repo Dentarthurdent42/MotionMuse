@@ -114,7 +114,7 @@ impossible. Per-oscillator level is a superset: mix *m* was exactly osc1 at
 `1-m` and osc2 at `m`, which is how saved presets are migrated on load rather
 than dropped.
 
-The stepper goes down to **zero**. Chord mode has its own voice bank, filter,
+The stepper goes down to **zero**. Gesture mode has its own voice bank, filter,
 level and envelope, so it is a complete instrument on its own, and leaving a
 lead oscillator running underneath it is a drone nobody asked for. With an empty
 bank the Oscillators rows and every `oscN_*` slider disappear — and so does the
@@ -122,7 +122,7 @@ Oscillators group in the patchbay's output picker, since both read the same
 table. Starting Play Along puts one oscillator back, because the game scores the
 pitch of oscillator 1 and cannot judge anything without it.
 
-Chord mode is voiced well below the lead on purpose — it was always a bed
+Gesture mode's chords are voiced well below the lead on purpose — they were always a bed
 beneath it — so **Chord Vol** now runs to 4 rather than 1. At unity, chords
 alone measure about −31 dBFS against a unity lead's −6; the extra 12 dB puts
 chord-only play at roughly −17 dBFS, a healthy standalone level. It is
@@ -171,12 +171,12 @@ entries that play music the moment you make a shape.
 
 In full:
 
-- **Chord Mode** — handshapes play chords in a key, no wiring. No lead
+- **Chords** — handshapes play chords in a key, no wiring. No lead
   oscillator, since a drone under the chords is not what anyone picked this for.
-  (It used to switch **DEV** on too, because chord mode was dev-gated. It is not
+  (It used to switch **DEV** on too, because gesture mode was dev-gated. It is not
   any more — see Developer mode.)
 - **Single Notes** — the same seven shapes and the same key, sounding one note
-  each, with your other hand sharpening or flattening it. It is chord mode in
+  each, with your other hand sharpening or flattening it. It is gesture mode in
   **note voicing** rather than a second mode, so it shares every setting; it is
   offered here because *"I want to play a melody"* is a different intention from
   *"I want to comp"*, and arriving with the first one should not mean picking
@@ -257,7 +257,7 @@ would recreate its canvas and drop the click-to-mute handler with it.
 
 ## Sections: containers, scrolling and resizing
 
-Every section — camera view, signals, models, patchbay, gestures, chord mode,
+Every section — camera view, signals, models, patchbay, gesture mode,
 each audio block, the parameter sliders — is its own container: a bordered box
 with a header strip, a body that can scroll on its own, and a **grip along the
 bottom edge** to set its height. Drag the grip to resize, **double-click it to
@@ -379,7 +379,7 @@ instrument with no way back to it once you touched anything, short of finding
 the QR code again.
 
 - **A configuration is a whole snapshot**, not a patch. A built-in preset is a
-  set of cables; this is the instrument — audio graph, gestures, chord mode,
+  set of cables; this is the instrument — audio graph, gestures, gesture mode,
   shader, kit, theme and which trackers were running. Storing less would make
   "the setup I named" mean something different from "the setup I shared", and
   those are the same act.
@@ -616,7 +616,7 @@ sign-off — and its "updated" pulse counts only those, rather than promising 23
 new steps and then showing nine.
 
 **The tour is scoped to a mode.** One tour covering everything meant a
-first-timer who picked chord mode sat through the patchbay, the cable editor and
+first-timer who picked gesture mode sat through the patchbay, the cable editor and
 the falling-note game before reaching the one panel they were going to use. Each
 step declares which way of playing it is about — `modes: ['osc']`,
 `modes: ['chords']`, or neither, meaning it is about the app rather than a mode —
@@ -626,7 +626,7 @@ between them every step is reachable; `npm run test:tutorial` walks both and
 fails if any step belongs to no mode at all.
 
 The **?** button gives the tour for what you are *currently* set up for, read
-from state rather than remembered from the picker — turn chord mode on later and
+from state rather than remembered from the picker — turn gesture mode on later and
 it follows. Choosing a patch from the **PRESET** menu offers the oscillator tour
 the same way, once, to anyone who has not seen it.
 
@@ -658,7 +658,7 @@ The tour is built for a project that changes weekly:
 - **Returning users see what's new.** Step ids are tracked per user; when a
   release ships steps you haven't seen, the **?** pulses ("tour updated — 2 new
   steps") instead of making you sit through the whole thing again.
-- Steps whose feature needs a particular state (audio on, chord mode on) simply
+- Steps whose feature needs a particular state (audio on, gesture mode on) simply
   don't show until the app is in it — the tour adapts to what's actually on
   screen.
 
@@ -683,8 +683,8 @@ button gone is a hand that stops playing for no reason a player can see. The
 underlying setting is left alone — DEV gates reach, it does not overwrite what
 the player chose.
 
-**Gestures and Chord Mode are not among them any more.** They were, and that was
-wrong: chord mode is a way of playing the instrument rather than an experiment,
+**Gesture Mode is not among them any more.** It was, and that was
+wrong: gesture mode is a way of playing the instrument rather than an experiment,
 and hiding it behind DEV meant the one starting point that needs no wiring at all
 was the one nobody could find. Both sections are now visible by default and chord
 playback no longer checks the flag.
@@ -715,7 +715,18 @@ input→output mental model, progressive disclosure via dev mode, plain-language
 labels, and icon **plus** text — never icon-only). Toggle controls expose
 `aria-pressed`; canvases carry `aria-label`.
 
-## Gestures & chord mode
+## Gesture mode
+
+**Gesture Mode** (formerly *Chord Mode*) is one section holding both halves of
+playing by handshape: the instrument on top — key, voicing, expression, the
+degree assignments, the arpeggiator and envelope — and the **HANDSHAPES**
+library folded underneath, where a shape is calibrated, recorded and removed.
+They were two sections once, and each grew read-only echoes of the other to
+stay legible (chips on the shape rows repeating the assignments, calibration
+state repeated beside the selects). Merging them retired the echoes: the
+assignment is stated once, in the rows, and the library is one fold away. The
+fold follows the mode until you touch it — closed while the mode is on, open
+while it is off, and your own choice wins from then on.
 
 ### One hand means one hand
 
@@ -834,7 +845,7 @@ slip under it per frame. `tests/unit/gesture-robust.test.js` drives the real
 matcher through that model deterministically, so a template or threshold edit
 that would regress live behaviour fails CI. Debounce does the rest — a new pose
 must win two frames before it takes over, and a few dropped frames are
-tolerated before release, so a borderline reading can't machine-gun chord mode.
+tolerated before release, so a borderline reading can't machine-gun gesture mode.
 
 ### Calibration
 
@@ -858,9 +869,9 @@ feature vectors, the whole template table and the sorted pairwise distances —
 that output is where the measured templates come from. (Needs
 `@mediapipe/tasks-vision`, a Chromium, and `hand_landmarker.task` in that folder.)
 
-### Chord mode
+### Chords by scale degree
 
-**Chord Mode** maps handshapes to chords **by scale degree in a key**, not by
+**Gesture Mode** maps handshapes to chords **by scale degree in a key**, not by
 absolute root. Pick a key once — root, mode, octave — and the panel lists the
 seven chords in it (**I ii iii IV V vi vii°**) plus **RELEASE**, each with a
 dropdown choosing which handshape plays it and an optional diatonic **7th**.
@@ -890,7 +901,7 @@ tone and read the intervals back. Harmonic minor therefore comes out
 
 Holding an assigned gesture sustains its chord; releasing it lets the chord go
 (hold-to-sound), shaped by a proper **ADSR** — attack, decay, sustain level and
-release, set in the Chord Mode section. The envelope sits on the shared chord
+release, set in the Gesture Mode section. The envelope sits on the shared chord
 gain rather than per voice: the whole chord is one note here (the voices are
 its intervals), so one envelope is what a player means by "the chord's attack".
 Retriggering mid-release starts from the dying value rather than snapping to
@@ -1103,7 +1114,7 @@ prioritised (3 frames of 4) so the approach is sampled fast enough to see.
   tracking stack.
 
 While a hand is armed its signals **freeze** — they hold the value they had
-rather than updating — so the patchbay and chord mode never fight the cursor
+rather than updating — so the patchbay and gesture mode never fight the cursor
 for it. Freezing rather than reporting the hand *absent* is the whole point:
 absence is a tracking failure and the safe answer to it is to fail quiet
 (decay, and force pinch to 1, since 0 reads as "hand open" and a volume
@@ -1385,7 +1396,7 @@ src/
     fullscreen.js   Fullscreen camera view + keyboard overlay
     keyboard.js     Shared piano-keyboard renderer
     playalong-ui.js Falling-note highway renderer + game panel
-    gesture-ui.js   Gestures + Chord Mode panel sections
+    gesture-ui.js   Gesture Mode panel section (assignments + handshape library)
     shader-ui.js    Shader visual-output panel section
     signals.js      Signal panel (build + live update)
     mapper-ui.js    Mapper rows (render + live bars)
@@ -1407,7 +1418,7 @@ scripts/
   lib/capture.mjs   The one capture recipe both screenshot scripts share
 sw.js               Service worker (network-first app shell, cached MediaPipe models)
 tests/
-  unit/             node --test suites (chords, diatonic degrees, chord mode,
+  unit/             node --test suites (chords, diatonic degrees, gesture mode,
                     gesture matching + degradation robustness, judging, notes,
                     filter, dynamics, stepped volume, mapper steps, hotkeys)
   contrast/         WCAG contrast checks over the OKLab palette

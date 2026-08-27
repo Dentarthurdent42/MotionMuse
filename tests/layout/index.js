@@ -224,20 +224,27 @@ const sections = await page.evaluate(() => {
     // ships at every zoom level rather than a per-container guess.
     textSizeAdjust: getComputedStyle(document.documentElement).webkitTextSizeAdjust
                  ?? getComputedStyle(document.documentElement).textSizeAdjust,
-    // Gestures and chord mode are visible without DEV. They were behind it,
-    // which meant the one way of playing that needs no wiring was the one
-    // nobody could find. What IS still dev-only is checked elsewhere in this
-    // suite (the inference HUD) — so this is not "nothing is gated any more".
+    // Gesture mode (with its handshape library) is visible without DEV. It
+    // was behind it once, which meant the one way of playing that needs no
+    // wiring was the one nobody could find. What IS still dev-only is checked
+    // elsewhere in this suite (the inference HUD) — so this is not "nothing
+    // is gated any more".
     playable: (() => {
       const vis = id => {
         const e = document.querySelector(`.sec[data-sec-id="${id}"]`);
         return !!e && e.getClientRects().length > 0;
       };
       return { dev: document.body.classList.contains('dev'),
-               gestures: vis('gestures'), chords: vis('chord-mode'),
+               gestureMode: vis('gesture-mode'),
+               // The library folded inside it: present, and its summary
+               // clickable even when the fold is shut.
+               lib: (() => {
+                 const d = document.getElementById('handshape-lib');
+                 return !!d && d.querySelector('summary').getClientRects().length > 0;
+               })(),
                models: vis('models'),
                badges: document.querySelectorAll(
-                 '.sec[data-sec-id="gestures"] .uc-badge, .sec[data-sec-id="chord-mode"] .uc-badge').length };
+                 '.sec[data-sec-id="gesture-mode"] .uc-badge').length };
     })(),
     // The oscilloscope is a section like any other: it folds, and it can be
     // dragged to another column. It has to live OUTSIDE #audio-panel to do so —
@@ -412,7 +419,7 @@ const relocation = await (async () => {
   // Seeded rather than dragged: the drag itself is a pointer-sequence concern,
   // while what must not regress is that the stored map is honoured.
   await page.addInitScript(() =>
-    localStorage.setItem('motionmuse-sec-home', JSON.stringify({ gestures: 'map', 'sound-kit': 'cam' })));
+    localStorage.setItem('motionmuse-sec-home', JSON.stringify({ 'gesture-mode': 'map', 'sound-kit': 'cam' })));
   await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(400);
 
@@ -422,7 +429,7 @@ const relocation = await (async () => {
     for (const e of document.querySelectorAll('.sec[data-sec-id]'))
       counts[e.dataset.secId] = (counts[e.dataset.secId] || 0) + 1;
     return {
-      gestures: at('gestures'), kit: at('sound-kit'),
+      gestures: at('gesture-mode'), kit: at('sound-kit'),
       dupes: Object.entries(counts).filter(([, n]) => n > 1).map(([k]) => k),
       // Sliders are wired by renderAudioPanel; if it scopes its queries to the
       // panel, a section that has moved out of it loses every handler.
@@ -479,9 +486,9 @@ const narrow = await (async () => {
   await page.waitForTimeout(600);
   await page.evaluate(() => document.querySelector('#start-pop button')?.click());
   await page.waitForTimeout(200);
-  // Chord mode on: its expression rows are the densest thing in that column.
+  // Gesture mode on: its expression rows are the densest thing in that column.
   await page.evaluate(() => {
-    const t = document.querySelector('[data-sec="chord-mode"] .wave-btn');
+    const t = document.querySelector('[data-sec="gesture-mode"] .wave-btn');
     if (t && !t.classList.contains('on')) t.click();
   });
   await page.waitForTimeout(300);
@@ -606,7 +613,7 @@ const hud = await (async () => {
     renderMapper();
     const three = { groups: grab(), picker: cats() };
     const shown = three.groups.flatMap(([, ks]) => ks);
-    // Zero is a legal bank size — chord mode is a complete instrument on its
+    // Zero is a legal bank size — gesture mode is a complete instrument on its
     // own — so the panel has to survive having no oscillator params at all.
     engine.setOscCount(0);
     (await import('/src/ui/audio-ui.js')).renderAudioPanel();
@@ -779,7 +786,7 @@ const firstrun = await (async () => {
   const again = await state();
   await ctx.close();
 
-  // …and a second fresh visit picking chord mode.
+  // …and a second fresh visit picking gesture mode.
   const ctx2 = await b.newContext({ viewport: { width: 1280, height: 900 } });
   await ctx2.addInitScript(() =>
     Object.defineProperty(navigator, 'webdriver', { get: () => false }));
@@ -876,8 +883,8 @@ for (const { width, off, on, sections, camSticky, sigPanel } of results) {
     `${w}: text auto-inflation is off`, String(sections.textSizeAdjust));
   const pl = sections.playable;
   check(!pl.dev, `${w}: measured outside dev mode`);
-  check(pl.gestures && pl.chords, `${w}: gestures and chord mode need no DEV`,
-    `gestures ${pl.gestures}, chords ${pl.chords}`);
+  check(pl.gestureMode, `${w}: gesture mode needs no DEV`);
+  check(pl.lib, `${w}: and its handshape library is reachable inside it`);
   check(pl.badges === 0, `${w}: and carry no under-construction badge`, String(pl.badges));
   check(!pl.models, `${w}: while MODELS is still dev-only`);
 
@@ -1024,7 +1031,7 @@ console.log('\nCross-column section placement\n');
   const { fresh, rerendered, reloaded, wired, errs } = relocation;
   const stages = [['on load', fresh], ['after renderAudioPanel()', rerendered], ['after reload', reloaded]];
   for (const [label, st] of stages) {
-    check(st.gestures === 'map', `${label}: GESTURES is in the patchbay column`, String(st.gestures));
+    check(st.gestures === 'map', `${label}: GESTURE MODE is in the patchbay column`, String(st.gestures));
     check(st.kit === 'cam', `${label}: SOUND KIT is in the camera column`, String(st.kit));
     check(st.dupes.length === 0, `${label}: no duplicated sections`, st.dupes.join(' '));
     check(st.apr > 0, `${label}: parameter sliders exist`, String(st.apr));
@@ -1061,7 +1068,7 @@ console.log('\nFirst run\n');
   check(shown.open, 'a fresh visit is asked how to play');
   check(shown.onTop >= 200, 'the picker is above every panel and popover', String(shown.onTop));
   check(shown.choices.includes('chords') && shown.choices.includes('blank'),
-    'chord mode and blank are among the choices', shown.choices.join(','));
+    'gesture mode and blank are among the choices', shown.choices.join(','));
   check(shown.choices.length >= 7, 'every mapping preset is offered too', `${shown.choices.length}`);
 
   check(blank.modal === false, 'choosing dismisses it');
@@ -1070,11 +1077,11 @@ console.log('\nFirst run\n');
   check(!blank.hands && !blank.pose, 'blank leaves the trackers off');
   check(again.modal === false, 'a returning visit is not asked again');
 
-  check(chords.chord, 'chord mode is switched on');
-  // It used to have to switch DEV on as well, because chord mode was hidden
+  check(chords.chord, 'gesture mode is switched on');
+  // It used to have to switch DEV on as well, because the mode was hidden
   // behind it. Asserting the opposite now: needing a developer toggle to reach
   // the one starting point that requires no wiring was the bug.
-  check(!chords.dev, 'without needing DEV — chord mode is not an experiment');
+  check(!chords.dev, 'without needing DEV — gesture mode is not an experiment');
   check(chords.oscs === 0, 'with no lead oscillator droning under the chords', `${chords.oscs}`);
   check(chords.hands && !chords.pose, 'hands tracked, pose not');
   check(errs.length === 0, 'no page errors on the first-run path', errs.join(' | '));
@@ -1163,7 +1170,7 @@ console.log('\nParameter grouping\n');
 
   const z = hud.params.zero;
   check(z.oscParams === 0 && z.rows === 0,
-    'the bank can be emptied for chord-mode-only play',
+    'the bank can be emptied for gesture-mode-only play',
     `${z.oscParams} params, ${z.rows} rows`);
   check(z.minusDisabled && z.field === '0', 'the stepper bottoms out at zero',
     `disabled=${z.minusDisabled} field=${z.field}`);

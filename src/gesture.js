@@ -399,7 +399,7 @@ export const gesture = (() => {
             // Switching costs the same debounce as engaging. Without this,
             // `active` was reassigned on *every* matching frame, so with
             // templates sitting close together the winner could flip frame to
-            // frame — and chord mode, which is edge-triggered on the active
+            // frame — and gesture mode, which is edge-triggered on the active
             // id, would re-attack the chord each time.
             if (m.id === st.cand) st.candFrames++;
             else { st.cand = m.id; st.candFrames = 1; }

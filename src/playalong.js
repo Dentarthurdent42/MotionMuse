@@ -115,7 +115,7 @@ export const playalong = {
     engine.setTuning({ enabled: true, root: song.root, scale: song.scale, system: 'equal (12-TET)' });
 
     // The game is played through oscillator 1's pitch — so it needs one to
-    // exist. The bank can be emptied (chord mode alone), and the game is not a
+    // exist. The bank can be emptied (gesture mode alone), and the game is not a
     // reason to refuse that; it just has to put a lead voice back before it can
     // score anything.
     if (!engine.PARAMS.osc1_freq) engine.setOscCount(1);

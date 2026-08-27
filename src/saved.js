@@ -14,7 +14,7 @@
 // A configuration is a WHOLE snapshot — the same object `preset.snapshot()`
 // produces and `preset.applyAll()` consumes — not a patch. A built-in preset is
 // a set of cables; this is the instrument, including the audio graph, the
-// gestures, chord mode and which trackers were running. Storing less would make
+// gestures, gesture mode and which trackers were running. Storing less would make
 // "the setup I named" mean something different from "the setup I shared", and
 // those are the same act.
 

@@ -56,7 +56,7 @@ function loop() {
   // persists, so without this a clap would arm an invisible cursor that
   // silently claims a hand away from the instrument.
   if (devmode.enabled) uicontrol.tick();
-  chordmode.tick();      // cheap no-op unless chord mode is enabled
+  chordmode.tick();      // cheap no-op unless gesture mode is enabled
   playalong.tick();      // cheap no-op unless a song is running
   // The pedal, after the trackers have published this frame's signals and
   // before anything draws: a nod detected now should move the transport now,
@@ -224,7 +224,7 @@ syncAllTracking();
 // built lazily — so the button is wired there, where it exists, rather than
 // looked up here at startup where it does not.
 //
-// Dev mode reveals whole sections (MODELS, Gestures, Chord Mode, Shader).
+// Dev mode reveals whole sections (MODELS, Shader).
 // Position hues are derived from measured geometry and skip hidden elements,
 // so anything revealed here has no hue until this recolours the set.
 devmode.onChange(() => colorSections());
