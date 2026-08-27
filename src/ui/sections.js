@@ -78,8 +78,10 @@ const HOSTS = [
 // height would strand empty space below them in landscape. Their grip still
 // works if you want to pin one.
 const DEFAULT_H = {
-  gestures: 220,
-  'chord-mode': 220,
+  // Gesture Mode absorbed the old Gestures section, so its one default covers
+  // what used to be two 220s — taller, because with the mode on it holds the
+  // assignment rows AND the folded handshape library.
+  'gesture-mode': 260,
   sliders: 260,
 };
 
@@ -292,11 +294,11 @@ function enhance(sec) {
     // A default height is a STARTING size, applied once. It used to be
     // re-applied on every enhance pass, and every re-render goes through one —
     // so picking a handshape from a dropdown rebuilt the audio panel and
-    // snapped Chord Mode back to 220px, which read as "the container resets
+    // snapped Gesture Mode back to its default, which read as "the container resets
     // when I use it". Worse, whether it snapped depended on how much content
     // the section happened to have the first time it was measured: applyHeight
     // releases a height that exceeds the content, so a section that was short
-    // at first paint (chord mode off) went natural, grew when you switched the
+    // at first paint (gesture mode off) went natural, grew when you switched the
     // mode on, and then got clamped by the next unrelated re-render.
     defaulted.add(id);
     applyHeight(sec, DEFAULT_H[id] ?? null);

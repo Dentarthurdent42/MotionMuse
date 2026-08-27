@@ -10,7 +10,7 @@ import { enhanceSections } from './sections.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
-import { gestureSections, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
+import { gestureModeSection, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
 import { looperSectionHTML, wireLooperSection } from './looper-ui.js';
 
 const opts = (arr, sel) =>
@@ -96,14 +96,13 @@ export function renderAudioPanel() {
   const gv = playalong.view;
   const gameActive = gv.state === 'countdown' || gv.state === 'playing';
 
-  // Chord Mode leads the panel: it is a way of playing rather than a setting,
-  // so someone who came to play chords should not have to scroll past the
-  // timbre picker and the note game to reach it. A section the user has
-  // dragged keeps the position they gave it — sections.js only falls back to
-  // this markup order for hosts nobody has rearranged.
-  const secs = gestureSections();
+  // Gesture Mode leads the panel: it is a way of playing rather than a
+  // setting, so someone who came to play by handshape should not have to
+  // scroll past the timbre picker and the note game to reach it. A section
+  // the user has dragged keeps the position they gave it — sections.js only
+  // falls back to this markup order for hosts nobody has rearranged.
   panel.innerHTML = `
-    ${secs.chordMode}
+    ${gestureModeSection()}
     <div class="audio-section">
       <div class="audio-section-label">Sound Kit</div>
       <select id="kit-select" title="Instrument timbre preset (synthesized)">${kitOpts}</select>
@@ -125,7 +124,6 @@ export function renderAudioPanel() {
       <canvas id="game-canvas" class="game-canvas" style="display:${gv.state !== 'idle' ? 'block' : 'none'}"></canvas>
       <div id="game-score" class="quant-notes">${gv.state === 'idle' ? bestLine() : '—'}</div>
     </div>
-    ${secs.gestures}
     ${looperSectionHTML()}
     <div class="audio-section">
       <div class="audio-section-label">
@@ -191,7 +189,7 @@ export function renderAudioPanel() {
                   title="Remove the last oscillator"${nOsc <= 0 ? ' disabled' : ''}>−</button>
           <input type="number" id="osc-count" min="0" max="${engine.MAX_OSCS}" step="1"
                  value="${nOsc}" inputmode="numeric" aria-label="Number of oscillators"
-                 title="How many oscillators the lead voice runs. Each gets its own pitch, detune, waveform and level. Zero leaves chord mode playing on its own.">
+                 title="How many oscillators the lead voice runs. Each gets its own pitch, detune, waveform and level. Zero leaves gesture mode playing on its own.">
           <button class="wave-btn" id="osc-plus" type="button" aria-label="Add an oscillator"
                   title="Add an oscillator"${nOsc >= engine.MAX_OSCS ? ' disabled' : ''}>+</button>
         </div>
@@ -213,7 +211,7 @@ export function renderAudioPanel() {
         ? (shep.lead
             ? 'Shepard: sweep pitch and it climbs forever — an octave returns you to the start'
             : 'Each has its own level: Osc1 Vol… under Parameters')
-        : 'No lead oscillators — chord mode plays on its own'}</div>
+        : 'No lead oscillators — gesture mode plays on its own'}</div>
     </div>
     <div class="audio-section">
       <div class="audio-section-label">Filter Type</div>
