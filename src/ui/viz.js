@@ -1,11 +1,24 @@
 import { engine } from '../engine.js';
 import { isDesktop } from './viewport.js';
+import { onThemeChange } from './theme.js';
 
 let canvas, ctx;
+
+// The scope is an emissive display: black glass in every theme, trace in the
+// theme's LED accent — so Ember's trace burns orange instead of staying the
+// one cyan element in a warm palette. Read once and on theme change, not per
+// frame; getComputedStyle every frame is a layout-adjacent cost at 60 fps.
+let accent = '#00e5cc';
+function readAccent() {
+  accent = getComputedStyle(document.documentElement)
+    .getPropertyValue('--led-accent').trim() || '#00e5cc';
+}
 
 function init() {
   canvas = document.getElementById('viz-canvas');
   ctx    = canvas.getContext('2d');
+  readAccent();
+  onThemeChange(readAccent);
 }
 
 export function drawViz() {
@@ -38,15 +51,18 @@ export function drawViz() {
     const y = (0.5 + wave[i] * 0.45) * H;
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = '#00e5cc33';
+  ctx.strokeStyle = accent;
+  ctx.globalAlpha = 0.2;
   ctx.lineWidth = 4;
   ctx.stroke();
-  ctx.strokeStyle = '#00e5cc';
+  ctx.globalAlpha = 1;
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  ctx.fillStyle = '#00e5cc0a';
+  ctx.fillStyle = accent;
+  ctx.globalAlpha = 0.04;
   ctx.lineTo(W, H / 2);
   ctx.lineTo(0, H / 2);
   ctx.fill();
+  ctx.globalAlpha = 1;
 }
