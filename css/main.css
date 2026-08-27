@@ -49,6 +49,17 @@
      track, so light themes replace them with opaque tints. */
   --bar-lo:     #0055cc;
   --bar-vel-lo: var(--purple-dim);
+  /* The "glass": grounds that are a SCREEN rather than a panel — the camera
+     stage, the oscilloscope, the shader canvas — plus the scrims of the HUDs
+     that float on them. Near-black here, and light in the light themes: a
+     screen belongs to the room it is in, and a black rectangle in a white
+     room reads as a rendering fault rather than a design. --glass-ink is the
+     neutral mark painted over the camera feed (wrist dot, nose contour); the
+     stage tints the video toward its own lightness, so the mark has to move
+     the opposite way. */
+  --glass:      oklch(0.09 0.010 275);
+  --glass-line: oklch(0.23 0.030 275);
+  --glass-ink:  oklch(1.00 0.000 0);
 }
 
 /* Maximum-contrast dark: near-black grounds, near-white text, accents pushed
@@ -73,6 +84,9 @@
   --shadow:    0 2px 6px rgba(0, 0, 0, 0.8);
   --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.85);
   --accent-l: 0.80; --accent-c: 0.15;
+  --glass:      oklch(0.04 0.000 0);
+  --glass-line: oklch(0.30 0.020 275);
+  --glass-ink:  oklch(1.00 0.000 0);
 }
 
 /* Warm dark — same lightness structure, hues rotated to amber/brown. The
@@ -102,6 +116,11 @@
   --accent-l: 0.72; --accent-c: 0.13;
   /* Displacement bars ramp coal → flame instead of the default royal blue. */
   --bar-lo:    oklch(0.50 0.130 30);
+  /* Warm near-black glass: the one large dark surface in the theme, kept in
+     the palette's hue rather than a neutral black borrowed from Midnight. */
+  --glass:      oklch(0.09 0.022 45);
+  --glass-line: oklch(0.25 0.045 45);
+  --glass-ink:  oklch(1.00 0.000 0);
 }
 
 /* Light themes invert the lightness ramp: grounds go light, text goes dark,
@@ -138,6 +157,12 @@
   /* Opaque tints: an alpha-dim gradient start disappears into a light track. */
   --bar-lo:     oklch(0.72 0.110 235);
   --bar-vel-lo: oklch(0.78 0.090 305);
+  /* Screens go light with the room, and land between the page ground and the
+     panel: brighter than --bg so the display still reads as lit, softer than
+     the panel so a dark trace on it keeps its 3:1. */
+  --glass:      oklch(0.95 0.005 275);
+  --glass-line: oklch(0.82 0.012 275);
+  --glass-ink:  oklch(0.24 0.020 275);
 }
 
 /* Warm light, lower glare than pure white for long sessions. */
@@ -168,6 +193,9 @@
   --led-purple: oklch(0.54 0.180 310);
   --bar-lo:     oklch(0.70 0.100 235);
   --bar-vel-lo: oklch(0.76 0.090 310);
+  --glass:      oklch(0.94 0.016 80);
+  --glass-line: oklch(0.80 0.028 70);
+  --glass-ink:  oklch(0.26 0.030 60);
 }
 
 html, body {
@@ -547,7 +575,7 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
 /* ── Camera ──────────────────────────────────────────────── */
 #video-wrap {
   position: relative;
-  background: #020204;
+  background: var(--glass);
   aspect-ratio: 4/3;
   flex-shrink: 0;
   overflow: hidden;
@@ -569,7 +597,7 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
   display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
 }
 .depth-toggle {
-  background: rgba(0,0,0,0.55);
+  background: color-mix(in oklab, var(--glass) 55%, transparent);
   border: 1px solid var(--border2);
   color: var(--dim);
   font-family: inherit;
@@ -591,9 +619,9 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
   position: fixed; inset: 0; z-index: 1000;
   width: auto; height: auto;
   aspect-ratio: auto;
-  background: #000;
+  background: var(--glass);
 }
-#video-wrap:fullscreen { aspect-ratio: auto; background: #000; }
+#video-wrap:fullscreen { aspect-ratio: auto; background: var(--glass); }
 
 /* A clean, video-player-like view: no latency HUD while fullscreen. */
 #video-wrap.fs-active #latency-bar { display: none; }
@@ -619,9 +647,9 @@ body.no-scroll { overflow: hidden; }
 }
 #latency-bar {
   position: absolute; bottom: 0; left: 0; right: 0;
-  background: rgba(0,0,0,0.55);
-  /* LED rather than text accent: this HUD sits on the video scrim, which is
-     dark in every theme, so the light themes' near-black accent would sink. */
+  /* Scrim in the glass's own colour, so the HUD keeps the stage's polarity
+     instead of stamping a black strip across a light one. */
+  background: color-mix(in oklab, var(--glass) 55%, transparent);
   color: var(--led-accent);
   font-family: monospace;
   font-size: 9px; letter-spacing: .07em;
@@ -630,7 +658,7 @@ body.no-scroll { overflow: hidden; }
   pointer-events: none;
 }
 #latency-bar span { margin-right: 14px; }
-#latency-bar span b { color: #fff; }
+#latency-bar span b { color: var(--glass-ink); }
 #cam-placeholder {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
@@ -892,7 +920,7 @@ option { background: var(--panel); }
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center; gap: 4px;
   font-size: 10px; letter-spacing: 1.5px; color: var(--amber);
-  background: rgba(2, 2, 4, 0.62);
+  background: color-mix(in oklab, var(--glass) 62%, transparent);
   pointer-events: none;   /* the banner is a readout, not a target */
 }
 #viz-muted[hidden] { display: none; }
@@ -901,7 +929,7 @@ option { background: var(--panel); }
 #viz-canvas {
   width: 100%;
   height: 72px;
-  background: #020204;
+  background: var(--glass);
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
   display: block;
@@ -1167,7 +1195,7 @@ option { background: var(--panel); }
   display: block;
   width: 100%;
   height: 120px;
-  background: #000;
+  background: var(--glass);
   border: 1px solid var(--border);
   border-radius: 2px;
 }
@@ -2382,7 +2410,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   width: 120px; height: 120px;
   border: 10px solid var(--cyan);
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.25);
+  background: color-mix(in oklab, var(--glass) 25%, transparent);
   color: var(--cyan);
   font: 700 13px "IBM Plex Mono", monospace;
   letter-spacing: 0.08em;
@@ -2403,7 +2431,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   padding: 12px 14px;
   border: 1px solid var(--cyan);
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in oklab, var(--glass) 45%, transparent);
   color: var(--cyan);
   font: 600 11px "IBM Plex Mono", monospace;
   letter-spacing: 0.06em;
