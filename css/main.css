@@ -32,6 +32,34 @@
   --shadow:    0 2px 6px rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.6);
   --accent-l: 0.72; --accent-c: 0.13;
+  /* LED tokens: glyphs that *light up* — the status dot, gesture dots, meter
+     and bar fills, the scope trace. Never text. On dark grounds a lit thing
+     and readable text are the same colour, so these alias the accents; light
+     themes must split them, because their accents drop to ~0.5 lightness for
+     AA text contrast, and a "lit" dot painted with a text colour reads as
+     off. LED-on-ground pairs are checked at the non-text 3:1 threshold by
+     tests/contrast/index.js. */
+  --led-accent: var(--cyan);
+  --led-green:  var(--green);
+  --led-amber:  var(--amber);
+  --led-red:    var(--red);
+  --led-purple: var(--purple);
+  /* Gradient starts for value bars (the end colour is the LED token). Dim
+     alpha ramps read as a glow on dark grounds but vanish into a light
+     track, so light themes replace them with opaque tints. */
+  --bar-lo:     #0055cc;
+  --bar-vel-lo: var(--purple-dim);
+  /* The "glass": grounds that are a SCREEN rather than a panel — the camera
+     stage, the oscilloscope, the shader canvas — plus the scrims of the HUDs
+     that float on them. Near-black here, and light in the light themes: a
+     screen belongs to the room it is in, and a black rectangle in a white
+     room reads as a rendering fault rather than a design. --glass-ink is the
+     neutral mark painted over the camera feed (wrist dot, nose contour); the
+     stage tints the video toward its own lightness, so the mark has to move
+     the opposite way. */
+  --glass:      oklch(0.09 0.010 275);
+  --glass-line: oklch(0.23 0.030 275);
+  --glass-ink:  oklch(1.00 0.000 0);
 }
 
 /* Maximum-contrast dark: near-black grounds, near-white text, accents pushed
@@ -56,9 +84,17 @@
   --shadow:    0 2px 6px rgba(0, 0, 0, 0.8);
   --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.85);
   --accent-l: 0.80; --accent-c: 0.15;
+  --glass:      oklch(0.04 0.000 0);
+  --glass-line: oklch(0.30 0.020 275);
+  --glass-ink:  oklch(1.00 0.000 0);
 }
 
-/* Warm dark — same lightness structure, hues rotated to amber/brown. */
+/* Warm dark — same lightness structure, hues rotated to amber/brown. The
+   accent slot keeps its default-palette name (--cyan) but holds ember
+   orange: a cool cyan was the one cold element left in an otherwise warm
+   palette, and it read as a leftover from Midnight rather than a choice.
+   Orange at hue 55 stays clearly apart from --amber (75, gold) on one side
+   and --red (25) on the other. */
 :root[data-theme="ember"] {
   --bg:        oklch(0.12 0.020 45);
   --surface:   oklch(0.16 0.028 45);
@@ -68,8 +104,8 @@
   --faint:     oklch(0.26 0.038 45);
   --text:      oklch(0.95 0.020 60);
   --dim:       oklch(0.82 0.050 60);
-  --cyan:      oklch(0.86 0.120 190);
-  --cyan-dim:  oklch(0.86 0.120 190 / 0.22);
+  --cyan:      oklch(0.84 0.145 55);
+  --cyan-dim:  oklch(0.84 0.145 55 / 0.22);
   --purple:    oklch(0.80 0.140 330);
   --purple-dim:oklch(0.80 0.140 330 / 0.22);
   --amber:     oklch(0.87 0.150 75);
@@ -78,6 +114,13 @@
   --shadow:    0 2px 6px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.55);
   --accent-l: 0.72; --accent-c: 0.13;
+  /* Displacement bars ramp coal → flame instead of the default royal blue. */
+  --bar-lo:    oklch(0.50 0.130 30);
+  /* Warm near-black glass: the one large dark surface in the theme, kept in
+     the palette's hue rather than a neutral black borrowed from Midnight. */
+  --glass:      oklch(0.09 0.022 45);
+  --glass-line: oklch(0.25 0.045 45);
+  --glass-ink:  oklch(1.00 0.000 0);
 }
 
 /* Light themes invert the lightness ramp: grounds go light, text goes dark,
@@ -103,6 +146,23 @@
   --shadow:    0 1px 3px rgba(20, 20, 40, 0.16);
   --shadow-lg: 0 8px 22px rgba(20, 20, 40, 0.20);
   --accent-l: 0.55; --accent-c: 0.15;
+  /* Lit glyphs stay saturated mid-lightness colours: dark enough to clear
+     the non-text 3:1 bar on white, light enough to read as ON — reusing the
+     near-black text accents here made every lit dot look dead. */
+  --led-accent: oklch(0.60 0.130 210);
+  --led-green:  oklch(0.60 0.190 150);
+  --led-amber:  oklch(0.63 0.160 70);
+  --led-red:    oklch(0.58 0.220 27);
+  --led-purple: oklch(0.55 0.190 300);
+  /* Opaque tints: an alpha-dim gradient start disappears into a light track. */
+  --bar-lo:     oklch(0.72 0.110 235);
+  --bar-vel-lo: oklch(0.78 0.090 305);
+  /* Screens go light with the room, and land between the page ground and the
+     panel: brighter than --bg so the display still reads as lit, softer than
+     the panel so a dark trace on it keeps its 3:1. */
+  --glass:      oklch(0.95 0.005 275);
+  --glass-line: oklch(0.82 0.012 275);
+  --glass-ink:  oklch(0.24 0.020 275);
 }
 
 /* Warm light, lower glare than pure white for long sessions. */
@@ -125,6 +185,17 @@
   --shadow:    0 1px 3px rgba(60, 40, 10, 0.18);
   --shadow-lg: 0 8px 22px rgba(60, 40, 10, 0.22);
   --accent-l: 0.54; --accent-c: 0.15;
+  /* Same LED reasoning as Paper, warmed a step to sit on cream. */
+  --led-accent: oklch(0.58 0.120 205);
+  --led-green:  oklch(0.58 0.180 150);
+  --led-amber:  oklch(0.61 0.160 65);
+  --led-red:    oklch(0.57 0.220 27);
+  --led-purple: oklch(0.54 0.180 310);
+  --bar-lo:     oklch(0.70 0.100 235);
+  --bar-vel-lo: oklch(0.76 0.090 310);
+  --glass:      oklch(0.94 0.016 80);
+  --glass-line: oklch(0.80 0.028 70);
+  --glass-ink:  oklch(0.26 0.030 60);
 }
 
 html, body {
@@ -273,9 +344,14 @@ body.resizing { cursor: col-resize; user-select: none; }
   flex-shrink: 0;
   transition: background 0.3s, box-shadow 0.3s;
 }
-.dot.on  { background: var(--green);  box-shadow: 0 0 8px var(--green); }
-.dot.warn{ background: var(--amber);  box-shadow: 0 0 8px var(--amber); }
-.dot.err { background: var(--red);    box-shadow: 0 0 8px var(--red); }
+.dot.on  { background: var(--led-green);  box-shadow: 0 0 8px var(--led-green); }
+.dot.warn{ background: var(--led-amber);  box-shadow: 0 0 8px var(--led-amber); }
+.dot.err { background: var(--led-red);    box-shadow: 0 0 8px var(--led-red); }
+/* The label reads as part of the indicator, so it takes the state's colour —
+   the *text* accent, which every theme keeps at AA, not the LED colour. */
+#status-lbl[data-state="active"]  { color: var(--green); }
+#status-lbl[data-state="loading"] { color: var(--amber); }
+#status-lbl[data-state="error"]   { color: var(--red); }
 
 .hsep { flex: 1; }
 
@@ -428,7 +504,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   height: 100%;
   width: 0;
   border-radius: 3px;
-  background: linear-gradient(90deg, var(--purple-dim), var(--purple));
+  background: linear-gradient(90deg, var(--bar-vel-lo), var(--led-purple));
   /* No transition: this IS the playhead, and easing it would put the bar
      somewhere the loop is not. */
 }
@@ -451,7 +527,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .loop-meter-fill {
   height: 100%; width: 0;
-  background: linear-gradient(90deg, var(--cyan), var(--amber));
+  background: linear-gradient(90deg, var(--led-accent), var(--led-amber));
   transition: width 60ms linear;
 }
 
@@ -499,7 +575,7 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
 /* ── Camera ──────────────────────────────────────────────── */
 #video-wrap {
   position: relative;
-  background: #020204;
+  background: var(--glass);
   aspect-ratio: 4/3;
   flex-shrink: 0;
   overflow: hidden;
@@ -521,7 +597,7 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
   display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
 }
 .depth-toggle {
-  background: rgba(0,0,0,0.55);
+  background: color-mix(in oklab, var(--glass) 55%, transparent);
   border: 1px solid var(--border2);
   color: var(--dim);
   font-family: inherit;
@@ -543,9 +619,9 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
   position: fixed; inset: 0; z-index: 1000;
   width: auto; height: auto;
   aspect-ratio: auto;
-  background: #000;
+  background: var(--glass);
 }
-#video-wrap:fullscreen { aspect-ratio: auto; background: #000; }
+#video-wrap:fullscreen { aspect-ratio: auto; background: var(--glass); }
 
 /* A clean, video-player-like view: no latency HUD while fullscreen. */
 #video-wrap.fs-active #latency-bar { display: none; }
@@ -571,8 +647,10 @@ body.no-scroll { overflow: hidden; }
 }
 #latency-bar {
   position: absolute; bottom: 0; left: 0; right: 0;
-  background: rgba(0,0,0,0.55);
-  color: #00e5cc;
+  /* Scrim in the glass's own colour, so the HUD keeps the stage's polarity
+     instead of stamping a black strip across a light one. */
+  background: color-mix(in oklab, var(--glass) 55%, transparent);
+  color: var(--led-accent);
   font-family: monospace;
   font-size: 9px; letter-spacing: .07em;
   padding: 3px 8px;
@@ -580,7 +658,7 @@ body.no-scroll { overflow: hidden; }
   pointer-events: none;
 }
 #latency-bar span { margin-right: 14px; }
-#latency-bar span b { color: #fff; }
+#latency-bar span b { color: var(--glass-ink); }
 #cam-placeholder {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
@@ -633,7 +711,7 @@ body.no-scroll { overflow: hidden; }
 .sig-bar-fill {
   height: 100%;
   border-radius: 2px;
-  background: linear-gradient(90deg, #0055cc, var(--cyan));
+  background: linear-gradient(90deg, var(--bar-lo), var(--led-accent));
   transition: width 40ms linear;
 }
 
@@ -662,7 +740,7 @@ body.no-scroll { overflow: hidden; }
    helping of it, so it is a different colour — the channel is identifiable
    at a glance rather than only by reading its label. */
 .sig-val.vel { color: var(--purple); }
-.sig-bar-fill.vel { background: linear-gradient(90deg, var(--purple-dim), var(--purple)); }
+.sig-bar-fill.vel { background: linear-gradient(90deg, var(--bar-vel-lo), var(--led-purple)); }
 
 /* ── Mapper ──────────────────────────────────────────────── */
 .mapper-thead {
@@ -842,7 +920,7 @@ option { background: var(--panel); }
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center; gap: 4px;
   font-size: 10px; letter-spacing: 1.5px; color: var(--amber);
-  background: rgba(2, 2, 4, 0.62);
+  background: color-mix(in oklab, var(--glass) 62%, transparent);
   pointer-events: none;   /* the banner is a readout, not a target */
 }
 #viz-muted[hidden] { display: none; }
@@ -851,7 +929,7 @@ option { background: var(--panel); }
 #viz-canvas {
   width: 100%;
   height: 72px;
-  background: #020204;
+  background: var(--glass);
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
   display: block;
@@ -1117,7 +1195,7 @@ option { background: var(--panel); }
   display: block;
   width: 100%;
   height: 120px;
-  background: #000;
+  background: var(--glass);
   border: 1px solid var(--border);
   border-radius: 2px;
 }
@@ -1201,7 +1279,7 @@ option { background: var(--panel); }
 }
 .mic-meter-fill {
   height: 100%; width: 0%;
-  background: var(--cyan);
+  background: var(--led-accent);
   transition: width 0.06s linear;
 }
 .gesture-chord.rel { border-color: var(--amber); color: var(--amber); background: #f0a50022; }
@@ -1210,7 +1288,7 @@ option { background: var(--panel); }
   background: var(--border2); flex-shrink: 0;
   transition: background 0.1s, box-shadow 0.1s;
 }
-.gesture-dot.on { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+.gesture-dot.on { background: var(--led-accent); box-shadow: 0 0 6px var(--led-accent); }
 /* Selected but not sounding — a latched chord waiting on the expression hand.
    A ring rather than a fill, so it cannot be mistaken for "playing". */
 .gesture-dot.sel {
@@ -1460,7 +1538,7 @@ input[type="range"]::-webkit-slider-thumb {
   position: fixed;
   border: 2px solid var(--cyan);
   border-radius: 4px;
-  box-shadow: 0 0 0 9999px rgba(6, 9, 15, 0.45), 0 0 18px var(--cyan);
+  box-shadow: 0 0 0 9999px rgba(6, 9, 15, 0.45), 0 0 18px var(--led-accent);
   z-index: 1001;
   pointer-events: none;
   transition: left 0.25s, top 0.25s, width 0.25s, height 0.25s;
@@ -1502,8 +1580,8 @@ input[type="range"]::-webkit-slider-thumb {
 /* ? button pulses when the tour has gained steps this user hasn't seen */
 #tour-btn.tour-new { border-color: var(--cyan); color: var(--cyan); }
 @keyframes tour-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 229, 204, 0.5); }
-  50%      { box-shadow: 0 0 0 5px rgba(0, 229, 204, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--led-accent) 50%, transparent); }
+  50%      { box-shadow: 0 0 0 5px transparent; }
 }
 #tour-btn.tour-new { animation: tour-pulse 2s infinite; }
 @media (prefers-reduced-motion: reduce) {
@@ -2332,7 +2410,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   width: 120px; height: 120px;
   border: 10px solid var(--cyan);
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.25);
+  background: color-mix(in oklab, var(--glass) 25%, transparent);
   color: var(--cyan);
   font: 700 13px "IBM Plex Mono", monospace;
   letter-spacing: 0.08em;
@@ -2353,7 +2431,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   padding: 12px 14px;
   border: 1px solid var(--cyan);
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in oklab, var(--glass) 45%, transparent);
   color: var(--cyan);
   font: 600 11px "IBM Plex Mono", monospace;
   letter-spacing: 0.06em;

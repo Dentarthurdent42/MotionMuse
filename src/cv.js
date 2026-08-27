@@ -3,6 +3,7 @@ import { push30, dist3, angleBetween, handOpenness, fingerExt, pinchStrength,
          torsoFrame, shoulderAngles,
          thumbOut, thumbContact }                          from './math.js';
 import { setStatus }                                        from './ui/status.js';
+import { themeToken }                                       from './ui/theme.js';
 import { depthSource }                                      from './depth.js';
 import { createPoseBackend }                                from './posebackends.js';
 import { lsGet, lsSet }                                     from './storage.js';
@@ -652,7 +653,12 @@ export const cvSource = {
           ctx.arc(lx(pt.x), ly(pt.y), 2, 0, Math.PI * 2);
         });
         ctx.fill();
-        ctx.fillStyle = '#fff';
+        // The wrist anchor is the one neutral mark on the overlay, and the
+        // stage tints the video toward its own lightness — so it inks dark on
+        // a light stage and white on a dark one. The hand and pose colours
+        // below stay fixed: they identify left from right and hand from body
+        // over arbitrary camera content, which is not a job for the palette.
+        ctx.fillStyle = themeToken('--glass-ink', '#fff');
         ctx.beginPath();
         ctx.arc(lx(lm[0].x), ly(lm[0].y), 3, 0, Math.PI * 2);
         ctx.fill();
