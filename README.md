@@ -1217,9 +1217,15 @@ a duet. Enabling either parks the other; both toggles say so by their state.
 
 The ring is drawn on the **camera overlay**, under the skeletons, in the
 overlay's own mirrored space, with note-name labels (numerals in chord
-voicing) counter-flipped so they read correctly in the mirror. The active
-section fills in the pointing hand's overlay colour, stronger while sounding,
-and a pointer line makes what the ring is reading visible rather than a guess.
+voicing) counter-flipped so they read correctly in the mirror. Its contrast
+is **self-contained**, for the same reason the skeleton colours are fixed
+rather than themed: the ring sits over arbitrary camera content — a cluttered
+room, a striped shirt, a face — and legibility over that is not a job for the
+palette. Every section carries its own **dark glass scrim**, every edge and
+glyph is **haloed** in that dark under light ink, and the active section's
+tint (the pointing hand's overlay colour, stronger while sounding) sits on
+top of the scrim rather than replacing it. A pointer line, haloed the same
+way, makes what the ring is reading visible rather than a guess.
 The forearm axis that orients it is differenced from two pose landmarks, so it
 carries both joints' jitter into every section's position; it runs through its
 own One-Euro filter before it touches the ring.

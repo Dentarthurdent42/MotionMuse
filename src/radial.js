@@ -530,7 +530,15 @@ export const radial = (() => {
     // CSS-mirrored, which the geometry inherits for free (it must line up
     // with the mirrored video); only TEXT must not, so labels counter-flip
     // around their own anchor.
-    draw(ctx, lx, ly, ink) {
+    //
+    // Contrast is SELF-CONTAINED, for the same reason the skeleton colours
+    // are fixed rather than themed: the ring sits over arbitrary camera
+    // content — a cluttered room, a striped shirt, a face — and legibility
+    // over that is not a job for the palette. So the band carries its own
+    // dark glass scrim on every section, every edge and label is haloed in
+    // that same dark under light ink, and nothing depends on what the video
+    // happens to show behind it.
+    draw(ctx, lx, ly) {
       if (!enabled || !geo) return;
       const j = JOINTS[joint];
       const n = sectionCount();
@@ -540,6 +548,9 @@ export const radial = (() => {
       const unitPx = (ly(1) - ly(0)) * geo.unit;   // one joint unit, in px
       if (!(unitPx > 2)) return;
       const col = side === 'R' ? '#00e5cc' : '#9d5cff';   // the overlay's own hand colours
+      const SCRIM = 'rgba(6, 10, 14, 0.5)';   // the band's own ground
+      const HALO  = 'rgba(6, 10, 14, 0.75)';  // under every stroke and glyph
+      const INK   = 'rgba(255, 255, 255, 0.92)';
 
       // A point of the ring: ring angle (degrees) and radius (joint units)
       // → 3D → orthographic drop of z → canvas.
@@ -564,9 +575,19 @@ export const radial = (() => {
           ctx.lineTo(x, y);
         }
         ctx.closePath();
-        if (i === sounding) { ctx.fillStyle = col + '55'; ctx.fill(); }
-        else if (i === tracker?.section) { ctx.fillStyle = col + '2e'; ctx.fill(); }
-        ctx.strokeStyle = ink + '55';
+        // Every section gets the scrim — the band is a surface the labels
+        // sit on, not lines floating over the video — and the active one
+        // gets its tint ON TOP of it, so it stays readable too.
+        ctx.fillStyle = SCRIM;
+        ctx.fill();
+        if (i === sounding) { ctx.fillStyle = col + '66'; ctx.fill(); }
+        else if (i === tracker?.section) { ctx.fillStyle = col + '3a'; ctx.fill(); }
+        // Edges twice: a dark halo, then light ink over it, so a boundary
+        // survives both a bright wall and a dark doorway behind it.
+        ctx.strokeStyle = HALO;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.strokeStyle = INK.replace('0.92', '0.7');
         ctx.lineWidth = 1;
         ctx.stroke();
 
@@ -580,10 +601,17 @@ export const radial = (() => {
         // Sized against the BAND, which is what has to contain it — rIn
         // measures where the band starts, not how much room is in it.
         const bandPx = (j.rOut - j.rIn) * unitPx;
-        ctx.font = `${Math.max(9, Math.min(14, bandPx * 0.5)).toFixed(0)}px "IBM Plex Mono", monospace`;
+        const fpx = Math.max(9, Math.min(14, bandPx * 0.5));
+        ctx.font = `${fpx.toFixed(0)}px "IBM Plex Mono", monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = i === sounding ? ink : ink + 'cc';
+        // Haloed glyphs: the scrim carries most of the contrast, the halo
+        // covers the label's overhang where a wide numeral leaves the band.
+        ctx.strokeStyle = HALO;
+        ctx.lineWidth = Math.max(2.5, fpx * 0.24);
+        ctx.lineJoin = 'round';
+        ctx.strokeText(this.sectionLabel(i), 0, 0);
+        ctx.fillStyle = i === sounding ? '#fff' : INK;
         ctx.fillText(this.sectionLabel(i), 0, 0);
         ctx.restore();
       }
@@ -592,9 +620,15 @@ export const radial = (() => {
       // the side's colour, so what the ring is reading is never a guess.
       const cx = lx(geo.anchor.x), cy = ly(geo.anchor.y);
       const px = lx(geo.pointer.x), py = ly(geo.pointer.y);
-      ctx.strokeStyle = col + '88';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = HALO;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+      ctx.strokeStyle = col;
       ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+      ctx.fillStyle = HALO;
+      ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = col;
       ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.fill();
     },
