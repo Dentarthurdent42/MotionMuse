@@ -209,6 +209,13 @@ export const TOUR_STEPS = [
           'Parameters.',
   },
   {
+    id: 'sec-radial', section: 'radial-menu', target: '#radial-toggle', needs: ['audio'],
+    title: 'Radial Menu',
+    body: 'A fan of arcs around your wrist or shoulder — one per scale ' +
+          'degree. Point into a section to play it, stay to sustain, and the ' +
+          'faster you enter, the harder the attack.',
+  },
+  {
     id: 'sec-pitch-quant', section: 'pitch-quantize', target: '#quant-toggle', needs: ['audio'],
     title: 'Pitch Quantize',
     body: 'Snaps pitch to a scale. Pick root, scale and tuning; the keyboard ' +

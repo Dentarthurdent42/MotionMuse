@@ -110,8 +110,12 @@ test('non-diatonic scales are excluded and fall back to major', () => {
   assert.equal(DIATONIC_SCALES.length, 6);
   assert.equal(isDiatonic('dorian'), true);
   assert.equal(isDiatonic('blues'), false);
-  // A pentatonic global scale must not break chord mode.
-  assert.deepEqual(diatonicChord('C', 4, 'major pentatonic', 0).midi,
+  // Pentatonics are DEGREE scales now — they build their own five-tone
+  // chords rather than falling back (tests/unit/pentatonic-degrees.test.js).
+  // The scales the degree system genuinely cannot address still fall back.
+  assert.deepEqual(diatonicChord('C', 4, 'blues', 0).midi,
+                   diatonicChord('C', 4, 'major (ionian)', 0).midi);
+  assert.deepEqual(diatonicChord('C', 4, 'whole tone', 0).midi,
                    diatonicChord('C', 4, 'major (ionian)', 0).midi);
 });
 
