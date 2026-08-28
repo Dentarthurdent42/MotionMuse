@@ -15,6 +15,7 @@ import { DEGREE_SCALES }         from '../chords.js';
 import { NOTE_NAMES }            from '../scale.js';
 import { engine }                from '../engine.js';
 import { cvSource }              from '../cv.js';
+import { faceSource }            from '../face.js';
 
 const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`;
 
@@ -37,7 +38,7 @@ const JOINT_LABELS = {
 // What still has to be switched on for the chosen joint to track — said in
 // the panel, because a ring that never appears is otherwise indistinguishable
 // from a broken one.
-function needsLine({ joint, side }) {
+function needsLine({ joint, side, volume }) {
   const missing = [];
   if (!cvSource.running) missing.push('the camera');
   if (joint === 'wrist') {
@@ -52,6 +53,10 @@ function needsLine({ joint, side }) {
   } else if (!cvSource.poseOn) {
     missing.push('pose tracking');
   }
+  // Eyebrow volume reads brow_raise, which only the face model feeds — a
+  // volume control wired to a tracker that is off is silence with no
+  // explanation.
+  if (volume === 'brow' && !faceSource.faceOn) missing.push('face tracking');
   return missing.length ? `Needs ${missing.join(' + ')}.` : '';
 }
 
@@ -63,6 +68,7 @@ export function radialMenuSection() {
   const flw = chordmode.isFollowing();
   const jointVal = `${cfg.joint}_${cfg.side}`;
   const sevenths = chordmode.sevenths();
+  const vol = radial.volumeState();
   const needs = on ? needsLine(cfg) : '';
 
   const keyRow = !on ? '' : `
@@ -136,6 +142,23 @@ export function radialMenuSection() {
           `<option value="${f}"${f === cfg.finger ? ' selected' : ''}>${f.toUpperCase()}</option>`).join('')}
       </select>
     </div>
+    <div class="chord-voicing">
+      <span class="chord-key-lbl">VOLUME</span>
+      <select id="radial-volume" aria-label="What sets the loudness"
+              title="Entry speed: how fast the pointer crosses into a section sets the attack, and the chord ADSR shapes the note. The other two hand loudness to a signal, as in Gesture Mode — the ring still names and holds the note, but the signal IS the level, continuously; there is no envelope to run, you are the envelope. With the other hand playing the volume, accidentals stand down.">
+        ${[['off', 'Entry speed'], ['hand', 'Other hand — openness'], ['brow', 'Eyebrows']]
+          .map(([m, l]) => `<option value="${m}"${m === vol.mode ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+    </div>
+    ${vol.mode === 'off' ? '' : `
+    <div class="chord-expr-cal">
+      <label class="ctrl-lbl">OFF AT<input type="range" id="radial-vol-lo" min="0" max="1" step="0.01" value="${vol.lo}"></label>
+      <label class="ctrl-lbl">FULL AT<input type="range" id="radial-vol-hi" min="0" max="1" step="0.01" value="${vol.hi}"></label>
+      <div class="expr-meter" id="radial-vol-meter" title="Live: the raw signal, and where it lands after the range above. If the bar never empties, raise OFF AT.">
+        <div class="expr-fill" id="radial-vol-fill"></div>
+        <span class="expr-read" id="radial-vol-read">—</span>
+      </div>
+    </div>`}
     ${seventhsRow}
     <div class="wave-btns" style="margin-top:4px;">
       <button type="button" class="wave-btn${engine.getShepard().chord ? ' on' : ''}" id="radial-shep"
@@ -177,6 +200,17 @@ export function wireRadialSection(rerender) {
   document.getElementById('radial-finger')?.addEventListener('change', e => {
     radial.setFinger(e.target.value);
   });
+  document.getElementById('radial-volume')?.addEventListener('change', e => {
+    radial.setVolume({ mode: e.target.value });
+    rerender();                             // the range sliders appear with it
+  });
+  // The range sliders mutate in place — a re-render mid-drag drops the
+  // pointer, and these are exactly the controls you adjust while watching
+  // the meter move.
+  document.getElementById('radial-vol-lo')?.addEventListener('input', e =>
+    radial.setVolume({ lo: +e.target.value }));
+  document.getElementById('radial-vol-hi')?.addEventListener('input', e =>
+    radial.setVolume({ hi: +e.target.value }));
 
   // Re-renders: the button relabels itself with the numeral it now sounds
   // ("V" → "V7"), and a 7th is a property of the chord, so nothing else in
@@ -219,4 +253,18 @@ export function updateRadialPanel() {
   else if (!geo) txt = needsLine(cfg) || `waiting for tracking — bring the ${cfg.joint} into frame`;
   else txt = 'in reach — extend into the ring to play';
   if (el.textContent !== txt) el.textContent = txt;
+
+  // Live volume meter. Without it, calibrating the range is guesswork: you
+  // cannot see that a closed fist still reads 0.42 and so never reaches
+  // silence, which is the whole reason the range exists.
+  const fill = document.getElementById('radial-vol-fill');
+  if (fill) {
+    const { raw, level } = radial.volumeLevel();
+    const pct = `${Math.round(level * 100)}%`;
+    if (fill.style.width !== pct) fill.style.width = pct;
+    fill.classList.toggle('on', level > 0 && s !== null);
+    const read = document.getElementById('radial-vol-read');
+    const rtxt = `${raw.toFixed(2)} → ${Math.round(level * 100)}%`;
+    if (read && read.textContent !== rtxt) read.textContent = rtxt;
+  }
 }

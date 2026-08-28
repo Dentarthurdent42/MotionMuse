@@ -9,7 +9,8 @@ import assert from 'node:assert/strict';
 import { makeRadialTracker, ringBasis, wristGeometry, shoulderGeometry,
          JOINTS, FINGERS, V_FLOOR, MIN_TILT, RING_THICKNESS,
          radial } from '../../src/radial.js';
-import { chordmode } from '../../src/chordmode.js';
+import { chordmode, EXPRESSION_RANGE } from '../../src/chordmode.js';
+import { bus } from '../../src/bus.js';
 import { engine }    from '../../src/engine.js';
 
 // A seven-section ring: ~51.4° per section, section 0 CENTRED on 0°.
@@ -280,5 +281,65 @@ test('junk in a loaded snapshot falls back instead of wedging', () => {
   assert.equal(cfg.side, 'R');
   assert.equal(cfg.voicing, 'note');
   assert.equal(cfg.finger, 'index', 'the pointing finger is the fallback');
+  radial.load({ enabled: false });
+});
+
+// ── Volume expression ─────────────────────────────────────────────────────
+
+test('choosing a volume source re-seeds its measured range — an explicit range still wins', () => {
+  radial.load({ enabled: false });
+  assert.equal(radial.volumeState().mode, 'off', 'entry speed is the default');
+  radial.setVolume({ mode: 'hand' });
+  assert.deepEqual(radial.volumeState(), { mode: 'hand', ...EXPRESSION_RANGE.hand },
+    'hand openness arrives with the openness range, as in gesture mode');
+  radial.setVolume({ mode: 'brow' });
+  assert.deepEqual(radial.volumeState(), { mode: 'brow', ...EXPRESSION_RANGE.brow });
+  radial.setVolume({ mode: 'hand', lo: 0.3, hi: 0.8 });
+  assert.deepEqual(radial.volumeState(), { mode: 'hand', lo: 0.3, hi: 0.8 });
+  radial.load({ enabled: false });
+});
+
+test('the off hand’s openness maps onto travel with a silent floor', () => {
+  // The ring on the RIGHT wrist reads the LEFT hand — the ring’s own off side.
+  bus.register('hand_L_open', { min: 0, max: 1 });
+  radial.load({ enabled: false, side: 'R', volume: { mode: 'hand' } });
+  const at = raw => { bus.update('hand_L_open', raw); return radial.volumeLevel(); };
+  assert.equal(at(0.90).level, 1, 'a fully open hand reaches full volume');
+  assert.equal(at(0.42).level, 0, 'a fist reaches true silence…');
+  assert.equal(at(0.46).level, 0, '…and does not have to be hit exactly (dead zone)');
+  const mid = at(0.66);
+  assert.ok(mid.level > 0.35 && mid.level < 0.5, `half-open is around half (${mid.level})`);
+  assert.ok(Math.abs(mid.raw - 0.66) < 1e-9, 'the meter reports the raw value it read');
+  radial.load({ enabled: false });
+});
+
+test('in a volume mode the ring names and holds the note; the signal owns loudness', () => {
+  bus.register('hand_L_open', { min: 0, max: 1 });
+  bus.update('hand_L_open', 0.9);
+  radial.load({ enabled: true, joint: 'wrist', side: 'R', volume: { mode: 'hand' } });
+  const hand = tip => {
+    const lm = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5 }));
+    lm[0] = { x: 0.5, y: 0.5 }; lm[9] = { x: 0.5, y: 0.4 }; lm[8] = tip;
+    return lm;
+  };
+  radial.feedHands({ R: hand({ x: 0.5, y: 0.32 }) }, null, 1);   // extended: in the ring
+  radial.tick();
+  assert.notEqual(radial.soundingSection(), null, 'pointing still names the note');
+  radial.feedHands({ R: hand({ x: 0.5, y: 0.45 }) }, null, 1);   // curled: retracted
+  radial.tick();
+  assert.equal(radial.soundingSection(), null, 'retracting still releases — the ring is the gate');
+  radial.load({ enabled: false });
+});
+
+test('volume settings round-trip, and junk falls back instead of wedging', () => {
+  radial.load({ enabled: false, volume: { mode: 'brow', lo: 0.1, hi: 0.6 } });
+  const snap = radial.serialize();
+  radial.load({ enabled: false });
+  radial.load(snap);
+  assert.deepEqual(radial.volumeState(), { mode: 'brow', lo: 0.1, hi: 0.6 });
+  radial.load({ enabled: false, volume: { mode: 'loud??', lo: 'wide', hi: -3 } });
+  const v = radial.volumeState();
+  assert.equal(v.mode, 'off');
+  assert.ok(v.hi > v.lo, 'the range stays a range');
   radial.load({ enabled: false });
 });
