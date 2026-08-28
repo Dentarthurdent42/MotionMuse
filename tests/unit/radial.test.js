@@ -6,9 +6,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeRadialTracker, ringBasis, wristGeometry, shoulderGeometry,
-         JOINTS, FINGERS, V_FLOOR, MIN_TILT, RING_THICKNESS,
-         radial } from '../../src/radial.js';
+import { makeRadialTracker, makeRingSmoother, ringBasis, wristGeometry,
+         shoulderGeometry, JOINTS, FINGERS, V_FLOOR, MIN_TILT, RING_THICKNESS,
+         HYST_DEG, radial } from '../../src/radial.js';
 import { chordmode, EXPRESSION_RANGE } from '../../src/chordmode.js';
 import { bus } from '../../src/bus.js';
 import { engine }    from '../../src/engine.js';
@@ -238,7 +238,7 @@ test('missing landmarks mean no ring, not a broken one', () => {
 
 // ── The instrument glue ───────────────────────────────────────────────────
 
-test('enabling the radial menu parks gesture mode and defaults to Shepard tones', () => {
+test('enabling radial mode parks gesture mode and defaults to Shepard tones', () => {
   chordmode.setEnabled(true);
   engine.setShepard({ chord: false });
   radial.setEnabled(true);
@@ -322,13 +322,25 @@ test('in a volume mode the ring names and holds the note; the signal owns loudne
     lm[0] = { x: 0.5, y: 0.5 }; lm[9] = { x: 0.5, y: 0.4 }; lm[8] = tip;
     return lm;
   };
-  radial.feedHands({ R: hand({ x: 0.5, y: 0.32 }) }, null, 1);   // extended: in the ring
-  radial.tick();
-  assert.notEqual(radial.soundingSection(), null, 'pointing still names the note');
-  radial.feedHands({ R: hand({ x: 0.5, y: 0.45 }) }, null, 1);   // curled: retracted
-  radial.tick();
-  assert.equal(radial.soundingSection(), null, 'retracting still releases — the ring is the gate');
-  radial.load({ enabled: false });
+  // The ring smooths its pointer against the wall clock; back-to-back test
+  // ticks share one instant, where a One-Euro moves nothing. Step time the
+  // way real frames do.
+  const realNow = performance.now.bind(performance);
+  let skew = 0;
+  performance.now = () => realNow() + skew;
+  try {
+    radial.feedHands({ R: hand({ x: 0.5, y: 0.32 }) }, null, 1);   // extended: in the ring
+    radial.tick();
+    assert.notEqual(radial.soundingSection(), null, 'pointing still names the note');
+    radial.feedHands({ R: hand({ x: 0.5, y: 0.45 }) }, null, 1);   // curled: retracted
+    for (let i = 0; i < 10 && radial.soundingSection() !== null; i++) {
+      skew += 33; radial.tick();
+    }
+    assert.equal(radial.soundingSection(), null, 'retracting still releases — the ring is the gate');
+  } finally {
+    performance.now = realNow;
+    radial.load({ enabled: false });
+  }
 });
 
 test('volume settings round-trip, and junk falls back instead of wedging', () => {
@@ -342,4 +354,61 @@ test('volume settings round-trip, and junk falls back instead of wedging', () =>
   assert.equal(v.mode, 'off');
   assert.ok(v.hi > v.lo, 'the range stays a range');
   radial.load({ enabled: false });
+});
+
+// ── Ring smoothing ────────────────────────────────────────────────────────
+//
+// The ring reads raw landmarks, and hand z — the noisiest number MediaPipe
+// produces — is in every one of its measurements. These pin the smoother's
+// bargain: a live hand's jitter dies below the angular hysteresis, a
+// deliberate move still lands within a few frames, and the seam never turns
+// a wobble into a lap of the circle.
+
+const sgeo = (deg, r) => ({ anchor: { x: 0.5, y: 0.5 }, unit: 0.1, aspect: 1,
+                            basis: null, pointer: { x: 0.5, y: 0.4, r, deg } });
+
+test('hold jitter settles under the boundary hysteresis', () => {
+  const sm = makeRingSmoother();
+  // ±8° / ±0.2r deterministic jitter at 30fps, held ON a section boundary —
+  // the worst place to stand, and raw it would re-attack every other frame.
+  let minD = 1e9, maxD = -1e9, minR = 1e9, maxR = -1e9;
+  for (let i = 0; i < 90; i++) {
+    const nz = (i % 2 ? 1 : -1) * 8 * (((i * 7) % 5) + 1) / 5;
+    const out = sm.smooth(sgeo(26 + nz, 1.6 + ((i % 3) - 1) * 0.2), i / 30);
+    if (i > 30) {
+      minD = Math.min(minD, out.pointer.deg); maxD = Math.max(maxD, out.pointer.deg);
+      minR = Math.min(minR, out.pointer.r);   maxR = Math.max(maxR, out.pointer.r);
+    }
+  }
+  assert.ok(maxD - minD < HYST_DEG, `±8° of noise settles to ${(maxD - minD).toFixed(2)}° — under the ${HYST_DEG}° hysteresis`);
+  assert.ok(maxR - minR < JOINTS.wrist.hystR, `±0.2r of noise settles under the release margin (${(maxR - minR).toFixed(3)})`);
+});
+
+test('a deliberate move still lands within a few frames', () => {
+  const sm = makeRingSmoother();
+  for (let i = 0; i < 30; i++) sm.smooth(sgeo(26, 1.6), i / 30);
+  let out;
+  for (let i = 0; i < 6; i++) out = sm.smooth(sgeo(116, 1.6), 1 + i / 30);
+  assert.ok(Math.abs(out.pointer.deg - 116) < 10,
+    `a quarter-turn arrives in six frames (${out.pointer.deg.toFixed(1)}°)`);
+});
+
+test('the seam smooths as a seam, not as a lap of the circle', () => {
+  // Filtering DEGREES would average 178 and −178 to zero — the opposite side
+  // of the ring. The unit-vector filter must keep the pointer at the seam.
+  const sm = makeRingSmoother();
+  for (let i = 0; i < 60; i++) {
+    const out = sm.smooth(sgeo(i % 2 ? 178 : -178, 1.6), i / 30);
+    if (i > 20) assert.ok(Math.abs(out.pointer.deg) > 170,
+      `seam wobble stays at the seam (${out.pointer.deg.toFixed(1)}°)`);
+  }
+});
+
+test('a reacquired hand snaps to where it is, not glides from where it was lost', () => {
+  const sm = makeRingSmoother();
+  for (let i = 0; i < 30; i++) sm.smooth(sgeo(26, 1.6), i / 30);
+  sm.smooth(null);                    // tracking lost — filters reset
+  const fresh = sm.smooth(sgeo(-150, 1.2), 2);
+  assert.ok(Math.abs(fresh.pointer.deg - -150) < 1e-9, 'first sample passes through exactly');
+  assert.ok(Math.abs(fresh.pointer.r - 1.2) < 1e-9);
 });

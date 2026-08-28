@@ -1,4 +1,4 @@
-// UI for the Radial Menu panel section — the joint-anchored ring of scale
+// UI for the Radial Mode panel section — the joint-anchored ring of scale
 // degrees (src/radial.js). Markup + handlers + the cheap per-frame readout,
 // kept beside gesture-ui.js because the two sections are siblings: both are
 // ways of playing the chord voice bank, and both speak the same key.
@@ -69,18 +69,19 @@ export function radialMenuSection() {
   const jointVal = `${cfg.joint}_${cfg.side}`;
   const sevenths = chordmode.sevenths();
   const vol = radial.volumeState();
+  const env = engine.getChordEnv();
   const needs = on ? needsLine(cfg) : '';
 
-  const keyRow = !on ? '' : `
+  const keyRow = `
     <div class="chord-key">
       <span class="chord-key-lbl">KEY</span>
-      <select id="rk-root" ${flw ? 'disabled' : ''} aria-label="Radial menu key root"
+      <select id="rk-root" ${flw ? 'disabled' : ''} aria-label="Radial mode key root"
               title="${flw ? 'Following Pitch Quantize' : 'Root of the key — shared with Gesture Mode'}"
         >${NOTE_NAMES.map(n => opt(n, eff.root)).join('')}</select>
-      <select id="rk-mode" ${flw ? 'disabled' : ''} aria-label="Radial menu key mode"
+      <select id="rk-mode" ${flw ? 'disabled' : ''} aria-label="Radial mode key mode"
               title="The scale — its degree count is the section count: seven arcs for a diatonic mode, five for a pentatonic"
         >${DEGREE_SCALES.map(s => `<option value="${s}"${s === eff.mode ? ' selected' : ''}>${MODE_LABELS[s] ?? s}</option>`).join('')}</select>
-      <select id="rk-oct" aria-label="Radial menu octave" title="Octave of the degrees"
+      <select id="rk-oct" aria-label="Radial mode octave" title="Octave of the degrees"
         >${[2, 3, 4, 5].map(o => opt(o, key.octave)).join('')}</select>
       <button class="wave-btn${key.follow ? ' on' : ''}" id="rk-follow" aria-pressed="${key.follow}"
               title="${key.follow && !flw
@@ -94,13 +95,13 @@ export function radialMenuSection() {
   // buttons write the same state gesture mode's per-chord 7th buttons do, and
   // a 7th set in either place is set in both. They live here because gesture
   // mode's rows are hidden whenever it is switched off, and enabling the
-  // radial menu switches it off: without this row, the radial menu's chords
+  // radial mode switches it off: without this row, radial mode's chords
   // honoured a 7ths table nothing on screen could reach.
   //
   // One button per section rather than a row per chord — the ring's sections
   // have no rows to hang them on — labelled with the numeral each degree
   // currently sounds, so the label says what the toggle did ("V" → "V7").
-  const seventhsRow = (!on || cfg.voicing !== 'chord') ? '' : `
+  const seventhsRow = cfg.voicing !== 'chord' ? '' : `
     <div class="chord-voicing">
       <span class="chord-key-lbl" title="Add the diatonic 7th to a degree. Shared with Gesture Mode.">7THS</span>
       <div class="wave-btns" style="flex:1;flex-wrap:wrap;">
@@ -114,7 +115,7 @@ export function radialMenuSection() {
       </div>
     </div>`;
 
-  const controls = !on ? '' : `
+  const controls = `
     <div class="chord-voicing">
       <span class="chord-key-lbl">JOINT</span>
       <select id="radial-joint" aria-label="Which joint the ring is worn on"
@@ -160,6 +161,17 @@ export function radialMenuSection() {
       </div>
     </div>`}
     ${seventhsRow}
+    <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;"
+         title="The chord envelope — the same one Gesture Mode shapes, since both modes voice through the same bank. Shapes entry-speed notes; in the signal-volume modes there is no envelope to run, you are the envelope.">
+      ${['attack', 'decay', 'sustain', 'release'].map(k => `
+        <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
+          ${k.slice(0, 3).toUpperCase()}
+          <input type="range" class="rk-env" data-env="${k}"
+            min="${engine.CHORD_ENV_RANGE[k][0]}" max="${engine.CHORD_ENV_RANGE[k][1]}"
+            step="0.005" value="${env[k]}">
+          <span class="ctrl-val" id="rk-env-${k}">${k === 'sustain' ? Math.round(env[k] * 100) + '%' : env[k].toFixed(2) + 's'}</span>
+        </label>`).join('')}
+    </div>
     <div class="wave-btns" style="margin-top:4px;">
       <button type="button" class="wave-btn${engine.getShepard().chord ? ' on' : ''}" id="radial-shep"
            aria-pressed="${engine.getShepard().chord}"
@@ -168,9 +180,9 @@ export function radialMenuSection() {
     <div class="quant-notes" id="radial-readout" role="status" aria-live="polite">${needs || '—'}</div>`;
 
   return `
-    <div class="audio-section" data-sec="radial-menu">
+    <div class="audio-section" data-sec="radial-mode">
       <div class="audio-section-label">
-        Radial Menu
+        Radial Mode
         <button class="wave-btn${on ? ' on' : ''}" id="radial-toggle" aria-pressed="${on}"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</button>
       </div>
@@ -221,6 +233,17 @@ export function wireRadialSection(rerender) {
       chordmode.setSeventh(d, !chordmode.sevenths()[d]);
       rerender();
     }));
+
+  // ADSR sliders mutate in place: a re-render mid-drag would drop the
+  // pointer capture. Same envelope gesture mode's sliders write.
+  document.querySelectorAll('.rk-env').forEach(el => {
+    el.addEventListener('input', e => {
+      const k = e.target.dataset.env;
+      const v = engine.setChordEnv({ [k]: +e.target.value })[k];
+      const out = document.getElementById(`rk-env-${k}`);
+      if (out) out.textContent = k === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`;
+    });
+  });
 
   document.getElementById('radial-shep')?.addEventListener('click', () => {
     radial.toggleShepard();

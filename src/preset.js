@@ -93,7 +93,7 @@ export function apply(data) {
   if (Array.isArray(data.mappings)) mapper.load(data.mappings);
   if (data.gestures) gesture.load(data.gestures);
   if (data.chord) chordmode.load(data.chord);
-  // After chord: an enabled radial menu switches gesture mode off (the two
+  // After chord: an enabled radial mode switches gesture mode off (the two
   // share the chord voice bank), and last-writer-wins is the honest order for
   // a snapshot that somehow carries both.
   if (data.radial) radial.load(data.radial);

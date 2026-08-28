@@ -6,7 +6,7 @@
 // thirty seconds a hunt for where the instrument is.
 //
 // So the first visit asks. Every mapping preset is offered, plus the four
-// in-key ways of playing — handshapes or the radial menu, each sounding
+// in-key ways of playing — handshapes or radial mode, each sounding
 // chords or single notes; ways of playing rather than patches — and an
 // explicit blank.
 
@@ -49,12 +49,12 @@ export const STARTERS = [
   },
   {
     id: 'radial-notes', kind: 'radial', mode: 'chords', voicing: 'note',
-    name: 'Radial Menu · Single Notes',
+    name: 'Radial Mode · Single Notes',
     hint: 'A ring of notes around your wrist — point with your index finger to play',
   },
   {
     id: 'radial-chords', kind: 'radial', mode: 'chords', voicing: 'chord',
-    name: 'Radial Menu · Chords',
+    name: 'Radial Mode · Chords',
     hint: 'The same ring, each section a chord of the key',
   },
   ...PRESETS.map(p => ({ id: p.id, kind: 'preset', mode: 'osc',
@@ -75,7 +75,7 @@ export const STARTERS = [
 // shape, so they are the best first thing to hand someone who has just arrived
 // — and chords were bottom of the list, below a scroll on a phone.
 export const STARTER_GROUPS = [
-  { mode: 'chords', label: 'PLAY IN A KEY — a handshape or a radial menu names a degree' },
+  { mode: 'chords', label: 'PLAY IN A KEY — a handshape or a radial ring names a degree' },
   { mode: 'osc',    label: 'OSCILLATOR — signals drive pitch and tone' },
 ];
 
@@ -107,7 +107,7 @@ export function applyStarter(id, { applyTrackers }) {
   mapper.load([]);
 
   if (s.kind === 'chords') {
-    // Enabling parks the radial menu — the two share the chord voice bank —
+    // Enabling parks radial mode — the two share the chord voice bank —
     // and every in-key start states its whole self: voicing AND Shepard
     // tones, rather than inheriting whatever the last setup left switched.
     radial.setEnabled(false);
