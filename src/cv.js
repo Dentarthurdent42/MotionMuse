@@ -645,7 +645,7 @@ export const cvSource = {
     // Distance-from-camera (LiDAR if active, else monocular size estimate).
     // Claimed hands freeze here in step with their other signals.
     depthSource.feedHands(found, claimed);
-    // The radial menu reads raw geometry (a pointer is a direction, not a
+    // Radial mode reads raw geometry (a pointer is a direction, not a
     // scalar the bus could carry), so it gets the landmarks the same way
     // depth does — claimed hands freeze here too, and staleness inside the
     // module turns a frozen hand into a released note.
@@ -717,7 +717,7 @@ export const cvSource = {
 
     // Torso distance-from-camera (LiDAR if active, else shoulder-span estimate).
     depthSource.feedPose(lm ?? null);
-    // The gated landmarks, not the raw ones: the radial menu rides the
+    // The gated landmarks, not the raw ones: radial mode rides the
     // forearm, and a forearm the model only guessed at would swing the whole
     // ring. Without it the ring falls back to facing the camera, which is the
     // same thing it does with pose switched off.
@@ -747,7 +747,7 @@ export const cvSource = {
     const lx = x => ox + x * vw * scale;
     const ly = y => oy + y * vh * scale;
 
-    // The radial menu's ring first, so the skeletons draw over it — it is
+    // Radial mode's ring first, so the skeletons draw over it — it is
     // furniture the pointer moves across, not part of the body. It brings
     // its own contrast (scrim + halos), so no theme token goes in.
     radial.draw(ctx, lx, ly);

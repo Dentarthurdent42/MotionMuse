@@ -135,7 +135,7 @@ export function gestureModeSection() {
   const eff  = chordmode.effectiveKey();
   const sevenths = chordmode.sevenths();
   const flw  = chordmode.isFollowing();   // armed *and* actually overriding
-  const keyRow = on ? `
+  const keyRow = `
     <div class="chord-key">
       <span class="chord-key-lbl">KEY</span>
       <select id="ck-root" ${flw ? 'disabled' : ''} aria-label="Chord key root"
@@ -149,7 +149,7 @@ export function gestureModeSection() {
               title="${key.follow && !flw
                 ? 'Following Pitch Quantize — inactive until quantise is on'
                 : 'Take the key from Pitch Quantize, so chords match the melody'}">FOLLOW</button>
-    </div>` : '';
+    </div>`;
 
   // ── Voicing: the chord, or the single note it is built on ───────────────
   //
@@ -166,7 +166,7 @@ export function gestureModeSection() {
   // there is not one: that hand is already the volume. Say so rather than
   // leaving two live-looking selects that quietly do nothing.
   const accBusy = ex.mode === 'hand';
-  const voicingRow = !on ? '' : `
+  const voicingRow = `
     <div class="chord-voicing">
       <span class="chord-key-lbl">PLAY</span>
       <select id="ck-voicing" aria-label="Whether a handshape sounds a chord or one note"
@@ -195,6 +195,10 @@ export function gestureModeSection() {
         : 'Neither shape held is natural. The hand that is not naming the note is the one that bends it.'}</div>
     </div>`}`;
 
+  // Every control renders whether the mode is ON or not — switching to
+  // radial mode must not hide the place a chord's 7th or the key is set, and
+  // setting a mode up BEFORE switching to it is half the point of having two.
+  // Only the live readout stays gated: it reports a sound that is not there.
   // One row per CHORD, not per handshape.
   //
   // It was the other way round, and that let the same shape be a chord *and*
@@ -235,7 +239,7 @@ export function gestureModeSection() {
     brow:    'Eyebrows',
   };
   const CONTROL_LABEL = { gate: 'ATTACK / RELEASE', volume: 'VOLUME' };
-  const exprRow = !on ? '' : `
+  const exprRow = `
     <div class="chord-expr">
       <span class="chord-key-lbl">PLAY WITH</span>
       <select id="ck-expr-mode" aria-label="What makes the chord sound"
@@ -275,7 +279,7 @@ export function gestureModeSection() {
   const PATTERN_LABEL = {
     up: 'UP', down: 'DOWN', updown: 'UP · DOWN', downup: 'DOWN · UP', random: 'RANDOM',
   };
-  const arpRow = !on ? '' : `
+  const arpRow = `
     <div class="chord-arp">
       <span class="chord-key-lbl">ARP</span>
       <button class="wave-btn${a.enabled ? ' on' : ''}" id="ck-arp" aria-pressed="${a.enabled}"
@@ -305,7 +309,7 @@ export function gestureModeSection() {
   // assigned to a degree beyond the count keeps its assignment — dormant, and
   // back the moment the mode is — so the rows that disappear here are not
   // deletions.
-  const assignRows = !on ? '' :
+  const assignRows =
     Array.from({ length: chordmode.degreeCount() }, (_, i) => chordRow(i)).join('') + `
     <div class="chord-assign${ex.mode === 'gesture' ? '' : ' dimmed'}" data-degree="release">
       <span class="gesture-dot" id="cdot-release"></span>
@@ -336,7 +340,6 @@ export function gestureModeSection() {
       ${exprRow}
       <div id="chord-assigns">${assignRows}</div>
       ${arpRow}
-      ${!on ? '' : `
       <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;">
         ${['attack', 'decay', 'sustain', 'release'].map(k => `
           <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
@@ -351,7 +354,7 @@ export function gestureModeSection() {
         <button type="button" class="wave-btn${engine.getShepard().chord ? ' on' : ''}" id="shep-chord"
              aria-pressed="${engine.getShepard().chord}"
              title="Shepard tones: every chord note becomes a stack of octaves under a fixed loudness curve, so a progression can climb without ever running out of register.">SHEPARD</button>
-      </div>`}
+      </div>
       <div class="chord-live" id="chord-live" style="display:${on ? 'grid' : 'none'}">
         <div id="chord-readout" class="quant-notes" role="status" aria-live="polite">—</div>
         <div class="chord-vol" title="How loud the chord is right now">
@@ -493,7 +496,7 @@ export function wireGestureSections(rerender) {
 
   document.getElementById('chord-toggle')?.addEventListener('click', () => {
     const on = !chordmode.enabled;
-    // One instrument on the chord bank at a time — the radial menu voices
+    // One instrument on the chord bank at a time — radial mode voices
     // through the same four voices, and radial.setEnabled enforces the same
     // rule from its own side.
     if (on) radial.setEnabled(false);

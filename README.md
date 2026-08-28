@@ -166,7 +166,7 @@ guided tour which tour to give you:
 the two **Face** patches, **Gaze**, **Pose**), plus **Blank**, which sits here
 because building from nothing means the patchbay.
 
-**Play in a key** — a handshape or a radial menu names a degree. Listed first:
+**Play in a key** — a handshape or a radial ring names a degree. Listed first:
 these are the entries that play music the moment you move.
 
 The in-key entries are **two choices crossed**, stated as four cards — *what
@@ -190,9 +190,9 @@ In full:
   should not mean picking the second and then finding the switch that undoes
   it. Each choice **states** its voicing rather than inheriting whatever was
   set last.
-- **Radial Menu · Single Notes** and **Radial Menu · Chords** — a ring of the
+- **Radial Mode · Single Notes** and **Radial Mode · Chords** — a ring of the
   key's degrees worn on the wrist, played by pointing the index finger (see
-  [Radial menu](#radial-menu-play-by-pointing)). Both hands tracked — one
+  [Radial mode](#radial-mode-play-by-pointing)). Both hands tracked — one
   wears the ring, the other bends notes — plus pose, which carries the
   forearm the ring rides.
 - **Blank** — nothing wired, no trackers, and **no oscillator**. Genuinely
@@ -798,7 +798,7 @@ treats as absent. Two consequences worth stating:
 - **A signal that cannot be computed decays** rather than standing at the last
   value it was invented from. A frozen garbage angle otherwise outlives the
   frame that produced it and keeps driving whatever it is mapped to.
-- **The radial menu stops riding a forearm that isn't there.** Its ring is
+- **Radial mode stops riding a forearm that isn't there.** Its ring is
   oriented by the elbow→wrist segment, so a guessed forearm would swing the
   whole ring; without a visible one it falls back to facing the camera, which
   is exactly what it does with pose switched off.
@@ -1122,9 +1122,9 @@ and the step clock are pure functions in `src/arp.js` and are unit-tested
 without an AudioContext; `src/chordmode.js` owns the clock and calls
 `engine.arpNote()`.
 
-## Radial menu (play by pointing)
+## Radial mode (play by pointing)
 
-The **Radial Menu** section (beside Gesture Mode) is a second way of playing
+The **Radial Mode** section (beside Gesture Mode) is a second way of playing
 the chord voice bank: a **circle of equal-angle sections** worn on a joint
 like a bracelet, one section per **scale degree** of the key. Point into a
 section and its degree sounds; five sections over a pentatonic key, seven
@@ -1219,7 +1219,7 @@ here:
   gesture mode's per-chord **7th** buttons do, because a 7th belongs to the
   chord rather than to whatever is playing it. It has to live here as well as
   there: gesture mode's rows are hidden whenever it is switched off, and
-  enabling the radial menu switches it off, so without this row the ring's
+  enabling radial mode switches it off, so without this row the ring's
   chords honoured a 7ths table nothing on screen could reach.
 
 **Shepard tones are the default voice** for this mode: enabling the menu
@@ -1229,9 +1229,18 @@ octave — runs around the ring climb without ever leaving their register.
 Toggling SHEPARD from the radial panel overrules the default for good; the
 auto-on never fights a choice you have made.
 
-Only **one** of Radial Menu and Gesture Mode is on at a time — both voice
+Only **one** of Radial Mode and Gesture Mode is on at a time — both voice
 through the same four chord voices, and two writers on one bank is a race, not
 a duet. Enabling either parks the other; both toggles say so by their state.
+The parked mode's **controls stay visible**: only what SOUNDS is exclusive,
+and setting a mode up before switching to it is half the point of having two —
+hiding the place a chord's 7th or the key is set the moment you switch away
+made every shared setting unreachable from where you were standing.
+
+The section also carries the **chord ADSR** — the same four sliders gesture
+mode has, writing the same envelope, since both modes voice through the same
+bank. It shapes entry-speed notes; in the signal-volume modes there is no
+envelope to run — you are the envelope.
 
 The ring is drawn on the **camera overlay**, under the skeletons, in the
 overlay's own mirrored space, with note-name labels (numerals in chord
@@ -1244,9 +1253,17 @@ glyph is **haloed** in that dark under light ink, and the active section's
 tint (the pointing hand's overlay colour, stronger while sounding) sits on
 top of the scrim rather than replacing it. A pointer line, haloed the same
 way, makes what the ring is reading visible rather than a guess.
-The forearm axis that orients it is differenced from two pose landmarks, so it
-carries both joints' jitter into every section's position; it runs through its
-own One-Euro filter before it touches the ring.
+The ring reads **raw landmarks** — no bus, no bus filter — and the number it
+leans on hardest is hand z, the noisiest thing MediaPipe produces. So every
+value it actually uses is One-Euro filtered: the forearm axis that orients it
+(differenced from two pose landmarks, so it carries both joints' jitter into
+every section's position), and the pointer's angle, radius, anchor and scale.
+The angle is filtered as a **unit vector** and read back with `atan2`, because
+an angle wraps — filtering degrees directly would swing a pointer crossing
+the seam through the whole circle instead of across it. Boundary hysteresis
+backstops the smoothing; neither alone was enough on a live hand. Losing
+tracking resets the filters, so a reacquired hand snaps to where it is rather
+than gliding in from where it was lost.
 
 The maths — section resolution on the closed circle, boundary hysteresis,
 entry-speed → strength, and both ring geometries — is pure and camera-free in

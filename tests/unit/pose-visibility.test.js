@@ -100,7 +100,7 @@ test('a pose with nothing visible reads exactly like no pose at all', () => {
   assert.ok(val('shoulder_width') < before);
 });
 
-test('the radial menu is not handed a forearm the model only guessed at', () => {
+test('radial mode is not handed a forearm the model only guessed at', () => {
   radial.load({ enabled: true, joint: 'wrist', side: 'R' });
   // A hand in view, but the arm behind it invisible.
   const lm = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5 }));

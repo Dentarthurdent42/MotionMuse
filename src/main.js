@@ -58,7 +58,7 @@ function loop() {
   // silently claims a hand away from the instrument.
   if (devmode.enabled) uicontrol.tick();
   chordmode.tick();      // cheap no-op unless gesture mode is enabled
-  radial.tick();         // cheap no-op unless the radial menu is enabled
+  radial.tick();         // cheap no-op unless radial mode is enabled
   playalong.tick();      // cheap no-op unless a song is running
   // The pedal, after the trackers have published this frame's signals and
   // before anything draws: a nod detected now should move the transport now,

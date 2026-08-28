@@ -1,4 +1,4 @@
-// Radial joint menu — play scale degrees by POINTING.
+// Radial mode — play scale degrees by POINTING.
 //
 // A CIRCLE of equal-angle sections is worn on a joint like a bracelet: the
 // ring's plane is perpendicular to a body axis, with that axis the normal
@@ -99,8 +99,10 @@ export const V_FLOOR = 0.35;
 
 // Angular hysteresis at section boundaries, degrees. Movement between
 // sections re-attacks; this keeps a pointer resting ON a boundary from
-// re-attacking every frame of jitter.
-export const HYST_DEG = 4;
+// re-attacking every frame of jitter. It backstops the smoother below —
+// hysteresis catches what smoothing lets through, and neither alone was
+// enough on a live hand.
+export const HYST_DEG = 6;
 
 // The drawn — and played — ring never goes fully edge-on: the normal is
 // tilted toward the camera until it keeps at least this much depth
@@ -108,6 +110,57 @@ export const HYST_DEG = 4;
 // ellipse instead of a line. Applied to the maths and the picture together,
 // so what you see is what is measured.
 export const MIN_TILT = 0.25;
+
+// ── Ring smoothing ────────────────────────────────────────────────────────
+//
+// The ring reads RAW landmarks — no bus, no bus filter — and the number it
+// leans on hardest is hand z, the noisiest thing MediaPipe produces. Left
+// unfiltered that noise lands everywhere at once: the pointer chatters
+// between sections, the radius flutters across the attack edge, and the
+// whole drawn ring breathes as the palm length wobbles. So every value the
+// ring actually uses runs through its own One-Euro filter — heavy on a held
+// pose, light on a deliberate stab, which is the property that keeps entry
+// speed meaningful.
+//
+// The ANGLE is filtered as a unit vector (cos, sin) and read back with
+// atan2, because an angle wraps: filtering degrees directly would swing a
+// pointer crossing the seam through the whole circle instead of across it.
+//
+// A pure factory with injected time, like the tracker, so the smoothing —
+// convergence on a noisy hold, bounded lag on a real move — is testable
+// without a camera: tests/unit/radial.test.js drives it directly.
+export function makeRingSmoother() {
+  const mk = opts => makeOneEuro(opts);
+  const POS = { minCutoff: 0.9, beta: 0.35 };   // pointer polar + screen pos
+  const SLOW = { minCutoff: 0.6, beta: 0.15 };  // anchor + scale: nothing musical rides them
+  const f = {
+    c: mk(POS), s: mk(POS), r: mk(POS), px: mk(POS), py: mk(POS),
+    ax: mk(SLOW), ay: mk(SLOW), unit: mk(SLOW),
+  };
+  return {
+    // Smoothed copy of a geometry, or null — which also RESETS, so a
+    // reacquired hand snaps to where it is rather than gliding in from
+    // where it was lost.
+    smooth(g, tSec) {
+      if (!g) { for (const k in f) f[k].reset(); return null; }
+      const rad = g.pointer.deg / DEG;
+      const c = f.c.filter(Math.cos(rad), tSec);
+      const sn = f.s.filter(Math.sin(rad), tSec);
+      const deg = Math.hypot(c, sn) < 1e-6 ? g.pointer.deg : Math.atan2(sn, c) * DEG;
+      return {
+        ...g,
+        anchor: { x: f.ax.filter(g.anchor.x, tSec), y: f.ay.filter(g.anchor.y, tSec) },
+        unit: f.unit.filter(g.unit, tSec),
+        pointer: {
+          x: f.px.filter(g.pointer.x, tSec),
+          y: f.py.filter(g.pointer.y, tSec),
+          r: f.r.filter(g.pointer.r, tSec),
+          deg,
+        },
+      };
+    },
+  };
+}
 
 // ── The tracker: samples in, attack/release events out ────────────────────
 //
@@ -365,6 +418,7 @@ export const radial = (() => {
 
   let tracker = null;
   let trackerCfg = '';                // what the tracker was built for
+  const smoother = makeRingSmoother();
   let geo = null;                     // last geometry, for drawing + panel
   let sounding = null;                // section index, or null
   let lastStrength = 0;               // for re-voicing without a new attack
@@ -456,7 +510,7 @@ export const radial = (() => {
       if (next === enabled) return enabled;
       enabled = next;
       if (enabled) {
-        // One instrument on the chord bank at a time: the radial menu and
+        // One instrument on the chord bank at a time: radial mode and
         // gesture mode both voice through it, and two writers is a race, not
         // a duet. (gesture-ui enforces the same rule from its side.)
         chordmode.setEnabled(false);
@@ -475,6 +529,9 @@ export const radial = (() => {
     setJoint(j, s) {
       if (JOINTS[j]) joint = j;
       if (s === 'L' || s === 'R') side = s;
+      // A new anchor is a new place: blending across the jump would glide
+      // the ring from wrist to shoulder as though the arm had moved.
+      smoother.smooth(null);
       ensureTracker();
     },
     setVoicing(v) {
@@ -545,7 +602,8 @@ export const radial = (() => {
     tick() {
       if (!enabled) return;
       ensureTracker();
-      geo = computeGeometry();
+      const now = performance.now();
+      geo = smoother.smooth(computeGeometry(), now / 1000);
       if (!geo) {
         // Tracking lost mid-note fails quiet, like every other source.
         silence();
@@ -554,7 +612,7 @@ export const radial = (() => {
       }
       const ev = tracker.feed({
         deg: geo.pointer.deg, r: geo.pointer.r,
-        t: performance.now() / 1000,
+        t: now / 1000,
       });
       const acc = accidentalNow();
 
@@ -737,6 +795,7 @@ export const radial = (() => {
       if (data.volume) this.setVolume(data.volume);
       shepAuto = data.shepAuto !== false;
       tracker = null; trackerCfg = '';
+      smoother.smooth(null);
       silence();
       lastStrength = 0; lastAcc = NATURAL;
       enabled = false;                  // so setEnabled(true) runs its side effects
