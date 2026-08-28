@@ -313,9 +313,13 @@ test('the off hand’s openness maps onto travel with a silent floor', () => {
   radial.load({ enabled: false });
 });
 
-test('in a volume mode the ring names and holds the note; the signal owns loudness', () => {
+test('a signal-volume latch: sweep does not bend the note, silence re-aims it', () => {
+  // "hold the last chord until the volume input releases and change the
+  // note/chord when it rearticulates" — the latch. While the signal is OPEN
+  // the pitch is frozen: moving the pointer, or losing the ring hand
+  // entirely, changes nothing. Only silence lets the aim move, and the next
+  // articulation sounds whatever was aimed at last.
   bus.register('hand_L_open', { min: 0, max: 1 });
-  bus.update('hand_L_open', 0.9);
   radial.load({ enabled: true, joint: 'wrist', side: 'R', volume: { mode: 'hand' } });
   const hand = tip => {
     const lm = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5 }));
@@ -328,15 +332,33 @@ test('in a volume mode the ring names and holds the note; the signal owns loudne
   const realNow = performance.now.bind(performance);
   let skew = 0;
   performance.now = () => realNow() + skew;
+  const TOP = { x: 0.5, y: 0.32 };    // section 0, straight up the ring
+  const LEFT = { x: 0.32, y: 0.5 };   // 90° round — section 2 of seven
+  const CURL = { x: 0.5, y: 0.45 };   // retracted, out of the band
+  const step = (tip, n = 1) => {
+    for (let i = 0; i < n; i++) { skew += 33; radial.feedHands({ R: hand(tip) }, null, 1); radial.tick(); }
+  };
   try {
-    radial.feedHands({ R: hand({ x: 0.5, y: 0.32 }) }, null, 1);   // extended: in the ring
-    radial.tick();
-    assert.notEqual(radial.soundingSection(), null, 'pointing still names the note');
-    radial.feedHands({ R: hand({ x: 0.5, y: 0.45 }) }, null, 1);   // curled: retracted
-    for (let i = 0; i < 10 && radial.soundingSection() !== null; i++) {
-      skew += 33; radial.tick();
-    }
-    assert.equal(radial.soundingSection(), null, 'retracting still releases — the ring is the gate');
+    bus.update('hand_L_open', 0.42);           // fist: silence
+    step(TOP, 6);
+    assert.equal(radial.soundingSection(), null, 'a closed signal is silence');
+    assert.equal(radial.latchedSection(), 0, 'but the aim is taken');
+    bus.update('hand_L_open', 0.9);            // open: articulate
+    step(TOP);
+    assert.equal(radial.soundingSection(), 0, 'the articulation sounds the latched degree');
+    step(LEFT, 8);                             // sweep, still open
+    assert.equal(radial.soundingSection(), 0, 'the pitch is frozen while the signal is open');
+    assert.equal(radial.latchedSection(), 0, 'and so is the latch — no glissando round the ring');
+    step(CURL, 8);                             // retract, still open
+    assert.equal(radial.soundingSection(), 0, 'the ring only names — retracting cannot cut a held note');
+    bus.update('hand_L_open', 0.42);           // close: release
+    step(CURL);
+    assert.equal(radial.soundingSection(), null, 'the signal is the only gate');
+    step(LEFT, 8);                             // re-aim in the silence
+    assert.equal(radial.latchedSection(), 2, 'silence lets the latch re-aim');
+    bus.update('hand_L_open', 0.9);            // rearticulate
+    step(LEFT);
+    assert.equal(radial.soundingSection(), 2, 'the next articulation takes the new aim');
   } finally {
     performance.now = realNow;
     radial.load({ enabled: false });

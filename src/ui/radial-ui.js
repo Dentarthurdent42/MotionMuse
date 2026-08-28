@@ -271,8 +271,13 @@ export function updateRadialPanel() {
   const s = radial.soundingSection();
   const geo = radial.geometry();
   const cfg = radial.config();
+  const held = cfg.volume.mode !== 'off' ? radial.latchedSection() : null;
   let txt;
   if (s !== null) txt = `● ${radial.sectionLabel(s, { long: true })}`;
+  // A silent latch: the ring has named the note, the signal just hasn't
+  // opened yet. Saying which note is armed is what makes aiming-in-silence
+  // usable — without it, the first articulation is a surprise.
+  else if (held !== null) txt = `${radial.sectionLabel(held, { long: true })} armed — ${cfg.volume.mode === 'brow' ? 'raise your brow' : 'open your hand'} to sound it`;
   else if (!geo) txt = needsLine(cfg) || `waiting for tracking — bring the ${cfg.joint} into frame`;
   else txt = 'in reach — extend into the ring to play';
   if (el.textContent !== txt) el.textContent = txt;
