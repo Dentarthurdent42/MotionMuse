@@ -32,8 +32,9 @@
 // speed, section resolution, the 3D ring orientation — is testable without a
 // camera or an AudioContext: tests/unit/radial.test.js drives them directly.
 
+import { bus }        from './bus.js';
 import { engine }     from './engine.js';
-import { chordmode }  from './chordmode.js';
+import { chordmode, EXPRESSION_RANGE } from './chordmode.js';
 import { gesture }    from './gesture.js';
 import { torsoFrame } from './math.js';
 import { makeOneEuro } from './filter.js';
@@ -298,12 +299,31 @@ export function shoulderGeometry(side, pose, aspect = 4 / 3) {
 
 // ── The instrument ────────────────────────────────────────────────────────
 
+// ── Volume expression ─────────────────────────────────────────────────────
+//
+// Gesture mode's volume story, worn on the ring. By default loudness comes
+// from ENTRY SPEED — the velocity → envelope-peak control the ring already
+// has. The two expression sources hand loudness to a SIGNAL instead, exactly
+// as gesture mode's VOLUME control does: the ring still names the note and
+// holds it (pointing is the gate), but the other hand's openness — or your
+// eyebrows — IS the level, continuously. There is no envelope to run and no
+// entry speed to read in those modes: you are the envelope, which is the
+// whole point of choosing them.
+//
+// lo/hi map the raw signal onto 0..1 travel with the same measured defaults
+// gesture mode uses (a fist still reads ~0.42 openness, a comfortable brow
+// raise is about half scale), and the bottom of the travel rounds down to
+// true silence so it does not have to be hit exactly.
+export const VOLUME_MODES = ['off', 'hand', 'brow'];
+const VOLUME_DEADZONE = 0.12;
+
 const DEFAULTS = {
   enabled: false,
   joint: 'wrist',                    // 'wrist' | 'shoulder'
   side: 'R',
   voicing: 'note',                   // 'note' | 'chord' — as in gesture mode
   finger: DEFAULT_FINGER,            // which fingertip points, wrist only
+  volume: { mode: 'off', ...EXPRESSION_RANGE.hand },   // see VOLUME_MODES
   // Shepard tones are this mode's default timbre; auto is cleared the first
   // time the player toggles SHEPARD from the radial panel, so their choice
   // outlives enable/disable and reloads.
@@ -320,6 +340,9 @@ export const radial = (() => {
   let side     = DEFAULTS.side;
   let voicing  = DEFAULTS.voicing;
   let finger   = DEFAULTS.finger;
+  let volume   = { ...DEFAULTS.volume };
+  let volRaw = 0, volLevel = 0;       // last read, for the panel's meter
+  let voicedSig = null;               // what the voices point at, volume modes
   let shepAuto = DEFAULTS.shepAuto;
 
   let hands = { L: null, R: null };   // latest hand landmarks per side
@@ -349,8 +372,24 @@ export const radial = (() => {
 
   const silence = () => {
     if (sounding === null) return;
-    engine.releaseChord();
+    // Two owners of the same gain, exactly one in charge (chordmode's rule):
+    // the ADSR path releases through its envelope, the expression path ramps
+    // its continuous level to zero.
+    if (volume.mode !== 'off') engine.setChordLevel(0);
+    else engine.releaseChord();
     sounding = null;
+    voicedSig = null;
+  };
+
+  // Raw signal → 0..1 travel, with the bottom rounded down to silence —
+  // gesture mode's readExpression, reading the ring's own off side.
+  const readVolume = () => {
+    const key = volume.mode === 'brow' ? 'brow_raise' : `hand_${offSide()}_open`;
+    volRaw = bus.signals.get(key)?.value ?? 0;
+    const span = Math.max(0.01, volume.hi - volume.lo);
+    const t = Math.max(0, Math.min(1, (volRaw - volume.lo) / span));
+    volLevel = t <= VOLUME_DEADZONE ? 0 : (t - VOLUME_DEADZONE) / (1 - VOLUME_DEADZONE);
+    return volLevel;
   };
 
   // One key, shared: the same effectiveKey gesture mode plays in.
@@ -367,6 +406,10 @@ export const radial = (() => {
   const offSide = () => (side === 'L' ? 'R' : 'L');
   const accidentalNow = () => {
     if (voicing !== 'note') return NATURAL;
+    // With the other hand playing the volume, asking it to hold a thumb as
+    // well would be asking for a specific openness — a specific loudness —
+    // so accidentals stand down there, exactly as in gesture mode.
+    if (volume.mode === 'hand') return NATURAL;
     const held = gesture.activeOn(offSide());
     if (held === null) return NATURAL;
     const acc = chordmode.accidentalGestures();
@@ -428,7 +471,7 @@ export const radial = (() => {
       return enabled;
     },
 
-    config: () => ({ joint, side, voicing, finger, shepAuto }),
+    config: () => ({ joint, side, voicing, finger, volume: volume.mode, shepAuto }),
     setJoint(j, s) {
       if (JOINTS[j]) joint = j;
       if (s === 'L' || s === 'R') side = s;
@@ -445,6 +488,34 @@ export const radial = (() => {
     setFinger(f) {
       if (FINGERS[f] !== undefined) finger = f;
       return finger;
+    },
+    volumeState: () => ({ ...volume }),
+    // Live values for the panel's meter — the only way to see whether your
+    // range actually reaches both ends without guessing. Read fresh rather
+    // than cached, so the meter is honest even before the first note.
+    volumeLevel() {
+      if (volume.mode !== 'off') readVolume();
+      return { raw: volRaw, level: volLevel };
+    },
+    setVolume(partial) {
+      const next = { ...volume, ...partial };
+      if (!VOLUME_MODES.includes(next.mode)) next.mode = 'off';
+      if (partial.mode && partial.mode !== volume.mode) {
+        // Handing loudness between owners mid-note would leave a level one of
+        // them set and neither now controls.
+        silence();
+        // Changing mode re-seeds the range: a span measured for hand openness
+        // is meaningless for eyebrows. An explicit lo/hi in the same call
+        // still wins — gesture mode's rule, verbatim.
+        if (EXPRESSION_RANGE[next.mode]) Object.assign(next, EXPRESSION_RANGE[next.mode], partial);
+      }
+      for (const k of ['lo', 'hi']) {
+        const v = Number(next[k]);
+        next[k] = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : DEFAULTS.volume[k];
+      }
+      if (next.hi <= next.lo) next.hi = Math.min(1, next.lo + 0.05);
+      volume = next;
+      return { ...volume };
     },
     // The SHEPARD button in the radial panel: same engine flag gesture mode's
     // button drives, but touching it HERE is the player overruling the
@@ -486,6 +557,26 @@ export const radial = (() => {
         t: performance.now() / 1000,
       });
       const acc = accidentalNow();
+
+      // Expression-driven volume: the ring names and holds the note, the
+      // signal IS the level. No envelope runs and no entry speed is read —
+      // you are the envelope. Voices are only re-pointed when the note
+      // actually changes; ramping frequencies every frame is the same
+      // never-settling glide gesture mode's volume path exists to avoid.
+      if (volume.mode !== 'off') {
+        const level = readVolume();
+        if (ev?.type === 'release') { silence(); return; }
+        if (ev?.type === 'attack') sounding = ev.section;
+        if (sounding === null) return;
+        const freqs = freqsFor(sounding, acc);
+        if (!freqs) { silence(); return; }
+        const sig = `${sounding}|${acc}|${voicing}|${JSON.stringify(chordmode.effectiveKey())}`;
+        if (sig !== voicedSig) { engine.setChordVoices(freqs); voicedSig = sig; }
+        engine.setChordLevel(level);
+        lastAcc = acc;
+        return;
+      }
+
       if (ev?.type === 'attack') {
         const freqs = freqsFor(ev.section, acc);
         if (freqs) {
@@ -634,7 +725,7 @@ export const radial = (() => {
     },
 
     serialize() {
-      return { enabled, joint, side, voicing, finger, shepAuto };
+      return { enabled, joint, side, voicing, finger, volume: { ...volume }, shepAuto };
     },
     load(data) {
       if (!data) return;
@@ -642,6 +733,8 @@ export const radial = (() => {
       side    = data.side === 'L' ? 'L' : 'R';
       voicing = data.voicing === 'chord' ? 'chord' : 'note';
       finger  = FINGERS[data.finger] !== undefined ? data.finger : DEFAULTS.finger;
+      volume  = { ...DEFAULTS.volume };
+      if (data.volume) this.setVolume(data.volume);
       shepAuto = data.shepAuto !== false;
       tracker = null; trackerCfg = '';
       silence();

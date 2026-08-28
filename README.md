@@ -1166,6 +1166,24 @@ circle is closed, so the last degree and the first are neighbours. Every
 boundary carries hysteresis — radial and angular — so a pointer resting *on*
 an edge holds its note instead of machine-gunning the envelope.
 
+**VOLUME** offers gesture mode's volume story on top of that. **Entry speed**
+(the default) is the behaviour above — velocity sets the attack, the chord
+ADSR shapes the note. **Other hand — openness** and **Eyebrows** hand
+loudness to a *signal* instead, exactly as gesture mode's VOLUME control
+does: the ring still names the note and holds it — pointing is the gate,
+retracting still releases — but the signal *is* the level, continuously.
+There is no envelope to run and no entry speed to read in those modes: you
+are the envelope. **OFF AT / FULL AT** map the raw signal onto that travel
+with the same measured defaults gesture mode uses (a fist still reads ~0.42
+openness, so silence has to be *put* somewhere your hand can reach), the
+bottom of the travel rounds down to true silence, and the live meter beside
+them shows the raw value and where it lands, because calibrating a range you
+cannot see is guesswork. With the other hand playing the volume, accidentals
+stand down — asking that hand to also hold a thumb would be asking for a
+specific openness, i.e. a specific loudness; eyebrow volume leaves it free.
+Voices are only re-pointed when the note actually changes, never per frame —
+the same never-settling-glide lesson gesture mode's volume path learned.
+
 All radii are in the joint's **own units** — palm lengths at the wrist, arm
 lengths at the shoulder — measured **perpendicular to the ring's axis**, so
 nothing changes when you step closer to the camera or hand the instrument to
