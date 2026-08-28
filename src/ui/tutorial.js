@@ -211,9 +211,9 @@ export const TOUR_STEPS = [
   {
     id: 'sec-radial', section: 'radial-menu', target: '#radial-toggle', needs: ['audio'],
     title: 'Radial Menu',
-    body: 'A fan of arcs around your wrist or shoulder — one per scale ' +
-          'degree. Point into a section to play it, stay to sustain, and the ' +
-          'faster you enter, the harder the attack.',
+    body: 'A ring worn on your wrist or shoulder — one section per scale ' +
+          'degree. Point your index finger into a section to play it, stay ' +
+          'to sustain; the faster you enter, the harder the attack.',
   },
   {
     id: 'sec-pitch-quant', section: 'pitch-quantize', target: '#quant-toggle', needs: ['audio'],

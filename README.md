@@ -166,22 +166,35 @@ guided tour which tour to give you:
 the two **Face** patches, **Gaze**, **Pose**), plus **Blank**, which sits here
 because building from nothing means the patchbay.
 
-**Handshapes** — a shape names a degree of the key. Listed first: these are the
-entries that play music the moment you make a shape.
+**Play in a key** — a handshape or a radial menu names a degree. Listed first:
+these are the entries that play music the moment you move.
+
+The in-key entries are **two choices crossed**, stated as four cards — *what
+names a degree* (a handshape, or pointing at a section of the radial ring) ×
+*what it sounds* (the whole chord, or the one note) — and every one of the
+four starts in **Shepard tones**, explicitly: it is the in-key modes' default
+voice, and a default that depends on what the last setup left switched on is
+not a default.
 
 In full:
 
-- **Chords** — handshapes play chords in a key, no wiring. No lead
+- **Handshapes · Chords** — handshapes play chords in a key, no wiring. No lead
   oscillator, since a drone under the chords is not what anyone picked this for.
   (It used to switch **DEV** on too, because gesture mode was dev-gated. It is not
   any more — see Developer mode.)
-- **Single Notes** — the same seven shapes and the same key, sounding one note
-  each, with your other hand sharpening or flattening it. It is gesture mode in
-  **note voicing** rather than a second mode, so it shares every setting; it is
-  offered here because *"I want to play a melody"* is a different intention from
-  *"I want to comp"*, and arriving with the first one should not mean picking
-  the second and then finding the switch that undoes it. Each handshape choice
-  **states** its voicing rather than inheriting whatever was set last.
+- **Handshapes · Single Notes** — the same seven shapes and the same key,
+  sounding one note each, with your other hand sharpening or flattening it. It
+  is gesture mode in **note voicing** rather than a second mode, so it shares
+  every setting; it is offered here because *"I want to play a melody"* is a
+  different intention from *"I want to comp"*, and arriving with the first one
+  should not mean picking the second and then finding the switch that undoes
+  it. Each choice **states** its voicing rather than inheriting whatever was
+  set last.
+- **Radial Menu · Single Notes** and **Radial Menu · Chords** — a ring of the
+  key's degrees worn on the wrist, played by pointing the index finger (see
+  [Radial menu](#radial-menu-play-by-pointing)). Both hands tracked — one
+  wears the ring, the other bends notes — plus pose, which carries the
+  forearm the ring rides.
 - **Blank** — nothing wired, no trackers, and **no oscillator**. Genuinely
   nothing, not a quiet something.
 
@@ -1059,41 +1072,56 @@ without an AudioContext; `src/chordmode.js` owns the clock and calls
 ## Radial menu (play by pointing)
 
 The **Radial Menu** section (beside Gesture Mode) is a second way of playing
-the chord voice bank: a fan of **equal-angle arc sections** anchored to a
-joint with real freedom of direction, one section per **scale degree** of the
-key. Point into a section and its degree sounds; five arcs over a pentatonic
-key, seven over a diatonic one, re-divided the moment the key changes.
+the chord voice bank: a **circle of equal-angle sections** worn on a joint
+like a bracelet, one section per **scale degree** of the key. Point into a
+section and its degree sounds; five sections over a pentatonic key, seven
+over a diatonic one, re-divided the moment the key changes.
 
-**JOINT** picks the anchor:
+The ring is a genuine circle in space, not a shape painted on the screen:
+its plane is **perpendicular to a body axis, with that axis the normal
+through its centre**, and the overlay draws its orthographic projection — an
+ellipse, foreshortened by however much the axis leans out of the image
+plane, which is what makes the orientation legible. **JOINT** picks where it
+is worn:
 
-- **Wrist** (either hand) — the fan is drawn around the wrist and **rides the
-  forearm**: its centreline is the elbow→wrist axis from pose tracking, so it
-  faces wherever your arm does and wrist flexion walks the sections. The
-  extended **middle fingertip is the pointer** — point to play, curl the
-  fingers to let go. With pose off the fan stays upright in the frame instead;
-  still playable, just fixed to the camera rather than to you, and the panel
-  says so.
-- **Shoulder** (either side) — the fan is fixed to the **torso** (it leans
-  when you do), the whole arm is the pointer, and the sections run from
-  arm-hanging (lowest degree) to arm-overhead (highest). Straighten the arm to
-  reach the ring, bend the elbow to release. Needs pose tracking.
+- **Wrist** (either hand) — the normal is the **forearm**: the elbow→wrist
+  segment of the pose skeleton runs square through the ring's centre, so the
+  ring rides the arm and faces wherever it points. The chosen **fingertip is
+  the pointer** — the **index by default** (a FINGER select offers the
+  others), aimed around the ring by wrist flexion and deviation, the way a
+  clock hand sweeps a dial: C sits at twelve and the degrees ascend
+  clockwise in the mirrored view. With pose off the ring lies flat to the
+  camera instead; still playable, just fixed to the frame rather than to
+  you, and the panel says so.
+- **Shoulder** (either side) — the normal is the torso's own **chest axis**,
+  so the ring lies on the body's plane (leaning when you do) and the whole
+  arm is the pointer: arm hanging is the first degree, ascending through
+  out-to-that-side to overhead, whichever arm. Straighten the arm in the
+  torso's plane to reach the ring; bend the elbow — or point the arm at the
+  camera — to retract. Needs pose tracking.
 
 The sections have **radial thickness** — each is an annular sector, not a ray —
 and that thickness is what makes sustain a *place* rather than a moment:
-extend into the ring and the note attacks, stay anywhere inside the section
-and it holds under the chord ADSR, retract past the inner edge and it
-releases. **How fast the pointer crosses into a section sets the attack
-strength** — a stab is loud, a drift is soft (never silent: a slow entry is a
-note meant quietly, not a note not meant). Sliding along inside the ring into
-the next section re-attacks on the new degree, measured by the same yardstick,
-so runs are played by sweeping. Every boundary carries hysteresis — radial and
-angular — so a pointer resting *on* an edge holds its note instead of
-machine-gunning the envelope.
+reach out from the ring's axis into the ring and the note attacks, stay
+anywhere inside the section and it holds under the chord ADSR, draw back
+toward the axis and it releases. **How fast the pointer crosses into a
+section sets the attack strength** — a stab is loud, a drift is soft (never
+silent: a slow entry is a note meant quietly, not a note not meant). Sliding
+around inside the ring into the next section re-attacks on the new degree,
+measured by the same yardstick, so runs are played by sweeping — and the
+circle is closed, so the last degree and the first are neighbours. Every
+boundary carries hysteresis — radial and angular — so a pointer resting *on*
+an edge holds its note instead of machine-gunning the envelope.
 
 All radii are in the joint's **own units** — palm lengths at the wrist, arm
-lengths at the shoulder — so nothing changes when you step closer to the
-camera or hand the instrument to smaller hands. **SPAN** sets the fan's width
-per joint (a wrist sweeps about ±75°; a shoulder a full half-turn).
+lengths at the shoulder — measured **perpendicular to the ring's axis**, so
+nothing changes when you step closer to the camera or hand the instrument to
+smaller hands. Two projections keep the picture honest and playable: the
+ring's normal is canonicalised to lean toward the camera, so the section
+order on screen never mirror-flips as the arm tilts through the image plane,
+and it keeps a minimum depth component, so an edge-on ring stays a readable
+ellipse instead of collapsing to a line — applied to the maths and the
+picture together, so what you see is what is measured.
 
 Three things are deliberately **shared with Gesture Mode** rather than owned
 here:
@@ -1113,7 +1141,7 @@ here:
 **Shepard tones are the default voice** for this mode: enabling the menu
 switches the chord bank's SHEPARD on (see Gesture Mode), because a menu that
 wraps around a joint pairs naturally with a timbre that wraps around the
-octave — runs around the fan climb without ever leaving their register.
+octave — runs around the ring climb without ever leaving their register.
 Toggling SHEPARD from the radial panel overrules the default for good; the
 auto-on never fights a choice you have made.
 
@@ -1121,17 +1149,21 @@ Only **one** of Radial Menu and Gesture Mode is on at a time — both voice
 through the same four chord voices, and two writers on one bank is a race, not
 a duet. Enabling either parks the other; both toggles say so by their state.
 
-The fan is drawn on the **camera overlay**, under the skeletons, in the
+The ring is drawn on the **camera overlay**, under the skeletons, in the
 overlay's own mirrored space, with note-name labels (numerals in chord
 voicing) counter-flipped so they read correctly in the mirror. The active
 section fills in the pointing hand's overlay colour, stronger while sounding,
-and a pointer line makes what the fan is reading visible rather than a guess.
+and a pointer line makes what the ring is reading visible rather than a guess.
+The forearm axis that orients it is differenced from two pose landmarks, so it
+carries both joints' jitter into every section's position; it runs through its
+own One-Euro filter before it touches the ring.
 
-The maths — section resolution, boundary hysteresis, entry-speed → strength,
-and both joint geometries — is pure and camera-free in `src/radial.js`
-(`makeRadialTracker`, `wristGeometry`, `shoulderGeometry`), driven by
-`tests/unit/radial.test.js`; the panel is `src/ui/radial-ui.js`; settings save
-with presets and travel in shared links like everything else.
+The maths — section resolution on the closed circle, boundary hysteresis,
+entry-speed → strength, and both ring geometries — is pure and camera-free in
+`src/radial.js` (`makeRadialTracker`, `ringBasis`, `wristGeometry`,
+`shoulderGeometry`), driven by `tests/unit/radial.test.js`; the panel is
+`src/ui/radial-ui.js`; settings save with presets and travel in shared links
+like everything else.
 
 ## Fullscreen camera view
 

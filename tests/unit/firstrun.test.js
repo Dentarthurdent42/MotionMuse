@@ -39,6 +39,7 @@ const { STARTERS, STARTER_GROUPS, shouldOfferStart, applyStarter } =
 const { mapper, PRESETS } = await import('../../src/mapper.js');
 const { engine } = await import('../../src/engine.js');
 const { chordmode } = await import('../../src/chordmode.js');
+const { radial } = await import('../../src/radial.js');
 
 // The picker hands tracker changes back to main.js, which owns the header
 // buttons; here it just records what was asked for.
@@ -50,16 +51,20 @@ const reset = () => {
   store.clear();
   asked = null;
   engine.setOscCount(1);
+  engine.setShepard({ chord: false });
   mapper.applyPreset('hands');
   chordmode.setEnabled(false);
   chordmode.setVoicing('chord');
+  radial.load({ enabled: false });
 };
 
-test('every mapping preset is offered, plus both handshape voicings and blank', () => {
+test('every mapping preset is offered, plus all four in-key starts and blank', () => {
   const ids = STARTERS.map(s => s.id);
   for (const p of PRESETS) assert.ok(ids.includes(p.id), `${p.id} is not offered`);
   assert.ok(ids.includes('chords'), 'chord mode is a way of playing, so it is a choice');
   assert.ok(ids.includes('notes'), 'so is playing those same shapes one note at a time');
+  assert.ok(ids.includes('radial-notes'), 'and pointing at a ring of notes');
+  assert.ok(ids.includes('radial-chords'), 'and pointing at a ring of chords');
   assert.ok(ids.includes('blank'));
   assert.equal(new Set(ids).size, ids.length, 'duplicate choice');
   for (const s of STARTERS) assert.ok(s.name && s.hint, `${s.id} needs a name and a hint`);
@@ -107,6 +112,41 @@ test('chord mode starts with the chords and nothing else making sound', async ()
   // Handshapes are what plays it, so the hands have to be tracked.
   assert.equal(asked.handsL && asked.handsR, true);
   assert.equal(asked.pose || asked.face || asked.gaze, false);
+  // Every in-key start states Shepard tones explicitly — a default that
+  // depends on what the last setup left switched on is not a default.
+  assert.equal(engine.getShepard().chord, true);
+});
+
+test('a radial start rings the wrist: pointing plays, nothing else sounds', async () => {
+  reset();
+  const s = await pick('radial-notes');
+  assert.equal(radial.enabled, true);
+  assert.equal(radial.config().voicing, 'note');
+  assert.equal(radial.config().finger, 'index', 'the pointing finger is the default');
+  assert.equal(chordmode.enabled, false, 'the ring and the handshapes share one voice bank');
+  assert.equal(mapper.mappings.length, 0);
+  assert.equal(engine.getOscCount(), 0);
+  assert.equal(engine.getShepard().chord, true, 'Shepard tones, stated');
+  assert.equal(s.mode, 'chords', 'the in-key tour, not the patchbay one');
+  // One hand wears the ring, the other bends notes; pose carries the forearm.
+  assert.deepEqual(asked, { handsL: true, handsR: true, pose: true, face: false, gaze: false });
+});
+
+test('the radial chord start is the same ring in chord voicing', async () => {
+  reset();
+  await pick('radial-chords');
+  assert.equal(radial.enabled, true);
+  assert.equal(radial.config().voicing, 'chord');
+  assert.equal(engine.getShepard().chord, true);
+});
+
+test('each radial choice states its voicing rather than inheriting the last', async () => {
+  reset();
+  await pick('radial-chords');
+  assert.equal(radial.config().voicing, 'chord');
+  store.delete('motionmuse-started');
+  await pick('radial-notes');
+  assert.equal(radial.config().voicing, 'note');
 });
 
 test('single notes is chord mode in note voicing, not a second mode', async () => {
