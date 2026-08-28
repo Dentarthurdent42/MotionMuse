@@ -7,7 +7,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { makeRadialTracker, ringBasis, wristGeometry, shoulderGeometry,
-         JOINTS, FINGERS, V_FLOOR, MIN_TILT, radial } from '../../src/radial.js';
+         JOINTS, FINGERS, V_FLOOR, MIN_TILT, RING_THICKNESS,
+         radial } from '../../src/radial.js';
 import { chordmode } from '../../src/chordmode.js';
 import { engine }    from '../../src/engine.js';
 
@@ -164,10 +165,21 @@ test('the ring rides the forearm: reach is measured square to it', () => {
   // sits ON the axis — almost no perpendicular reach, however long it is.
   const along = wristGeometry(hand({ x: 0.5, y: 0.31 }), [0, -0.3, 0], 1);
   assert.ok(along.pointer.r < 0.7, `along the axis is retracted (${along.pointer.r})`);
-  // The same fingertip swung sideways is square to the axis: full reach.
-  const across = wristGeometry(hand({ x: 0.38, y: 0.5 }), [0, -0.3, 0], 1);
-  assert.ok(across.pointer.r > 1.0, `across the axis reaches the ring (${across.pointer.r})`);
-  assert.ok(across.pointer.r > JOINTS.wrist.rIn);
+  // The same fingertip swung square to the axis reaches the band. 0.15 of a
+  // frame on a 0.1 palm is 1.5 palm units out — past rIn, which sits at two
+  // thirds of rOut, so entering asks for a real bend rather than a twitch.
+  const across = wristGeometry(hand({ x: 0.35, y: 0.5 }), [0, -0.3, 0], 1);
+  assert.ok(across.pointer.r > JOINTS.wrist.rIn,
+    `across the axis reaches the ring (${across.pointer.r} vs ${JOINTS.wrist.rIn})`);
+});
+
+test('every joint wears the same band: a third of the outer radius', () => {
+  for (const [name, j] of Object.entries(JOINTS)) {
+    assert.ok(Math.abs((j.rOut - j.rIn) / j.rOut - RING_THICKNESS) < 1e-9,
+      `${name} band is ${((j.rOut - j.rIn) / j.rOut).toFixed(3)} of its outer radius`);
+    assert.ok(j.hystR < j.rOut - j.rIn,
+      `${name}: the release margin must be smaller than the band it guards`);
+  }
 });
 
 test('the pointer is the chosen fingertip — index by default', () => {

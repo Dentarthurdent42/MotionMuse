@@ -58,22 +58,33 @@ const DEG = 180 / Math.PI;
 // PERPENDICULAR to the ring's axis, so they are independent of hand size and
 // of distance from the camera.
 //
-//   rIn     inner edge of the ring: where an attack fires. Wrist: an
-//           extended index finger held along the forearm sits near the axis
-//           (~0.2–0.35 perpendicular), a deliberately flexed or deviated
-//           wrist carries it past 1.2, so 0.85 asks for a real point.
-//           Shoulder: an arm reaching out in the torso's plane projects
-//           ~0.9 of its own length; pointing it forward, or bending the
-//           elbow, pulls it back toward the axis.
 //   rOut    outer edge — drawn, and a bound on the ring, but chosen past
 //           what the pointer can physically reach so play never falls off
 //           the far side of a section.
+//   rIn     inner edge: where an attack fires. DERIVED from rOut through
+//           RING_THICKNESS below, so it is a band rather than two numbers
+//           that can drift apart. Wrist: a finger held along the forearm
+//           sits near the axis (~0.2–0.35 perpendicular), so reaching the
+//           band asks for a deliberate flex or deviation — roughly 45° off
+//           the forearm on a fully extended finger. Shoulder: an arm
+//           reaching out in the torso's plane projects ~0.9 of its own
+//           length, while pointing it forward or bending the elbow pulls it
+//           back toward the axis.
 //   hystR   how far back inside rIn the pointer must retract to release, so
 //           a fingertip resting on the edge doesn't machine-gun the envelope.
 //   vRef    entry speed (joint units/s) that earns a full-strength attack.
+
+// The band's thickness as a share of the outer radius: (rOut − rIn) / rOut.
+// One ratio for every joint, so the ring reads as the same instrument
+// wherever it is worn, and a thinner band than the reach it sits in — the
+// sections are a rim to aim at, not most of the disc.
+export const RING_THICKNESS = 1 / 3;
+
+const band = (rOut, rest) => ({ rIn: rOut * (1 - RING_THICKNESS), rOut, ...rest });
+
 export const JOINTS = {
-  wrist:    { rIn: 0.85, rOut: 2.0,  hystR: 0.12, vRef: 8 },
-  shoulder: { rIn: 0.6,  rOut: 1.15, hystR: 0.07, vRef: 2.5 },
+  wrist:    band(2.0,  { hystR: 0.12, vRef: 8 }),
+  shoulder: band(1.15, { hystR: 0.07, vRef: 2.5 }),
 };
 
 // Fingertip landmarks the wrist ring can point with. Index is the default —
@@ -566,7 +577,10 @@ export const radial = (() => {
         ctx.save();
         ctx.translate(tx, ty);
         ctx.scale(-1, 1);
-        ctx.font = `${Math.max(9, Math.min(14, j.rIn * unitPx * 0.28)).toFixed(0)}px "IBM Plex Mono", monospace`;
+        // Sized against the BAND, which is what has to contain it — rIn
+        // measures where the band starts, not how much room is in it.
+        const bandPx = (j.rOut - j.rIn) * unitPx;
+        ctx.font = `${Math.max(9, Math.min(14, bandPx * 0.5)).toFixed(0)}px "IBM Plex Mono", monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = i === sounding ? ink : ink + 'cc';

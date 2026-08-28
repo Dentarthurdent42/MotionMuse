@@ -62,6 +62,7 @@ export function radialMenuSection() {
   const eff = chordmode.effectiveKey();
   const flw = chordmode.isFollowing();
   const jointVal = `${cfg.joint}_${cfg.side}`;
+  const sevenths = chordmode.sevenths();
   const needs = on ? needsLine(cfg) : '';
 
   const keyRow = !on ? '' : `
@@ -79,6 +80,32 @@ export function radialMenuSection() {
               title="${key.follow && !flw
                 ? 'Following Pitch Quantize — inactive until quantise is on'
                 : 'Take the key from Pitch Quantize, so the fan matches the melody'}">FOLLOW</button>
+    </div>`;
+
+  // ── 7ths ────────────────────────────────────────────────────────────
+  //
+  // The 7th belongs to the CHORD, and chordmode owns that table — so these
+  // buttons write the same state gesture mode's per-chord 7th buttons do, and
+  // a 7th set in either place is set in both. They live here because gesture
+  // mode's rows are hidden whenever it is switched off, and enabling the
+  // radial menu switches it off: without this row, the radial menu's chords
+  // honoured a 7ths table nothing on screen could reach.
+  //
+  // One button per section rather than a row per chord — the ring's sections
+  // have no rows to hang them on — labelled with the numeral each degree
+  // currently sounds, so the label says what the toggle did ("V" → "V7").
+  const seventhsRow = (!on || cfg.voicing !== 'chord') ? '' : `
+    <div class="chord-voicing">
+      <span class="chord-key-lbl" title="Add the diatonic 7th to a degree. Shared with Gesture Mode.">7THS</span>
+      <div class="wave-btns" style="flex:1;flex-wrap:wrap;">
+        ${Array.from({ length: chordmode.degreeCount() }, (_, i) => {
+          const c = chordmode.chordAt(i);
+          return `<button type="button" class="wave-btn rad-sev${sevenths[i] ? ' on' : ''}"
+                  data-degree="${i}" aria-pressed="${sevenths[i]}"
+                  title="${sevenths[i] ? 'Remove' : 'Add'} the diatonic 7th on ${c.rootName}"
+            >${c.numeral}</button>`;
+        }).join('')}
+      </div>
     </div>`;
 
   const controls = !on ? '' : `
@@ -109,6 +136,7 @@ export function radialMenuSection() {
           `<option value="${f}"${f === cfg.finger ? ' selected' : ''}>${f.toUpperCase()}</option>`).join('')}
       </select>
     </div>
+    ${seventhsRow}
     <div class="wave-btns" style="margin-top:4px;">
       <button type="button" class="wave-btn${engine.getShepard().chord ? ' on' : ''}" id="radial-shep"
            aria-pressed="${engine.getShepard().chord}"
@@ -149,6 +177,16 @@ export function wireRadialSection(rerender) {
   document.getElementById('radial-finger')?.addEventListener('change', e => {
     radial.setFinger(e.target.value);
   });
+
+  // Re-renders: the button relabels itself with the numeral it now sounds
+  // ("V" → "V7"), and a 7th is a property of the chord, so nothing else in
+  // the panel has to move.
+  document.querySelectorAll('.rad-sev').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const d = Number(btn.dataset.degree);
+      chordmode.setSeventh(d, !chordmode.sevenths()[d]);
+      rerender();
+    }));
 
   document.getElementById('radial-shep')?.addEventListener('click', () => {
     radial.toggleShepard();
