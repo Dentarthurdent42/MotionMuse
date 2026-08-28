@@ -1169,7 +1169,12 @@ an edge holds its note instead of machine-gunning the envelope.
 All radii are in the joint's **own units** — palm lengths at the wrist, arm
 lengths at the shoulder — measured **perpendicular to the ring's axis**, so
 nothing changes when you step closer to the camera or hand the instrument to
-smaller hands. Two projections keep the picture honest and playable: the
+smaller hands. The band is **a third of the outer radius** (`RING_THICKNESS`),
+and the inner edge is *derived* from that rather than written down beside it,
+so the two cannot drift apart: the sections are a rim to aim at, not most of
+the disc, and reaching them asks for a deliberate bend — roughly 45° off the
+forearm on a fully extended finger — rather than a twitch. Section labels are
+sized against the band, which is what has to contain them. Two projections keep the picture honest and playable: the
 ring's normal is canonicalised to lean toward the camera, so the section
 order on screen never mirror-flips as the arm tilts through the image plane,
 and it keeps a minimum depth component, so an edge-on ring stays a readable
@@ -1190,6 +1195,14 @@ here:
   the note with the same two shapes (**Thumbs Up** = ♯, **Thumbs Down** = ♭ by
   default — one setting, gesture mode's). A thumb turning over under a held
   note re-attacks it at the new pitch, at the held strength.
+- **The 7ths.** In chord voicing a **7THS** row appears, one button per
+  section, labelled with the numeral that degree currently sounds — so the
+  label says what the toggle did (`V` → `V7`). It writes the same table
+  gesture mode's per-chord **7th** buttons do, because a 7th belongs to the
+  chord rather than to whatever is playing it. It has to live here as well as
+  there: gesture mode's rows are hidden whenever it is switched off, and
+  enabling the radial menu switches it off, so without this row the ring's
+  chords honoured a 7ths table nothing on screen could reach.
 
 **Shepard tones are the default voice** for this mode: enabling the menu
 switches the chord bank's SHEPARD on (see Gesture Mode), because a menu that
