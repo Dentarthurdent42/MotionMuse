@@ -15,6 +15,7 @@ import { DEGREE_SCALES }         from '../chords.js';
 import { NOTE_NAMES }            from '../scale.js';
 import { engine }                from '../engine.js';
 import { cvSource }              from '../cv.js';
+import { metronome }             from '../metronome.js';
 import { faceSource }            from '../face.js';
 
 const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`;
@@ -57,6 +58,9 @@ function needsLine({ joint, side, volume }) {
   // volume control wired to a tracker that is off is silence with no
   // explanation.
   if (volume === 'brow' && !faceSource.faceOn) missing.push('face tracking');
+  // Beat-sampled volume with the clock stopped is silence with no
+  // explanation, same story.
+  if (volume === 'beat' && !metronome.on) missing.push('the metronome (switch it on)');
   return missing.length ? `Needs ${missing.join(' + ')}.` : '';
 }
 
@@ -146,12 +150,14 @@ export function radialMenuSection() {
     <div class="chord-voicing">
       <span class="chord-key-lbl">VOLUME</span>
       <select id="radial-volume" aria-label="What sets the loudness"
-              title="Entry speed: how fast the pointer crosses into a section sets the attack, and the chord ADSR shapes the note. The other two hand loudness to a signal, as in Gesture Mode — the ring still names and holds the note, but the signal IS the level, continuously; there is no envelope to run, you are the envelope. With the other hand playing the volume, accidentals stand down.">
-        ${[['off', 'Entry speed'], ['hand', 'Other hand — openness'], ['brow', 'Eyebrows']]
+              title="Entry speed: how fast the pointer crosses into a section sets the attack, and the chord ADSR shapes the note. The signal modes hand loudness to a signal, as in Gesture Mode — the degree you point at latches, the signal is level and gate; there is no envelope to run, you are the envelope (with the other hand playing the volume, accidentals stand down). Metronome beats strikes whatever the pointer names when a SAMPLE beat lands — the clock plays, the ring chooses.">
+        ${[['off', 'Entry speed'], ['hand', 'Other hand — openness'], ['brow', 'Eyebrows'], ['beat', 'Metronome beats']]
           .map(([m, l]) => `<option value="${m}"${m === vol.mode ? ' selected' : ''}>${l}</option>`).join('')}
       </select>
     </div>
-    ${vol.mode === 'off' ? '' : `
+    ${vol.mode === 'beat' ? `
+    <div class="quant-notes">strikes the pointed section on the metronome's SAMPLE beats — set them in the Metronome section, and switch it on</div>` : ''}
+    ${vol.mode === 'hand' || vol.mode === 'brow' ? `
     <div class="chord-expr-cal">
       <label class="ctrl-lbl">OFF AT<input type="range" id="radial-vol-lo" min="0" max="1" step="0.01" value="${vol.lo}"></label>
       <label class="ctrl-lbl">FULL AT<input type="range" id="radial-vol-hi" min="0" max="1" step="0.01" value="${vol.hi}"></label>
@@ -159,7 +165,7 @@ export function radialMenuSection() {
         <div class="expr-fill" id="radial-vol-fill"></div>
         <span class="expr-read" id="radial-vol-read">—</span>
       </div>
-    </div>`}
+    </div>` : ''}
     ${seventhsRow}
     <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;"
          title="The chord envelope — the same one Gesture Mode shapes, since both modes voice through the same bank. Shapes entry-speed notes; in the signal-volume modes there is no envelope to run, you are the envelope.">

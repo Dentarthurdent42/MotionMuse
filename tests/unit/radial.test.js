@@ -365,6 +365,52 @@ test('a signal-volume latch: sweep does not bend the note, silence re-aims it', 
   }
 });
 
+test('the beat volume mode strikes what the pointer names, when the clock says so', async () => {
+  // "only samples the gesture/radial menu selection on certain beats" — the
+  // metronome is the articulation. Pointing between beats costs nothing; a
+  // SAMPLE beat strikes whatever is pointed at then, and one that finds the
+  // pointer retracted is a rest.
+  const { metronome } = await import('../../src/metronome.js');
+  radial.load({ enabled: true, joint: 'wrist', side: 'R', volume: { mode: 'beat' } });
+  metronome.load({ on: true, bpm: 120, sig: '4/4' });   // a beat every 0.5 s
+  const hand = tip => {
+    const lm = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5 }));
+    lm[0] = { x: 0.5, y: 0.5 }; lm[9] = { x: 0.5, y: 0.4 }; lm[8] = tip;
+    return lm;
+  };
+  const TOP = { x: 0.5, y: 0.32 };    // section 0
+  const LEFT = { x: 0.32, y: 0.5 };   // section 2 of seven
+  const CURL = { x: 0.5, y: 0.45 };   // retracted
+  const realNow = performance.now.bind(performance);
+  let t = 0;
+  performance.now = () => t * 1000;
+  const frames = (tip, n) => {
+    for (let i = 0; i < n; i++) {
+      t += 0.033;
+      metronome.tick(t);
+      radial.feedHands({ R: hand(tip) }, null, 1);
+      radial.tick();
+    }
+  };
+  try {
+    frames(TOP, 6);                    // the first frame carries beat ONE
+    assert.equal(radial.soundingSection(), 0, 'the downbeat strikes the pointed section');
+    frames(LEFT, 6);                   // t ≈ 0.4 — still inside beat one
+    assert.equal(radial.soundingSection(), 0, 'pointing between beats changes nothing');
+    frames(LEFT, 6);                   // crosses the next beat at t = 0.5
+    assert.equal(radial.soundingSection(), 2, 'the next beat samples the new aim');
+    frames(CURL, 16);                  // crosses a beat retracted: a rest
+    assert.equal(radial.soundingSection(), null, 'a beat that finds no pointer releases');
+    metronome.setOn(false);
+    frames(TOP, 8);
+    assert.equal(radial.soundingSection(), null, 'no clock, no strikes — the panel says why');
+  } finally {
+    performance.now = realNow;
+    metronome.load({});
+    radial.load({ enabled: false });
+  }
+});
+
 test('volume settings round-trip, and junk falls back instead of wedging', () => {
   radial.load({ enabled: false, volume: { mode: 'brow', lo: 0.1, hi: 0.6 } });
   const snap = radial.serialize();

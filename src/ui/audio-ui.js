@@ -12,6 +12,7 @@ import { playalong } from '../playalong.js';
 import { SONGS }     from '../songs.js';
 import { gestureModeSection, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
 import { radialMenuSection, wireRadialSection, updateRadialPanel } from './radial-ui.js';
+import { metronomeSection, wireMetronomeSection, updateMetronomePanel } from './metronome-ui.js';
 import { looperSectionHTML, wireLooperSection } from './looper-ui.js';
 
 const opts = (arr, sel) =>
@@ -105,6 +106,7 @@ export function renderAudioPanel() {
   panel.innerHTML = `
     ${gestureModeSection()}
     ${radialMenuSection()}
+    ${metronomeSection()}
     <div class="audio-section">
       <div class="audio-section-label">Sound Kit</div>
       <select id="kit-select" title="Instrument timbre preset (synthesized)">${kitOpts}</select>
@@ -487,6 +489,7 @@ export function renderAudioPanel() {
 
   wireGestureSections(renderAudioPanel);
   wireRadialSection(renderAudioPanel);
+  wireMetronomeSection(renderAudioPanel);
   wireLooperSection();
 
   // Cache slider/readout refs — updateAudioSliders runs every frame and
@@ -532,4 +535,5 @@ export function updateAudioSliders() {
 
   updateGesturePanel();
   updateRadialPanel();
+  updateMetronomePanel();
 }

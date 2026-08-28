@@ -9,6 +9,7 @@ import { createPoseBackend }                                from './posebackends
 import { lsGet, lsSet }                                     from './storage.js';
 import { gesture }                                          from './gesture.js';
 import { uicontrol }                                        from './uicontrol.js';
+import { metronome }                                        from './metronome.js';
 import { radial }                                           from './radial.js';
 
 // How sure the handedness guess has to be before it is allowed to REJECT a
@@ -808,5 +809,9 @@ export const cvSource = {
       });
       ctx.fill();
     }
+
+    // The metronome's beat strip last — it is a HUD, and a clock a raised
+    // hand can cover is a clock you lose exactly when you play.
+    metronome.draw(ctx, c.width, c.height);
   },
 };

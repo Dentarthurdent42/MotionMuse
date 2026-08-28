@@ -10,6 +10,7 @@
 
 import { bus }                        from './bus.js';
 import { engine }                     from './engine.js';
+import { metronome }                  from './metronome.js';
 import { gesture, gestureLabel }      from './gesture.js';
 import { diatonicChord, diatonicNote, isDiatonic, isDegreeScale, degreeCountOf,
          NATURAL, SHARP, FLAT }       from './chords.js';
@@ -99,6 +100,10 @@ export const accidentalSign = a => (a > 0 ? '♯' : a < 0 ? '♭' : '');
 //   'hand'     two-handed: one hand names the chord, the other's OPENNESS
 //              plays it. The chord latches, so the naming hand can relax.
 //   'brow'     one-handed: the hand names the chord, your eyebrows play it.
+//   'beat'     the metronome plays it: the shape held when a SAMPLE beat
+//              lands is struck then, and only then. Shapes changed between
+//              beats cost nothing — the clock is the articulation, the hand
+//              only chooses. Needs the metronome running; silent otherwise.
 //
 // and how that signal is read:
 //
@@ -113,7 +118,7 @@ export const accidentalSign = a => (a > 0 ? '♯' : a < 0 ? '♭' : '');
 // the signal actually occupies is what makes fully-off a place your hand can
 // get to. `deadzone` then rounds the bottom of that travel down to true
 // silence, so it does not need to be hit exactly.
-export const EXPRESSION_MODES = ['gesture', 'hand', 'brow'];
+export const EXPRESSION_MODES = ['gesture', 'hand', 'brow', 'beat'];
 export const EXPRESSION_CONTROLS = ['gate', 'volume'];
 
 // Per-mode defaults for the raw range, measured from the signals themselves:
@@ -500,6 +505,7 @@ export const chordmode = (() => {
         if (playing) { engine.releaseChord(); stopArp(); playing = null; }
         return;
       }
+      if (expr.mode === 'beat') return this._tickBeat();
       if (expr.mode !== 'gesture') return this._tickExpressed();
 
       const held = gesture.current();
@@ -535,6 +541,34 @@ export const chordmode = (() => {
       // fed. This is why the early-out above became a branch — the state may be
       // unchanged and there can still be notes owed.
       if (playing && arp.enabled) runArp(soundFreqs(playing, playingAcc));
+    },
+
+    // 'beat' mode: the metronome is the articulation. On each SAMPLE beat the
+    // currently-held shape is read and struck through the chord ADSR — the
+    // same _sound() a handshape attack uses, arpeggiator included — and a
+    // beat that finds no shape (or the release shape) is a rest, which
+    // releases whatever the previous beat struck. Between beats nothing is
+    // read at all: that is the feature, not an optimisation. With the
+    // metronome off there is no clock to strike on, so the mode is silent —
+    // the panel says so rather than leaving a mystery.
+    _tickBeat() {
+      if (!metronome.on) {
+        if (playing) { engine.releaseChord(); stopArp(); playing = null; }
+        return;
+      }
+      if (playing && arp.enabled) runArp(soundFreqs(playing, playingAcc));
+      const ev = metronome.sampleThisFrame();
+      if (!ev) return;
+      const named = namedWithSide();
+      const id = named?.id ?? null;
+      const acc = accidentalFor(named?.side ?? null);
+      if (id !== null && liveDegree(assignments[id])) {
+        this._sound(id, { restart: id !== playing, accidental: acc });
+        playing = id;
+        playingAcc = acc;
+      } else if (playing) {
+        engine.releaseChord(); stopArp(); playing = null;
+      }
     },
 
     // hand / brow modes. The handshape names the chord and LATCHES — dropping

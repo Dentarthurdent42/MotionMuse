@@ -237,6 +237,7 @@ export function gestureModeSection() {
     gesture: 'Handshape holds it',
     hand:    'Other hand — openness',
     brow:    'Eyebrows',
+    beat:    'Metronome beats',
   };
   const CONTROL_LABEL = { gate: 'ATTACK / RELEASE', volume: 'VOLUME' };
   const exprRow = `
@@ -253,12 +254,14 @@ export function gestureModeSection() {
           `<option value="${v}"${v === ex.hand ? ' selected' : ''}>${l}</option>`).join('')}
       </select>
       <select id="ck-expr-control" aria-label="How the signal is read"
-              ${ex.mode === 'gesture' ? 'disabled' : ''}
+              ${ex.mode === 'hand' || ex.mode === 'brow' ? '' : 'disabled'}
               title="ATTACK / RELEASE runs the envelope past a threshold. VOLUME makes the signal the level itself — there is no envelope to run, you are the envelope.">
         ${EXPRESSION_CONTROLS.map(c => `<option value="${c}"${c === ex.control ? ' selected' : ''}>${CONTROL_LABEL[c]}</option>`).join('')}
       </select>
     </div>
-    ${ex.mode === 'gesture' ? '' : `
+    ${ex.mode === 'beat' ? `
+    <div class="quant-notes">the shape held when a SAMPLE beat lands is struck then — set the beats in the Metronome section, and switch it on</div>` : ''}
+    ${ex.mode === 'gesture' || ex.mode === 'beat' ? '' : `
     <div class="chord-expr-cal">
       <label class="ctrl-lbl">OFF AT<input type="range" id="ck-expr-lo" min="0" max="1" step="0.01" value="${ex.lo}"></label>
       <label class="ctrl-lbl">FULL AT<input type="range" id="ck-expr-hi" min="0" max="1" step="0.01" value="${ex.hi}"></label>

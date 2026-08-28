@@ -974,27 +974,29 @@ for (const { width, off, on, sections, camSticky, sigPanel } of results) {
 
   check(!off.hOverflow && !on.hOverflow, `${w}: no horizontal overflow`);
 
-  // FACE/GAZE are camera-only, and must be real controls when they appear.
-  check(off.face === null && off.gaze === null, `${w}: FACE/GAZE hidden with the camera off`);
+  // The tracker toggles live in the Camera Input section now ("move the
+  // hands, pose, face, and gaze buttons to the camera input section"), so
+  // they are present with the camera off too — FACE/GAZE merely disabled
+  // until there is a stream to run their model on.
+  check(off.face !== null && off.gaze !== null, `${w}: FACE/GAZE present with the camera off`);
   check(on.face !== null && on.gaze !== null,   `${w}: FACE/GAZE present with the camera on`);
 
   if (on.face && on.cv) {
-    // The request they came from: below the main buttons, not beside them.
-    check(on.face.top >= on.cv.bottom - 0.5,
-      `${w}: FACE sits below the main buttons`,
-      `face.top ${Math.round(on.face.top)} vs cv.bottom ${Math.round(on.cv.bottom)}`);
+    check(on.face.top >= on.header.bottom - 0.5,
+      `${w}: FACE is out of the header`,
+      `face.top ${Math.round(on.face.top)} vs header.bottom ${Math.round(on.header.bottom)}`);
     check(on.face.right <= width + 0.5 && on.face.left >= -0.5,
       `${w}: FACE is on-screen horizontally`,
       `${Math.round(on.face.left)}..${Math.round(on.face.right)}`);
   }
 
-  // The header must actually grow to hold the extra row rather than letting it
-  // spill: the panel below has to start at the header's new bottom edge.
   check(Math.abs(on.mainTop - on.header.bottom) < 1.5,
     `${w}: the panel starts where the header ends`,
     `header.bottom ${Math.round(on.header.bottom)} vs main.top ${Math.round(on.mainTop)}`);
-  check(on.header.height >= off.header.height,
-    `${w}: the header grows (or holds) when the camera row appears`,
+  // The camera-dependent header row is gone, so starting the camera must not
+  // move the header at all.
+  check(Math.abs(on.header.height - off.header.height) < 0.5,
+    `${w}: the header holds its height when the camera starts`,
     `${Math.round(off.header.height)} → ${Math.round(on.header.height)}`);
 
   // ── Panel arrangement ──
