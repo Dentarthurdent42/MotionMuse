@@ -747,9 +747,10 @@ export const cvSource = {
     const lx = x => ox + x * vw * scale;
     const ly = y => oy + y * vh * scale;
 
-    // The radial menu's fan first, so the skeletons draw over it — it is
-    // furniture the pointer moves across, not part of the body.
-    radial.draw(ctx, lx, ly, themeToken('--glass-ink', '#fff'));
+    // The radial menu's ring first, so the skeletons draw over it — it is
+    // furniture the pointer moves across, not part of the body. It brings
+    // its own contrast (scrim + halos), so no theme token goes in.
+    radial.draw(ctx, lx, ly);
 
     // Batched drawing: one stroked path per hand (all 24 connections), one
     // filled path per dot colour — ~8 canvas ops instead of ~100.
