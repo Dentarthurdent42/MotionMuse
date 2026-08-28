@@ -13,6 +13,7 @@ import { mapper } from './mapper.js';
 import { currentKit, setCurrentLabel } from './soundkit.js';
 import { gesture } from './gesture.js';
 import { chordmode } from './chordmode.js';
+import { radial } from './radial.js';
 import { shader } from './shader.js';
 import { lsGet, lsSet } from './storage.js';
 import { isString, isRecord } from './is.js';
@@ -80,6 +81,7 @@ export function snapshot() {
     audio: engine.snapshot(),
     gestures: gesture.serialize(),   // custom gestures + hidden built-ins
     chord: chordmode.serialize(),
+    radial: radial.serialize(),
     shader: shader.serialize(),
     ui: uiSnapshot(),
   };
@@ -91,6 +93,10 @@ export function apply(data) {
   if (Array.isArray(data.mappings)) mapper.load(data.mappings);
   if (data.gestures) gesture.load(data.gestures);
   if (data.chord) chordmode.load(data.chord);
+  // After chord: an enabled radial menu switches gesture mode off (the two
+  // share the chord voice bank), and last-writer-wins is the honest order for
+  // a snapshot that somehow carries both.
+  if (data.radial) radial.load(data.radial);
   if (data.shader) shader.load(data.shader);
   // Restore the kit *selection label* only — the exact parameter values came
   // from the snapshot above, so re-applying the kit would stomp them.

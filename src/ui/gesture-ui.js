@@ -16,10 +16,11 @@ import { gesture, gestureLabel } from '../gesture.js';
 import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS,
          VOICINGS, accidentalSign } from '../chordmode.js';
 import { ARP_PATTERNS, ARP_MAX_OCTAVES } from '../arp.js';
-import { diatonicChord, DIATONIC_SCALES } from '../chords.js';
+import { diatonicChord, DEGREE_SCALES } from '../chords.js';
 import { NOTE_NAMES } from '../scale.js';
 import { cvSource }   from '../cv.js';
 import { engine }     from '../engine.js';
+import { radial }     from '../radial.js';
 import { toast }      from './status.js';
 import { buildSigPanel } from './signals.js';
 
@@ -44,9 +45,11 @@ let handshapeLibOpen = null;
 // The key select is narrow; scale.js's full names ("major (ionian)") get
 // clipped mid-word, so shorten them for this one control.
 const MODE_LABELS = {
-  'major (ionian)': 'major',
-  'natural minor':  'minor',
-  'harmonic minor': 'harm min',
+  'major (ionian)':   'major',
+  'natural minor':    'minor',
+  'harmonic minor':   'harm min',
+  'major pentatonic': 'maj pent',
+  'minor pentatonic': 'min pent',
 };
 
 export function gestureModeSection() {
@@ -139,7 +142,7 @@ export function gestureModeSection() {
               title="${flw ? 'Following Pitch Quantize' : 'Root of the key chords are built in'}"
         >${NOTE_NAMES.map(n => opt(n, eff.root)).join('')}</select>
       <select id="ck-mode" ${flw ? 'disabled' : ''} aria-label="Chord key mode"
-        >${DIATONIC_SCALES.map(s => `<option value="${s}"${s === eff.mode ? ' selected' : ''}>${MODE_LABELS[s] ?? s}</option>`).join('')}</select>
+        >${DEGREE_SCALES.map(s => `<option value="${s}"${s === eff.mode ? ' selected' : ''}>${MODE_LABELS[s] ?? s}</option>`).join('')}</select>
       <select id="ck-oct" aria-label="Chord octave" title="Octave of the chord roots"
         >${[2, 3, 4, 5].map(o => opt(o, key.octave)).join('')}</select>
       <button class="wave-btn${key.follow ? ' on' : ''}" id="ck-follow" aria-pressed="${key.follow}"
@@ -298,8 +301,12 @@ export function gestureModeSection() {
       <div class="arp-read quant-notes" id="ck-arp-read">—</div>
     </div>` : ''}`;
 
+  // Five rows over a pentatonic key, seven over a diatonic one. A shape
+  // assigned to a degree beyond the count keeps its assignment — dormant, and
+  // back the moment the mode is — so the rows that disappear here are not
+  // deletions.
   const assignRows = !on ? '' :
-    Array.from({ length: DEGREES }, (_, i) => chordRow(i)).join('') + `
+    Array.from({ length: chordmode.degreeCount() }, (_, i) => chordRow(i)).join('') + `
     <div class="chord-assign${ex.mode === 'gesture' ? '' : ' dimmed'}" data-degree="release">
       <span class="gesture-dot" id="cdot-release"></span>
       <span class="chord-degree" title="${ex.mode === 'gesture'
@@ -485,7 +492,12 @@ export function wireGestureSections(rerender) {
   });
 
   document.getElementById('chord-toggle')?.addEventListener('click', () => {
-    chordmode.setEnabled(!chordmode.enabled);
+    const on = !chordmode.enabled;
+    // One instrument on the chord bank at a time — the radial menu voices
+    // through the same four voices, and radial.setEnabled enforces the same
+    // rule from its own side.
+    if (on) radial.setEnabled(false);
+    chordmode.setEnabled(on);
     rerender();
   });
 

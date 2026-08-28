@@ -873,10 +873,17 @@ that output is where the measured templates come from. (Needs
 
 **Gesture Mode** maps handshapes to chords **by scale degree in a key**, not by
 absolute root. Pick a key once — root, mode, octave — and the panel lists the
-seven chords in it (**I ii iii IV V vi vii°**) plus **RELEASE**, each with a
-dropdown choosing which handshape plays it and an optional diatonic **7th**.
-Changing the key transposes every assignment at once, and every chord is
-guaranteed to belong to the key.
+chords in it (**I ii iii IV V vi vii°** over a diatonic mode) plus **RELEASE**,
+each with a dropdown choosing which handshape plays it and an optional diatonic
+**7th**. Changing the key transposes every assignment at once, and every chord
+is guaranteed to belong to the key.
+
+The key's mode can also be a **pentatonic**, which offers **five** degrees —
+numbered 1–5, since roman numerals mean seven tones — and the panel lists five
+rows. A shape assigned to degree 6 or 7 goes **dormant** over a pentatonic
+rather than being unassigned: switch back to a 7-note mode and it plays its
+chord again. The same rule runs the other way at load, so nothing is repaired
+or lost crossing the 7↔5 boundary.
 
 The list is of **chords**, one handshape each, and that is the point. It ran the
 other way round — a row per handshape, with a chord dropdown — which let the
@@ -891,9 +898,11 @@ leave V unplayable. Saved setups from the old format are repaired on load.
 
 The **7th** belongs to the chord, not to the handshape that plays it, so it
 survives unassigning the shape. With **FOLLOW** on (the default) the key comes from Pitch
-Quantize, so chords land in the same key the melody snaps to; it stands down
-automatically when quantise is off or its scale isn't one of the six seven-note
-modes, since roman numerals mean nothing over a pentatonic or whole-tone scale.
+Quantize, so chords land in the same key the melody snaps to — including the
+pentatonics now that degrees generalise to them; it stands down automatically
+when quantise is off or its scale is one the degree system genuinely cannot
+address (blues, whole-tone, chromatic), whose six-plus degrees stack into
+clusters rather than chords.
 
 Qualities and numerals are *derived*, never tabulated: stack every other scale
 tone and read the intervals back. Harmonic minor therefore comes out
@@ -1046,6 +1055,83 @@ difference between an arpeggio and a stutter. The pattern order, the note pool
 and the step clock are pure functions in `src/arp.js` and are unit-tested
 without an AudioContext; `src/chordmode.js` owns the clock and calls
 `engine.arpNote()`.
+
+## Radial menu (play by pointing)
+
+The **Radial Menu** section (beside Gesture Mode) is a second way of playing
+the chord voice bank: a fan of **equal-angle arc sections** anchored to a
+joint with real freedom of direction, one section per **scale degree** of the
+key. Point into a section and its degree sounds; five arcs over a pentatonic
+key, seven over a diatonic one, re-divided the moment the key changes.
+
+**JOINT** picks the anchor:
+
+- **Wrist** (either hand) — the fan is drawn around the wrist and **rides the
+  forearm**: its centreline is the elbow→wrist axis from pose tracking, so it
+  faces wherever your arm does and wrist flexion walks the sections. The
+  extended **middle fingertip is the pointer** — point to play, curl the
+  fingers to let go. With pose off the fan stays upright in the frame instead;
+  still playable, just fixed to the camera rather than to you, and the panel
+  says so.
+- **Shoulder** (either side) — the fan is fixed to the **torso** (it leans
+  when you do), the whole arm is the pointer, and the sections run from
+  arm-hanging (lowest degree) to arm-overhead (highest). Straighten the arm to
+  reach the ring, bend the elbow to release. Needs pose tracking.
+
+The sections have **radial thickness** — each is an annular sector, not a ray —
+and that thickness is what makes sustain a *place* rather than a moment:
+extend into the ring and the note attacks, stay anywhere inside the section
+and it holds under the chord ADSR, retract past the inner edge and it
+releases. **How fast the pointer crosses into a section sets the attack
+strength** — a stab is loud, a drift is soft (never silent: a slow entry is a
+note meant quietly, not a note not meant). Sliding along inside the ring into
+the next section re-attacks on the new degree, measured by the same yardstick,
+so runs are played by sweeping. Every boundary carries hysteresis — radial and
+angular — so a pointer resting *on* an edge holds its note instead of
+machine-gunning the envelope.
+
+All radii are in the joint's **own units** — palm lengths at the wrist, arm
+lengths at the shoulder — so nothing changes when you step closer to the
+camera or hand the instrument to smaller hands. **SPAN** sets the fan's width
+per joint (a wrist sweeps about ±75°; a shoulder a full half-turn).
+
+Three things are deliberately **shared with Gesture Mode** rather than owned
+here:
+
+- **The key.** The KEY row edits the *same* root/mode/octave (with the same
+  FOLLOW to Pitch Quantize) that gesture mode plays in — nobody plays two
+  scales at once, so there is one scale to pick, reachable from either panel,
+  and the two rows can never disagree because they render from one state.
+- **The voicing.** **PLAY** offers the same choice: **SINGLE NOTES** (the
+  default here — pointing reads as melody) or **CHORDS**, the degree's whole
+  chord with its 7ths as set in the gesture panel.
+- **The accidentals.** In note voicing the hand *not* wearing the menu bends
+  the note with the same two shapes (**Thumbs Up** = ♯, **Thumbs Down** = ♭ by
+  default — one setting, gesture mode's). A thumb turning over under a held
+  note re-attacks it at the new pitch, at the held strength.
+
+**Shepard tones are the default voice** for this mode: enabling the menu
+switches the chord bank's SHEPARD on (see Gesture Mode), because a menu that
+wraps around a joint pairs naturally with a timbre that wraps around the
+octave — runs around the fan climb without ever leaving their register.
+Toggling SHEPARD from the radial panel overrules the default for good; the
+auto-on never fights a choice you have made.
+
+Only **one** of Radial Menu and Gesture Mode is on at a time — both voice
+through the same four chord voices, and two writers on one bank is a race, not
+a duet. Enabling either parks the other; both toggles say so by their state.
+
+The fan is drawn on the **camera overlay**, under the skeletons, in the
+overlay's own mirrored space, with note-name labels (numerals in chord
+voicing) counter-flipped so they read correctly in the mirror. The active
+section fills in the pointing hand's overlay colour, stronger while sounding,
+and a pointer line makes what the fan is reading visible rather than a guess.
+
+The maths — section resolution, boundary hysteresis, entry-speed → strength,
+and both joint geometries — is pure and camera-free in `src/radial.js`
+(`makeRadialTracker`, `wristGeometry`, `shoulderGeometry`), driven by
+`tests/unit/radial.test.js`; the panel is `src/ui/radial-ui.js`; settings save
+with presets and travel in shared links like everything else.
 
 ## Fullscreen camera view
 

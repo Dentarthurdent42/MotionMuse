@@ -690,10 +690,14 @@ export const engine = (() => {
     chordOn = true;
   }
 
-  function playChord(freqs, { gain = CHORD_PEAK } = {}) {
+  // `velocity` scales the envelope's peak (0..1, like a MIDI velocity): the
+  // radial menu turns entry speed into attack strength through it. Kept as a
+  // factor on `gain` rather than an absolute so callers never need to know
+  // CHORD_PEAK.
+  function playChord(freqs, { gain = CHORD_PEAK, velocity = 1 } = {}) {
     if (!started || !freqs?.length) return;
     setChordVoices(freqs);
-    attackChord(gain);
+    attackChord(gain * Math.max(0, Math.min(1, velocity)));
   }
 
   // ── Arpeggiator notes ────────────────────────────────────────────────

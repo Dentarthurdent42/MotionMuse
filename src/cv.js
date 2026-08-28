@@ -9,6 +9,7 @@ import { createPoseBackend }                                from './posebackends
 import { lsGet, lsSet }                                     from './storage.js';
 import { gesture }                                          from './gesture.js';
 import { uicontrol }                                        from './uicontrol.js';
+import { radial }                                           from './radial.js';
 
 // How sure the handedness guess has to be before it is allowed to REJECT a
 // hand. MediaPipe reports a score per detection; below this the label is a coin
@@ -562,6 +563,11 @@ export const cvSource = {
     // Distance-from-camera (LiDAR if active, else monocular size estimate).
     // Claimed hands freeze here in step with their other signals.
     depthSource.feedHands(found, claimed);
+    // The radial menu reads raw geometry (a pointer is a direction, not a
+    // scalar the bus could carry), so it gets the landmarks the same way
+    // depth does — claimed hands freeze here too, and staleness inside the
+    // module turns a frozen hand into a released note.
+    radial.feedHands(found, claimed, this.video ? this.video.videoWidth / this.video.videoHeight : 0);
   },
 
   // ── Signal extraction: pose ──────────────────────────────────────────
@@ -574,6 +580,7 @@ export const cvSource = {
        'arm_raise_L','arm_raise_R','torso_tilt','head_x','head_y','nose_y']
         .forEach(k => bus.decay(k));
       depthSource.feedPose(null);
+      radial.feedPose(null, 0);
       return;
     }
     const lm = r.landmarks[0];
@@ -616,6 +623,7 @@ export const cvSource = {
 
     // Torso distance-from-camera (LiDAR if active, else shoulder-span estimate).
     depthSource.feedPose(lm);
+    radial.feedPose(lm, this.video ? this.video.videoWidth / this.video.videoHeight : 0);
   },
 
   // ── Canvas skeleton overlay ──────────────────────────────────────────
@@ -631,6 +639,10 @@ export const cvSource = {
     const oy = (c.height - vh * scale) / 2;
     const lx = x => ox + x * vw * scale;
     const ly = y => oy + y * vh * scale;
+
+    // The radial menu's fan first, so the skeletons draw over it — it is
+    // furniture the pointer moves across, not part of the body.
+    radial.draw(ctx, lx, ly, themeToken('--glass-ink', '#fff'));
 
     // Batched drawing: one stroked path per hand (all 24 connections), one
     // filled path per dot colour — ~8 canvas ops instead of ~100.

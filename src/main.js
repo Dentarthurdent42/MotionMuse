@@ -17,6 +17,7 @@ import { playalong }                        from './playalong.js';
 import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
 import { gesture }                          from './gesture.js';
 import { chordmode }                        from './chordmode.js';
+import { radial }                           from './radial.js';
 import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
@@ -57,6 +58,7 @@ function loop() {
   // silently claims a hand away from the instrument.
   if (devmode.enabled) uicontrol.tick();
   chordmode.tick();      // cheap no-op unless gesture mode is enabled
+  radial.tick();         // cheap no-op unless the radial menu is enabled
   playalong.tick();      // cheap no-op unless a song is running
   // The pedal, after the trackers have published this frame's signals and
   // before anything draws: a nod detected now should move the transport now,
