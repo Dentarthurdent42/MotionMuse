@@ -16,6 +16,36 @@ import { radial }                                           from './radial.js';
 // toss and rejecting on it would cost dropouts on a correctly-shown hand.
 const HANDEDNESS_SURE = 0.9;
 
+// Mean per-landmark separation, in palm lengths, under which two detections
+// are treated as the same hand seen twice. See _sameHand for why the measure
+// is per-landmark and where the gap between a duplicate (~0) and a clap (~1)
+// actually sits.
+const DUP_PALMS = 0.4;
+
+// How sure the pose model has to be that it can SEE a landmark before that
+// landmark is allowed to mean anything.
+//
+// MediaPipe scores every pose landmark with a `visibility`, and nothing here
+// read it — so a subject too close for the model to find a torso (a face
+// filling the frame) still published elbow angles, shoulder swings and a
+// torso lean, computed from landmarks the model had placed by extrapolating
+// off the edge of the picture. Those are not noisy readings, they are
+// invented ones, and they hold their invented value for as long as the model
+// keeps guessing.
+//
+// The MoveNet backend already drops keypoints below its own score
+// (posebackends.js); this applies the same rule to the MediaPipe path, which
+// was passing everything through.
+export const POSE_VISIBLE = 0.5;
+
+// Every signal processPose owns. One list: the update path decays whatever it
+// could not compute this frame, which is the same set the no-pose path decays.
+const POSE_SIGNALS = [
+  'elbow_L', 'elbow_R', 'shoulder_y_L', 'shoulder_y_R', 'shoulder_width',
+  'shoulder_elev_L', 'shoulder_elev_R', 'shoulder_azim_L', 'shoulder_azim_R',
+  'arm_raise_L', 'arm_raise_R', 'torso_tilt', 'head_x', 'head_y', 'nose_y',
+];
+
 
 // Hand skeleton connections (MediaPipe 21-landmark topology)
 const HAND_CONNS = [
@@ -29,9 +59,6 @@ const HAND_CONNS = [
 
 // Pose skeleton connections (subset of 33-landmark BlazePose)
 const POSE_CONNS = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24]];
-
-// Placeholder for overlay drawing before a model has produced its first result.
-const EMPTY_RESULT = { landmarks: [], handednesses: [] };
 
 export const cvSource = {
   hand:     null,
@@ -70,8 +97,8 @@ export const cvSource = {
     if (pose   !== undefined) this.poseOn = !!pose;
     // Drop the cached result of anything switched off, or the overlay would
     // keep drawing the last landmarks it saw as though they were live.
-    if (!this.handsOn) this._hr = null;
-    if (!this.poseOn)  this._pr = null;
+    if (!this.handsOn) this._hands = null;
+    if (!this.poseOn)  this._pose = null;
     // Drop the timings too, so switching a model back on reports what it is
     // doing now rather than the average it left behind.
     if (!this.handsOn) this._lat?.hand.splice(0);
@@ -401,18 +428,18 @@ export const cvSource = {
                              : this.handsOn;
         const runPose = both ? !runHand : this.poseOn;
         if (runHand) {
-          this._hr = this.hand.recognizeForVideo
+          const hr = this.hand.recognizeForVideo
             ? this.hand.recognizeForVideo(this.video, now)
             : this.hand.detectForVideo(this.video, now);
           push30(lat.hand, performance.now() - t0);
-          this.processHands(this._hr);
+          this.processHands(hr);
         } else if (runPose) {
-          this._pr = this.poseBackend.detect(this.video, now);
-          push30(lat.pose, performance.now() - t0);
-          this.processPose(this._pr);
+          const pr = this.poseBackend.detect(this.video, now);
+          push30(lat.pose, performance.now() - t0);   // the detect, not the plumbing
+          this.processPose(pr);
         }
         push30(lat.total, performance.now() - t0);
-        this.drawOverlay(this._hr ?? EMPTY_RESULT, this._pr ?? EMPTY_RESULT);
+        this.drawOverlay(this._hands, this._pose);
         if (++lat.frame % 15 === 0) this._updateLatency();
       } catch (e) {
         if (!this._warned) { console.warn('[cv] frame error:', e); this._warned = true; }
@@ -450,11 +477,57 @@ export const cvSource = {
     document.getElementById('lat-total').textContent = ms(total);
   },
 
+  // Is `b` the same physical hand as `a`, detected twice?
+  //
+  // Held close to the lens, one hand can trip the palm detector twice and
+  // survive non-max suppression as two overlapping detections — and the
+  // classifier, guessing at the same pixels twice, hands the copies OPPOSITE
+  // handedness labels. That is not a cosmetic double-draw. With both sides
+  // enabled, processHands files one copy under L and the other under R, so a
+  // single hand drives both sides' signals: the "other hand" that bends a
+  // note sharp, or plays its volume, becomes the very hand that named it.
+  //
+  // Measured per LANDMARK rather than by wrist distance, because clapped
+  // hands sit only about half a palm apart at the wrist — uicontrol's clap is
+  // exactly that pose — so a wrist test tight enough to catch a duplicate
+  // would fuse a clap into one hand and stop the gesture firing. Mirrored
+  // hands put each index's landmark on opposite sides of the pair (thumb tip
+  // against thumb tip spans a palm and a half), so the MEAN over all 21
+  // separates the two cases by an order of magnitude: a duplicate scores near
+  // zero, a clap scores about one.
+  _sameHand(a, b) {
+    if (!a?.length || !b?.length) return false;
+    const palm = dist3(a[0], a[9]);
+    if (palm < 1e-6) return false;
+    const n = Math.min(a.length, b.length);
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += dist3(a[i], b[i]);
+    return (sum / n) / palm < DUP_PALMS;
+  },
+
+  // Indices of the detections that describe DISTINCT hands. When two describe
+  // the same one, the surviving copy is whichever label the model is surer of
+  // — there is no more information to go on, and one side reading a real hand
+  // beats both sides reading the same one.
+  _distinctHands(r) {
+    const keep = [];
+    for (let i = 0; i < (r.landmarks?.length ?? 0); i++) {
+      const at = keep.findIndex(j => this._sameHand(r.landmarks[i], r.landmarks[j]));
+      if (at < 0) { keep.push(i); continue; }
+      const mine  = r.handednesses?.[i]?.[0]?.score ?? 0;
+      const kept  = r.handednesses?.[keep[at]]?.[0]?.score ?? 0;
+      if (mine > kept) keep[at] = i;
+    }
+    return keep;
+  },
+
   // Which detection to treat as `side`, or -1 for none. Exported shape kept
   // simple (indices into the result) so the choice is one place and testable.
-  _pickSide(r, side) {
+  // `keep` narrows the candidates to the distinct hands (see _distinctHands);
+  // absent, every detection is a candidate.
+  _pickSide(r, side, keep) {
     let unsure = -1;
-    for (let i = 0; i < r.landmarks.length; i++) {
+    for (const i of keep ?? r.landmarks.map((_, k) => k)) {
       const h = r.handednesses[i]?.[0];
       const guess = h?.categoryName === 'Left' ? 'L' : 'R';
       const score = h?.score ?? 0;
@@ -486,26 +559,35 @@ export const cvSource = {
     // fixed, and it is the only one where a hand is thrown away.
     const onlySide = this.handsL !== this.handsR ? (this.handsL ? 'L' : 'R') : null;
     if (r.handednesses && r.landmarks) {
+      // One hand detected twice is one hand: resolve that before either
+      // branch, so neither can hand the same hand to both sides.
+      const keep = this._distinctHands(r);
       if (onlySide && r.landmarks.length) {
-        const i = this._pickSide(r, onlySide);
+        const i = this._pickSide(r, onlySide, keep);
         if (i >= 0) {
           found[onlySide]       = r.landmarks[i];
           foundWorld[onlySide]  = r.worldLandmarks?.[i] ?? null;
           foundCanned[onlySide] = r.gestures?.[i]?.[0] ?? null;
         }
       } else {
-        r.handednesses.forEach((h, i) => {
+        for (const i of keep) {
           // MediaPipe Tasks API reports handedness from the subject's perspective
-          const side = h[0].categoryName === 'Left' ? 'L' : 'R';
-          if (side === 'L' ? !this.handsL : !this.handsR) return;
+          const side = r.handednesses[i]?.[0]?.categoryName === 'Left' ? 'L' : 'R';
+          if (side === 'L' ? !this.handsL : !this.handsR) continue;
           found[side]      = r.landmarks[i];
           foundWorld[side] = r.worldLandmarks?.[i] ?? null;
           // Same index, same side resolution — so the classification and the
           // landmarks can never end up describing different hands.
           foundCanned[side] = r.gestures?.[i]?.[0] ?? null;
-        });
+        }
       }
     }
+    // What the overlay draws: the hands that actually drive the instrument,
+    // one per side, rather than every raw detection. Drawing the raw list is
+    // how a rejected duplicate showed up as two skeletons intersecting
+    // impossibly on one hand — a picture of something the instrument was not
+    // playing.
+    this._hands = found;
     // The hand cursor sees every hand BEFORE the claims gate below — an armed
     // hand is invisible to the bus precisely because the cursor owns it.
     uicontrol.feedHands(found, foundWorld, performance.now());
@@ -570,64 +652,89 @@ export const cvSource = {
     radial.feedHands(found, claimed, this.video ? this.video.videoWidth / this.video.videoHeight : 0);
   },
 
+  // Drop the pose landmarks the model cannot actually see, so an invented one
+  // reads as an absent one — every consumer already null-guards. Absent
+  // `visibility` means a backend that has gated already (MoveNet), so a
+  // present-but-unscored landmark counts as visible.
+  _visiblePose(r) {
+    const lm = r?.landmarks?.[0];
+    if (!lm) return r;
+    return { ...r, landmarks: [
+      lm.map(p => (p && (p.visibility ?? 1) >= POSE_VISIBLE ? p : undefined)),
+    ] };
+  },
+
   // ── Signal extraction: pose ──────────────────────────────────────────
-  processPose(r) {
-    if (!r.landmarks?.length) {
-      // Decay pose signals like the hand path does — otherwise they freeze at
-      // their last value when the subject leaves the frame.
-      ['elbow_L','elbow_R','shoulder_y_L','shoulder_y_R','shoulder_width',
-       'shoulder_elev_L','shoulder_elev_R','shoulder_azim_L','shoulder_azim_R',
-       'arm_raise_L','arm_raise_R','torso_tilt','head_x','head_y','nose_y']
-        .forEach(k => bus.decay(k));
-      depthSource.feedPose(null);
-      radial.feedPose(null, 0);
-      return;
-    }
-    const lm = r.landmarks[0];
+  processPose(raw) {
+    const r = this._visiblePose(raw);
+    const lm = r.landmarks?.[0];
+    // Whatever cannot be computed this frame is DECAYED, not left standing:
+    // a landmark that has gone invisible under a model still confidently
+    // reporting a pose would otherwise freeze its signals at the last value
+    // it invented, which is exactly how a garbage reading outlives the frame
+    // that produced it.
+    const fresh = new Set();
+    const put = (k, v) => { bus.update(k, v); fresh.add(k); };
+
     // Indices: 0=nose, 11=Lshoulder, 12=Rshoulder, 13=Lelbow,
     //          14=Relbow, 15=Lwrist, 16=Rwrist, 23=Lhip, 24=Rhip
-    const [ls, rs, le, re, lw, rw, lh, rh, nose] = [11,12,13,14,15,16,23,24,0].map(i => lm[i]);
+    const [ls, rs, le, re, lw, rw, lh, rh, nose] =
+      [11,12,13,14,15,16,23,24,0].map(i => lm?.[i]);
 
-    if (ls && le && lw) bus.update('elbow_L', angleBetween(ls, le, lw));
-    if (rs && re && rw) bus.update('elbow_R', angleBetween(rs, re, rw));
+    if (ls && le && lw) put('elbow_L', angleBetween(ls, le, lw));
+    if (rs && re && rw) put('elbow_R', angleBetween(rs, re, rw));
     if (ls && rs) {
-      bus.update('shoulder_y_L',   1 - ls.y);
-      bus.update('shoulder_y_R',   1 - rs.y);
-      bus.update('shoulder_width', Math.abs(ls.x - rs.x));
+      put('shoulder_y_L',   1 - ls.y);
+      put('shoulder_y_R',   1 - rs.y);
+      put('shoulder_width', Math.abs(ls.x - rs.x));
     }
     if (ls && rs && lh && rh) {
       const smx = (ls.x + rs.x) / 2, hmx = (lh.x + rh.x) / 2;
-      bus.update('torso_tilt', Math.max(-1, Math.min(1, (smx - hmx) * 5)));
+      put('torso_tilt', Math.max(-1, Math.min(1, (smx - hmx) * 5)));
 
       // Both shoulders share one torso frame, so the two arms are described
       // against the same body rather than each against the camera.
       const frame = torsoFrame(ls, rs, lh, rh);
       if (le) {
         const a = shoulderAngles('L', ls, le, frame);
-        bus.update('shoulder_elev_L', a.elevation);
-        bus.update('shoulder_azim_L', a.azimuth);
-        bus.update('arm_raise_L', a.elevation / 180);
+        put('shoulder_elev_L', a.elevation);
+        put('shoulder_azim_L', a.azimuth);
+        put('arm_raise_L', a.elevation / 180);
       }
       if (re) {
         const a = shoulderAngles('R', rs, re, frame);
-        bus.update('shoulder_elev_R', a.elevation);
-        bus.update('shoulder_azim_R', a.azimuth);
-        bus.update('arm_raise_R', a.elevation / 180);
+        put('shoulder_elev_R', a.elevation);
+        put('shoulder_azim_R', a.azimuth);
+        put('arm_raise_R', a.elevation / 180);
       }
     }
     if (nose) {
-      bus.update('head_x', nose.x);
-      bus.update('head_y', 1 - nose.y);
-      bus.update('nose_y', nose.y); // raw: high = head down
+      put('head_x', nose.x);
+      put('head_y', 1 - nose.y);
+      put('nose_y', nose.y); // raw: high = head down
     }
+    for (const k of POSE_SIGNALS) if (!fresh.has(k)) bus.decay(k);
 
     // Torso distance-from-camera (LiDAR if active, else shoulder-span estimate).
-    depthSource.feedPose(lm);
-    radial.feedPose(lm, this.video ? this.video.videoWidth / this.video.videoHeight : 0);
+    depthSource.feedPose(lm ?? null);
+    // The gated landmarks, not the raw ones: the radial menu rides the
+    // forearm, and a forearm the model only guessed at would swing the whole
+    // ring. Without it the ring falls back to facing the camera, which is the
+    // same thing it does with pose switched off.
+    radial.feedPose(lm ?? null,
+      this.video ? this.video.videoWidth / this.video.videoHeight : 0);
+    this._pose = lm ?? null;
   },
 
   // ── Canvas skeleton overlay ──────────────────────────────────────────
-  drawOverlay(hr, pr) {
+  //
+  // Takes what the instrument RESOLVED — one hand per side, and the pose
+  // landmarks that survived the visibility gate — rather than the raw model
+  // results. Drawing the raw results is how a duplicate detection appeared as
+  // two skeletons intersecting impossibly on one hand, and how landmarks the
+  // model had extrapolated off the edge of the frame were drawn as though
+  // they were seen.
+  drawOverlay(hands, pose) {
     const { ctx, canvas: c } = this;
     ctx.clearRect(0, 0, c.width, c.height);
 
@@ -646,10 +753,14 @@ export const cvSource = {
 
     // Batched drawing: one stroked path per hand (all 24 connections), one
     // filled path per dot colour — ~8 canvas ops instead of ~100.
-    if (hr.landmarks) {
-      hr.landmarks.forEach((lm, hi) => {
-        const isRight = hr.handednesses[hi]?.[0]?.categoryName === 'Right';
-        const col = isRight ? '#00e5cc' : '#9d5cff';
+    //
+    // `hands` is the resolved side→landmarks map, so the colour comes from
+    // the side the hand was actually filed under rather than from a label
+    // read a second time — the picture and the signals cannot disagree.
+    for (const s of ['L', 'R']) {
+      const lm = hands?.[s];
+      if (lm) {
+        const col = s === 'R' ? '#00e5cc' : '#9d5cff';
         ctx.strokeStyle = col + 'aa'; ctx.lineWidth = 1.5;
         ctx.beginPath();
         HAND_CONNS.forEach(([a, b]) => {
@@ -674,11 +785,11 @@ export const cvSource = {
         ctx.beginPath();
         ctx.arc(lx(lm[0].x), ly(lm[0].y), 3, 0, Math.PI * 2);
         ctx.fill();
-      });
+      }
     }
 
-    if (pr.landmarks?.length) {
-      const lm = pr.landmarks[0];
+    if (pose) {
+      const lm = pose;
       ctx.strokeStyle = '#f0a50066'; ctx.lineWidth = 2;
       ctx.beginPath();
       POSE_CONNS.forEach(([a, b]) => {
