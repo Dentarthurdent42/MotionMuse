@@ -1170,8 +1170,14 @@ an edge holds its note instead of machine-gunning the envelope.
 (the default) is the behaviour above — velocity sets the attack, the chord
 ADSR shapes the note. **Other hand — openness** and **Eyebrows** hand
 loudness to a *signal* instead, exactly as gesture mode's VOLUME control
-does: the ring still names the note and holds it — pointing is the gate,
-retracting still releases — but the signal *is* the level, continuously.
+does: the signal *is* the level, continuously, and it is also the only
+gate. The ring only **names**: the degree you point at **latches**, the
+next articulation of the signal sounds it, and while the signal is open the
+pitch is frozen — sweeping the pointer (or losing the ring hand entirely)
+cannot bend or cut the held note, only the accidental can. Close the signal
+and the latch is free again; aim in the silence, and the rearticulation
+takes the new aim. The latched section is drawn as an outline in the hand's
+colour — a promise, where a fill means sound — and the panel names it.
 There is no envelope to run and no entry speed to read in those modes: you
 are the envelope. **OFF AT / FULL AT** map the raw signal onto that travel
 with the same measured defaults gesture mode uses (a fist still reads ~0.42

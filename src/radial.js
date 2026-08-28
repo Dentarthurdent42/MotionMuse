@@ -357,11 +357,18 @@ export function shoulderGeometry(side, pose, aspect = 4 / 3) {
 // Gesture mode's volume story, worn on the ring. By default loudness comes
 // from ENTRY SPEED — the velocity → envelope-peak control the ring already
 // has. The two expression sources hand loudness to a SIGNAL instead, exactly
-// as gesture mode's VOLUME control does: the ring still names the note and
-// holds it (pointing is the gate), but the other hand's openness — or your
+// as gesture mode's VOLUME control does: the other hand's openness — or your
 // eyebrows — IS the level, continuously. There is no envelope to run and no
 // entry speed to read in those modes: you are the envelope, which is the
 // whole point of choosing them.
+//
+// And the named degree LATCHES, exactly as gesture mode's named chord does:
+// one input chooses, the other plays. While the signal is OPEN the pitch is
+// frozen — the pointer is a continuous thing, and re-pointing live would
+// glissando a sweep through every section between here and there — and the
+// ring hand may relax, retract, even drop out of frame without cutting the
+// note, because the sound is not what it controls. The latch re-aims only
+// while the signal is SILENT, and the next articulation takes the new aim.
 //
 // lo/hi map the raw signal onto 0..1 travel with the same measured defaults
 // gesture mode uses (a fist still reads ~0.42 openness, a comfortable brow
@@ -396,6 +403,7 @@ export const radial = (() => {
   let volume   = { ...DEFAULTS.volume };
   let volRaw = 0, volLevel = 0;       // last read, for the panel's meter
   let voicedSig = null;               // what the voices point at, volume modes
+  let latched = null;                 // degree the volume modes hold, per the latch
   let shepAuto = DEFAULTS.shepAuto;
 
   let hands = { L: null, R: null };   // latest hand landmarks per side
@@ -432,6 +440,7 @@ export const radial = (() => {
     if (volume.mode !== 'off') engine.setChordLevel(0);
     else engine.releaseChord();
     sounding = null;
+    latched = null;
     voicedSig = null;
   };
 
@@ -604,6 +613,18 @@ export const radial = (() => {
       ensureTracker();
       const now = performance.now();
       geo = smoother.smooth(computeGeometry(), now / 1000);
+
+      // Expression-driven volume runs its own transport: the ring only
+      // NAMES, so losing the ring's tracking must not cut a note the volume
+      // hand is holding — the latch survives, and if the volume hand is lost
+      // too, its bus signal decays to silence on its own.
+      if (volume.mode !== 'off') {
+        if (geo) tracker.feed({ deg: geo.pointer.deg, r: geo.pointer.r, t: now / 1000 });
+        else tracker.reset();
+        this._tickExpressed(geo ? tracker.section : null);
+        return;
+      }
+
       if (!geo) {
         // Tracking lost mid-note fails quiet, like every other source.
         silence();
@@ -615,26 +636,6 @@ export const radial = (() => {
         t: now / 1000,
       });
       const acc = accidentalNow();
-
-      // Expression-driven volume: the ring names and holds the note, the
-      // signal IS the level. No envelope runs and no entry speed is read —
-      // you are the envelope. Voices are only re-pointed when the note
-      // actually changes; ramping frequencies every frame is the same
-      // never-settling glide gesture mode's volume path exists to avoid.
-      if (volume.mode !== 'off') {
-        const level = readVolume();
-        if (ev?.type === 'release') { silence(); return; }
-        if (ev?.type === 'attack') sounding = ev.section;
-        if (sounding === null) return;
-        const freqs = freqsFor(sounding, acc);
-        if (!freqs) { silence(); return; }
-        const sig = `${sounding}|${acc}|${voicing}|${JSON.stringify(chordmode.effectiveKey())}`;
-        if (sig !== voicedSig) { engine.setChordVoices(freqs); voicedSig = sig; }
-        engine.setChordLevel(level);
-        lastAcc = acc;
-        return;
-      }
-
       if (ev?.type === 'attack') {
         const freqs = freqsFor(ev.section, acc);
         if (freqs) {
@@ -654,9 +655,45 @@ export const radial = (() => {
       }
     },
 
+    // The volume modes' transport, named for its counterpart in chordmode.
+    // `named` is the section the pointer is on right now, or null.
+    //
+    // The latch updates ONLY while the signal is silent: while it is open
+    // the pitch is frozen (the accidental alone may bend it — the one part
+    // of a note the off input can move without touching the aim, exactly as
+    // in gesture mode), and the next articulation sounds whatever was aimed
+    // at last. Voices are only re-pointed when the note actually changes;
+    // ramping frequencies every frame is the same never-settling glide
+    // gesture mode's volume path exists to avoid.
+    _tickExpressed(named) {
+      const level = readVolume();
+      const acc = accidentalNow();
+      if (level === 0) {
+        if (named !== null) latched = named;   // silent: the pointer re-aims freely
+        if (sounding !== null) { engine.setChordLevel(0); sounding = null; voicedSig = null; }
+        return;
+      }
+      if (latched === null) return;            // nothing has ever been named
+      const freqs = freqsFor(latched, acc);
+      if (!freqs) {
+        // A key change stranded the latch on a degree the new mode no longer
+        // has. That is a release: a latch pointing at nothing is a note
+        // nothing could ever stop.
+        engine.setChordLevel(0);
+        sounding = null; latched = null; voicedSig = null;
+        return;
+      }
+      const sig = `${latched}|${acc}|${voicing}|${JSON.stringify(chordmode.effectiveKey())}`;
+      if (sig !== voicedSig) { engine.setChordVoices(freqs); voicedSig = sig; }
+      engine.setChordLevel(level);
+      sounding = latched;
+      lastAcc = acc;
+    },
+
     // ── For the panel and the overlay ───────────────────────────────────
     geometry: () => geo,
     soundingSection: () => sounding,
+    latchedSection: () => latched,
     // Label of one section — the note's name in note voicing (octave
     // dropped: the arc is small and the octave is the key's), the numeral in
     // chord voicing.
@@ -739,6 +776,15 @@ export const radial = (() => {
         ctx.strokeStyle = INK.replace('0.92', '0.7');
         ctx.lineWidth = 1;
         ctx.stroke();
+        // In a volume mode the latched section is the note the next
+        // articulation will sound. An OUTLINE in the hand's colour, never a
+        // fill — a fill is the overlay's word for "sounding now", and a
+        // silent latch is a promise, not a sound.
+        if (volume.mode !== 'off' && i === latched && i !== sounding) {
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
 
         // Label at the section's middle. The canvas is mirrored, so text
         // drawn straight would read backwards — flip it back around its
