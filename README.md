@@ -759,6 +759,59 @@ model is confident belongs to the other side is rejected. That last case is the
 bug, and it is the only one where a hand is discarded.
 `tests/unit/hand-side.test.js` pins all four.
 
+### One hand is not two hands
+
+Held close to the lens, a single hand can trip the palm detector twice and
+survive non-max suppression as **two overlapping detections** — which the
+classifier then labels Left and Right, because it is guessing at the same
+pixels twice. On screen that is two skeletons intersecting impossibly on one
+hand; underneath it is worse. With both sides enabled, one copy was filed
+under **L** and the other under **R**, so a single hand drove *both* sides'
+signals: the off hand that bends a note sharp, or plays its volume, was the
+same hand that named the note.
+
+Duplicates are now rejected before either side is assigned, and the copy the
+model is surer of survives — there is no more information to go on, and one
+side reading a real hand beats both sides reading the same one.
+
+The measure is the interesting part. Clapped hands sit only about **half a palm
+apart at the wrist** (the hand cursor's clap is exactly that pose), so a wrist
+test tight enough to catch a duplicate would fuse a clap and stop the wake
+gesture firing. Mirrored hands put each index's landmark on opposite sides of
+the pair — thumb tip against thumb tip spans a palm and a half — so the rule is
+the **mean over all 21 landmarks**, where the two cases sit an order of
+magnitude apart: a duplicate scores near zero, a clap near one.
+`tests/unit/hand-dupe.test.js` pins both, including that a clap survives.
+
+### A landmark the model cannot see is a guess
+
+MediaPipe scores every **pose** landmark with a `visibility`, and nothing read
+it. So a subject too close for the model to find a torso — a face filling the
+frame — still published elbow angles, shoulder swings and a torso lean,
+computed from landmarks the model had placed by extrapolating off the edge of
+the picture. Those readings are not noisy, they are *invented*, and they were
+drawn on the overlay as though they had been seen.
+
+Pose landmarks below the floor are now dropped, which every consumer already
+treats as absent. Two consequences worth stating:
+
+- **A signal that cannot be computed decays** rather than standing at the last
+  value it was invented from. A frozen garbage angle otherwise outlives the
+  frame that produced it and keeps driving whatever it is mapped to.
+- **The radial menu stops riding a forearm that isn't there.** Its ring is
+  oriented by the elbow→wrist segment, so a guessed forearm would swing the
+  whole ring; without a visible one it falls back to facing the camera, which
+  is exactly what it does with pose switched off.
+
+The MoveNet backend already dropped keypoints below its own score
+(`posebackends.js`); this is the same rule applied to the MediaPipe path, which
+had been passing everything through. `tests/unit/pose-visibility.test.js`.
+
+**The overlay draws what the instrument resolved** — one hand per side, and the
+pose landmarks that survived the gate — rather than the raw model output. The
+picture and the signals now come from the same values, so the overlay cannot
+show a hand that is not playing anything.
+
 ### Presets switch the models they need
 
 Choosing a preset now switches every tracker to what the patch actually uses,
