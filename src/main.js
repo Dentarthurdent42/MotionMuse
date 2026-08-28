@@ -18,6 +18,7 @@ import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
 import { gesture }                          from './gesture.js';
 import { chordmode }                        from './chordmode.js';
 import { radial }                           from './radial.js';
+import { metronome }                        from './metronome.js';
 import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
@@ -57,6 +58,9 @@ function loop() {
   // persists, so without this a clap would arm an invisible cursor that
   // silently claims a hand away from the instrument.
   if (devmode.enabled) uicontrol.tick();
+  // The metronome BEFORE the play modes: a beat that lands this frame must be
+  // visible to the beat-sampled volume modes this frame, not next.
+  metronome.tick();
   chordmode.tick();      // cheap no-op unless gesture mode is enabled
   radial.tick();         // cheap no-op unless radial mode is enabled
   playalong.tick();      // cheap no-op unless a song is running
@@ -106,7 +110,7 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
     setStatus('', 'STOPPED');
     setLabel(btn, 'START CAMERA');
     btn.classList.remove('on');
-    document.body.classList.remove('cam-on');   // hides the FACE/GAZE row
+    document.body.classList.remove('cam-on');
     return;
   }
   btn.disabled = true;
@@ -120,8 +124,9 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
     btn.classList.add('on');
     buildSigPanel();
     renderMapper();
-    // Face & gaze tracking are opt-in once the camera is running; their row in
-    // the header only exists from this point on.
+    // Face & gaze tracking are opt-in once the camera is running: they load a
+    // model onto the live stream, so their buttons in the TRACKING row wake
+    // up here.
     document.body.classList.add('cam-on');
     document.getElementById('face-btn').disabled = false;
     document.getElementById('gaze-btn').disabled = false;

@@ -62,23 +62,6 @@
       <button class="btn" id="donate-btn" aria-haspopup="menu" aria-expanded="false"
               title="Support this project — donation links">♥</button>
     </div>
-    <!-- Camera-dependent toggles: hidden until the camera is running, then
-         shown on their own row beneath the main controls. -->
-    <div class="hcam">
-      <!-- Hand tracking costs about twice what pose does and is the usual
-           frame-rate bottleneck, so both are switchable outright. With one
-           off the other stops sharing frames and runs at the full rate. -->
-      <button class="btn on" id="hands-l-btn"
-              title="Track the left hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">✋ L</button>
-      <button class="btn on" id="hands-r-btn"
-              title="Track the right hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">R ✋</button>
-      <button class="btn on" id="pose-btn"
-              title="Body pose tracking. Turn it off to give hand tracking the whole frame budget.">🧍 POSE</button>
-      <button class="btn" id="face-btn"
-              title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears">☺ FACE</button>
-      <button class="btn" id="gaze-btn"
-              title="Track pupil orientation as gaze_x / gaze_y signals">◉ GAZE</button>
-    </div>
   </header>
 
   <!-- ── Main ───────────────────────────────────────────── -->
@@ -146,6 +129,29 @@
           <video id="video" autoplay playsinline muted></video>
           <canvas id="overlay"></canvas>
           <canvas id="face-overlay"></canvas>
+          <!-- What the camera tracks — a property of this input, so the
+               toggles wear the picture itself rather than the header they
+               used to share with SHARE and the theme. A strip overlaid like
+               .cam-toggles opposite, because a stacked row would grow the
+               camera panel and steal that height from the patchbay below.
+               Hands and pose work before the camera starts (they set intent
+               the loop reads); FACE and GAZE load a model onto the live
+               stream, so they stay disabled until there is one. -->
+          <div class="cam-trackers">
+            <!-- Hand tracking costs about twice what pose does and is the usual
+                 frame-rate bottleneck, so both are switchable outright. With one
+                 off the other stops sharing frames and runs at the full rate. -->
+            <button class="depth-toggle on" id="hands-l-btn"
+                    title="Track the left hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">✋ L</button>
+            <button class="depth-toggle on" id="hands-r-btn"
+                    title="Track the right hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">R ✋</button>
+            <button class="depth-toggle on" id="pose-btn"
+                    title="Body pose tracking. Turn it off to give hand tracking the whole frame budget.">🧍 POSE</button>
+            <button class="depth-toggle" id="face-btn" disabled
+                    title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears — start the camera first">☺ FACE</button>
+            <button class="depth-toggle" id="gaze-btn" disabled
+                    title="Track pupil orientation as gaze_x / gaze_y signals — start the camera first">◉ GAZE</button>
+          </div>
           <div class="cam-toggles">
             <button id="depth-btn" class="depth-toggle uc-feature"
                     title="Under construction — use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth (DEV mode feature)"><span id="depth-btn-lbl">◈ LiDAR</span><span class="src-tab-wip">🚧</span></button>

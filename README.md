@@ -36,7 +36,7 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 ```
 
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1. Registering with `velocity: true` also creates a `<key>_vel` sibling the bus keeps fed with the rate of change — see [Velocities](#velocities--every-measure-also-reports-how-fast-it-is-changing).
-- **Tracking toggles**: **✋ L**, **R ✋** and **🧍 POSE** in the header (once the camera is on) switch each model off outright. Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
+- **Tracking toggles**: **✋ L**, **R ✋** and **🧍 POSE** — the TRACKING strip overlaid on the camera view, with ☺ FACE and ◉ GAZE below them — switch each model off outright. (They live on the camera picture because what the camera tracks is a property of that input, not of the app's header; hands and pose can be set before the camera starts, face and gaze wake once there is a stream to run on.) Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` plus a swappable **pose backend** (`src/posebackends.js` — MediaPipe lite/full/heavy or TF.js MoveNet), extracts ~30 signals per frame, and writes them into the bus. Hand and pose inference **alternate frames** (each still ≥15 Hz at a 30 fps camera) so per-frame cost stays half of running both, and every positional signal passes through a per-signal **One-Euro filter** (`src/filter.js`, applied in `bus.update`) — the standard low-latency jitter filter: heavy smoothing on a held pose, light smoothing on fast moves.
 - **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert, invert+ease), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **inverted** with its `⇅ INVERT` toggle — the input's high end then drives the output's low end, which composes with (rather than replaces) the curve, so any response shape can run either way round. A cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired. An output also *remembers* its range, curve, steps and invert flag, so re-wiring a different input into it (or unplugging and re-plugging) doesn't reset them. Each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
 - **Audio Engine** (`src/engine.js`): a **resizable oscillator bank** — one oscillator by default, up to eight, each with its own frequency, detune, waveform and **level** (`oscN_freq` / `oscN_detune` / `oscN_volume`) — through a BiquadFilter, and the chord-mode voice bank through a **second, independent filter and level** (`chord_filter_freq` / `chord_filter_q` / `chord_volume`, with `osc_volume` as the whole bank's level, the lead's counterpart to `chord_volume`). The two sources converge into a shared convolution reverb and main gain. All driven by the Web Audio API with 25 ms parameter smoothing. **Volume is the exception**: it snaps onto a perceptual step ladder and fires *one* envelope per level change instead of re-smoothing every frame — see Volume quantisation below. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
@@ -995,8 +995,11 @@ zero, so fast chord changes don't click.
   Which hand plays is switchable.
 - **Eyebrows** — one-handed. The hand names chords with either side; your
   eyebrows play them.
+- **Metronome beats** — the clock plays it: the shape held when one of the
+  metronome's SAMPLE beats lands is struck then, and only then. See the
+  Metronome section; needs it switched on.
 
-and how that signal is read:
+and how that signal is read (the two signal modes only):
 
 - **ATTACK / RELEASE** — past a threshold it attacks, below it releases, and the
   ADSR runs. Hysteresis keeps a hand hovering at the threshold from
@@ -1179,7 +1182,10 @@ and the latch is free again; aim in the silence, and the rearticulation
 takes the new aim. The latched section is drawn as an outline in the hand's
 colour — a promise, where a fill means sound — and the panel names it.
 There is no envelope to run and no entry speed to read in those modes: you
-are the envelope. **OFF AT / FULL AT** map the raw signal onto that travel
+are the envelope. **Metronome beats** hands the articulation to the clock
+instead: the section the pointer is on when a SAMPLE beat lands is struck
+then, through the chord ADSR — pointing between beats costs nothing, and a
+beat that finds the pointer retracted is a rest. See the Metronome section. **OFF AT / FULL AT** map the raw signal onto that travel
 with the same measured defaults gesture mode uses (a fist still reads ~0.42
 openness, so silence has to be *put* somewhere your hand can reach), the
 bottom of the travel rounds down to true silence, and the live meter beside
@@ -1277,6 +1283,47 @@ entry-speed → strength, and both ring geometries — is pure and camera-free i
 `shoulderGeometry`), driven by `tests/unit/radial.test.js`; the panel is
 `src/ui/radial-ui.js`; settings save with presets and travel in shared links
 like everything else.
+
+## Metronome
+
+A beat clock the whole instrument can see and hear — one clock, three faces:
+
+- **It clicks.** A short blip through the engine's output, accented on the
+  downbeat. **MUTE silences the click and nothing else**: the clock keeps
+  counting, the picture keeps pulsing, the sampling modes keep sampling — a
+  metronome you can hear *or* just watch is two practice tools for the price
+  of one. The clicks are scheduled ahead on the audio clock rather than fired
+  from whichever frame noticed the beat: a frame is ~16 ms of jitter, which a
+  listener hears as a drunk drummer long before a player sees it.
+- **It is drawn on the camera view.** One marker per beat of the bar,
+  top-centre — the time signature as a picture rather than a fraction. The
+  **downbeat is a diamond** where the others are circles, **SAMPLE beats are
+  filled** where masked-off beats are hollow, and the current beat swells and
+  lights as it lands. Same self-contained contrast as the ring: a scrim band
+  and dark halos, owing nothing to the background.
+- **The play modes read it.** Gesture mode's PLAY WITH and radial mode's
+  VOLUME each offer **“Metronome beats”**: the selection — the handshape held,
+  the section pointed at — is sampled **only when a SAMPLE beat lands**, and
+  struck then through the chord ADSR. Changing your mind between beats costs
+  nothing; the clock is the articulation, the hand only chooses. A sample
+  beat that finds no selection is a rest and releases; a **masked-off beat is
+  skipped entirely** — it neither strikes nor releases, so lighting beats 1
+  and 3 of a four gives you pulses that ring *through* 2 and 4. The **SAMPLE
+  row** in the panel is one toggle per beat of the bar, the same row of
+  markers the camera strip draws.
+
+**TEMPO** is a slider (30–300 BPM) with **−**/**+** nudge buttons; **TIME**
+offers 2/4 through 12/8 — the numerator is what the instrument consumes
+(beats per bar, mask length, markers on screen), the denominator names the
+note the BPM counts, and compound meters click every division rather than the
+dotted pulse: this is a practice clock, not a conductor. Changing the
+signature resizes the SAMPLE mask (kept beats keep their setting, new ones
+arrive switched on) and restarts the bar at ONE. The clock itself runs on the
+frame clock, because everything it gates — handshapes, the ring's pointer —
+only changes once per frame anyway. Settings save with presets and travel in
+shared links; the module is `src/metronome.js`, the panel
+`src/ui/metronome-ui.js`, both driven by `tests/unit/metronome.test.js` plus
+beat-mode tests in the radial and chord-expression suites.
 
 ## Fullscreen camera view
 
@@ -1517,7 +1564,8 @@ clicking the measure's name copies the measure's.
 
 ## Face & gaze tracking (opt-in)
 
-Once the camera is running, two toggles appear under the LiDAR button:
+Two toggles in the camera view's TRACKING strip, disabled until the camera
+is running (they load a model onto the live stream, so there has to be one):
 
 - **☺ FACE** loads MediaPipe `FaceLandmarker` (with blendshapes) and publishes
   eyebrow, lip, tongue, cheek and ear signals. Ears don't articulate, so their
@@ -1786,7 +1834,7 @@ or **TF.js MoveNet Lightning / Thunder** — and watch live detection FPS and
 per-model mean/p95 inference times while the camera runs, so variants can be
 A/B'd on the actual device. Switches happen live and persist in
 `localStorage`. The **DELEGATE** switch applies to *both* the pose and hand
-models, and **HANDS** is no longer set here: the header's ✋ L / R toggles own it, and the
+models, and **HANDS** is no longer set here: the camera view's ✋ L / R toggles own it, and the
 model is always asked for two hands so the one you enabled can be picked out
 from the one you did not (see "One hand means one hand").
 

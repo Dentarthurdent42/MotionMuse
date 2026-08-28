@@ -34,6 +34,7 @@
 
 import { bus }        from './bus.js';
 import { engine }     from './engine.js';
+import { metronome } from './metronome.js';
 import { chordmode, EXPRESSION_RANGE } from './chordmode.js';
 import { gesture }    from './gesture.js';
 import { torsoFrame } from './math.js';
@@ -374,7 +375,14 @@ export function shoulderGeometry(side, pose, aspect = 4 / 3) {
 // gesture mode uses (a fist still reads ~0.42 openness, a comfortable brow
 // raise is about half scale), and the bottom of the travel rounds down to
 // true silence so it does not have to be hit exactly.
-export const VOLUME_MODES = ['off', 'hand', 'brow'];
+//
+// 'beat' hands the articulation to the METRONOME instead: the section the
+// pointer is on when a SAMPLE beat lands is struck then, through the chord
+// ADSR, and only then. Pointing between beats costs nothing — the clock
+// plays, the ring only chooses — and a sample beat that finds the pointer
+// retracted is a rest, which releases whatever the previous beat struck.
+// Needs the metronome running; silent otherwise, and the panel says so.
+export const VOLUME_MODES = ['off', 'hand', 'brow', 'beat'];
 const VOLUME_DEADZONE = 0.12;
 
 const DEFAULTS = {
@@ -560,7 +568,8 @@ export const radial = (() => {
     // range actually reaches both ends without guessing. Read fresh rather
     // than cached, so the meter is honest even before the first note.
     volumeLevel() {
-      if (volume.mode !== 'off') readVolume();
+      // Only the signal modes have a signal to read; 'beat' has a clock.
+      if (volume.mode === 'hand' || volume.mode === 'brow') readVolume();
       return { raw: volRaw, level: volLevel };
     },
     setVolume(partial) {
@@ -614,6 +623,17 @@ export const radial = (() => {
       const now = performance.now();
       geo = smoother.smooth(computeGeometry(), now / 1000);
 
+      // The metronome-sampled mode runs its own transport too: the beat is
+      // the articulation, so the geo-null bail below (which releases) must
+      // not run — a pointer that drops out between beats is nothing, and one
+      // that drops out ON a beat is that beat's rest.
+      if (volume.mode === 'beat') {
+        if (geo) tracker.feed({ deg: geo.pointer.deg, r: geo.pointer.r, t: now / 1000 });
+        else tracker.reset();
+        this._tickBeat(geo ? tracker.section : null);
+        return;
+      }
+
       // Expression-driven volume runs its own transport: the ring only
       // NAMES, so losing the ring's tracking must not cut a note the volume
       // hand is holding — the latch survives, and if the volume hand is lost
@@ -652,6 +672,26 @@ export const radial = (() => {
         const freqs = freqsFor(sounding, acc);
         if (freqs) engine.playChord(freqs, { velocity: lastStrength });
         lastAcc = acc;
+      }
+    },
+
+    // The 'beat' transport: strike what the pointer names, when the
+    // metronome says so. `named` is the section under the pointer this
+    // frame, or null. Entry speed means nothing here — there is no entry —
+    // so every strike goes out at full velocity and the ADSR shapes it.
+    _tickBeat(named) {
+      if (!metronome.on) { silence(); return; }
+      const ev = metronome.sampleThisFrame();
+      if (!ev) return;
+      const acc = accidentalNow();
+      const freqs = named !== null ? freqsFor(named, acc) : null;
+      if (freqs) {
+        engine.playChord(freqs, { velocity: 1 });
+        sounding = named;
+        lastStrength = 1;
+        lastAcc = acc;
+      } else if (sounding !== null) {
+        silence();
       }
     },
 
