@@ -1,4 +1,4 @@
-// UI for the Radial Menu panel section — the joint-anchored fan of scale
+// UI for the Radial Menu panel section — the joint-anchored ring of scale
 // degrees (src/radial.js). Markup + handlers + the cheap per-frame readout,
 // kept beside gesture-ui.js because the two sections are siblings: both are
 // ways of playing the chord voice bank, and both speak the same key.
@@ -9,7 +9,7 @@
 // scales at once, so there is one scale to pick, reachable from wherever you
 // happen to be looking.
 
-import { radial }                from '../radial.js';
+import { radial, FINGERS }       from '../radial.js';
 import { chordmode }             from '../chordmode.js';
 import { DEGREE_SCALES }         from '../chords.js';
 import { NOTE_NAMES }            from '../scale.js';
@@ -35,7 +35,7 @@ const JOINT_LABELS = {
 };
 
 // What still has to be switched on for the chosen joint to track — said in
-// the panel, because a fan that never appears is otherwise indistinguishable
+// the panel, because a ring that never appears is otherwise indistinguishable
 // from a broken one.
 function needsLine({ joint, side }) {
   const missing = [];
@@ -46,8 +46,8 @@ function needsLine({ joint, side }) {
     }
     if (!cvSource.poseOn) {
       return missing.length
-        ? `Needs ${missing.join(' + ')}. Pose is off, so the fan stays upright instead of riding the forearm.`
-        : 'Pose is off, so the fan stays upright in the frame instead of riding the forearm.';
+        ? `Needs ${missing.join(' + ')}. Pose is off, so the ring faces the camera instead of riding the forearm.`
+        : 'Pose is off, so the ring faces the camera instead of riding the forearm.';
     }
   } else if (!cvSource.poseOn) {
     missing.push('pose tracking');
@@ -84,8 +84,8 @@ export function radialMenuSection() {
   const controls = !on ? '' : `
     <div class="chord-voicing">
       <span class="chord-key-lbl">JOINT</span>
-      <select id="radial-joint" aria-label="Which joint anchors the menu"
-              title="Wrist: the fan rides the forearm and the fingers point. Shoulder: the fan is fixed to the torso and the whole arm points.">
+      <select id="radial-joint" aria-label="Which joint the ring is worn on"
+              title="Wrist: the ring rides the forearm — its plane is square to the arm — and a fingertip points around it. Shoulder: the ring lies on the torso and the whole arm points.">
         ${Object.entries(JOINT_LABELS).map(([v, l]) =>
           `<option value="${v}"${v === jointVal ? ' selected' : ''}>${l}</option>`).join('')}
       </select>
@@ -98,16 +98,21 @@ export function radialMenuSection() {
         <option value="chord"${cfg.voicing === 'chord' ? ' selected' : ''}>CHORDS</option>
       </select>
     </div>
-    <div class="chord-expr-cal">
-      <label class="ctrl-lbl" title="Width of the fan, degrees of arc. Each section is an equal share of it.">SPAN
-        <input type="range" id="radial-span" min="60" max="300" step="5" value="${cfg.span}">
-      </label>
-      <div class="quant-notes" id="radial-span-read" style="align-self:center;margin:0;">${cfg.span}°</div>
+    <div class="chord-voicing">
+      <span class="chord-key-lbl">FINGER</span>
+      <select id="radial-finger" ${cfg.joint === 'wrist' ? '' : 'disabled'}
+              aria-label="Which fingertip points"
+              title="${cfg.joint === 'wrist'
+                ? 'The fingertip that reaches into the ring. Index is the pointing finger; curling it back releases the note.'
+                : 'On the shoulder the whole arm is the pointer, so there is no finger to choose.'}">
+        ${Object.keys(FINGERS).map(f =>
+          `<option value="${f}"${f === cfg.finger ? ' selected' : ''}>${f.toUpperCase()}</option>`).join('')}
+      </select>
     </div>
     <div class="wave-btns" style="margin-top:4px;">
       <button type="button" class="wave-btn${engine.getShepard().chord ? ' on' : ''}" id="radial-shep"
            aria-pressed="${engine.getShepard().chord}"
-           title="Shepard tones — this mode's default voice: every note becomes a stack of octaves under a fixed loudness curve, so runs around the fan climb without ever leaving their register.">SHEPARD</button>
+           title="Shepard tones — this mode's default voice: every note becomes a stack of octaves under a fixed loudness curve, so runs around the ring climb without ever leaving their register.">SHEPARD</button>
     </div>
     <div class="quant-notes" id="radial-readout" role="status" aria-live="polite">${needs || '—'}</div>`;
 
@@ -120,7 +125,7 @@ export function radialMenuSection() {
       </div>
       ${keyRow}
       ${controls}
-      ${on ? '' : `<div class="quant-notes">switch on to play scale degrees by pointing — a fan of arcs around your wrist or shoulder</div>`}
+      ${on ? '' : `<div class="quant-notes">switch on to play scale degrees by pointing — a ring of sections around your wrist or shoulder</div>`}
     </div>`;
 }
 
@@ -135,20 +140,14 @@ export function wireRadialSection(rerender) {
   document.getElementById('radial-joint')?.addEventListener('change', e => {
     const [joint, side] = e.target.value.split('_');
     radial.setJoint(joint, side);
-    rerender();                             // the span slider re-seeds per joint
+    rerender();                             // the finger select follows the joint
   });
   document.getElementById('radial-voicing')?.addEventListener('change', e => {
     radial.setVoicing(e.target.value);
     rerender();
   });
-
-  // The span mutates in place — a re-render mid-drag drops the pointer — and
-  // the fan on the camera view redraws from it live, which is the real
-  // feedback; the number here is just the receipt.
-  document.getElementById('radial-span')?.addEventListener('input', e => {
-    const v = radial.setSpan(+e.target.value);
-    const read = document.getElementById('radial-span-read');
-    if (read) read.textContent = `${v}°`;
+  document.getElementById('radial-finger')?.addEventListener('change', e => {
+    radial.setFinger(e.target.value);
   });
 
   document.getElementById('radial-shep')?.addEventListener('click', () => {
