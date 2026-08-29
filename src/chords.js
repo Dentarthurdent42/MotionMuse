@@ -48,6 +48,21 @@ export const DIATONIC_SCALES =
 
 export const isDiatonic = scale => SCALES[scale]?.length === 7;
 
+// The scales the DEGREE system can address: the 7-note modes plus the
+// pentatonics. Degrees generalise cleanly to five tones — stack every other
+// scale tone and read the intervals back, exactly as with seven — it is only
+// the roman NUMERALS that don't, so pentatonic degrees are numbered 1–5
+// instead (numeralFor already says so). Blues and whole-tone stay out: their
+// six degrees stack into tone clusters nobody means by "the chord on 4".
+export const DEGREE_SCALES =
+  Object.keys(SCALES).filter(k => [5, 7].includes(SCALES[k].length));
+
+export const isDegreeScale = scale => [5, 7].includes(SCALES[scale]?.length);
+
+// How many degrees a key in this scale has to offer (7 for anything the
+// degree system cannot address, matching diatonicChord's own fallback).
+export const degreeCountOf = scale => (isDegreeScale(scale) ? SCALES[scale].length : 7);
+
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 
 // Semitone offsets of a triad/seventh built on degree `i`, relative to the
@@ -101,7 +116,7 @@ function qualityFor(offs) {
 // `octave` sets where the chord's root sits (C4 = 60).
 export function diatonicChord(keyRoot = 'C', octave = 4, scale = 'major (ionian)',
                               degree = 0, seventh = false) {
-  const degrees = SCALES[scale]?.length === 7 ? SCALES[scale] : SCALES['major (ionian)'];
+  const degrees = isDegreeScale(scale) ? SCALES[scale] : SCALES['major (ionian)'];
   const d = diatonic(degrees, degree, { seventh });
   const base = rootMidi(keyRoot, octave) + d.root;
   return {

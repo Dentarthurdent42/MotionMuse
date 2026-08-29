@@ -200,6 +200,38 @@ test('one-handed: eyebrows play what the hand names', () => {
   assert.equal(chordmode.expressionLevel().latched, 'palm');
 });
 
+test('beat mode: the metronome strikes what the shape names, on SAMPLE beats only', async () => {
+  const { metronome } = await import('../../src/metronome.js');
+  reset();
+  chordmode.setExpression({ mode: 'beat' });
+  metronome.load({ on: true, bpm: 120, sig: '4/4' });   // a beat every 0.5 s
+  const step = t => { metronome.tick(t); gesture.tick(); chordmode.tick(); };
+  try {
+    // A shape held when the bar starts: the downbeat strikes it.
+    feed('R', tmpl('point'));                           // I by default
+    settle();                                            // recognizer debounce
+    step(10.0);
+    assert.equal(chordmode.soundingDegree(), 0, 'beat one strikes the held shape');
+    // Change the shape between beats: nothing moves until the clock says so.
+    feed('R', tmpl('palm'));                            // V by default
+    for (const t of [10.1, 10.2, 10.3, 10.4]) step(t);
+    assert.equal(chordmode.soundingDegree(), 0, 'shapes changed between beats cost nothing');
+    step(10.52);
+    assert.equal(chordmode.soundingDegree(), 4, 'the next beat samples the new shape');
+    // A masked-out beat is skipped entirely: the old chord keeps ringing.
+    metronome.toggleMaskBeat(2);
+    clearHand('R');
+    for (const t of [10.7, 10.9, 11.03]) step(t);
+    assert.equal(chordmode.soundingDegree(), 4, 'a rested beat neither strikes nor releases');
+    // The next SAMPLE beat finds no shape: that is a rest, and it releases.
+    step(11.55);
+    assert.equal(chordmode.soundingDegree(), -1, 'a sample beat with no shape releases');
+  } finally {
+    metronome.load({});
+    chordmode.setExpression({ mode: 'gesture' });
+  }
+});
+
 test('switching expression mode does not leave a chord ringing', () => {
   reset();
   chordmode.setExpression({ mode: 'hand', hand: 'L', control: 'volume' });

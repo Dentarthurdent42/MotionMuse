@@ -232,7 +232,7 @@ html, body {
   padding: 0 14px;
   gap: 12px;
   row-gap: 6px;
-  flex-wrap: wrap;      /* only wraps when .hcam appears (flex-basis: 100%) */
+  flex-wrap: wrap;      /* narrow desktop windows wrap rather than clip */
   flex-shrink: 0;
   min-height: 40px;
 }
@@ -241,16 +241,18 @@ html, body {
    boxes in the mobile block below. */
 .htitle, .hbtns { display: contents; }
 
-/* Camera-dependent toggles (FACE / GAZE) live on their own full-width line
-   under the main controls, and only once the camera is running. `flex-basis:
-   100%` forces the wrap; while hidden the header stays a single row. */
-.hcam {
-  display: none;
-  flex-basis: 100%;
-  align-items: center;
-  gap: 8px;
+/* The metronome's SAMPLE row: the current beat carries a visible walker, so
+   the panel and the camera strip agree about where the bar stands. */
+.met-beat.met-now { outline: 1px solid var(--amber); outline-offset: 1px; }
+
+/* The TRACKING strip on the camera view — what the camera tracks lives with
+   the camera, not in the header. Overlaid like .cam-toggles opposite rather
+   than stacked below the picture, because a stacked row grows the camera
+   panel and steals that height from the patchbay under it. */
+.cam-trackers {
+  position: absolute; top: 6px; left: 6px; z-index: 3;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
 }
-body.cam-on .hcam { display: flex; }
 
 /* Keep one width as the caption changes: the hidden sizer holds the longest
    label and shares a grid cell with the live text, so the box is sized by the
@@ -1987,24 +1989,21 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
     align-items: stretch;
     padding: 6px 10px; gap: 6px;
     overflow: visible;
-    /* The desktop rule wraps so .hcam can claim its own line. In a *column*
-       container wrapping means new COLUMNS, and flex-basis sizes height, not
-       width — which shoved FACE/GAZE off the right edge. Rows are explicit
-       here, so neither is wanted. */
+    /* In a *column* container wrapping means new COLUMNS — rows are explicit
+       here, so it is never wanted. */
     flex-wrap: nowrap;
   }
-  .hcam { flex-basis: auto; }
   .htitle {
     display: flex; align-items: center; justify-content: center;
     gap: 7px; width: 100%;
   }
-  .hbtns, body.cam-on .hcam {
+  .hbtns {
     display: flex; align-items: center; justify-content: center;
     gap: 8px; width: 100%; flex-wrap: wrap; row-gap: 6px;
   }
   /* Buttons share the row evenly rather than sizing to their text, so the
      narrow ones (DEV, ?, ♥) still present a comfortable tap target. */
-  .hbtns .btn, .hcam .btn { flex: 1 1 auto; min-width: 44px; }
+  .hbtns .btn { flex: 1 1 auto; min-width: 44px; }
   .logo   { font-size: 11px; flex-shrink: 0; }
   .hsep   { display: none; }
   #status-lbl { display: none; }

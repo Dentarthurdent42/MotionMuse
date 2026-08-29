@@ -24,13 +24,19 @@ cvSource.registerSignals();
 
 // A minimal MediaPipe-shaped result: one hand per side, fingers spread so the
 // shape is unambiguous, thumb and index far apart in world space (not pinched).
+//
+// The two hands must sit in DIFFERENT places. This built the same hand twice
+// and labelled the copies Left and Right, which is not two hands — it is the
+// picture of one hand detected twice, and processHands now rejects it as
+// such (tests/unit/hand-dupe.test.js), because that duplicate is what let a
+// single hand drive both sides' signals.
 const pt = (x, y) => ({ x, y, z: 0 });
-const lms = () => {
-  const l = Array.from({ length: 21 }, () => pt(0.5, 0.6));
-  l[0] = pt(0.50, 0.80); l[5] = pt(0.45, 0.68); l[9] = pt(0.50, 0.68);
-  l[13] = pt(0.55, 0.68); l[17] = pt(0.60, 0.70);
-  l[4] = pt(0.36, 0.74); l[8] = pt(0.45, 0.55);
-  l[12] = pt(0.50, 0.54); l[16] = pt(0.55, 0.56); l[20] = pt(0.60, 0.60);
+const lms = (dx = 0) => {
+  const l = Array.from({ length: 21 }, () => pt(0.5 + dx, 0.6));
+  l[0] = pt(0.50 + dx, 0.80); l[5] = pt(0.45 + dx, 0.68); l[9] = pt(0.50 + dx, 0.68);
+  l[13] = pt(0.55 + dx, 0.68); l[17] = pt(0.60 + dx, 0.70);
+  l[4] = pt(0.36 + dx, 0.74); l[8] = pt(0.45 + dx, 0.55);
+  l[12] = pt(0.50 + dx, 0.54); l[16] = pt(0.55 + dx, 0.56); l[20] = pt(0.60 + dx, 0.60);
   return l;
 };
 const world = () => {
@@ -40,7 +46,7 @@ const world = () => {
   return w;
 };
 const result = () => ({
-  landmarks: [lms(), lms()],
+  landmarks: [lms(-0.25), lms(0.25)],
   worldLandmarks: [world(), world()],
   handednesses: [[{ categoryName: 'Left', score: 0.99 }],
                  [{ categoryName: 'Right', score: 0.99 }]],

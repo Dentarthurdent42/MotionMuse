@@ -635,6 +635,24 @@ export const engine = (() => {
   // Audio-clock now (seconds) — the play-along scheduler's timeline anchor.
   function now() { return started ? ctx.currentTime : 0; }
 
+  // The metronome's click — `when` seconds ahead, accented on the downbeat.
+  // Its own two-node voice, connected onto the mute gate: through neither the
+  // reverb nor the master fader, because a practice clock that fades with the
+  // mix defeats itself — but one that ignored MUTE would read as broken.
+  function click(when = 0, accent = false) {
+    if (!started) return;
+    const t0 = ctx.currentTime + Math.max(0, when);
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = accent ? 1760 : 1245;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(accent ? 0.4 : 0.26, t0 + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.06);
+    o.connect(g); g.connect(outg);
+    o.start(t0); o.stop(t0 + 0.1);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
+  }
+
   // ── Chord voice bank (gesture mode) ────────────────────────────────────
   // Sustains a chord while a gesture is held. Voices ride the same timbre
   // as oscillator 1 and run through the filter/reverb/main chain, so the sound
@@ -690,10 +708,14 @@ export const engine = (() => {
     chordOn = true;
   }
 
-  function playChord(freqs, { gain = CHORD_PEAK } = {}) {
+  // `velocity` scales the envelope's peak (0..1, like a MIDI velocity):
+  // radial mode turns entry speed into attack strength through it. Kept as a
+  // factor on `gain` rather than an absolute so callers never need to know
+  // CHORD_PEAK.
+  function playChord(freqs, { gain = CHORD_PEAK, velocity = 1 } = {}) {
     if (!started || !freqs?.length) return;
     setChordVoices(freqs);
-    attackChord(gain);
+    attackChord(gain * Math.max(0, Math.min(1, velocity)));
   }
 
   // ── Arpeggiator notes ────────────────────────────────────────────────
@@ -887,7 +909,7 @@ export const engine = (() => {
     setFilterType, getFilterType,
     setChordFilterType, getChordFilterType,
     snapshot, restore,
-    defineWave, playTone, now,
+    defineWave, playTone, now, click,
     playChord, releaseChord, chordActive, setChordVoices, setChordLevel, chordLevel,
     attackChord, arpNote, silenceChordVoices,
     setChordEnv, getChordEnv, CHORD_ENV_RANGE,
