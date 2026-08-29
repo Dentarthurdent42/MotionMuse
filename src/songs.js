@@ -1,10 +1,15 @@
-// Bundled play-along note charts (public-domain melodies). Embedded as a
-// module so they work offline with no extra fetches.
+// Play-along note charts: the bundled public-domain melodies (embedded as a
+// module so they work offline with no extra fetches), plus whatever the
+// player has imported from their own MIDI files (kept in localStorage, so
+// they survive reload but never leave the machine).
 //
 // Format: { id, name, bpm, beatsPerBar, root, scale, notes: [{ b, m, d }] }
 //   b = beat offset from song start, m = MIDI note, d = duration in beats.
 // Charts stay within C3–C6 so they sit comfortably on the C2–C7 keyboard
 // and within a hand-height mapping's usable range.
+
+import { lsGet, lsSet } from './storage.js';
+import { isRecord, isString } from './is.js';
 
 export const SONGS = [
   {
@@ -68,3 +73,38 @@ export const SONGS = [
     ],
   },
 ];
+
+// ── Imported songs ────────────────────────────────────────────────────────
+
+const USER_KEY = 'motionmuse-user-songs';
+// localStorage is ~5 MB and shared with everything else the app remembers; a
+// dozen full charts is well under half a megabyte, and the picker stops being
+// a picker long before the storage runs out.
+export const MAX_USER_SONGS = 24;
+
+export function userSongs() {
+  try {
+    const raw = JSON.parse(lsGet(USER_KEY));
+    return Array.isArray(raw) ? raw.filter(s => isRecord(s) && isString(s.id) && Array.isArray(s.notes)) : [];
+  } catch { return []; }
+}
+
+export function addUserSong(song) {
+  const id = `user-${Date.now().toString(36)}`;
+  const list = userSongs();
+  list.push({ ...song, id });
+  while (list.length > MAX_USER_SONGS) list.shift();   // oldest out first
+  lsSet(USER_KEY, JSON.stringify(list));
+  return id;
+}
+
+export function removeUserSong(id) {
+  lsSet(USER_KEY, JSON.stringify(userSongs().filter(s => s.id !== id)));
+}
+
+export const isUserSong = id => isString(id) && id.startsWith('user-');
+
+// Every pickable chart, bundled first. Generated charts are not in this list:
+// they are made fresh at start(), not stored.
+export const allSongs = () => [...SONGS, ...userSongs()];
+export const songById = id => allSongs().find(s => s.id === id) ?? null;

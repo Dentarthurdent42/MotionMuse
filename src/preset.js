@@ -10,6 +10,8 @@
 
 import { engine } from './engine.js';
 import { mapper } from './mapper.js';
+import { graph } from './graph.js';
+import { arpvoice } from './arpvoice.js';
 import { currentKit, setCurrentLabel } from './soundkit.js';
 import { gesture } from './gesture.js';
 import { chordmode } from './chordmode.js';
@@ -78,7 +80,9 @@ export function snapshot() {
   return {
     app: TAG, v: 2,
     kit: currentKit(),
+    graph: graph.serialize(),
     mappings: mapper.serialize(),
+    arp: arpvoice.serialize(),
     audio: engine.snapshot(),
     gestures: gesture.serialize(),   // custom gestures + hidden built-ins
     chord: chordmode.serialize(),
@@ -92,7 +96,11 @@ export function snapshot() {
 export function apply(data) {
   if (!data || (data.app !== TAG && !LEGACY_TAGS.includes(data.app))) return false;
   if (data.audio) engine.restore(data.audio);
+  // Nodes BEFORE cables: a mapping can name a node's socket, which has to
+  // exist by the time the cable is strung.
+  graph.load(data.graph);
   if (Array.isArray(data.mappings)) mapper.load(data.mappings);
+  if (data.arp) arpvoice.load(data.arp);
   if (data.gestures) gesture.load(data.gestures);
   if (data.chord) chordmode.load(data.chord);
   // After chord: an enabled radial mode switches gesture mode off (the two

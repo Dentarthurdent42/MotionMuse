@@ -15,8 +15,8 @@ import { gesture, gestureLabel }      from './gesture.js';
 import { diatonicChord, diatonicNote, isDiatonic, isDegreeScale, degreeCountOf,
          NATURAL, SHARP, FLAT }       from './chords.js';
 import { NOTE_NAMES }                 from './scale.js';
-import { ARP_PATTERNS, ARP_MAX_OCTAVES, ARP_DEFAULTS,
-         notePool, stepIndex, stepSeconds, noteSeconds, dueSteps } from './arp.js';
+import { notePool }                   from './arp.js';
+import { arpvoice }                   from './arpvoice.js';
 
 export const DEFAULT_KEY = {
   root: 'C',
@@ -184,61 +184,16 @@ export const chordmode = (() => {
 
   // ── Arpeggiator ─────────────────────────────────────────────────────────
   //
-  // An alternative to sounding the chord as a block: the same chord, the same
-  // gesture, the same expression — played one note at a time. It replaces the
-  // block chord rather than layering over it, which is why it is a property of
-  // chord mode and not a separate instrument.
-  //
-  // Rate and gate live in engine.PARAMS (`arp_rate`, `arp_gate`) so they can be
-  // driven from the patchbay; pattern and octaves are discrete choices and live
-  // here. The clock is the audio clock, read through engine.now(): rAF decides
-  // when we look, never when a note sounds.
-  let arp = { ...ARP_DEFAULTS };
-  let arpClock = null;              // { at, i } while running; null when idle
-  let arpSched = [];                // recently scheduled {at, idx}, for the panel
-
-  // How far ahead steps are scheduled. Long enough that a dropped frame cannot
-  // leave a hole in the pulse (a 60 Hz frame is 17 ms), short enough that a
-  // chord change is heard on the next step rather than the one after it.
-  const ARP_HORIZON = 0.12;
-
-  const arpRate = () => engine.PARAMS.arp_rate?.val ?? 4;
-  const arpGate = () => engine.PARAMS.arp_gate?.val ?? 0.55;
-
-  // Hand the voices back and forget the clock. Stopping the clock alone is not
-  // enough: the arp schedules into the future, so notes are already queued.
-  const stopArp = () => {
-    if (!arpClock && !arpSched.length) return;
-    arpClock = null;
-    arpSched = [];
-    engine.silenceChordVoices?.();
-  };
-
-  // Start the run from the top of the pattern on the next look.
-  const restartArp = () => { arpClock = null; arpSched = []; };
-
-  // Schedule whatever is due. `level` is 1 in the envelope-driven modes: there
-  // the ADSR on the shared gain already owns loudness, and a second multiplier
-  // here would only fight it.
-  const runArp = (freqs, level = 1) => {
-    if (!engine.started) return;
-    const pool = notePool(freqs, arp.octaves);
-    if (!pool.length) return;
-    const now = engine.now();
-    if (!arpClock) arpClock = { at: now, i: 0 };
-    const rate = arpRate();
-    const { steps, state } = dueSteps(arpClock, now, ARP_HORIZON, rate);
-    arpClock = state;
-    if (!steps.length) return;
-    const dur = noteSeconds(stepSeconds(rate), arpGate());
-    for (const s of steps) {
-      const idx = stepIndex(s.i, pool.length, arp.pattern);
-      engine.arpNote({ freq: pool[idx], when: s.at, dur, gain: level });
-      arpSched.push({ at: s.at, idx });
-    }
-    // Only the recent past is interesting, and this runs every frame.
-    if (arpSched.length > 24) arpSched = arpSched.slice(-12);
-  };
+  // The arpeggiator is the INSTRUMENT's now, not gesture mode's — radial mode
+  // runs the same one, and two arpeggiators for two modes that park each
+  // other would be redundant on their face. State and transport live in
+  // arpvoice.js; these aliases keep this file reading as it always did.
+  const stopArp    = () => arpvoice.stop();
+  const restartArp = () => arpvoice.restart();
+  const runArp     = (freqs, level = 1) => arpvoice.run(freqs, level);
+  // An arp flip invalidates this mode's private chord state (the flip itself
+  // already released the chord and silenced the voices).
+  arpvoice.onFlip(() => { voiced = null; gateOpen = false; });
 
   // Raw signal → 0..1 travel, with the bottom rounded down to silence.
   const readExpression = () => {
@@ -486,7 +441,7 @@ export const chordmode = (() => {
     _sound(id, { restart = true, accidental = playingAcc } = {}) {
       const freqs = soundFreqs(id, accidental);
       if (!freqs) return;
-      if (!arp.enabled) { engine.playChord(freqs); return; }
+      if (!arpvoice.enabled) { engine.playChord(freqs); return; }
       if (restart) restartArp();
       engine.attackChord();
     },
@@ -540,7 +495,7 @@ export const chordmode = (() => {
       // A block chord is set up once and sustains itself; an arpeggio has to be
       // fed. This is why the early-out above became a branch — the state may be
       // unchanged and there can still be notes owed.
-      if (playing && arp.enabled) runArp(soundFreqs(playing, playingAcc));
+      if (playing && arpvoice.enabled) runArp(soundFreqs(playing, playingAcc));
     },
 
     // 'beat' mode: the metronome is the articulation. On each SAMPLE beat the
@@ -556,7 +511,7 @@ export const chordmode = (() => {
         if (playing) { engine.releaseChord(); stopArp(); playing = null; }
         return;
       }
-      if (playing && arp.enabled) runArp(soundFreqs(playing, playingAcc));
+      if (playing && arpvoice.enabled) runArp(soundFreqs(playing, playingAcc));
       const ev = metronome.sampleThisFrame();
       if (!ev) return;
       const named = namedWithSide();
@@ -609,7 +564,7 @@ export const chordmode = (() => {
         engine.setChordLevel(level);
         gateOpen = level > 0;
         playingAcc = acc;
-        if (arp.enabled) {
+        if (arpvoice.enabled) {
           // The hand owns loudness on the shared gain and the arp owns rhythm
           // underneath it, so the notes go out at full voice level. Silence is
           // a real state here, not a quiet one: at zero the run stops and
@@ -652,7 +607,7 @@ export const chordmode = (() => {
         }
         else { engine.releaseChord(); stopArp(); voiced = null; }
       }
-      if (gateOpen && arp.enabled) runArp(soundFreqs(latched, playingAcc));
+      if (gateOpen && arpvoice.enabled) runArp(soundFreqs(latched, playingAcc));
     },
 
     // Which degree is sounding, or -1 — for the row indicators. `playing` is a
@@ -671,42 +626,13 @@ export const chordmode = (() => {
     // signal, which differs from it whenever an envelope is in between.
     chordLevel: () => engine.chordLevel?.() ?? 0,
 
-    arpState: () => ({ ...arp }),
-    // Which note of the pool is sounding, or -1. Steps are scheduled ahead of
-    // the audio clock, so "the last one scheduled" is the wrong answer by up to
-    // a step — this reports the last one that has actually started, which is
-    // what a player watching the panel is hearing.
-    arpSounding() {
-      if (!arp.enabled || !arpClock) return -1;
-      const t = engine.now?.() ?? 0;
-      let idx = -1;
-      for (const s of arpSched) if (s.at <= t) idx = s.idx;
-      return idx;
-    },
-    // How many notes the current chord gives the pattern to walk, so the panel
-    // can say "3 of 6" rather than leaving the octave setting abstract.
+    // The arpeggiator itself is shared (arpvoice.js); what stays HERE is the
+    // one question only this mode can answer — which chord the pattern walks.
+    // How many notes the current chord gives the pattern, so the panel can
+    // say "3 of 6" rather than leaving the octave setting abstract.
     arpPoolSize() {
       const id = playing ?? latched;
-      return notePool(id ? soundFreqs(id, playingAcc) ?? [] : [], arp.octaves).length;
-    },
-    setArp(partial) {
-      const next = { ...arp, ...partial };
-      next.enabled = !!next.enabled;
-      if (!ARP_PATTERNS.includes(next.pattern)) next.pattern = ARP_DEFAULTS.pattern;
-      const o = Math.round(Number(next.octaves));
-      next.octaves = Number.isFinite(o) ? Math.max(1, Math.min(ARP_MAX_OCTAVES, o)) : 1;
-      const flipped = next.enabled !== arp.enabled;
-      arp = next;
-      // Block chord and arpeggio are two owners of the same voice gains, so a
-      // switch hands them over cleanly instead of leaving whatever the other
-      // one last scheduled ringing under the new one.
-      if (flipped) {
-        stopArp();
-        engine.releaseChord();
-        voiced = null;
-        gateOpen = false;
-      }
-      return { ...arp };
+      return notePool(id ? soundFreqs(id, playingAcc) ?? [] : [], arpvoice.state().octaves).length;
     },
 
     expression: () => ({ ...expr }),
@@ -750,7 +676,7 @@ export const chordmode = (() => {
     serialize() {
       return { enabled, key: { ...key }, assignments: { ...assignments },
                sevenths: sevenths.slice(), releaseGesture, expression: { ...expr },
-               arp: { ...arp }, voicing, accidentals: { ...accGestures } };
+               voicing, accidentals: { ...accGestures } };
     },
 
     load(data) {
@@ -781,9 +707,9 @@ export const chordmode = (() => {
       // Absent in setups saved before expression existed, which were all
       // gesture-driven — so the default is the old behaviour exactly.
       this.setExpression({ ...DEFAULT_EXPRESSION, ...data.expression });
-      // Absent in setups saved before the arpeggiator existed, which all played
-      // block chords — so the default is off, and the old behaviour exactly.
-      this.setArp({ ...ARP_DEFAULTS, ...data.arp });
+      // The arpeggiator is the instrument's now (arpvoice.js) and saves under
+      // its own key; a chord blob saved while it lived here still carries it.
+      if (data.arp) arpvoice.load(data.arp);
       // Same for the voicing: everything saved before single notes existed was
       // playing chords, which is what the default says.
       this.setVoicing(data.voicing ?? 'chord');
