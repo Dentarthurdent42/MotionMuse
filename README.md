@@ -354,6 +354,37 @@ audio controls below it. This is an instrument you play by moving in front of a
 camera; losing sight of the camera while reaching for a control is backwards.
 The handle is there for when the height gets in the way.
 
+## Every slider also takes a typed number
+
+A slider is for *finding* a value; a number is for *knowing* one. "Filter at
+3 kHz", "96 BPM", "attack 0.02 s" are values you arrive at once and then want
+to set exactly, and hunting for them with a thumb on a 200-pixel track is a
+game, not a control. So **every range in the app has a numeric twin** — the
+audio parameters, both ADSR banks, the arpeggiator's rate and gate, the
+metronome's tempo, the expression ranges, the pedal's sensitivity, a graph
+node's own knobs.
+
+Nothing new appears on screen: where a slider already had a **readout**, that
+readout *is* the field — the number you were reading is the number you type
+into, in the same box, so no layout moves. Where there was none, a compact
+field is appended. The twin writes through the slider (it sets the value and
+dispatches a real `input` event), so every existing handler runs exactly as
+it does for a drag, and nothing had to be rewired to accept typing.
+
+Typing is **exact**. A range's value setter rounds to the slider's step, and
+those steps exist for dragging — `(max − min) / 300` on the filter is 53 Hz,
+so a typed 5000 would land on 5015.51. The write happens with the step out of
+the way, and the field then shows what was actually *taken*, since a slider
+with magnetic detents rewrites the value it is handed. A value a cable is
+driving keeps updating in the field, except while you are typing into it.
+
+It is applied by watching the DOM (`src/ui/numeric.js`) rather than by each
+panel remembering to ask, so a panel that rebuilds its own markup gets its
+fields back and a slider added later is typable without anyone thinking about
+it. `tests/layout/index.js` checks, in a real browser at every width, that
+every slider is paired, that a typed value reaches the parameter exactly, and
+that no section starts scrolling because of it.
+
 ## Function nodes — the patchbay's interior
 
 The patchbay used to be one hop: signal → cable → parameter. **Function

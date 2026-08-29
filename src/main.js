@@ -20,6 +20,7 @@ import { chordmode }                        from './chordmode.js';
 import { radial }                           from './radial.js';
 import { metronome }                        from './metronome.js';
 import { graph }                            from './graph.js';
+import { watchRanges }                      from './ui/numeric.js';
 import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
@@ -505,6 +506,9 @@ cvSource.registerSignals();    // hand/pose signals are mappable up front
 faceSource.registerSignals();  // face/gaze signals are mappable up front
 gesture.registerSignals();     // gesture_<id> signals are mappable up front
 metronome.registerSignals();   // the beat clock is wirable like any signal
+// Every slider in the app gets a typed twin, including panels that rebuild
+// themselves and any slider added later — see ui/numeric.js.
+watchRanges();
 initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer
