@@ -251,9 +251,14 @@ export const TOUR_STEPS = [
           'The layout is remembered.',
   },
   {
-    id: 'playalong', section: 'play-along', modes: ['osc'], target: '#audio-panel', needs: ['audio'], title: 'Play along',
-    body: 'A falling-note game. Pick a song and difficulty; hit the notes ' +
-          'with whatever plays pitch. Best scores are kept.',
+    // No modes gate any more: the game now has a chart for every way of
+    // playing, so every tour gets to hear about it.
+    id: 'playalong', section: 'play-along', target: '#audio-panel', needs: ['audio'], title: 'Play along',
+    body: 'A falling-note game with a chart for every way of playing: songs ' +
+          'for the quantised lead, and <b>generated</b> charts — fresh every ' +
+          'start, in your key — for handshapes and the radial ring. ' +
+          '<b>IMPORT</b> turns your own MIDI files into charts. Best scores ' +
+          'are kept.',
   },
   {
     id: 'share', target: '#share-btn', title: 'SHARE',

@@ -49,6 +49,35 @@ function drawKeys(ctx, W, yTop, keysH, root, scale, playerMidi) {
   return L;
 }
 
+// Degree-chart lanes: one column per degree of the key, labeled with its
+// numeral, the player's current degree lit. The piano strip answers "which
+// pitch"; this answers "which handshape / which ring section", which is the
+// vocabulary those charts are written in.
+function drawLanes(ctx, W, yTop, keysH, view) {
+  const n = view.laneCount;
+  const lw = W / n;
+  for (let i = 0; i < n; i++) {
+    const x = i * lw;
+    ctx.fillStyle = i % 2 ? '#252b34' : '#1e242c';
+    ctx.fillRect(x + 0.5, yTop, lw - 1, keysH);
+    if (i === view.playerLane) {
+      ctx.fillStyle = 'rgba(0,229,204,0.32)';
+      ctx.fillRect(x + 0.5, yTop, lw - 1, keysH);
+    }
+    ctx.strokeStyle = '#2a2f38'; ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, yTop, lw - 1, keysH);
+    // Faint guide up the highway, so a falling bar can be aimed at early.
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, yTop); ctx.stroke();
+    ctx.fillStyle = i === view.playerLane ? '#0b0d12' : '#cfd4db';
+    ctx.font = `${Math.max(10, Math.round(keysH * 0.34))}px "IBM Plex Mono", monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(view.laneLabels?.[i] ?? String(i + 1), x + lw / 2, yTop + keysH / 2);
+  }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  return { center: i => (i + 0.5) * lw, w: lw };
+}
+
 // Full game frame. opts: { height, keysH }
 export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -63,7 +92,18 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
   ctx.fillRect(0, 0, W, H);
 
   const hitY = H - keysH;
-  const L = drawKeys(ctx, W, hitY, keysH, view.root, view.scale, view.playerMidi);
+  // Two vocabularies, one highway: pitch charts land on the piano, degree
+  // charts land on lanes. Everything below speaks through centerOf/barW.
+  let centerOf, barW;
+  if (view.laneCount) {
+    const L = drawLanes(ctx, W, hitY, keysH, view);
+    centerOf = n => L.center(Math.max(0, Math.min(view.laneCount - 1, n.deg ?? 0)));
+    barW = Math.max(6, L.w * 0.55);
+  } else {
+    const L = drawKeys(ctx, W, hitY, keysH, view.root, view.scale, view.playerMidi);
+    centerOf = n => L.keyCenter(Math.max(KBD_LO, Math.min(KBD_HI, n.m)));
+    barW = Math.max(4, L.ww * 0.7);
+  }
   const fallMs = view.cfg.fallSec * 1000;
 
   // Falling notes: y = hitY when tMs === now; top of highway = fallSec early.
@@ -72,8 +112,8 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
     if (dt > fallMs || dt < -1200) continue;
     const y = hitY * (1 - dt / fallMs);                     // note head
     const len = Math.max(6, (n.durMs / fallMs) * hitY);     // bar length
-    const x = L.keyCenter(Math.max(KBD_LO, Math.min(KBD_HI, n.m)));
-    const w = Math.max(4, L.ww * 0.7);
+    const x = centerOf(n);
+    const w = barW;
 
     if (n.status === 'hit') {
       const age = view.nowMs - (n.hitAtMs ?? n.tMs);

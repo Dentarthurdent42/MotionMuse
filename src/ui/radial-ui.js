@@ -16,6 +16,7 @@ import { NOTE_NAMES }            from '../scale.js';
 import { engine }                from '../engine.js';
 import { cvSource }              from '../cv.js';
 import { metronome }             from '../metronome.js';
+import { arpRowHTML, wireArpRow, updateArpRow } from './arp-ui.js';
 import { faceSource }            from '../face.js';
 
 const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`;
@@ -178,6 +179,7 @@ export function radialMenuSection() {
           <span class="ctrl-val" id="rk-env-${k}">${k === 'sustain' ? Math.round(env[k] * 100) + '%' : env[k].toFixed(2) + 's'}</span>
         </label>`).join('')}
     </div>
+    ${arpRowHTML('rk')}
     <div class="wave-btns" style="margin-top:4px;">
       <button type="button" class="wave-btn${engine.getShepard().chord ? ' on' : ''}" id="radial-shep"
            aria-pressed="${engine.getShepard().chord}"
@@ -201,6 +203,8 @@ export function radialMenuSection() {
 // rerender: renderAudioPanel — structural changes rebuild the whole panel,
 // exactly as the gesture section does, so the shared key rows stay in step.
 export function wireRadialSection(rerender) {
+  wireArpRow('rk', rerender);
+
   document.getElementById('radial-toggle')?.addEventListener('click', () => {
     radial.setEnabled(!radial.enabled);     // enabling parks gesture mode
     rerender();
@@ -272,6 +276,7 @@ export function wireRadialSection(rerender) {
 // Cheap per-frame update: what the pointer is on, and whether it is sounding.
 export function updateRadialPanel() {
   if (!radial.enabled) return;
+  updateArpRow('rk', radial.arpPoolSize());
   const el = document.getElementById('radial-readout');
   if (!el) return;
   const s = radial.soundingSection();

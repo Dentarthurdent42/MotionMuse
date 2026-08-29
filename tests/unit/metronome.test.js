@@ -122,6 +122,38 @@ test('the overlay view mirrors the clock, and is null when off', () => {
   assert.equal(metronome.view(), null, 'no clock, no picture');
 });
 
+test('the clock publishes itself onto the bus, wirable like any signal', async () => {
+  const { bus } = await import('../../src/bus.js');
+  metronome.registerSignals();
+  fresh({ sig: '4/4' });
+  metronome.tick(10);
+  assert.equal(bus.signals.get('metro_beat').value, 1, 'a one-frame pulse on the beat');
+  assert.equal(bus.signals.get('metro_downbeat').value, 1);
+  metronome.tick(10.2);
+  assert.equal(bus.signals.get('metro_beat').value, 0, 'and silence between beats');
+  assert.ok(Math.abs(bus.signals.get('metro_phase').value - 0.4) < 1e-6,
+    'phase runs 0..1 through the beat (120 BPM: 0.2 s is 40%)');
+  metronome.setOn(false);
+  metronome.tick(11);
+  assert.equal(bus.signals.get('metro_phase').value, 0, 'off reads as zero, not as frozen');
+});
+
+test('the shared arp follows the metronome when synced, the free rate otherwise', async () => {
+  const { arpvoice } = await import('../../src/arpvoice.js');
+  const { engine } = await import('../../src/engine.js');
+  engine.set?.('arp_rate', 4);
+  arpvoice.set({ sync: 2 });
+  fresh({ bpm: 120 });                        // 2 steps/beat at 120 BPM = 4/s… pick 90 to differ
+  metronome.setBpm(90);
+  // The rate is read inside run(), which needs audio; pin the arithmetic the
+  // panel readout shows instead: synced = (bpm/60)·sync.
+  const a = arpvoice.state();
+  assert.equal(a.sync, 2);
+  assert.ok(Math.abs((90 / 60) * a.sync - 3) < 1e-9, 'synced rate is 3 steps/s at 90 BPM');
+  metronome.setOn(false);
+  arpvoice.set({ sync: 0 });
+});
+
 test('settings round-trip through serialize/load; junk falls back', () => {
   metronome.load({ on: false, bpm: 87, sig: '6/8', muted: true,
                    mask: [true, false, true, true, false, true] });

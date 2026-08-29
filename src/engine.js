@@ -173,12 +173,28 @@ export const engine = (() => {
   // back would otherwise leave its rows sitting after Main Vol in the panel.
   // Entries are the same objects each time, so values and any live reference to
   // them (the volume ladder writes through `snaps`) survive a resize.
+  // Parameters registered from OUTSIDE the engine — the patchbay's function
+  // nodes plug their input sockets in here. set() clamps and stores them and
+  // has no audio case, exactly the arp_rate/arp_gate arrangement; keeping the
+  // defs in their own map is what lets rebuildParams() (which starts from a
+  // clean slate whenever the oscillator bank resizes) re-add them instead of
+  // silently dropping every node input on the first bank change.
+  const EXT_DEFS = {};
+  function registerParams(defs) {
+    Object.assign(EXT_DEFS, defs);
+    for (const [k, def] of Object.entries(defs)) PARAMS[k] = def;
+  }
+  function unregisterParams(keys) {
+    for (const k of keys) { delete EXT_DEFS[k]; delete PARAMS[k]; }
+  }
+
   function rebuildParams() {
     for (const k in PARAMS) delete PARAMS[k];
     for (let i = 0; i < oscCount; i++)
       for (const [k, def] of Object.entries(oscParamDefs(i)))
         PARAMS[k] = oscParamCache[k] ??= def;
     for (const [k, def] of Object.entries(TAIL_DEFS)) PARAMS[k] = def;
+    for (const [k, def] of Object.entries(EXT_DEFS)) PARAMS[k] = def;
   }
   rebuildParams();
 
@@ -909,10 +925,11 @@ export const engine = (() => {
     setFilterType, getFilterType,
     setChordFilterType, getChordFilterType,
     snapshot, restore,
+    registerParams, unregisterParams,
     defineWave, playTone, now, click,
     playChord, releaseChord, chordActive, setChordVoices, setChordLevel, chordLevel,
     attackChord, arpNote, silenceChordVoices,
-    setChordEnv, getChordEnv, CHORD_ENV_RANGE,
+    setChordEnv, getChordEnv, CHORD_ENV_RANGE, CHORD_PEAK,
     setLeadEnv, getLeadEnv, LEAD_ENV_RANGE,
     setShepard, getShepard,
     getWaveform,
