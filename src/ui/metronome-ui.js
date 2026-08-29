@@ -6,6 +6,7 @@
 // steals the pointer mid-adjustment.
 
 import { metronome, SIGNATURES, BPM_MIN, BPM_MAX } from '../metronome.js';
+import { setReadout } from './numeric.js';
 
 export function metronomeSection() {
   const c = metronome.config();
@@ -62,7 +63,7 @@ export function wireMetronomeSection(rerender) {
   // re-render mid-drag drops the pointer.
   const bpmEl = document.getElementById('metro-bpm');
   const bpmVal = document.getElementById('metro-bpm-val');
-  const showBpm = v => { if (bpmVal) bpmVal.textContent = String(v); };
+  const showBpm = v => setReadout(bpmVal, String(v));
   bpmEl?.addEventListener('input', e => showBpm(metronome.setBpm(+e.target.value)));
   const nudge = dir => {
     const v = metronome.nudge(dir);

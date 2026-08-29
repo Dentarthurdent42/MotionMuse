@@ -14,6 +14,7 @@
 
 import { gesture, gestureLabel } from '../gesture.js';
 import { arpRowHTML, wireArpRow, updateArpRow } from './arp-ui.js';
+import { setReadout } from './numeric.js';
 import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS,
          VOICINGS, accidentalSign } from '../chordmode.js';
 import { diatonicChord, DEGREE_SCALES } from '../chords.js';
@@ -492,8 +493,8 @@ export function wireGestureSections(rerender) {
     el.addEventListener('input', e => {
       const k = e.target.dataset.env;
       const v = engine.setChordEnv({ [k]: +e.target.value })[k];
-      const out = document.getElementById(`ck-env-${k}`);
-      if (out) out.textContent = k === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`;
+      setReadout(document.getElementById(`ck-env-${k}`),
+                 k === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`);
     });
   });
 

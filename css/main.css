@@ -266,6 +266,47 @@ html, body {
 .ng-fnode input[type="range"] { flex: 1 1 60px; min-width: 40px; }
 .ng-fnode .ng-fnode-del { margin-left: auto; }
 
+/* A slider's typed twin (ui/numeric.js). Where it replaces a `.ctrl-val` it
+   inherits that class too, so it keeps the readout's size, colour and right
+   alignment and nothing on screen moves; the rules here only strip the chrome
+   a number input arrives with. */
+.num-in {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--purple);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding: 1px 2px;
+  min-width: 0;
+  width: 100%;
+  -moz-appearance: textfield;
+}
+/* The spinners eat the width the digits need at this size, and a 9px arrow is
+   not a control anyone is hitting. The keyboard's own up/down still steps. */
+.num-in::-webkit-outer-spin-button,
+.num-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* Invisible until you go near it: this is a readout that happens to be
+   typable, and thirteen boxed fields would read as a form. */
+.num-in:hover { border-color: var(--border2); }
+.num-in:focus {
+  outline: none;
+  border-color: var(--cyan);
+  background: var(--faint);
+  color: var(--text);
+}
+/* A field appended beside a slider that had no readout has no `.ctrl-val` to
+   size it, so it gets its own. */
+.num-in:not(.ctrl-val) { flex: 0 0 42px; width: 42px; }
+.num-unit { font-size: 8px; color: var(--dim); flex: 0 0 auto; margin-left: 1px; }
+/* Number + unit as one box, so it stands exactly where the readout it
+   replaced stood — including inside the column-stacked ADSR labels, where a
+   loose unit would drop onto a line of its own. */
+.num-wrap { display: flex; align-items: baseline; justify-content: flex-end; min-width: 0; }
+.num-wrap > .num-in { text-align: right; }
+
 /* The metronome's rows. NOT .ctrl-row: that is a three-column grid (label /
    slider / value) and TEMPO has five controls in it, which put the nudge
    buttons in the slider's cell and wrapped the rest onto a second line. A
@@ -282,7 +323,7 @@ html, body {
 .met-row > .chord-key-lbl { flex: 0 0 46px; }
 .met-row > input[type="range"] { flex: 1 1 auto; min-width: 0; }
 .met-row > select { flex: 1 1 auto; min-width: 0; }
-.met-row > .ctrl-val { flex: 0 0 30px; }
+.met-row > .ctrl-val { flex: 0 0 42px; }
 /* `.met-row` prefixed so these outrank `.wave-btn { flex: 1 }`, which is
    declared later in this file — without it the nudges collapsed to the width
    of their own glyph, a 9px tap target. */

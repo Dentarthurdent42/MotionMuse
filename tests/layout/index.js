@@ -403,7 +403,47 @@ const off = await measure();
     };
   });
 
-  results.push({ width, off, on, sections, camSticky, sigPanel });
+  // Every slider takes a typed value (ui/numeric.js). Checked in the browser
+  // because the pairing is applied by observing the DOM: a panel that rebuilds
+  // its own innerHTML has to get its fields back, and a slider added later has
+  // to get them without anyone remembering to ask.
+  const nums = await page.evaluate(async () => {
+    // Wake the panels that keep sliders behind a toggle, so this covers all
+    // of them rather than the handful visible on load.
+    const { chordmode } = await import('/src/chordmode.js');
+    const { arpvoice } = await import('/src/arpvoice.js');
+    const { metronome } = await import('/src/metronome.js');
+    chordmode.setEnabled(true);
+    chordmode.setExpression({ mode: 'hand', control: 'volume' });
+    arpvoice.set({ enabled: true });
+    metronome.setOn(true);
+    const { renderAudioPanel } = await import('/src/ui/audio-ui.js');
+    renderAudioPanel();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const ranges = [...document.querySelectorAll('input[type="range"]')];
+    const paired = ranges.filter(r => r.hasAttribute('data-num-paired'));
+    // A typed value must reach the parameter, not just the field.
+    const { engine } = await import('/src/engine.js');
+    const f = document.getElementById('av-filter_freq');
+    let typed = null;
+    if (f && f.tagName === 'INPUT') {
+      f.focus(); f.value = '5000';
+      f.dispatchEvent(new Event('input', { bubbles: true }));
+      f.blur();
+      typed = Math.round(engine.PARAMS.filter_freq.val);
+    }
+    return {
+      ranges: ranges.length, paired: paired.length,
+      missing: ranges.filter(r => !r.hasAttribute('data-num-paired'))
+        .map(r => r.id || r.className || 'anonymous'),
+      typed,
+      // The field sits where the readout did, so nothing may start scrolling.
+      overflow: [...document.querySelectorAll('.audio-section')]
+        .filter(e => e.scrollWidth > e.clientWidth + 1).length,
+    };
+  });
+
+  results.push({ width, off, on, sections, camSticky, sigPanel, nums });
   await page.close();
 }
 
@@ -870,7 +910,7 @@ check(reset.after.keys === 0, 'reset: and forgets every stored layout key',
 check(reset.reloaded.order === 'camera mic patchbay',
   'reset: and it survives a reload', reset.reloaded.order);
 
-for (const { width, off, on, sections, camSticky, sigPanel } of results) {
+for (const { width, off, on, sections, camSticky, sigPanel, nums } of results) {
   const w = `${width}px`;
 
   check(sections.total >= 12, `${w}: sections are wrapped`, `${sections.total} found`);
@@ -968,6 +1008,14 @@ for (const { width, off, on, sections, camSticky, sigPanel } of results) {
     check(sections.caret.target >= 18, `${w}: the caret's hit target is large enough`,
       `${sections.caret.target}px`);
   }
+
+  check(nums.ranges > 0, `${w}: there are sliders to check`, String(nums.ranges));
+  check(nums.paired === nums.ranges, `${w}: every slider takes a typed value`,
+    nums.missing.join(' '));
+  check(nums.typed === 5000, `${w}: a typed value reaches the parameter exactly`,
+    `filter_freq = ${nums.typed}`);
+  check(nums.overflow === 0, `${w}: the typed fields do not overflow their sections`,
+    `${nums.overflow} section(s)`);
 
   check(off.escapees.length === 0, `${w} camera off: every control inside the header`, off.escapees.join(' '));
   check(on.escapees.length === 0,  `${w} camera on:  every control inside the header`, on.escapees.join(' '));

@@ -10,6 +10,7 @@ import { enhanceSections } from './sections.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { toast }     from './status.js';
+import { setReadout } from './numeric.js';
 import { SONGS, userSongs, addUserSong, removeUserSong, isUserSong } from '../songs.js';
 import { GEN_SONGS } from '../songgen.js';
 import { songFromMidi } from '../midifile.js';
@@ -402,9 +403,8 @@ export function renderAudioPanel() {
     el.addEventListener('input', e => {
       const k = e.target.dataset.env;
       const v = engine.setLeadEnv({ [k]: +e.target.value })[k];
-      const out = document.getElementById(`le-env-${k}`);
-      if (out) out.textContent = k === 'sustain'
-        ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`;
+      setReadout(document.getElementById(`le-env-${k}`),
+                 k === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`);
     });
   });
 
@@ -450,8 +450,8 @@ export function renderAudioPanel() {
       const s = snapTo(p, val);
       if (s !== val) { val = s; e.target.value = s; }   // detent the thumb too
       engine.set(key, val);
-      const dispEl = document.getElementById(`av-${key}`);
-      if (dispEl) dispEl.textContent = val.toFixed(p.unit === 'Hz' ? 0 : 2);
+      setReadout(document.getElementById(`av-${key}`),
+                 val.toFixed(p.unit === 'Hz' ? 0 : 2));
       if (KIT_PARAM_KEYS.has(key)) syncKitToCustom();
     });
   });
@@ -550,7 +550,7 @@ export function updateAudioSliders() {
     const r = sliderRefs.get(m.audioParam);
     if (!p || !r) return;
     r.slider.value = p.val;
-    if (r.valEl) r.valEl.textContent = p.val.toFixed(p.unit === 'Hz' ? 0 : 2);
+    setReadout(r.valEl, p.val.toFixed(p.unit === 'Hz' ? 0 : 2));
   });
 
   // Live readout of the notes the oscillators are currently snapped to, plus
