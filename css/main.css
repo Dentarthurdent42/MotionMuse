@@ -266,8 +266,40 @@ html, body {
 .ng-fnode input[type="range"] { flex: 1 1 60px; min-width: 40px; }
 .ng-fnode .ng-fnode-del { margin-left: auto; }
 
-/* The metronome's SAMPLE row: the current beat carries a visible walker, so
-   the panel and the camera strip agree about where the bar stands. */
+/* The metronome's rows. NOT .ctrl-row: that is a three-column grid (label /
+   slider / value) and TEMPO has five controls in it, which put the nudge
+   buttons in the slider's cell and wrapped the rest onto a second line. A
+   flex row with one shared label width keeps the three rows aligned while
+   each holds whatever it holds — and `.wave-btn`'s `flex: 1` is overridden
+   per control, since a −/+ and a MUTE want their own size, not a third of
+   the panel. */
+.met-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.met-row > .chord-key-lbl { flex: 0 0 46px; }
+.met-row > input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.met-row > select { flex: 1 1 auto; min-width: 0; }
+.met-row > .ctrl-val { flex: 0 0 30px; }
+/* `.met-row` prefixed so these outrank `.wave-btn { flex: 1 }`, which is
+   declared later in this file — without it the nudges collapsed to the width
+   of their own glyph, a 9px tap target. */
+.met-row .met-nudge { flex: 0 0 30px; padding: 4px 0; font-size: 11px; line-height: 1; }
+.met-row .met-mute  { flex: 0 0 auto; padding: 4px 10px; }
+/* One cell per beat of the bar: they share the row evenly, but never grow
+   into the paddles a full-width flex made of them — twelve of them still fit
+   at 12/8, and four do not each claim a quarter of the panel. */
+.met-beats {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 3px;
+  min-width: 0;
+}
+.met-row .met-beat { flex: 0 1 34px; padding: 4px 0; }
+/* The current beat carries a visible walker, so the panel and the camera
+   strip agree about where the bar stands. */
 .met-beat.met-now { outline: 1px solid var(--amber); outline-offset: 1px; }
 
 /* The TRACKING strip on the camera view — what the camera tracks lives with
