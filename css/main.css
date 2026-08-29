@@ -396,6 +396,9 @@ body.resizing { cursor: col-resize; user-select: none; }
   white-space: nowrap;
 }
 .btn.on { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim); }
+/* An anchor wearing .btn (the repo link): kill the link underline and center
+   its glyph so it stands in the row as a peer of the buttons around it. */
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .btn.purple.on { border-color: var(--purple); color: var(--purple); background: var(--purple-dim); }
 /* Muted is a *state*, not a disabled control, so it reads as loud as "on"
    does. Amber rather than red: nothing is wrong, the sound is just off. */
