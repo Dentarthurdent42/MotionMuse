@@ -9,7 +9,10 @@ import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS, GATE_AT_OPTS, GATE_AT_DEFAULT,
 import { enhanceSections } from './sections.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
-import { SONGS }     from '../songs.js';
+import { toast }     from './status.js';
+import { SONGS, userSongs, addUserSong, removeUserSong, isUserSong } from '../songs.js';
+import { GEN_SONGS } from '../songgen.js';
+import { songFromMidi } from '../midifile.js';
 import { gestureModeSection, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
 import { radialMenuSection, wireRadialSection, updateRadialPanel } from './radial-ui.js';
 import { metronomeSection, wireMetronomeSection, updateMetronomePanel } from './metronome-ui.js';
@@ -114,8 +117,15 @@ export function renderAudioPanel() {
     <div class="audio-section">
       <div class="audio-section-label">Play Along</div>
       <div class="scale-grid" style="grid-template-columns:1.6fr 1fr;">
-        <select id="song-select" title="Song"${gameActive ? ' disabled' : ''}>
-          ${SONGS.map(s => `<option value="${s.id}"${s.id === playalong.lastSong ? ' selected' : ''}>${s.name}</option>`).join('')}
+        <select id="song-select" title="Song — bundled charts, your imported MIDI files, and generated charts that are different every start"${gameActive ? ' disabled' : ''}>
+          ${(() => {
+            const opt = s => `<option value="${s.id}"${s.id === playalong.lastSong ? ' selected' : ''}>${s.name}</option>`;
+            const imported = userSongs();
+            return `
+            <optgroup label="SONGS">${SONGS.map(opt).join('')}</optgroup>
+            ${imported.length ? `<optgroup label="IMPORTED">${imported.map(opt).join('')}</optgroup>` : ''}
+            <optgroup label="GENERATED · in your key, new every start">${GEN_SONGS.map(opt).join('')}</optgroup>`;
+          })()}
         </select>
         <select id="diff-select" title="Difficulty"${gameActive ? ' disabled' : ''}>
           ${['easy', 'medium', 'hard'].map(d => `<option value="${d}"${d === playalong.lastDiff ? ' selected' : ''}>${d}</option>`).join('')}
@@ -124,6 +134,11 @@ export function renderAudioPanel() {
       <div class="wave-btns" style="margin-top:4px;">
         <button type="button" class="wave-btn${gameActive ? ' on' : ''}" id="game-btn">${gameActive ? 'STOP' : 'PLAY'}</button>
         <button type="button" class="wave-btn${playalong.guide ? ' on' : ''}" id="guide-btn" title="Play a quiet guide melody">GUIDE</button>
+        <button type="button" class="wave-btn" id="song-import-btn"
+                title="Import a MIDI file (.mid) as a play-along chart — the busiest track becomes the melody. Stays on this machine.">IMPORT</button>
+        <button type="button" class="wave-btn" id="song-delete-btn"${isUserSong(playalong.lastSong) ? '' : ' disabled'}
+                title="Remove the selected imported song">✕ SONG</button>
+        <input type="file" id="song-import-file" accept=".mid,.midi,audio/midi" style="display:none" aria-hidden="true">
       </div>
       <canvas id="game-canvas" class="game-canvas" style="display:${gv.state !== 'idle' ? 'block' : 'none'}"></canvas>
       <div id="game-score" class="quant-notes">${gv.state === 'idle' ? bestLine() : '—'}</div>
@@ -291,13 +306,42 @@ export function renderAudioPanel() {
     playalong.setGuide(!playalong.guide);
     e.target.classList.toggle('on', playalong.guide);
   });
-  // Show the saved best for the selected song+difficulty while idle.
+  // Show the saved best for the selected song+difficulty while idle, and
+  // wake the delete button only over a song the player actually imported.
   ['song-select', 'diff-select'].forEach(id =>
     document.getElementById(id).addEventListener('change', () => {
+      const del = document.getElementById('song-delete-btn');
+      if (del) del.disabled = !isUserSong(document.getElementById('song-select').value);
       if (playalong.view.state !== 'idle') return;
       const el = document.getElementById('game-score');
       if (el) el.textContent = bestLine();
     }));
+
+  // MIDI import: parse in the browser, keep in localStorage, list beside the
+  // bundled charts. Nothing is uploaded anywhere.
+  document.getElementById('song-import-btn')?.addEventListener('click', () =>
+    document.getElementById('song-import-file')?.click());
+  document.getElementById('song-import-file')?.addEventListener('change', async e => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const song = songFromMidi(await file.arrayBuffer(),
+        { name: file.name.replace(/\.midi?$/i, '') });
+      const id = addUserSong(song);
+      playalong.setLastSong?.(id);
+      renderAudioPanel();
+      toast(`Imported “${song.name}” — ${song.notes.length} notes, ${song.bpm} BPM, ${song.root} ${song.scale}`);
+    } catch (err) {
+      toast(`Could not import: ${err?.message ?? err}`);
+    }
+  });
+  document.getElementById('song-delete-btn')?.addEventListener('click', () => {
+    const id = document.getElementById('song-select')?.value;
+    if (!isUserSong(id)) return;
+    removeUserSong(id);
+    renderAudioPanel();
+  });
   // Manual timbre tweaks flip the kit selection to "Custom" in place
   // (no full re-render — that would kill a slider mid-drag).
   const syncKitToCustom = () => {

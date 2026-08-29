@@ -19,6 +19,7 @@ import { gesture }                          from './gesture.js';
 import { chordmode }                        from './chordmode.js';
 import { radial }                           from './radial.js';
 import { metronome }                        from './metronome.js';
+import { graph }                            from './graph.js';
 import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
@@ -49,6 +50,11 @@ consumeSharedLink();
 // ── Main RAF loop ────────────────────────────────────────────────────────
 function loop() {
   mapper.tick();
+  // Function nodes, after the cables have written their inputs: a chain of
+  // nodes settles inside the frame; only the hop through a cable is a frame
+  // behind, which at 60 fps sits under the One-Euro smoothing every camera
+  // signal already carries.
+  graph.tick();
   micSource.tick();      // cheap no-op unless the mic is on
   gesture.tick();        // recognize hand gestures → gesture_<id> bus signals
   // Hand cursor — cheap no-op unless enabled. Sits between gesture and
@@ -498,6 +504,7 @@ depthSource.init();       // register depth signals so they appear in the panel
 cvSource.registerSignals();    // hand/pose signals are mappable up front
 faceSource.registerSignals();  // face/gaze signals are mappable up front
 gesture.registerSignals();     // gesture_<id> signals are mappable up front
+metronome.registerSignals();   // the beat clock is wirable like any signal
 initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
 initPlayalongUI();        // registers the fullscreen game renderer

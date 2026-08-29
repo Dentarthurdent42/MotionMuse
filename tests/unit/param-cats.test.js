@@ -47,3 +47,18 @@ test('the bank starts at one oscillator', async () => {
   assert.equal(fresh.PARAMS.osc_mix, undefined, 'the 1<->2 crossfade is gone');
   assert.equal(fresh.PARAMS.volume.label, 'Main Vol');
 });
+
+// Function-node inputs register at runtime; the GRAPH NODES category is as
+// runtime-sized as the oscillators, and the same both-directions pin applies.
+test('a function node\u2019s inputs appear in the picker, and leave with it', async () => {
+  const { graph, paramKeyOf } = await import('../../src/graph.js');
+  const id = graph.add('mix');
+  const inCats = PARAM_CATS().flatMap(([, keys]) => keys);
+  for (const k of ['a', 'b', 'mix']) {
+    assert.ok(inCats.includes(paramKeyOf(id, k)), `${k} reachable from the picker`);
+  }
+  const missing = Object.keys(engine.PARAMS).filter(k => !inCats.includes(k));
+  assert.deepEqual(missing, [], `unreachable: ${missing}`);
+  graph.remove(id);
+  assert.equal(PARAM_CATS().flatMap(([, keys]) => keys).some(k => k.startsWith(`fn_${id}_`)), false);
+});

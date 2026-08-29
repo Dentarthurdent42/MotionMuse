@@ -71,6 +71,15 @@ export const bus = (() => {
       });
     },
 
+    // Remove a signal (and its velocity twin) from the registry — for sources
+    // whose signals are created and destroyed at runtime, like the patchbay's
+    // function nodes. Anything still holding the key reads undefined, which
+    // norm() treats as 0 — absent, not wedged.
+    unregister(key) {
+      signals.delete(key);
+      signals.delete(velKeyOf(key));
+    },
+
     update(key, value, tMs) {
       const s = signals.get(key);
       if (!s) return;
