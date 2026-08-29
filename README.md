@@ -1171,10 +1171,17 @@ sounds both endpoints twice, which lands as a stumble on every turn.
 **Rate and gate are patchbay outputs** (`Arp Rate`, `Arp Gate`, under Chord
 Mode), which is the point of expressing the rate as a plain number rather than
 a tempo: wire a signal to `arp_rate` and your hand drives how fast the chord
-churns, the same way it drives the filter. And when there IS a clock — the
-metronome — **SYNC** locks the run to it: a steps-per-beat division
-(1–4/BEAT) that takes effect while the metronome runs, dimming RATE so the
-panel never shows a number you are not hearing. FREE keeps the slider.
+churns, the same way it drives the filter.
+
+And when there IS a clock — the metronome — **SYNC** locks the run to it,
+which is the **default** (`2/BEAT`, eighth notes). It does two things,
+because rate alone is not sync: the steps take their tempo from the clock's
+BPM, *and* the run is **phase-locked** — its first step lands on the next
+division of the beat rather than wherever the chord happened to be struck.
+An arp at exactly the right speed but a semiquaver off the grid still sounds
+like two musicians who have not met. Sync applies only while the metronome
+is running (RATE dims to say so); with the clock stopped the slider stands
+unchanged, and **FREE** opts out of the grid entirely.
 
 Timing comes off the **audio clock**, not the frame loop: each frame looks
 120 ms ahead and schedules whatever falls due, so a dropped frame cannot put a

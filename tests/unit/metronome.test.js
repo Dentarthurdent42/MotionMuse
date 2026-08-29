@@ -171,3 +171,48 @@ test('settings round-trip through serialize/load; junk falls back', () => {
   assert.ok(c.mask.every(v => v === true), 'junk mask is every beat on');
   metronome.load({});
 });
+
+// ── Arpeggiator sync ──────────────────────────────────────────────────────
+//
+// "The arpeggiator should sync with the metronome." Rate alone is not sync:
+// a run at exactly the right speed but a semiquaver off the grid still
+// sounds like two musicians who have not met. These pin both halves, and
+// that the clock being off leaves the free rate alone.
+
+test('the arpeggiator syncs to the clock by default', async () => {
+  const { arpvoice, ARP_SYNC_DEFAULT } = await import('../../src/arpvoice.js');
+  arpvoice.load({});
+  assert.equal(arpvoice.state().sync, ARP_SYNC_DEFAULT);
+  assert.ok(ARP_SYNC_DEFAULT > 0, 'the default is a division of the beat, not FREE');
+});
+
+test('a synced run takes its tempo from the clock, and stands down when it stops', async () => {
+  const { arpvoice } = await import('../../src/arpvoice.js');
+  const { engine } = await import('../../src/engine.js');
+  arpvoice.load({ sync: 2 });
+  fresh({ bpm: 90 });
+  metronome.tick(10);
+  // 90 BPM at two steps per beat is three steps a second, whatever the
+  // free-running RATE parameter says.
+  assert.ok(Math.abs(arpvoice.stepsPerSecond() - 3) < 1e-9,
+    `synced rate ${arpvoice.stepsPerSecond()}`);
+  metronome.setOn(false);
+  assert.equal(arpvoice.stepsPerSecond(), engine.PARAMS.arp_rate?.val ?? 4,
+    'with no clock to lock to, the RATE slider stands');
+  arpvoice.load({});
+});
+
+test('a run struck off the beat waits for the grid, not for a whole step', async () => {
+  const { arpvoice } = await import('../../src/arpvoice.js');
+  arpvoice.load({ sync: 2 });
+  fresh({ bpm: 120 });                 // a beat every 0.5 s, a step every 0.25 s
+  metronome.tick(10);                  // beat 0, phase 0
+  assert.ok(Math.abs(arpvoice.gridWait()) < 1e-9,
+    'struck exactly on the beat, the run starts now — never a step late');
+  metronome.tick(10.125);              // half a step in
+  assert.ok(Math.abs(arpvoice.gridWait() - 0.125) < 1e-3,
+    `half a step in, it waits out the other half (${arpvoice.gridWait()})`);
+  metronome.setOn(false);
+  assert.equal(arpvoice.gridWait(), 0, 'free-running runs start immediately');
+  arpvoice.load({});
+});
