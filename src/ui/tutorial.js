@@ -170,7 +170,8 @@ export const TOUR_STEPS = [
           '<b>CLEAR</b> are buttons, so the motion that starts a take can never ' +
           'end one. It reads how <i>fast</i> you move, not where you are, so ' +
           'holding a pose never trips it — nudge <b>SENSITIVITY</b> while ' +
-          'watching the meter to set it for your neck.',
+          'watching the meter to set it for your neck. The gesture starts ' +
+          '<b>off</b> (a nod is also just a nod); the buttons work either way.',
   },
   {
     id: 'save-load', section: 'patchbay', target: '#save-btn', title: 'Save and load',

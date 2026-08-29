@@ -485,6 +485,14 @@ the other way) is not counted. **SENSITIVITY** sets the bar, and the meter besid
 it shows how close the last movement came, so calibrating is watching rather
 than guessing.
 
+**The gesture is OFF by default** — press **ON** beside the pedal picker to arm
+it. A nod is the pedal precisely because you can do it without interrupting a
+phrase, which is also why you do it constantly without meaning anything by it:
+agreeing, glancing at your hands, moving to your own beat. Armed on a fresh
+install, that recorded loops nobody asked for. The transport **buttons work
+from the start** either way, so looping is never out of reach — only out of the
+way until you ask for it.
+
 **One press cycles the transport:**
 
 ```
