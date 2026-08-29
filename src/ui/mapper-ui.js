@@ -11,12 +11,15 @@
 import { bus }    from '../bus.js';
 import { engine } from '../engine.js';
 import { mapper } from '../mapper.js';
+import { graph, NODE_TYPES, sigKeyOf, paramKeyOf } from '../graph.js';
 import { mtof, parseNote, midiName }        from '../scale.js';
 import { STEP_OPTS }                       from '../dynamics.js';
 import { drawKeyboard, midiAtPoint, midiOf } from './keyboard.js';
 import { isDesktop } from './viewport.js';
 
-const PARAM_KEYS = Object.keys(engine.PARAMS);
+// Live, not a snapshot: function-node inputs register at runtime, and the
+// oscillator bank resizes.
+const paramKeys = () => Object.keys(engine.PARAMS);
 
 const CURVE_OPTS = [
   ['linear', 'Linear'], ['quad', 'Quadratic'], ['cubic', 'Cubic'],
@@ -50,6 +53,9 @@ export const PARAM_CATS = () => [
   ['Gesture Mode', ['chord_filter_freq', 'chord_filter_q', 'chord_volume', 'arp_rate', 'arp_gate']],
   ['LFO',         ['lfo_rate', 'lfo_depth']],
   ['Output',      ['reverb_mix', 'volume', 'loop_volume']],
+  // The function nodes' input sockets — as many as there are nodes, so this
+  // row is as runtime-sized as the oscillators above.
+  ['Graph Nodes', graph.inputKeys()],
 ];
 
 // Grouped <optgroup> option lists so the pickers stay categorized, not flat.
@@ -121,7 +127,7 @@ function inputKeys() {
 }
 function outputKeys() {
   const used = mapper.mappings.filter(m => m.signal).map(m => m.audioParam);
-  return PARAM_KEYS.filter(k => used.includes(k) || addedOutputs.has(k));
+  return paramKeys().filter(k => used.includes(k) || addedOutputs.has(k));
 }
 
 export function renderMapper() {
@@ -200,7 +206,13 @@ export function renderMapper() {
         <option value="">+ add output…</option>
         ${groupedParamOptions(outputs)}
       </select>
+      <select id="ng-add-node" aria-label="Add a function node"
+              title="Function nodes compute between cables: their inputs appear as outputs to wire INTO, their result as a signal to wire onward — into a parameter, or into another node.">
+        <option value="">+ add node…</option>
+        ${Object.entries(NODE_TYPES).map(([k, t]) => `<option value="${k}">ƒ ${t.name}</option>`).join('')}
+      </select>
     </div>
+    ${fnodeStrip()}
     ${editor}`;
 
   wireHandlers(rows);
@@ -292,6 +304,36 @@ if (globalThis.document !== undefined) document.addEventListener('keydown', e =>
   }
 });
 
+// Each live node as a row: its identity, its own discrete options, its ×.
+// The node's SOCKETS are not here — they are ordinary pills in the two
+// columns above, which is the whole design: a node is both ends of the
+// existing machinery at once.
+function fnodeStrip() {
+  const nodes = graph.nodes();
+  if (!nodes.length) return '';
+  const optCtl = (n, key, decl) => {
+    if (decl.kind === 'choice') return `
+      <select class="ng-fnode-opt" data-node="${n.id}" data-opt="${key}" aria-label="${key} of node ${n.id}">
+        ${decl.of.map(v => `<option value="${v}"${v === n.opts[key] ? ' selected' : ''}>${v.toUpperCase()}</option>`).join('')}
+      </select>`;
+    if (decl.kind === 'int') return `
+      <input type="number" class="ng-fnode-opt" data-node="${n.id}" data-opt="${key}"
+             min="${decl.min}" max="${decl.max}" step="1" value="${n.opts[key]}" aria-label="${key} of node ${n.id}">`;
+    return `
+      <input type="range" class="ng-fnode-opt" data-node="${n.id}" data-opt="${key}"
+             min="0" max="1" step="0.01" value="${n.opts[key]}" aria-label="${key} of node ${n.id}">`;
+  };
+  return `
+    <div class="ng-nodesbar">
+      ${nodes.map(n => `
+      <div class="ng-fnode" data-node="${n.id}">
+        <span class="ng-fnode-name">ƒ${n.id} ${NODE_TYPES[n.type].name.toUpperCase()}</span>
+        ${Object.entries(NODE_TYPES[n.type].opts ?? {}).map(([k, d]) => optCtl(n, k, d)).join('')}
+        <button class="rm-btn ng-fnode-del" data-node="${n.id}" aria-label="Delete node ${n.id}">×</button>
+      </div>`).join('')}
+    </div>`;
+}
+
 function wireHandlers(rows) {
   rows.querySelector('#ng-add-input')?.addEventListener('change', e => {
     if (e.target.value) { addedInputs.add(e.target.value); renderMapper(); }
@@ -299,6 +341,26 @@ function wireHandlers(rows) {
   rows.querySelector('#ng-add-output')?.addEventListener('change', e => {
     if (e.target.value) { addedOutputs.add(e.target.value); renderMapper(); }
   });
+  rows.querySelector('#ng-add-node')?.addEventListener('change', e => {
+    if (!e.target.value) return;
+    const id = graph.add(e.target.value);
+    // The new node arrives with its pills already on the canvas — an input
+    // you then have to hunt down in two pickers is a node nobody finds.
+    addedInputs.add(sigKeyOf(id));
+    NODE_TYPES[e.target.value].ins.forEach(i => addedOutputs.add(paramKeyOf(id, i)));
+    renderMapper();
+  });
+  rows.querySelectorAll('.ng-fnode-del').forEach(btn => btn.addEventListener('click', () => {
+    const id = +btn.dataset.node;
+    addedInputs.delete(sigKeyOf(id));
+    for (const k of graph.inputKeys()) if (k.startsWith(`fn_${id}_`)) addedOutputs.delete(k);
+    graph.remove(id);
+    renderMapper();
+  }));
+  // Choice/int options re-render nothing; the value slider mutates in place.
+  rows.querySelectorAll('.ng-fnode-opt').forEach(el => el.addEventListener(
+    el.type === 'range' ? 'input' : 'change',
+    () => graph.setOpt(+el.dataset.node, el.dataset.opt, el.value)));
 
   // Remove a node entirely (and any cable attached to it). Works even in the
   // minimal one-in/one-out case.

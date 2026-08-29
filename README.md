@@ -354,6 +354,51 @@ audio controls below it. This is an instrument you play by moving in front of a
 camera; losing sight of the camera while reaching for a control is backwards.
 The handle is there for when the height gets in the way.
 
+## Function nodes — the patchbay's interior
+
+The patchbay used to be one hop: signal → cable → parameter. **Function
+nodes** are what you get when the middle is allowed to grow — the shader-graph
+move, done with the machinery already there. A node is *both ends of the
+existing patchbay at once*:
+
+- each **input socket** registers as an engine parameter (`ƒ1 Math · A`,
+  under the picker's **GRAPH NODES** category) — so any existing cable can
+  drive it, with its full curve / range / steps / invert kit;
+- its **output** registers as a bus signal (`ƒ1 Math`, in the **graph**
+  group) — so any existing cable can read it onward, into an audio parameter
+  or into *another node's* input.
+
+No new cable type, no new picker, no new persistence path: the graph **is**
+the patchbay, just allowed to bend back on itself. Add nodes with
+**+ add node…**; each live node gets a row in the panel for its own discrete
+choices (a Math node's op, an LFO's wave) and its ×, which also takes every
+cable attached to it. Values are 0..1 on both sides — the cable's out-range
+does the scaling into real units, exactly as it always has.
+
+| Node | What it computes |
+|---|---|
+| **Const** | A knob. The graph's way of writing a number onto any input. |
+| **Math** | `a ⊕ b` — add, sub, mul, min, max, avg — clamped into range. |
+| **Mix** | Crossfade `a → b` by a third input. Wire an LFO into `mix` and two signals take turns. |
+| **Smooth** | A one-pole lag with a real time constant (up to ~2 s), frame-rate independent. |
+| **Quantize** | Snap onto N levels (2–16). |
+| **Sample & Hold** | Samples `in` on the `gate`'s rising edge, holds until the next one. |
+| **LFO** | 0.05–12 Hz (exponential), sine/triangle/square/saw, depth around a still centre. |
+
+Evaluation is control-rate, once per frame, in dependency order — a chain of
+nodes settles inside the frame; only the hop *through* a cable is one frame
+behind, which at 60 fps sits under the One-Euro smoothing every camera signal
+already carries. A **cycle is legal** (feedback is a synthesis tool): the
+loop's seam reads last frame's value, which makes it a one-frame delay
+rather than a deadlock.
+
+**The metronome is on the bus too** (`metro` group): `metro_beat` and
+`metro_downbeat` one-frame pulses, `metro_phase` and `metro_bar` ramps. Wire
+`metro_beat` into a Sample & Hold's gate and *any* signal becomes
+beat-quantized — the graph's generalisation of the play modes' beat-sampled
+volume. Nodes save with presets and travel in shared links; module
+`src/graph.js`, driven by `tests/unit/graph.test.js`.
+
 ## Starting patches (PRESET)
 
 **PRESET** opens a menu of complete patches rather than loading one silently:
@@ -1093,6 +1138,16 @@ FOLLOW still transposes it, the 7th still adds a fourth note to the run, and in
 two-handed play the expressing hand still owns the loudness while the arpeggio
 owns the rhythm.
 
+There is exactly **one arpeggiator in the instrument** (`src/arpvoice.js`):
+Radial Mode carries the same ARP row, driving the same state and the same
+step clock, and whichever mode currently owns the chord bank feeds it chords.
+Two arpeggiators for two modes that park each other would be redundant on
+their face — pattern, octaves and the clock are the instrument's, not one
+mode's. In Radial Mode the run works under every volume story: entry-speed
+attacks restart the pattern at a velocity-scaled envelope, the signal modes
+put the hand on the shared gain over the running notes, and the beat-sampled
+mode restarts the run on each SAMPLE strike.
+
 | Control | What it does |
 |---|---|
 | **ON / OFF** | Replaces the block chord with the run. Off by default; setups saved before it existed load as block chords. |
@@ -1108,8 +1163,10 @@ sounds both endpoints twice, which lands as a stumble on every turn.
 **Rate and gate are patchbay outputs** (`Arp Rate`, `Arp Gate`, under Chord
 Mode), which is the point of expressing the rate as a plain number rather than
 a tempo: wire a signal to `arp_rate` and your hand drives how fast the chord
-churns, the same way it drives the filter. There is no global clock in this
-instrument to lock to, so there is nothing to fall out of sync with.
+churns, the same way it drives the filter. And when there IS a clock — the
+metronome — **SYNC** locks the run to it: a steps-per-beat division
+(1–4/BEAT) that takes effect while the metronome runs, dimming RATE so the
+panel never shows a number you are not hearing. FREE keeps the slider.
 
 Timing comes off the **audio clock**, not the frame loop: each frame looks
 120 ms ahead and schedules whatever falls due, so a dropped frame cannot put a
@@ -1424,13 +1481,42 @@ machine: `clawStep` in `src/uicontrol.js` (`tests/unit/uicontrol-claw.test.js`).
 
 ## Play along (Guitar Hero mode)
 
-The **Play Along** section starts a falling-note game: notes descend toward a
-hit line above the piano keys, and you *hit* a note by steering osc 1's
-quantised pitch onto the target as it crosses the line — using whatever gesture
-drives `osc1_freq` (a Left-Wrist-Y mapping is added automatically if none
-exists). Starting a song turns pitch quantise on in the song's key and restores
-your tuning afterwards. A quiet **guide** melody can be toggled; hits and
-misses get audio feedback.
+The **Play Along** section starts a falling-note game — and there is now a
+chart for **every way of playing**, not just the oscillator patch:
+
+- **Pitch charts** (every stored song): notes descend toward a hit line above
+  the piano keys, and you *hit* a note by steering osc 1's quantised pitch
+  onto the target as it crosses the line — using whatever gesture drives
+  `osc1_freq` (a Left-Wrist-Y mapping is added automatically if none exists).
+  Starting one turns pitch quantise on in the song's key and restores your
+  tuning afterwards.
+- **Degree charts** (the generated entries): the piano strip becomes **lanes,
+  one per degree of the key**, labeled with their numerals, and you hit a bar
+  by *sounding that degree* as it lands — a handshape in Gesture Mode, or
+  pointing the ring at that section in Radial Mode. Starting one switches the
+  right mode on if it is off, and says so. Octave-agnostic scoring does not
+  apply: a lane is exact.
+
+A quiet **guide** melody can be toggled; hits and misses get audio feedback.
+
+**⚄ Generated charts** are procedural: seeded, sized by the difficulty, and
+built **in the key the instrument is currently set to** — the shared key both
+play modes read — so practising a progression practises *your* key. Melodies
+walk the scale (stepwise mostly, chord tones favoured on downbeats, a real
+cadence onto the tonic); degree charts follow a functional-harmony walk whose
+last two bars are always dominant → tonic, so even a random progression ends
+like music. Every press of PLAY is a new chart; best scores still accumulate
+per entry per difficulty, because the *skill* is stable even when the chart
+is not.
+
+**IMPORT** takes your own **MIDI files** (`.mid`): parsed in the browser — an
+own-built SMF reader, `src/midifile.js`, nothing uploaded anywhere — the
+busiest non-drum track becomes the melody, stacked notes reduce to the top
+voice, timing lands on the beat grid at the file's first tempo, the register
+is brought onto the keyboard by whole octaves, and a Krumhansl-style profile
+match guesses the key for the quantiser. Imported songs live in
+`localStorage` (up to 24; oldest out first), appear under IMPORTED in the
+song picker, and leave with **✕ SONG**.
 
 **Scoring:** hits are timing-graded — **PERFECT** inside the central 40% of
 the difficulty's window (150 pts, higher chirp, amber flash) vs **GOOD**
@@ -1443,10 +1529,11 @@ counts and best streak. Best scores persist per song per difficulty in
 the panel shows the saved best for the selected song while idle. Quitting
 mid-song discards the run.
 
-- **Songs** (public domain, bundled in `src/songs.js`): Ode to Joy, Twinkle
-  Twinkle, When the Saints, Scarborough Fair. Chart format:
+- **Songs** (public domain, bundled in `src/songs.js`, which also keeps the
+  imported registry): Ode to Joy, Twinkle Twinkle, When the Saints,
+  Scarborough Fair. Chart format:
   `{ bpm, beatsPerBar, root, scale, notes: [{ b, m, d }] }` — beat, MIDI note,
-  duration in beats.
+  duration in beats; degree-chart notes carry `deg` beside the guide-midi `m`.
 - **Difficulties:** *easy* (downbeats & long notes only, ±250 ms window,
   slow fall, octave-agnostic matching), *medium* (on-the-beat notes, ±180 ms),
   *hard* (every note, ±120 ms, fast fall).

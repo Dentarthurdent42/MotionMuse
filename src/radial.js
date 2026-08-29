@@ -35,6 +35,8 @@
 import { bus }        from './bus.js';
 import { engine }     from './engine.js';
 import { metronome } from './metronome.js';
+import { arpvoice } from './arpvoice.js';
+import { notePool } from './arp.js';
 import { chordmode, EXPRESSION_RANGE } from './chordmode.js';
 import { gesture }    from './gesture.js';
 import { torsoFrame } from './math.js';
@@ -412,6 +414,7 @@ export const radial = (() => {
   let volRaw = 0, volLevel = 0;       // last read, for the panel's meter
   let voicedSig = null;               // what the voices point at, volume modes
   let latched = null;                 // degree the volume modes hold, per the latch
+  arpvoice.onFlip(() => { voicedSig = null; });
   let shepAuto = DEFAULTS.shepAuto;
 
   let hands = { L: null, R: null };   // latest hand landmarks per side
@@ -447,6 +450,7 @@ export const radial = (() => {
     // its continuous level to zero.
     if (volume.mode !== 'off') engine.setChordLevel(0);
     else engine.releaseChord();
+    arpvoice.stop();
     sounding = null;
     latched = null;
     voicedSig = null;
@@ -659,7 +663,7 @@ export const radial = (() => {
       if (ev?.type === 'attack') {
         const freqs = freqsFor(ev.section, acc);
         if (freqs) {
-          engine.playChord(freqs, { velocity: ev.strength });
+          this._strike(freqs, ev.strength);
           sounding = ev.section;
           lastStrength = ev.strength;
           lastAcc = acc;
@@ -670,8 +674,24 @@ export const radial = (() => {
         // A thumb turning over under a held note is a new note — the same
         // re-attack a bent note gets in gesture mode, at the held strength.
         const freqs = freqsFor(sounding, acc);
-        if (freqs) engine.playChord(freqs, { velocity: lastStrength });
+        if (freqs) this._strike(freqs, lastStrength);
         lastAcc = acc;
+      }
+      // An arpeggio has to be fed: the state may be unchanged and there can
+      // still be notes owed — gesture mode's rule, verbatim.
+      if (sounding !== null && arpvoice.enabled) arpvoice.run(freqsFor(sounding, lastAcc));
+    },
+
+    // One articulation, either voice: the block chord at the given velocity,
+    // or — with the shared arpeggiator on — a restarted run under a chord
+    // envelope attacked at the same velocity, so a stab still lands harder
+    // than a drift when the notes take turns.
+    _strike(freqs, velocity = 1) {
+      if (arpvoice.enabled) {
+        arpvoice.restart();
+        engine.attackChord(engine.CHORD_PEAK * Math.max(0, Math.min(1, velocity)));
+      } else {
+        engine.playChord(freqs, { velocity });
       }
     },
 
@@ -681,12 +701,13 @@ export const radial = (() => {
     // so every strike goes out at full velocity and the ADSR shapes it.
     _tickBeat(named) {
       if (!metronome.on) { silence(); return; }
+      if (sounding !== null && arpvoice.enabled) arpvoice.run(freqsFor(sounding, lastAcc));
       const ev = metronome.sampleThisFrame();
       if (!ev) return;
       const acc = accidentalNow();
       const freqs = named !== null ? freqsFor(named, acc) : null;
       if (freqs) {
-        engine.playChord(freqs, { velocity: 1 });
+        this._strike(freqs, 1);
         sounding = named;
         lastStrength = 1;
         lastAcc = acc;
@@ -710,7 +731,11 @@ export const radial = (() => {
       const acc = accidentalNow();
       if (level === 0) {
         if (named !== null) latched = named;   // silent: the pointer re-aims freely
-        if (sounding !== null) { engine.setChordLevel(0); sounding = null; voicedSig = null; }
+        if (sounding !== null) {
+          engine.setChordLevel(0);
+          arpvoice.stop();                     // silence is a real state, not a quiet one
+          sounding = null; voicedSig = null;
+        }
         return;
       }
       if (latched === null) return;            // nothing has ever been named
@@ -720,12 +745,21 @@ export const radial = (() => {
         // has. That is a release: a latch pointing at nothing is a note
         // nothing could ever stop.
         engine.setChordLevel(0);
+        arpvoice.stop();
         sounding = null; latched = null; voicedSig = null;
         return;
       }
-      const sig = `${latched}|${acc}|${voicing}|${JSON.stringify(chordmode.effectiveKey())}`;
-      if (sig !== voicedSig) { engine.setChordVoices(freqs); voicedSig = sig; }
       engine.setChordLevel(level);
+      if (arpvoice.enabled) {
+        // The hand owns loudness on the shared gain and the arp owns rhythm
+        // underneath it, so the notes go out at full voice level — and the
+        // block-chord voicing is stale while the arp drives.
+        arpvoice.run(freqs);
+        voicedSig = null;
+      } else {
+        const sig = `${latched}|${acc}|${voicing}|${JSON.stringify(chordmode.effectiveKey())}`;
+        if (sig !== voicedSig) { engine.setChordVoices(freqs); voicedSig = sig; }
+      }
       sounding = latched;
       lastAcc = acc;
     },
@@ -733,6 +767,13 @@ export const radial = (() => {
     // ── For the panel and the overlay ───────────────────────────────────
     geometry: () => geo,
     soundingSection: () => sounding,
+    // How many notes the current section gives the shared arp's pattern —
+    // the one question only this mode can answer (see chordmode.arpPoolSize).
+    arpPoolSize() {
+      const at = sounding ?? latched;
+      return notePool(at !== null ? freqsFor(at, lastAcc) ?? [] : [],
+                      arpvoice.state().octaves).length;
+    },
     latchedSection: () => latched,
     // Label of one section — the note's name in note voicing (octave
     // dropped: the arc is small and the octave is the key's), the numeral in

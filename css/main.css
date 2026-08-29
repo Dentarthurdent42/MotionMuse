@@ -241,6 +241,31 @@ html, body {
    boxes in the mobile block below. */
 .htitle, .hbtns { display: contents; }
 
+/* The patchbay's function-node strip: one row per live node — identity, its
+   own discrete options, its ×. The node's sockets are ordinary pills in the
+   columns above; this strip is only where a node's insides are set. */
+.ng-nodesbar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.ng-fnode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--glass);
+  font-size: 10px;
+}
+.ng-fnode-name { color: var(--amber); letter-spacing: 0.5px; flex: 0 0 auto; }
+.ng-fnode select, .ng-fnode input[type="number"] { font-size: 10px; padding: 1px 4px; flex: 0 0 auto; width: auto; }
+.ng-fnode input[type="number"] { width: 46px; }
+.ng-fnode input[type="range"] { flex: 1 1 60px; min-width: 40px; }
+.ng-fnode .ng-fnode-del { margin-left: auto; }
+
 /* The metronome's SAMPLE row: the current beat carries a visible walker, so
    the panel and the camera strip agree about where the bar stands. */
 .met-beat.met-now { outline: 1px solid var(--amber); outline-offset: 1px; }
@@ -371,6 +396,9 @@ body.resizing { cursor: col-resize; user-select: none; }
   white-space: nowrap;
 }
 .btn.on { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim); }
+/* An anchor wearing .btn (the repo link): kill the link underline and center
+   its glyph so it stands in the row as a peer of the buttons around it. */
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .btn.purple.on { border-color: var(--purple); color: var(--purple); background: var(--purple-dim); }
 /* Muted is a *state*, not a disabled control, so it reads as loud as "on"
    does. Amber rather than red: nothing is wrong, the sound is just off. */

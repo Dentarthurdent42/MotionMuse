@@ -8,7 +8,10 @@ import { engine }       from './engine.js';
 import { mtof }         from './scale.js';
 import { lsGet, lsSet } from './storage.js';
 import { mapper }       from './mapper.js';
-import { SONGS }        from './songs.js';
+import { SONGS, songById } from './songs.js';
+import { isGenSong, genModeOf, generateSong } from './songgen.js';
+import { chordmode }    from './chordmode.js';
+import { radial }       from './radial.js';
 import { midiOf }       from './ui/keyboard.js';
 import { toast }        from './ui/status.js';
 import { renderMapper } from './ui/mapper-ui.js';
@@ -57,6 +60,10 @@ const COUNTDOWN_S = 3;
 
 let state = 'idle';            // idle | countdown | playing | finished
 let song = null, cfg = null, diffId = 'medium';
+// Which input the chart judges: the quantised lead pitch (every stored song),
+// or a DEGREE — gesture mode's sounding degree, or the ring's pointed
+// section. Degree charts come from the generator and carry `deg` per note.
+let mode = 'pitch';
 let notes = [];                // { m, tMs, durMs, status, hitAtMs? }
 let t0 = 0;                    // engine.now() (s) at which beat 0 sounds
 let schedIdx = 0, guideOn = true;
@@ -89,6 +96,9 @@ function restoreTuning() {
 
 export const playalong = {
   get lastSong() { return lastSongId; },
+  // The importer selects what it just imported — a fresh song the picker
+  // then hides behind the old selection would look like a failed import.
+  setLastSong(id) { lastSongId = id; },
   get lastDiff() { return lastDiffId; },
   get guide()    { return guideOn; },
   setGuide(on)   { guideOn = on; },
@@ -98,32 +108,56 @@ export const playalong = {
     // The engine starts with the page, so this is an unavailable-audio path
     // now, not a "you forgot to switch it on" one.
     if (!engine.started) { toast('Audio engine unavailable'); return false; }
-    song = SONGS.find(s => s.id === songId) ?? SONGS[0];
-    cfg = DIFF[dId] ?? DIFF.medium;
     diffId = DIFF[dId] ? dId : 'medium';
+    cfg = DIFF[diffId];
+    if (isGenSong(songId)) {
+      // A generated chart: fresh from the grammar, in the key the instrument
+      // is currently set to — the shared key both play modes read — and
+      // sized by the difficulty. The stable id is what best scores key on.
+      mode = genModeOf(songId);
+      song = generateSong(mode, { key: chordmode.effectiveKey(), diffId });
+      song.id = songId;
+    } else {
+      mode = 'pitch';
+      song = songById(songId) ?? SONGS[0];
+    }
     lastSongId = song.id; lastDiffId = diffId;
 
     const spb = 60 / song.bpm;
     const chart = filterNotes(song.notes, diffId, song.beatsPerBar);
     if (!chart.length) { toast('Empty chart'); return false; }
-    notes = chart.map(n => ({ m: n.m, tMs: n.b * spb * 1000, durMs: n.d * spb * 1000, status: 'upcoming' }));
+    notes = chart.map(n => ({ m: n.m, deg: n.deg, tMs: n.b * spb * 1000, durMs: n.d * spb * 1000, status: 'upcoming' }));
     endMs = notes[notes.length - 1].tMs + notes[notes.length - 1].durMs + 1500;
 
-    // The song owns the quantiser while playing: every chart note must be
-    // reachable, so force quantise on in the song's key. Restored on finish.
-    savedTuning = engine.getTuning();
-    engine.setTuning({ enabled: true, root: song.root, scale: song.scale, system: 'equal (12-TET)' });
+    if (mode === 'pitch') {
+      // The song owns the quantiser while playing: every chart note must be
+      // reachable, so force quantise on in the song's key. Restored on finish.
+      savedTuning = engine.getTuning();
+      engine.setTuning({ enabled: true, root: song.root, scale: song.scale, system: 'equal (12-TET)' });
 
-    // The game is played through oscillator 1's pitch — so it needs one to
-    // exist. The bank can be emptied (gesture mode alone), and the game is not a
-    // reason to refuse that; it just has to put a lead voice back before it can
-    // score anything.
-    if (!engine.PARAMS.osc1_freq) engine.setOscCount(1);
-    // …and make sure something drives it.
-    if (!mapper.mappings.some(m => m.audioParam === 'osc1_freq' && m.signal)) {
-      mapper.add('osc1_freq', 'hand_L_y', 80, 880, 'quad');
-      renderMapper();
-      toast('Added mapping: Left Wrist Y → Osc1 pitch');
+      // The game is played through oscillator 1's pitch — so it needs one to
+      // exist. The bank can be emptied (gesture mode alone), and the game is not a
+      // reason to refuse that; it just has to put a lead voice back before it can
+      // score anything.
+      if (!engine.PARAMS.osc1_freq) engine.setOscCount(1);
+      // …and make sure something drives it.
+      if (!mapper.mappings.some(m => m.audioParam === 'osc1_freq' && m.signal)) {
+        mapper.add('osc1_freq', 'hand_L_y', 80, 880, 'quad');
+        renderMapper();
+        toast('Added mapping: Left Wrist Y → Osc1 pitch');
+      }
+    } else {
+      // A degree chart is played through a play mode, so that mode has to be
+      // on — same rule as the lead voice above: the game sets up what it
+      // needs and says so, rather than starting a round nobody can score in.
+      if (mode === 'gesture' && !chordmode.enabled) {
+        radial.setEnabled(false);
+        chordmode.setEnabled(true);
+        toast('Gesture Mode switched on for the game');
+      } else if (mode === 'radial' && !radial.enabled) {
+        radial.setEnabled(true);
+        toast('Radial Mode switched on for the game');
+      }
     }
 
     t0 = engine.now() + COUNTDOWN_S;
@@ -164,14 +198,23 @@ export const playalong = {
       });
     }
 
-    // Judge notes around the hit line. No lead oscillator means no pitch to
-    // judge — the bank can be emptied mid-song from the panel.
-    if (!engine.PARAMS.osc1_freq) return;
-    const pm = midiOf(engine.PARAMS.osc1_freq.val);
+    // Judge notes around the hit line, against whichever input this chart is
+    // for. No lead oscillator means no pitch to judge — the bank can be
+    // emptied mid-song from the panel; a play mode switched off mid-game
+    // reads as "not sounding", which misses honestly.
+    let pm, jcfg = cfg;
+    if (mode === 'pitch') {
+      if (!engine.PARAMS.osc1_freq) return;
+      pm = midiOf(engine.PARAMS.osc1_freq.val);
+    } else {
+      pm = mode === 'gesture' ? chordmode.soundingDegree() : (radial.soundingSection() ?? -1);
+      // Octave-agnostic matching is a pitch idea; degree lanes are exact.
+      jcfg = cfg.pcMatch ? { ...cfg, pcMatch: false } : cfg;
+    }
     for (const n of notes) {
       if (n.status !== 'upcoming') continue;
       if (n.tMs - t > cfg.window) break;          // notes sorted; rest are future
-      const r = judge(pm, n.m, t, n.tMs, cfg);
+      const r = judge(pm, n.deg ?? n.m, t, n.tMs, jcfg);
       if (r === 'perfect' || r === 'good') {
         n.status = 'hit'; n.tier = r; n.hitAtMs = t;
         hits++; judged++; streak++;
@@ -205,7 +248,12 @@ export const playalong = {
       nowMs: state === 'idle' ? 0 : nowMs(),
       countdown: state === 'countdown' ? Math.max(1, Math.ceil(-nowMs() / 1000)) : 0,
       notes,
-      playerMidi: engine.started && engine.PARAMS.osc1_freq
+      mode,
+      laneCount: song?.laneCount ?? null,
+      laneLabels: song?.laneLabels ?? null,
+      playerLane: mode === 'gesture' ? chordmode.soundingDegree()
+                : mode === 'radial' ? (radial.soundingSection() ?? -1) : -1,
+      playerMidi: mode === 'pitch' && engine.started && engine.PARAMS.osc1_freq
         ? midiOf(engine.PARAMS.osc1_freq.val) : null,
       root: song?.root, scale: song?.scale,
       score, streak, bestStreak, hits, judged,

@@ -19,6 +19,7 @@
 // picture keeps pulsing, the beat-sampled modes keep sampling. A metronome
 // you can hear OR just watch is two practice tools for the price of one.
 
+import { bus }    from './bus.js';
 import { engine } from './engine.js';
 import { isRecord } from './is.js';
 
@@ -61,13 +62,34 @@ export const metronome = (() => {
     mask = Array.from({ length: n }, (_, i) => mask[i] ?? true);
   };
 
+  // The clock as bus signals, so the patchbay can wire it anywhere: a pulse
+  // per beat (and per downbeat), the phase within the beat and within the
+  // bar. Wire metro_beat into a Sample & Hold's gate and ANY signal becomes
+  // beat-quantized — the graph's version of the beat-sampled volume modes.
+  const publish = () => {
+    if (!bus.signals.has('metro_beat')) return;   // panel not registered yet
+    const n = numOf(sig);
+    bus.update('metro_beat', ev ? 1 : 0);
+    bus.update('metro_downbeat', ev?.downbeat ? 1 : 0);
+    bus.update('metro_phase', on ? count - Math.floor(count) : 0);
+    bus.update('metro_bar', on ? (count % n) / n : 0);
+  };
+
   return {
     get on() { return on; },
+
+    registerSignals() {
+      const meta = (label) => ({ label, min: 0, max: 1, group: 'metro', source: 'metronome' });
+      bus.register('metro_beat',     meta('Metro Beat (pulse)'));
+      bus.register('metro_downbeat', meta('Metro Downbeat (pulse)'));
+      bus.register('metro_phase',    meta('Metro Beat Phase'));
+      bus.register('metro_bar',      meta('Metro Bar Phase'));
+    },
 
     // ── Per-frame drive (main.js RAF loop, BEFORE the play modes' ticks,
     //    so a beat that lands this frame is visible to them this frame) ────
     tick(now = performance.now() / 1000) {
-      if (!on) { ev = null; return; }
+      if (!on) { ev = null; publish(); return; }
       const n = numOf(sig);
       if (lastT !== null) count += (now - lastT) * (bpm / 60);
       lastT = now;
@@ -85,6 +107,7 @@ export const metronome = (() => {
       // Clicks, scheduled ahead on the audio clock. The grid is recomputed
       // from the live tempo each tick, so a tempo change bends the upcoming
       // beats rather than waiting out the old ones.
+      publish();
       if (muted) { clickIdx = Math.ceil(count); return; }
       const spb = 60 / bpm;
       if (clickIdx < count - 0.02) clickIdx = Math.ceil(count - 0.02);
