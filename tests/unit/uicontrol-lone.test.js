@@ -27,8 +27,17 @@ const world = () => Array.from({ length: 21 }, () => ({ x: 0, y: 0, z: 0 }));
 
 test('one hand in frame can arm itself by holding up, with both trackers on', () => {
   const dwell = UIC.SINGLE_DWELL, cool = UIC.SINGLE_COOLDOWN;
-  UIC.SINGLE_DWELL = 1;            // the timing is wall-clock; this keeps it fast
-  UIC.SINGLE_COOLDOWN = 1;
+  UIC.SINGLE_DWELL = 1;            // still wall-clock — the stepped shim below feeds it
+  // Long, deliberately: the dwell is a TOGGLE, and with the shim feeding a
+  // full frame per tick a short cooldown lets it re-fire every iteration —
+  // eight toggles ends exactly where it started. One arm is the test.
+  UIC.SINGLE_COOLDOWN = 1e9;
+  // The dwell accumulates real time BETWEEN ticks, and a fast machine runs
+  // all eight iterations in under a millisecond — so the test failed exactly
+  // when nothing was wrong. Step the clock like real frames instead.
+  const realNow = performance.now.bind(performance);
+  let skew = 0;
+  performance.now = () => realNow() + skew;
   try {
     uicontrol.disarmAll();
     uicontrol.setEnabled(true);
@@ -36,6 +45,7 @@ test('one hand in frame can arm itself by holding up, with both trackers on', ()
     // Only the LEFT hand is ever seen — the right is holding the tablet.
     // Nothing tells uicontrol that a tracker was switched off, because none was.
     for (let i = 0; i < 8; i++) {
+      skew += 33;
       uicontrol.feedHands({ L: raisedOpen(), R: null },
                           { L: world(), R: null }, performance.now());
       uicontrol.tick();
@@ -43,6 +53,7 @@ test('one hand in frame can arm itself by holding up, with both trackers on', ()
     assert.equal(uicontrol.armedOn('L'), true, 'the lone hand armed itself');
     assert.equal(uicontrol.armedOn('R'), false, 'the absent hand did not');
   } finally {
+    performance.now = realNow;
     UIC.SINGLE_DWELL = dwell;
     UIC.SINGLE_COOLDOWN = cool;
     uicontrol.disarmAll();

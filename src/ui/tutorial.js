@@ -209,6 +209,22 @@ export const TOUR_STEPS = [
           'Parameters.',
   },
   {
+    id: 'sec-radial', section: 'radial-mode', target: '#radial-toggle', needs: ['audio'],
+    title: 'Radial Mode',
+    body: 'A ring worn on your wrist or shoulder — one section per scale ' +
+          'degree. Point your index finger into a section to play it, stay ' +
+          'to sustain; the faster you enter, the harder the attack.',
+  },
+  {
+    id: 'sec-metronome', section: 'metronome', target: '#metro-toggle', needs: ['audio'],
+    title: 'Metronome',
+    body: 'A beat clock you can hear and see: it clicks (MUTE silences just ' +
+          'the click), and its beat strip pulses on the camera view — one ' +
+          'marker per beat, the diamond the downbeat. Both play modes offer ' +
+          'a “Metronome beats” volume mode that strikes only on the beats ' +
+          'you light in the SAMPLE row.',
+  },
+  {
     id: 'sec-pitch-quant', section: 'pitch-quantize', target: '#quant-toggle', needs: ['audio'],
     title: 'Pitch Quantize',
     body: 'Snaps pitch to a scale. Pick root, scale and tuning; the keyboard ' +

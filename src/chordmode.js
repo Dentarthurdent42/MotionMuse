@@ -10,8 +10,9 @@
 
 import { bus }                        from './bus.js';
 import { engine }                     from './engine.js';
+import { metronome }                  from './metronome.js';
 import { gesture, gestureLabel }      from './gesture.js';
-import { diatonicChord, diatonicNote, isDiatonic,
+import { diatonicChord, diatonicNote, isDiatonic, isDegreeScale, degreeCountOf,
          NATURAL, SHARP, FLAT }       from './chords.js';
 import { NOTE_NAMES }                 from './scale.js';
 import { ARP_PATTERNS, ARP_MAX_OCTAVES, ARP_DEFAULTS,
@@ -55,6 +56,11 @@ const DEFAULT_ASSIGNMENTS = {
 // it survives unassigning the shape.
 const DEFAULT_SEVENTHS = [false, false, true, false, true, false, false];
 
+// The MOST degrees any key offers — array sizes and the storage format. How
+// many are LIVE depends on the key's scale: five over a pentatonic, seven over
+// the diatonic modes (degreeCount() below). An assignment to a degree beyond
+// the live count is dormant, not deleted — switch back to a 7-note mode and
+// the shape plays its chord again.
 export const DEGREES = 7;
 
 // ── Voicing: what a degree sounds as ──────────────────────────────────────
@@ -94,6 +100,10 @@ export const accidentalSign = a => (a > 0 ? '♯' : a < 0 ? '♭' : '');
 //   'hand'     two-handed: one hand names the chord, the other's OPENNESS
 //              plays it. The chord latches, so the naming hand can relax.
 //   'brow'     one-handed: the hand names the chord, your eyebrows play it.
+//   'beat'     the metronome plays it: the shape held when a SAMPLE beat
+//              lands is struck then, and only then. Shapes changed between
+//              beats cost nothing — the clock is the articulation, the hand
+//              only chooses. Needs the metronome running; silent otherwise.
 //
 // and how that signal is read:
 //
@@ -108,7 +118,7 @@ export const accidentalSign = a => (a > 0 ? '♯' : a < 0 ? '♭' : '');
 // the signal actually occupies is what makes fully-off a place your hand can
 // get to. `deadzone` then rounds the bottom of that travel down to true
 // silence, so it does not need to be hit exactly.
-export const EXPRESSION_MODES = ['gesture', 'hand', 'brow'];
+export const EXPRESSION_MODES = ['gesture', 'hand', 'brow', 'beat'];
 export const EXPRESSION_CONTROLS = ['gate', 'volume'];
 
 // Per-mode defaults for the raw range, measured from the signals themselves:
@@ -245,18 +255,25 @@ export const chordmode = (() => {
   const chordHand = () => (expr.hand === 'L' ? 'R' : 'L');
 
   // The key actually used to build chords. With `follow` on, Pitch Quantize
-  // drives it so chords land in the same key the melody snaps to — but only
-  // when that scale has seven notes; roman numerals are meaningless over a
-  // pentatonic or whole-tone scale, so those fall back to the panel's own mode.
+  // drives it so chords land in the same key the melody snaps to — for any
+  // scale the degree system can address (the 7-note modes and the
+  // pentatonics). Blues and whole-tone still fall back to the panel's own
+  // mode: their six degrees stack into clusters, not chords.
   const effectiveKey = () => {
     if (!key.follow) return { root: key.root, mode: key.mode, octave: key.octave };
     const t = engine.getTuning?.() ?? {};
     return {
       root:   t.enabled ? (t.root ?? key.root) : key.root,
-      mode:   t.enabled && isDiatonic(t.scale) ? t.scale : key.mode,
+      mode:   t.enabled && isDegreeScale(t.scale) ? t.scale : key.mode,
       octave: key.octave,
     };
   };
+
+  // How many degrees the current key actually offers (5 or 7), and whether a
+  // stored degree is one of them. A shape assigned to vi over a pentatonic is
+  // DORMANT — it names nothing, plays nothing, and comes back with the mode.
+  const degreeCount = () => degreeCountOf(effectiveKey().mode);
+  const liveDegree = d => d !== undefined && d < degreeCount();
 
   const chordAt = degree => {
     const k = effectiveKey();
@@ -265,7 +282,7 @@ export const chordmode = (() => {
   };
   const chordFor = id => {
     const d = assignments[id];
-    return d === undefined ? null : chordAt(d);
+    return liveDegree(d) ? chordAt(d) : null;
   };
   const gestureFor = degree =>
     Object.keys(assignments).find(id => assignments[id] === normDegree(degree)) ?? null;
@@ -278,7 +295,7 @@ export const chordmode = (() => {
   };
   const noteFor = (id, accidental = NATURAL) => {
     const d = assignments[id];
-    return d === undefined ? null : noteAt(d, accidental);
+    return liveDegree(d) ? noteAt(d, accidental) : null;
   };
 
   // What the voice bank should be pointed at for this handshape — the whole
@@ -318,7 +335,7 @@ export const chordmode = (() => {
   const namedWithSide = () => {
     for (const side of ['L', 'R']) {
       const id = gesture.activeOn(side);
-      if (id !== null && assignments[id] !== undefined) return { id, side };
+      if (id !== null && liveDegree(assignments[id])) return { id, side };
     }
     return null;
   };
@@ -336,13 +353,18 @@ export const chordmode = (() => {
 
     key: () => ({ ...key }),
     effectiveKey,
+    degreeCount,
     // True only when Pitch Quantize is actually overriding the panel's key —
     // with quantise off, FOLLOW is armed but inert, so the manual selects stay
     // live rather than being greyed out for no reason.
     isFollowing: () => !!key.follow && !!engine.getTuning?.().enabled,
     setKey(partial) {
       key = { ...key, ...partial };
-      if (playing) this._sound(playing, { restart: false });      // live-transpose a held chord
+      // A held chord live-transposes — unless the new mode has fewer degrees
+      // and this one just went dormant, which is a release, not a null sound.
+      if (playing && !liveDegree(assignments[playing])) {
+        engine.releaseChord(); stopArp(); playing = null; playingAcc = NATURAL;
+      } else if (playing) this._sound(playing, { restart: false });
     },
 
     assignments: () => ({ ...assignments }),
@@ -483,6 +505,7 @@ export const chordmode = (() => {
         if (playing) { engine.releaseChord(); stopArp(); playing = null; }
         return;
       }
+      if (expr.mode === 'beat') return this._tickBeat();
       if (expr.mode !== 'gesture') return this._tickExpressed();
 
       const held = gesture.current();
@@ -520,6 +543,34 @@ export const chordmode = (() => {
       if (playing && arp.enabled) runArp(soundFreqs(playing, playingAcc));
     },
 
+    // 'beat' mode: the metronome is the articulation. On each SAMPLE beat the
+    // currently-held shape is read and struck through the chord ADSR — the
+    // same _sound() a handshape attack uses, arpeggiator included — and a
+    // beat that finds no shape (or the release shape) is a rest, which
+    // releases whatever the previous beat struck. Between beats nothing is
+    // read at all: that is the feature, not an optimisation. With the
+    // metronome off there is no clock to strike on, so the mode is silent —
+    // the panel says so rather than leaving a mystery.
+    _tickBeat() {
+      if (!metronome.on) {
+        if (playing) { engine.releaseChord(); stopArp(); playing = null; }
+        return;
+      }
+      if (playing && arp.enabled) runArp(soundFreqs(playing, playingAcc));
+      const ev = metronome.sampleThisFrame();
+      if (!ev) return;
+      const named = namedWithSide();
+      const id = named?.id ?? null;
+      const acc = accidentalFor(named?.side ?? null);
+      if (id !== null && liveDegree(assignments[id])) {
+        this._sound(id, { restart: id !== playing, accidental: acc });
+        playing = id;
+        playingAcc = acc;
+      } else if (playing) {
+        engine.releaseChord(); stopArp(); playing = null;
+      }
+    },
+
     // hand / brow modes. The handshape names the chord and LATCHES — dropping
     // it does not stop the sound, because the sound is not what it controls.
     // That separation is the point: one hand chooses, the other plays.
@@ -537,7 +588,14 @@ export const chordmode = (() => {
         namedSide = chordHand();
         named = gesture.activeOn(namedSide);
       }
-      if (named !== null && assignments[named] !== undefined && named !== latched) {
+      // A key change can strand the latched shape on a degree the new mode no
+      // longer has. That is a release: a latch pointing at nothing is not a
+      // chord waiting to sound, it is a note nothing could ever stop.
+      if (latched !== null && !liveDegree(assignments[latched])) {
+        engine.releaseChord(); stopArp();
+        latched = null; latchedSide = null; gateOpen = false; voiced = null;
+      }
+      if (named !== null && liveDegree(assignments[named]) && named !== latched) {
         latched = named;
         latchedSide = namedSide;
         voiced = null;                 // the new chord has not been sounded yet
