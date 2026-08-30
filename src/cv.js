@@ -810,6 +810,6 @@ export const cvSource = {
 
     // The metronome's beat strip last — it is a HUD, and a clock a raised
     // hand can cover is a clock you lose exactly when you play.
-    metronome.draw(ctx, c.width, c.height);
+    metronome.draw(ctx, c.width);
   },
 };

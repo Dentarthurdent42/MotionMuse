@@ -988,10 +988,13 @@ const presets = await (async () => {
       // The code cannot shrink to fit — that is the whole point — so what has
       // to hold instead is that it never takes a click away from a control.
       clickThrough: getComputedStyle(wrap).pointerEvents === 'none',
-      // Anchored to the corner it was put in, whatever size it comes out.
+      // Anchored to the corner it was put in, at the shared inset every other
+      // thing on the picture uses, whatever size it comes out.
       inset: {
         right:  Math.round(frame.right - w.right),
         bottom: Math.round(frame.bottom - w.bottom),
+        want: parseFloat(getComputedStyle(document.getElementById('video-wrap'))
+                .getPropertyValue('--cam-inset')),
       },
     };
   });
@@ -1021,6 +1024,81 @@ const presets = await (async () => {
 
   await page.close();
   return { listed, applied, renamed, collided, escaped, afterPreset, qr, want, decoded, errs };
+})();
+
+// ── The controls on the picture are one system ───────────────────────────
+//
+// They were not. Each sized itself from whatever was inside it, so an 11px
+// GitHub glyph, a 9px ♥ and an emoji made three heights in one row and four
+// widths, and eight loose chips sat at two corners of the frame. Reported as
+// "the buttons are all different heights and widths, and spread around the
+// screen which makes it look sloppy", which is what it was.
+//
+// Measured rather than eyeballed, because "they all look the same size" is
+// exactly the claim a stylesheet quietly stops honouring. Both view states:
+// fullscreen re-declares the tokens one size up, and the point of a system is
+// that the RELATIONSHIPS survive that, not the numbers.
+const camctl = await (async () => {
+  const page = await b.newPage({ viewport: { width: 1280, height: 900 } });
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+  // STOP only exists while a camera is running, and that class is exactly what
+  // cv.js toggles — so the strip can be measured at full strength, no webcam.
+  await page.evaluate(() => document.body.classList.add('cam-on'));
+
+  const read = () => page.evaluate(() => {
+    const wrap = document.getElementById('video-wrap');
+    const frame = wrap.getBoundingClientRect();
+    const cs = getComputedStyle(wrap);
+    const tok = n => parseFloat(cs.getPropertyValue(n));
+    const seg = el => {
+      const r = el.getBoundingClientRect();
+      return {
+        id: el.id, w: Math.round(r.width), h: Math.round(r.height),
+        // A segment carries no border of its own: the bar around it does, and
+        // the 1px gaps between segments are that colour showing through.
+        border: parseFloat(getComputedStyle(el).borderTopWidth),
+        labelled: el.textContent.trim().replace(/[^\w]/g, '').length > 0,
+      };
+    };
+    const bar = sel => {
+      const el = document.querySelector(sel);
+      const r = el.getBoundingClientRect();
+      return {
+        segs: [...el.children].filter(c => c.getClientRects().length).map(seg),
+        gap: parseFloat(getComputedStyle(el).gap),
+        radius: parseFloat(getComputedStyle(el).borderTopLeftRadius),
+        inset: { left: Math.round(r.left - frame.left), top: Math.round(r.top - frame.top),
+                 right: Math.round(frame.right - r.right), bottom: Math.round(frame.bottom - r.bottom) },
+      };
+    };
+    return {
+      ctrlH: tok('--cam-ctrl-h'), inset: tok('--cam-inset'), radius: tok('--cam-radius'),
+      actions: bar('.cam-actions'), toggles: bar('.cam-toggles'),
+      // The name badge is a caption, not a control, but it shares the line.
+      nameH: (() => {
+        const n = document.getElementById('cam-name');
+        n.hidden = false; n.textContent = 'x';
+        const h = Math.round(n.getBoundingClientRect().height);
+        n.hidden = true; n.textContent = '';
+        return h;
+      })(),
+      // An unnamed setup must leave NO box behind: `display: flex` outranks
+      // the [hidden] the markup ships with, and did.
+      emptyBadge: document.getElementById('cam-name').getClientRects().length,
+    };
+  });
+
+  const small = await read();
+  await page.evaluate(() =>
+    document.getElementById('video-wrap').classList.add('fs-active', 'fake-fullscreen'));
+  await page.waitForTimeout(150);
+  const full = await read();
+
+  await page.close();
+  return { small, full, errs };
 })();
 
 await b.close(); server.close();
@@ -1460,8 +1538,9 @@ console.log('\nSaved setups\n');
   // takes a click from the controls it may reach over.
   check(q.wrapW <= q.frameW && q.wrapH <= q.frameH,
     'it fits inside the picture', `${q.wrapW}x${q.wrapH} in ${q.frameW}x${q.frameH}`);
-  check(q.inset.right === 6 && q.inset.bottom === 6,
-    'anchored to the bottom-right corner', JSON.stringify(q.inset));
+  check(q.inset.right === q.inset.want && q.inset.bottom === q.inset.want,
+    'anchored to the bottom-right corner, at the shared inset',
+    JSON.stringify(q.inset));
   check(q.clickThrough, 'and never swallows a click — it is a picture, not a control');
   // The claim being tested: readable from a SCREENSHOT of the screen, which is
   // what someone photographing or grabbing the window actually gets.
@@ -1469,6 +1548,60 @@ console.log('\nSaved setups\n');
     'a screenshot of that code decodes back to this setup’s link',
     p.decoded.text === null ? `no code found in ${p.decoded.w}x${p.decoded.h}px`
       : `${p.decoded.text.length} chars, ${p.decoded.text === w.url ? 'match' : 'MISMATCH'}`);
+}
+
+// ── The controls on the picture are one system ──
+console.log('\nCamera-view controls\n');
+{
+  check(camctl.errs.length === 0, 'no page errors', camctl.errs.join(' | '));
+  for (const [view, m] of [['windowed', camctl.small], ['fullscreen', camctl.full]]) {
+    const segs = [...m.actions.segs, ...m.toggles.segs];
+    check(segs.length >= 6, `${view}: both strips have their controls`, `${segs.length} segments`);
+
+    // ONE height. The complaint, and the first thing a stylesheet forgets.
+    const heights = [...new Set(segs.map(s => s.h))];
+    check(heights.length === 1 && heights[0] === m.ctrlH,
+      `${view}: every control is exactly one height`,
+      `${heights.join('/')} against --cam-ctrl-h ${m.ctrlH}`);
+    check(m.nameH === m.ctrlH,
+      `${view}: the name caption shares it, so the top edge is one line`,
+      `${m.nameH} vs ${m.ctrlH}`);
+
+    // Square when there are no words; wider only to hold them.
+    const icons = segs.filter(s => !s.labelled);
+    check(icons.length >= 3 && icons.every(s => s.w === m.ctrlH),
+      `${view}: a control with no label is a square`,
+      icons.map(s => `${s.id} ${s.w}x${s.h}`).join(' '));
+    check(segs.filter(s => s.labelled).every(s => s.w > m.ctrlH),
+      `${view}: a labelled one grows sideways only`);
+
+    // A stack has one edge, not a ragged one.
+    const stacked = [...new Set(m.toggles.segs.map(s => s.w))];
+    check(stacked.length === 1, `${view}: the stacked strip has one width`, stacked.join('/'));
+
+    // One object, not a row of chips: the bar draws the border and the
+    // hairlines, the segments draw nothing.
+    check(segs.every(s => s.border === 0),
+      `${view}: segments carry no border of their own`,
+      segs.filter(s => s.border !== 0).map(s => s.id).join(' '));
+    check(m.actions.gap === 1 && m.toggles.gap === 1,
+      `${view}: dividers are hairlines`, `${m.actions.gap} / ${m.toggles.gap}`);
+    check(m.actions.radius === m.radius && m.toggles.radius === m.radius,
+      `${view}: one corner radius`, `${m.actions.radius} / ${m.toggles.radius} vs ${m.radius}`);
+
+    // One inset, so the strips hug the frame by the same amount at both ends.
+    check(m.actions.inset.left === m.inset && m.actions.inset.bottom === m.inset
+       && m.toggles.inset.right === m.inset && m.toggles.inset.top === m.inset,
+      `${view}: both strips sit at the shared inset`,
+      `${JSON.stringify(m.actions.inset)} ${JSON.stringify(m.toggles.inset)}`);
+
+    check(m.emptyBadge === 0,
+      `${view}: an unnamed setup leaves no empty badge on the picture`);
+  }
+  // Fullscreen is the same system one size up — not a second design.
+  check(camctl.full.ctrlH > camctl.small.ctrlH && camctl.full.inset > camctl.small.inset,
+    'fullscreen scales the system rather than replacing it',
+    `${camctl.small.ctrlH}px→${camctl.full.ctrlH}px, inset ${camctl.small.inset}→${camctl.full.inset}`);
 }
 
 console.log(`\n${fail} failure(s)\n`);
