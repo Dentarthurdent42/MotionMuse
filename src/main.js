@@ -24,6 +24,7 @@ import { graph }                            from './graph.js';
 import { watchRanges, syncNumbers }         from './ui/numeric.js';
 import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
+import { audioSession }                     from './audiosession.js';
 import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
@@ -317,7 +318,12 @@ async function toggleMute() {
   // frozen clock is safe: the AudioParam timeline is absolute, so it plays out
   // normally once the clock starts.
   engine.resume();
-  engine.setMuted(!engine.muted);
+  const nowMuted = engine.setMuted(!engine.muted);
+  // On an iPhone this click is also what decides whether the Ring/Silent
+  // switch applies to us — see audiosession.js. It hangs off unmuting rather
+  // than off startup because holding the session is not free: it stops
+  // whatever the phone was already playing.
+  if (nowMuted) audioSession.release(); else audioSession.hold();
   syncMuteUI();
 }
 

@@ -11,8 +11,8 @@ A browser-based instrument that maps live webcam data — hand position, gesture
 Open `index.html` (or the Netlify deploy) and:
 1. Click **START CAMERA** — the blank frame *is* the button — MediaPipe loads and begins detecting hands and pose
 2. Click **PRESET** — pick a starting patch (hands, face, gaze or whole-body)
-3. Press **Space** (or click **🔇 MUTED**) to unmute, then move and play — the synthesiser
-   is already running, it just starts silent
+3. Press **Space** (or click the amber **🔇** on the camera view) to unmute, then move
+   and play — the synthesiser is already running, it just starts silent
 
 ## Support
 
@@ -54,7 +54,8 @@ room, and most of all to someone who came to read about it.
 Muted is shown three ways, because a silent instrument and a broken one look
 identical otherwise:
 
-- the header button reads **🔇 MUTED** in amber (**🔊 SOUND ON** when live);
+- the mute button on the camera view turns amber (muted is a *state*, not a
+  disabled control);
 - a **MUTED** banner sits over the visualiser;
 - the waveform **keeps moving** behind that banner. The mute gain is placed
   *after* the analyser precisely so it does — you can see the instrument
@@ -64,6 +65,45 @@ Three ways to toggle it: the header button, **tapping the visualiser** (the
 biggest thing on screen already showing the state), and **Spacebar**. The key
 binding is shown, and changed, under **Mute Hotkey** in the audio panel: click
 it, press the key you want, Esc cancels.
+
+### The iPhone Ring/Silent switch
+
+Reported as the instrument being completely silent on an iPhone, while a
+screen recording of that same session had sound in it — which makes it look
+like a phone bug and is in fact ours.
+
+iOS gives every page an **audio session category**, and WebKit picks it from
+what the page plays rather than from anything the page asks for. Web Audio on
+its own gets **ambient**: the category for incidental noise — a game's bleeps,
+a video autoplaying in a feed — and ambient obeys the Ring/Silent switch. A
+page playing a media element with a real, unmuted audio track gets
+**playback**, the category for something a person came here to listen to, and
+playback ignores the switch. MotionMuse is Web Audio end to end and had no
+media element, so the switch silenced all of it. The recording still had audio
+because a screen recorder taps app audio upstream of the category.
+
+The fix is the door WebKit leaves open: while the instrument is audible, keep
+a silent, looping, **unmuted** audio element playing. Two things about it are
+easy to get backwards, and both are pinned by tests:
+
+- **Silence has to come from the file, not the element.** A `muted` element —
+  or one at volume 0 — does not count as playing audio, so it leaves the page
+  in ambient and changes nothing. What loops is half a second of digital
+  silence at full volume, built in `src/audiosession.js` rather than shipped
+  as an asset so a reader can check the header against the WAV spec. It is
+  16-bit specifically: 16-bit PCM silence is 0, so an untouched buffer is
+  already silent, where 8-bit silence is 128 and an all-zero buffer would be
+  full-scale DC — a click on every loop.
+- **It is held only while unmuted, and only on iOS.** A page in the playback
+  category stops whatever the phone was already playing, so taking someone's
+  music the moment they open a page that is not making a sound yet would be a
+  worse bug than the one being fixed. Off iOS it is never created at all:
+  Android would lose audio focus for nothing and the desktop would raise media
+  keys for a track that does not exist, and neither platform has the switch.
+
+iPadOS needs it too and is the awkward case — it reports itself as `MacIntel`
+and keeps "iPad" out of the agent string. A Mac with a touchscreen does not
+exist, which is what makes `maxTouchPoints` the tiebreak.
 
 Two details worth knowing about the spacebar in particular. It's the key
 browsers use to activate whatever has focus, so the app claims it — a focused
