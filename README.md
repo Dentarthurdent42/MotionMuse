@@ -1338,6 +1338,42 @@ Calibrated templates replace the estimate in place, keeping the gesture's id —
 chord assignments and mappings survive — clear the `est` flag, and save with
 presets.
 
+#### 2-vs-3, and what one photo cannot tell you
+
+That last sentence was written as a caveat and turned out to be a bug report:
+ASL 3 stopped being recognised for a second person. Three things had gone
+wrong together, and the fix needed all of them.
+
+- **The template was fitted to one photo.** `asl3`'s reference hand held its
+  ring and pinky half-curled (0.52); a second hand folded them properly (0.35)
+  and landed 0.102 away, with `peace` only 0.023 further off. A template
+  measured from one hand matches one hand, and nothing says so until somebody
+  else holds the pose — so there is now a second photo, `asl3b.jpg`, and the
+  template is the midpoint of the two.
+- **Re-centring alone made it worse.** Moving `asl3` toward the second hand
+  moves it toward `peace`, and the midpoint on its own drops the pair to 0.142
+  — under the 0.15 separation floor. The suite refuses it, correctly.
+- **The channel that separates them was voting at a quarter strength.** ASL 3
+  is a peace sign plus a thumb, so `thumb` and `thumbOut` are what tell them
+  apart — and `peace` masks `thumbOut` out, because a peace sign genuinely
+  turns up with the thumb both tucked and clear. That leaves `thumb`, which was
+  weighted **0.25**: a leftover from when extension was a base-to-tip distance
+  covering a 0.09 span. As a joint angle it carries a real ~0.45 span, so it is
+  now **0.7** — still under the finger channels, since `thumbOut` remains the
+  more direct statement wherever a template is willing to hear it.
+
+Together: the second hand's margin over `peace` goes from **0.023 to 0.109**,
+and the worst margin across *all fourteen* reference photos improves from 0.023
+to 0.102 — this was not only ASL 3's problem, it was just ASL 3 that noticed.
+The `peace ~ asl3` separation stays above the floor at 0.165.
+
+A note on the illustrations in `icons/handshapes/`: they are rendered from the
+templates, but the renderer is **not deterministic** — re-running it changes
+every picture by about as many pixels as a real template edit does (~12k of
+65k, on an untouched shape). So they are not regenerated as part of a template
+change; there is no way to tell the real difference from the jitter, and they
+are DEV-only and badged under-construction for that reason.
+
 `npm run test:gesture-img` runs the hand pipeline over the reference photos,
 asserts each maps to the right gesture, and fails if a template edit pushes any
 pair below the separation floor. Add `-- --calibrate` to print the measured

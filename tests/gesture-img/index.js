@@ -36,10 +36,17 @@ const MODEL = join(HERE, 'hand_landmarker.task');   // provide locally to run of
 // half-straight. That was survivable when extension was a base-to-tip
 // distance; measuring the joints themselves means the photo has to actually
 // show them. `asl10` is the same handshape with the fingers in view.
+//
+// `asl3b` is a SECOND hand making ASL 3, added because the first one's
+// template did not recognise it in the field. Two photos of the same shape
+// from different hands is the only thing that keeps a template honest: fitted
+// to one photo it matches one person, and the failure is invisible until
+// somebody else holds the pose.
 const CASES = {
   fist: 'fist', victory: 'peace', point: 'point',
   asl1: 'point', asl2: 'peace',  asl3: 'asl3', asl4: 'asl4', asl5: 'palm',
   asl6: 'asl6',  asl7: 'asl7',   asl8: 'asl8', asl9: 'asl9', asl10: 'thumbs',
+  asl3b: 'asl3',
 };
 
 if (!existsSync(MP)) { console.log('SKIP: @mediapipe/tasks-vision not installed'); process.exit(0); }
@@ -147,8 +154,13 @@ if (CALIBRATE) {
   }
   console.log('\n── Shipped templates ' + '─'.repeat(47));
   console.log('  ' + 'id'.padEnd(9) + 'source'.padEnd(11) + results.features.map(pad).join(''));
-  for (const [id, src, f] of results.templates)
-    console.log('  ' + id.padEnd(9) + src.padEnd(11) + f.map(v => pad(v.toFixed(2))).join(''));
+  for (const [id, src, f] of results.templates) {
+    // `thumbsdown` and `iloveyou` are recognised by MediaPipe's own classifier
+    // and carry no feature vector, so there is nothing to tabulate — say so
+    // rather than throwing halfway down the table, which is what this did.
+    console.log('  ' + id.padEnd(9) + src.padEnd(11)
+      + (f ? f.map(v => pad(v.toFixed(2))).join('') : '(classifier only — no template vector)'));
+  }
   console.log('\n── Pairwise distances, closest first ' + '─'.repeat(31));
   for (const [a, bId, d] of results.pairs.slice(0, 20))
     console.log(`  ${d.toFixed(3)}  ${a} ~ ${bId}`);
