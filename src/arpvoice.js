@@ -25,7 +25,8 @@
 import { engine }    from './engine.js';
 import { metronome } from './metronome.js';
 import { ARP_DEFAULTS, ARP_PATTERNS, ARP_MAX_OCTAVES,
-         notePool, stepIndex, stepSeconds, noteEnvelope, dueSteps } from './arp.js';
+         notePool, stepIndex, stepSeconds, noteEnvelope, noteSpans,
+         noteLevelAt, dueSteps } from './arp.js';
 
 // Steps per metronome beat, 0 = free (use arp_rate). Whole subdivisions only:
 // the point of syncing is landing ON the grid the click is sounding.
@@ -38,7 +39,15 @@ export const ARP_SYNC_DEFAULT = 2;
 export const arpvoice = (() => {
   let arp = { ...ARP_DEFAULTS, sync: ARP_SYNC_DEFAULT };
   let clock = null;               // { at, i } while running; null when idle
-  let sched = [];                 // recently scheduled {at, idx}, for the panel
+  // Recently scheduled notes: {at, idx, freq, spans}. `freq` and `spans` ride
+  // along rather than being re-derived, because both can move under a note
+  // that is already sounding — the pool changes with the chord, the envelope
+  // with the gate, sustain or rate. A note is drawn the way it was PLAYED.
+  let sched = [];
+  // Notes still ringing after the chord was let go: release() hands the voices
+  // to the engine's chord release, and the display has to follow them down
+  // rather than going blank while the room is still sounding.
+  let fading = null;              // { at, secs, notes: [freq] }
   let voicedSig = null;           // the chord the queued steps were planned for
 
   // How far ahead steps are scheduled. Long enough that a dropped frame cannot
@@ -106,6 +115,7 @@ export const arpvoice = (() => {
       if (!clock && !sched.length) return;
       clock = null;
       sched = [];
+      fading = null;          // a cut leaves nothing ringing to draw
       voicedSig = null;
       engine.silenceChordVoices?.();
     },
@@ -121,6 +131,16 @@ export const arpvoice = (() => {
     // chord sounded like switching it off.
     release() {
       if (!clock && !sched.length) return;
+      // Whatever is audible at this instant carries on falling, over the
+      // chord's own release — so hand it to `fading` before dropping the
+      // schedule, or the keyboard would go blank while the room is still
+      // sounding. That is the same lie as showing every chord note at once,
+      // just at the other end of the note.
+      const live = this.voices();
+      const secs = engine.getChordEnv?.().release ?? 0;
+      fading = live.length && secs > 0
+        ? { at: engine.now?.() ?? 0, secs, notes: live.map(v => ({ freq: v.freq, from: v.level })) }
+        : null;
       clock = null;
       sched = [];
       voicedSig = null;
@@ -135,6 +155,7 @@ export const arpvoice = (() => {
       if (sched.some(s => s.at > (engine.now?.() ?? 0))) engine.silenceChordVoices?.();
       clock = null;
       sched = [];
+      fading = null;
       voicedSig = null;
     },
 
@@ -183,13 +204,48 @@ export const arpvoice = (() => {
       clock = state;
       if (!steps.length) return;
       const { hold, tail } = noteEnvelope(stepSeconds(r), gate(), sustain());
+      const spans = noteSpans(hold, tail);
       for (const s of steps) {
         const idx = stepIndex(s.i, pool.length, arp.pattern);
         engine.arpNote({ freq: pool[idx], when: s.at, dur: hold, tail, gain: level });
-        sched.push({ at: s.at, idx });
+        // The envelope is stored WITH the note: gate, sustain and rate are all
+        // live patchbay outputs, so the one in force now is not necessarily the
+        // one this note was struck under.
+        sched.push({ at: s.at, idx, freq: pool[idx], spans });
       }
+      fading = null;          // the run is sounding again; nothing is falling
       // Only the recent past is interesting, and this runs every frame.
       if (sched.length > 24) sched = sched.slice(-12);
+    },
+
+    // What is AUDIBLE right now, note by note, with how loud each is (0..1).
+    //
+    // The keyboard overlay used to be handed the whole chord whenever a chord
+    // was held, which is true of a block chord and a lie about an arpeggio:
+    // an arp sounds one note at a time, and the display claimed all four were
+    // down for as long as you held the gesture. Reading the schedule instead
+    // shows what the run is doing — a note struck, held for its gate, falling
+    // through its tail, gone — because these are the same numbers the engine
+    // scheduled the gain from (see noteSpans in arp.js).
+    //
+    // Notes still in the future are not "pressed" yet and are left out: the
+    // scheduler runs a horizon ahead, so half of `sched` has not happened.
+    voices() {
+      const t = engine.now?.() ?? 0;
+      // After the chord is let go the run is over, and what is left is the
+      // engine's release carrying the last notes down.
+      if (fading) {
+        const k = 1 - (t - fading.at) / fading.secs;
+        if (k <= 0) return [];
+        return fading.notes.map(n => ({ freq: n.freq, level: n.from * k }));
+      }
+      if (!arp.enabled) return [];
+      const live = new Map();     // freq → loudest level, so a repeat wins
+      for (const s of sched) {
+        const lvl = noteLevelAt(t - s.at, s.spans);
+        if (lvl > 0) live.set(s.freq, Math.max(live.get(s.freq) ?? 0, lvl));
+      }
+      return [...live].map(([freq, level]) => ({ freq, level }));
     },
 
     // Which note of the pool is sounding, or -1. Steps are scheduled ahead of

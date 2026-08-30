@@ -7,6 +7,7 @@
 import { engine } from '../engine.js';
 import { makeKbdView, midiOf } from './keyboard.js';
 import { chordmode } from '../chordmode.js';
+import { arpvoice }  from '../arpvoice.js';
 
 let wrap, fsBtn, kbdBtn, kbdCanvas;
 let lastKbdH = null;      // last published --fs-kbd-h, so it is written on change only
@@ -130,6 +131,21 @@ function publishKbdHeight() {
   wrap?.style.setProperty('--fs-kbd-h', `${h}px`);
 }
 
+// What the keyboard should be showing. A block chord really does hold every
+// note down, so all of them are drawn at full strength — but an ARPEGGIO does
+// not, and drawing the whole chord while a run picks through it one note at a
+// time was the keyboard describing a way of playing nobody had chosen. Under
+// the arp the display follows the schedule instead: each note struck, held for
+// its gate, falling through its tail, gone.
+function soundingNotes() {
+  if (!chordmode.enabled) return [];
+  if (arpvoice.enabled) {
+    return arpvoice.voices().map(v => ({ m: midiOf(v.freq), level: v.level }));
+  }
+  const c = chordmode.currentChord();
+  return c ? c.freqs.map(midiOf) : [];
+}
+
 // Called every RAF from main.js — cheap no-op unless the keyboard overlay is
 // up. It is no longer fullscreen-only: the keys show which notes the
 // instrument is quantised to, which is as worth seeing while you are wiring
@@ -158,12 +174,11 @@ export function updateFsOverlay() {
   // and gesture mode typically runs with none. Fullscreen is exactly where you
   // cannot see the panel, so this is the only place the harmony is visible
   // while you are playing it.
-  const c = chordmode.enabled ? chordmode.currentChord() : null;
   fsKbd.draw({
     root: t.root,
     scale: t.enabled ? t.scale : null,   // untinted keys when quantise is off
     markers: Array.from({ length: engine.getOscCount() },
       (_, i) => midiOf(engine.PARAMS[`osc${i + 1}_freq`].val)),
-    chord: c ? c.freqs.map(midiOf) : [],
+    chord: soundingNotes(),
   });
 }
