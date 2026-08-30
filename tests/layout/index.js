@@ -968,46 +968,39 @@ const presets = await (async () => {
   await page.waitForTimeout(400);
   const afterPreset = await badge();
 
-  // ── The dev-mode code, read back off the screen ──
-  await toggleDev(page);
-  await page.waitForTimeout(2600);          // past cam-badge's re-encode window
-  const qr = await page.evaluate(() => {
-    const wrap = document.getElementById('cam-qr');
-    const c = document.getElementById('cam-qr-canvas');
-    const r = c.getBoundingClientRect();
-    const w = wrap.getBoundingClientRect();
-    const frame = document.getElementById('video-wrap').getBoundingClientRect();
+  // ── SHARE takes the screen, and the code on it is readable ──
+  //
+  // This used to measure a DEV-mode code drawn into the corner of the camera
+  // view at one pixel per module. The measurement behind that was sound — one
+  // pixel per module really does survive a screenshot — but the answer was
+  // still 129px square for a typical setup, which is a quarter of the width of
+  // a phone's camera panel and not a corner ornament by any reading. A code
+  // that size needs somewhere it can be the whole point, so the code lives in
+  // SHARE and SHARE now takes the screen.
+  await page.click('#share-btn');
+  await page.waitForTimeout(700);
+  const share = await page.evaluate(() => {
+    const pop = document.getElementById('share-pop');
+    const c = document.getElementById('share-qr');
+    const p = pop.getBoundingClientRect(), q = c.getBoundingClientRect();
     return {
-      shown: !wrap.hidden && getComputedStyle(wrap).display !== 'none',
-      px: c.width,
-      // Drawn at exactly one CSS pixel per module: any scaling is what puts
-      // module edges between pixels, and that is what a decoder trips on.
-      cssW: Math.round(r.width), cssH: Math.round(r.height),
-      wrapW: Math.round(w.width), wrapH: Math.round(w.height),
-      frameW: Math.round(frame.width), frameH: Math.round(frame.height),
-      // The code cannot shrink to fit — that is the whole point — so what has
-      // to hold instead is that it never takes a click away from a control.
-      clickThrough: getComputedStyle(wrap).pointerEvents === 'none',
-      // Anchored to the corner it was put in, at the shared inset every other
-      // thing on the picture uses, whatever size it comes out.
-      inset: {
-        right:  Math.round(frame.right - w.right),
-        bottom: Math.round(frame.bottom - w.bottom),
-        want: parseFloat(getComputedStyle(document.getElementById('video-wrap'))
-                .getPropertyValue('--cam-inset')),
-      },
+      open: pop.classList.contains('open'),
+      pop: { w: Math.round(p.width), h: Math.round(p.height),
+             left: Math.round(p.left), top: Math.round(p.top) },
+      qr: { w: Math.round(q.width), h: Math.round(q.height) },
+      vw: innerWidth, vh: innerHeight,
+      // Everything that is not the code keeps a readable measure rather than
+      // stretching to the width of a desktop screen.
+      labelW: Math.round(document.getElementById('share-label').getBoundingClientRect().width),
     };
   });
-  // The link the app would share right now, and the code it needs — for
-  // comparison with what the decoder reads back out of the picture, and with
-  // the number of pixels it was given to say it in.
+  // The link the app would share right now, for comparison with what a decoder
+  // reads back off the screen.
   const want = await page.evaluate(async () => {
     const { shareableSnapshot, encodeState, shareUrl } = await import('/src/share.js');
-    const { encodeQR } = await import('/src/qr.js');
-    const url = shareUrl(await encodeState(shareableSnapshot()));
-    return { url, modules: encodeQR(url, { ecc: 'L' }).size };
+    return shareUrl(await encodeState(shareableSnapshot()));
   });
-  const shot = await page.locator('#cam-qr').screenshot();
+  const shot = await page.locator('#share-qr').screenshot();
   await page.addScriptTag({ path: join(ROOT, 'node_modules/jsqr/dist/jsQR.js') });
   const decoded = await page.evaluate(async b64 => {
     const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
@@ -1016,14 +1009,14 @@ const presets = await (async () => {
     c.width = bmp.width; c.height = bmp.height;
     c.getContext('2d').drawImage(bmp, 0, 0);
     const img = c.getContext('2d').getImageData(0, 0, c.width, c.height);
-    return {
-      w: bmp.width, h: bmp.height,
-      text: globalThis.jsQR(img.data, img.width, img.height)?.data ?? null,
-    };
+    return { w: bmp.width, h: bmp.height,
+             text: globalThis.jsQR(img.data, img.width, img.height)?.data ?? null };
   }, shot.toString('base64'));
+  const noCamQr = await page.evaluate(() => !document.getElementById('cam-qr'));
 
   await page.close();
-  return { listed, applied, renamed, collided, escaped, afterPreset, qr, want, decoded, errs };
+  return { listed, applied, renamed, collided, escaped, afterPreset,
+           share, want, decoded, noCamQr, errs };
 })();
 
 // ── The controls on the picture are one system ───────────────────────────
@@ -1099,6 +1092,81 @@ const camctl = await (async () => {
 
   await page.close();
   return { small, full, errs };
+})();
+
+// ── The camera view at its two sizes, and what sits on it ────────────────
+//
+// Three regressions, all of them things that LOOK fine in the state you
+// happen to be testing in:
+//
+//   1. Fullscreen was 400px wide and centred on a desktop, with the page
+//      still visible either side. `.panel-cam #video-wrap` and
+//      `#video-wrap.fake-fullscreen` carry the same specificity — one id, one
+//      class — and the responsive one is declared later, so it won. Portrait
+//      hid it completely: --cam-w defaults to 100% there, and 100% of a
+//      fixed, inset:0 box is the viewport.
+//   2. The actions bar sat ON the fullscreen keyboard overlay, which is a
+//      control surface you play with your thumbs.
+//   3. The tracker toggles rendered outside the box labelled Camera Input on
+//      a phone, because #cam-extras leaves the section there to escape the
+//      sticky camera — and they had been put inside it.
+//
+// Measured at both widths, because each of these was correct at one of them.
+const camView = await (async () => {
+  const out = {};
+  for (const [w, h, key] of [[390, 844, 'phone'], [1440, 900, 'desktop']]) {
+    const ctx = await b.newContext({ viewport: { width: w, height: h } });
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on('pageerror', e => errs.push(String(e)));
+    await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(300);
+
+    const trackers = await page.evaluate(() => {
+      const sec = document.querySelector('.panel-cam');
+      const body = sec?.querySelector(':scope > .sec-body');
+      const row = document.getElementById('tracker-row');
+      const b = body?.getBoundingClientRect(), r = row?.getBoundingClientRect();
+      return {
+        inBody: !!body?.contains(row),
+        // Inside the box a reader can see, not merely inside the DOM subtree.
+        within: !!(b && r) && r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5,
+      };
+    });
+
+    await page.evaluate(async () => (await import('/src/ui/fullscreen.js')).fullscreen.open());
+    await page.waitForTimeout(300);
+    const fs = await page.evaluate(() => {
+      const r = document.getElementById('video-wrap').getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height),
+               left: Math.round(r.left), top: Math.round(r.top),
+               vw: innerWidth, vh: innerHeight };
+    });
+
+    await page.evaluate(() => document.getElementById('fskbd-btn').click());
+    await page.waitForTimeout(400);
+    const kbd = await page.evaluate(() => {
+      const box = el => { const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), bottom: Math.round(r.bottom) }; };
+      return {
+        keys: box(document.getElementById('fs-kbd')),
+        actions: box(document.querySelector('.cam-actions')),
+        reserved: getComputedStyle(document.getElementById('video-wrap'))
+                    .getPropertyValue('--fs-kbd-h').trim(),
+      };
+    });
+    // Leaving fullscreen takes the keyboard's reserved space with it, or the
+    // bar floats a keyboard's height off the bottom of a windowed view.
+    await page.evaluate(() => document.getElementById('fs-btn').click());
+    await page.waitForTimeout(300);
+    const afterExit = await page.evaluate(() =>
+      getComputedStyle(document.getElementById('video-wrap'))
+        .getPropertyValue('--fs-kbd-h').trim());
+
+    out[key] = { trackers, fs, kbd, afterExit, errs };
+    await ctx.close();
+  }
+  return out;
 })();
 
 await b.close(); server.close();
@@ -1522,32 +1590,32 @@ console.log('\nSaved setups\n');
     'a built-in patch clears the name — it is not one of yours',
     `“${p.afterPreset.text}” hidden=${p.afterPreset.hidden}`);
 
-  const q = p.qr, w = p.want;
-  check(q.shown, 'DEV puts the setup on the frame as a code');
-  // One pixel per module, plus the spec's 4-module quiet zone on each side,
-  // and no CSS scaling on top — a module smeared across a pixel boundary is
-  // what actually stops a code decoding, not a module being small.
-  check(q.px === w.modules + 8,
-    'the code is drawn at exactly one pixel per module, quiet zone included',
-    `${w.modules} modules + 8 → ${q.px}px`);
-  check(q.cssW === q.px && q.cssH === q.px,
-    'and CSS does not scale it back up', `${q.cssW}x${q.cssH}px on a ${q.px}px canvas`);
-  // The code cannot be made smaller — that is the finding — so a dense setup
-  // makes it a large fraction of a small camera panel. What has to hold is
-  // that it stays INSIDE the picture, in the corner it was put in, and never
-  // takes a click from the controls it may reach over.
-  check(q.wrapW <= q.frameW && q.wrapH <= q.frameH,
-    'it fits inside the picture', `${q.wrapW}x${q.wrapH} in ${q.frameW}x${q.frameH}`);
-  check(q.inset.right === q.inset.want && q.inset.bottom === q.inset.want,
-    'anchored to the bottom-right corner, at the shared inset',
-    JSON.stringify(q.inset));
-  check(q.clickThrough, 'and never swallows a click — it is a picture, not a control');
-  // The claim being tested: readable from a SCREENSHOT of the screen, which is
-  // what someone photographing or grabbing the window actually gets.
-  check(p.decoded.text === w.url,
-    'a screenshot of that code decodes back to this setup’s link',
+  const sh = p.share;
+  check(p.noCamQr,
+    'the setup is no longer drawn onto the camera view — 129px was never a corner ornament');
+  check(sh.open, 'SHARE opens');
+  // A full-bleed sheet, not a card. What this holds is a code being read by
+  // somebody else's camera across a table, and every pixel of screen is reach.
+  check(sh.pop.w === sh.vw && sh.pop.h === sh.vh && sh.pop.left === 0 && sh.pop.top === 0,
+    'and takes the whole screen',
+    `${sh.pop.w}x${sh.pop.h} at ${sh.pop.left},${sh.pop.top} in ${sh.vw}x${sh.vh}`);
+  check(sh.qr.w === sh.qr.h, 'the code is square', `${sh.qr.w}x${sh.qr.h}`);
+  // The old card capped it at 300px however much screen there was. Anything
+  // that reintroduces a fixed cap fails here rather than on someone's table.
+  check(sh.qr.w > 300, 'and is bigger than the card that used to hold it',
+    `${sh.qr.w}px`);
+  check(sh.qr.w <= sh.vw && sh.qr.h <= sh.vh,
+    'while still fitting on the screen — a cropped code scans like no code',
+    `${sh.qr.w}px in ${sh.vw}x${sh.vh}`);
+  // Full-bleed is for the code, not for a text field stretched across a
+  // desktop monitor.
+  check(sh.labelW < sh.vw, 'the rest of the sheet keeps a readable measure',
+    `name field ${sh.labelW}px of ${sh.vw}px`);
+  // The claim worth testing: a decoder reads it back off the actual pixels.
+  check(p.decoded.text === p.want,
+    'and a screenshot of it decodes back to this setup’s link',
     p.decoded.text === null ? `no code found in ${p.decoded.w}x${p.decoded.h}px`
-      : `${p.decoded.text.length} chars, ${p.decoded.text === w.url ? 'match' : 'MISMATCH'}`);
+      : `${p.decoded.text.length} chars, ${p.decoded.text === p.want ? 'match' : 'MISMATCH'}`);
 }
 
 // ── The controls on the picture are one system ──
@@ -1602,6 +1670,25 @@ console.log('\nCamera-view controls\n');
   check(camctl.full.ctrlH > camctl.small.ctrlH && camctl.full.inset > camctl.small.inset,
     'fullscreen scales the system rather than replacing it',
     `${camctl.small.ctrlH}px→${camctl.full.ctrlH}px, inset ${camctl.small.inset}→${camctl.full.inset}`);
+}
+
+// ── The camera view at its two sizes ──
+console.log('\nCamera view — fullscreen, the keyboard, and the container\n');
+for (const [label, m] of Object.entries(camView)) {
+  check(m.errs.length === 0, `${label}: no page errors`, m.errs.join(' | '));
+  check(m.fs.w === m.fs.vw && m.fs.h === m.fs.vh && m.fs.left === 0 && m.fs.top === 0,
+    `${label}: fullscreen fills the screen`,
+    `${m.fs.w}x${m.fs.h} at ${m.fs.left},${m.fs.top} in ${m.fs.vw}x${m.fs.vh}`);
+  check(m.kbd.actions.bottom <= m.kbd.keys.top,
+    `${label}: the controls sit above the keyboard, not on it`,
+    `actions end ${m.kbd.actions.bottom}, keys start ${m.kbd.keys.top}`);
+  check(parseFloat(m.kbd.reserved) > 0,
+    `${label}: and the space they clear is the keyboard's own height`, m.kbd.reserved);
+  check(parseFloat(m.afterExit) === 0,
+    `${label}: leaving fullscreen gives that space back`, m.afterExit || '(unset)');
+  check(m.trackers.inBody && m.trackers.within,
+    `${label}: the tracker toggles are inside the Camera Input container`,
+    `inBody=${m.trackers.inBody} withinBox=${m.trackers.within}`);
 }
 
 console.log(`\n${fail} failure(s)\n`);

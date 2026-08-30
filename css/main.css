@@ -439,29 +439,18 @@ html, body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   pointer-events: none;
 }
-/* DEV only: the whole setup as a QR code, small enough to be a corner of the
-   picture and no smaller — 1 pixel per module is the floor a screenshot can
-   still be read at, so the canvas is never scaled up or down (a fractional
-   module is what makes a QR blur into something no camera locks onto). The
-   quiet zone is drawn INSIDE the canvas; this padding is a frame, so the
-   code has an edge against a bright frame of video as well as a dark one. */
-.cam-qr {
-  position: absolute; bottom: var(--cam-inset); right: var(--cam-inset); z-index: 3;
-  padding: 3px;
-  background: #fff;
-  border-radius: var(--cam-radius);
-  line-height: 0;
-  /* A picture to photograph, never a control. A dense setup makes a code
-     wider than a small camera panel's corner, and a code that swallowed the
-     clicks of whatever it reached over would be worse than one that overlaps. */
-  pointer-events: none;
-}
-.cam-qr canvas { image-rendering: pixelated; display: block; }
 /* The picture's own controls: what you reach for while playing or while
    handing the instrument to someone else. Bottom-left, opposite the
    .cam-toggles strip, so neither covers the other and the middle of the
    frame — where you are — stays clear. */
-.cam-actions { bottom: var(--cam-inset); left: var(--cam-inset); }
+/* --fs-kbd-h is 0 unless the fullscreen keyboard overlay is up, in which case
+   ui/fullscreen.js publishes its height here and the bar rides above it. The
+   keys are a control surface you play with your thumbs; a strip of buttons
+   sitting on top of them is both in the way and one mis-tap from muting. */
+.cam-actions {
+  bottom: calc(var(--cam-inset) + var(--fs-kbd-h, 0px));
+  left: var(--cam-inset);
+}
 /* Muted is a state, not a disabled control — amber, as it was in the header. */
 #audio-btn.muted { color: var(--amber); border-color: var(--amber); background: #f0a50022; }
 
@@ -646,7 +635,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 #donate-pop {
   position: absolute;
   left: var(--cam-inset);
-  bottom: calc(var(--cam-inset) + var(--cam-ctrl-h) + 6px);
+  bottom: calc(var(--cam-inset) + var(--fs-kbd-h, 0px) + var(--cam-ctrl-h) + 6px);
   z-index: 60;
   min-width: 170px;
   background: var(--panel);
@@ -1311,31 +1300,42 @@ option { background: var(--panel); }
 .start-name { font-size: 11px; letter-spacing: 1px; }
 .start-hint { font-size: 9px; letter-spacing: 0.5px; color: var(--dim); }
 
-/* ── Share popover ───────────────────────────────────────
-   Anchored to the middle of the screen rather than the button: it holds a QR
-   code that has to be big enough for another phone's camera, which is not a
-   size that fits beside a toolbar button. */
+/* ── Share sheet ─────────────────────────────────────────
+   The whole screen, not a popover. What this holds is a QR code being read by
+   somebody else's camera, across a table or a room, and every pixel of screen
+   is reach: a code confined to a 360px card was a code you had to walk over
+   to. Taking the screen also removes the app behind it as a thing to aim at
+   by mistake. */
 #share-pop {
   position: fixed;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
   z-index: 200;
   display: none;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  max-width: min(92vw, 360px);
-  /* Never taller than the screen: the QR is the top item, so when the popover
-     does have to scroll the code is still the part you can see. JS narrows
-     this further to the visual viewport once a keyboard is up. */
-  max-height: 100dvh;
+  align-items: center;
+  /* `safe` so a code taller than the sheet — a dense setup on a short landscape
+     screen — overflows off the BOTTOM, where scrolling reaches it, rather than
+     off both ends, where centring would put half of it out of reach. Browsers
+     without it drop the declaration and fall back to flex-start, which is the
+     same safe direction. */
+  justify-content: safe center;
+  gap: 10px;
+  /* Tight at the sides: the code can only grow in whole modules, so a step of
+     padding is often a whole step of code size. 8px here is what lets a
+     121-module code take 3px per module on a 390px phone instead of 2. */
+  padding: 8px 8px 16px;
+  /* JS narrows the height to the visual viewport once a phone keyboard is up,
+     so the code stays visible while the name is being typed. */
   overflow-y: auto;
   background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: var(--shadow-lg);
 }
 #share-pop.open { display: flex; }
+/* The sheet is full-bleed; its contents are not. Everything but the code keeps
+   a readable measure and stays centred under it — the code is excluded by
+   name rather than left to be overridden, because its size is computed in JS
+   and a width here would be a second opinion about it. */
+#share-pop > * { flex: 0 0 auto; }
+#share-pop > *:not(.share-qr) { width: min(420px, 100%); }
 /* The sharer's one-line description of the setup, which travels in the link.
    A QR code says nothing about what is behind it, so this is what makes a
    screen showing one legible to the person pointing a camera at it. */
@@ -1353,15 +1353,17 @@ option { background: var(--panel); }
 }
 .share-label::placeholder { color: var(--dim); }
 .share-label:focus { outline: 1px solid var(--cyan); outline-offset: -1px; }
-.share-qr {
+/* Deliberately NOT sized here. ui/share.js measures the room the sheet has,
+   asks drawQR for the largest WHOLE number of pixels per module that fits,
+   and sets the width and height to exactly that — so nothing is resampled.
+   A CSS size would put module edges between pixels at any fractional ratio,
+   and a decoder finds nothing in the result (measured: a 558px box holding a
+   640px canvas did not decode). The id keeps this ahead of the
+   `#share-pop > *` measure above; the code is the one child meant to be big. */
+#share-pop > .share-qr {
   display: block;
-  width: 100%;
-  /* Shrinks on a short screen rather than being cut off — a partly visible QR
-     code scans as well as no QR code at all. */
-  max-width: min(300px, 52dvh);
+  max-width: 100%;
   margin: 0 auto;
-  /* The code is drawn at whole-pixel modules; letting the browser resample it
-     to a fractional size is what makes a QR stop scanning. */
   image-rendering: pixelated;
   border-radius: 2px;
 }
@@ -2204,7 +2206,13 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
      the aspect ratio has to stay exactly 4/3 or the landmark overlay — which
      is drawn in normalised coordinates across the full canvas — would no
      longer line up with the video under it. */
-  .panel-cam #video-wrap {
+  /* :not(.fs-active) because this rule and #video-wrap.fake-fullscreen carry
+     the SAME specificity (one id, one class) and this one is declared later,
+     so it was winning — a "fullscreen" camera pinned to 400px and centred,
+     with the page still visible either side of it. Portrait hid the bug:
+     --cam-w defaults to 100% there, and 100% of a fixed, inset:0 box is the
+     viewport. Excluding the fullscreen state is the fix that says why. */
+  .panel-cam #video-wrap:not(.fs-active) {
     /* Same custom property the drag handle writes (see ui/resize.js), so one
        control resizes the camera in both orientations. 400px = the 300px-tall
        default at 4:3. */
@@ -2378,7 +2386,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
      then takes the height down with it, so the frame stays whole and the
      landmark overlay stays registered to the video. Clipping would hide the
      bottom of the frame — exactly where your hands are. */
-  .panel-cam #video-wrap {
+  .panel-cam #video-wrap:not(.fs-active) {
     width: min(100%, var(--cam-w, 100%));
     margin-inline: auto;
   }

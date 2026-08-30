@@ -9,6 +9,7 @@ import { makeKbdView, midiOf } from './keyboard.js';
 import { chordmode } from '../chordmode.js';
 
 let wrap, fsBtn, kbdBtn, kbdCanvas;
+let lastKbdH = null;      // last published --fs-kbd-h, so it is written on change only
 let kbdShown = false;
 let fsGameRenderer = null;   // injected by playalong-ui to avoid circular imports
 const changeCbs = [];
@@ -39,6 +40,11 @@ function syncState(active) {
   wrap.classList.toggle('fs-active', active);
   fsBtn.textContent = active ? '✕ EXIT' : '⛶ FULL';
   fsBtn.classList.toggle('on', active);
+  // The keyboard overlay is fullscreen-only, so leaving takes its reserved
+  // space with it. updateFsOverlay returns early once inactive and would
+  // never get to say so, leaving the actions bar floating a keyboard's height
+  // off the bottom of a windowed camera view.
+  if (!active) { lastKbdH = 0; wrap.style.setProperty('--fs-kbd-h', '0px'); }
   // Refit overlay canvases immediately (the ResizeObserver also fires, but
   // some Safari versions deliver it a frame late).
   ['overlay', 'face-overlay'].forEach(id => {
@@ -105,6 +111,23 @@ const fsKbd = makeKbdView('fs-kbd', {
   height: () => Math.max(40, Math.round((wrap?.clientHeight ?? 480) * 0.14)),
 });
 
+// How much of the bottom of the frame the keyboard overlay is occupying, as a
+// custom property the stylesheet can do arithmetic with. The controls that
+// hug the bottom edge — the actions bar and the ♥ popover it opens — ride
+// above it rather than sitting on the keys, which are themselves something
+// you play with your thumbs.
+//
+// Published rather than duplicated: the height is `makeKbdView`'s to decide
+// (14% of the frame, floored at 40px), and a second copy of that expression
+// in CSS would be a copy that goes stale.
+function publishKbdHeight() {
+  const h = kbdCanvas?.classList.contains('shown')
+    ? Math.round(kbdCanvas.getBoundingClientRect().height) : 0;
+  if (h === lastKbdH) return;
+  lastKbdH = h;
+  wrap?.style.setProperty('--fs-kbd-h', `${h}px`);
+}
+
 // Called every RAF from main.js — cheap no-op unless fullscreen is active.
 export function updateFsOverlay() {
   if (!fullscreen.active) return;
@@ -112,15 +135,18 @@ export function updateFsOverlay() {
   // A running game owns the overlay (and forces the canvas visible).
   if (fsGameRenderer && fsGameRenderer(kbdCanvas)) {
     kbdCanvas.classList.add('shown');
+    publishKbdHeight();
     fsKbd.invalidate();          // force a clean keyboard redraw afterwards
     return;
   }
   if (!kbdShown) {
     if (!kbdCanvas.classList.contains('shown')) return;
     kbdCanvas.classList.remove('shown');
+    publishKbdHeight();
     return;
   }
   kbdCanvas.classList.add('shown');
+  publishKbdHeight();
   const t = engine.getTuning();
   // Chord tones go on the same keyboard as the oscillator markers, because in
   // gesture mode the keyboard is otherwise inert — the markers track oscillators,

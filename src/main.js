@@ -94,7 +94,7 @@ function loop() {
   drawViz();
   shader.render();       // cheap no-op unless the shader panel is active
   updateFsOverlay();     // cheap no-op unless fullscreen is active
-  updateCamBadge();      // which saved setup is playing; dev-mode share code
+  updateCamBadge();      // which saved setup is playing
   updateGamePanel();     // cheap no-op unless a song is running
   updateUicOverlay();    // cheap no-op unless the hand cursor is live
   updateStage();         // cheap no-op unless the gesture stage is up
@@ -541,7 +541,7 @@ metronome.registerSignals();   // the beat clock is wirable like any signal
 watchRanges();
 initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
-initCamBadge();           // saved-setup name (and, in dev, its QR) on the frame
+initCamBadge();           // the saved setup's name, captioning the frame
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
 initSettings();           // ⚙ theme + hotkeys: how the tool looks and is driven

@@ -262,9 +262,39 @@ Fullscreen API rejects anything else.) The tour for the arriving setup then
 a fullscreen camera is a walkthrough of nothing.
 
 
-**SHARE** (beside SAVE and LOAD) shows a QR code of everything you have set up.
-Point a phone at it and the app opens configured the same way — the point being
-that handing someone a patch should not require a file, an account or a server.
+**SHARE** (on the camera view, among the picture's own controls) shows a QR
+code of everything you have set up. Point a phone at it and the app opens
+configured the same way — the point being that handing someone a patch should
+not require a file, an account or a server.
+
+**It takes the whole screen.** The code was a 360px card in the middle of the
+page, which made sense as a popover and no sense as a thing being read: the
+reader is somebody else's camera, across a table or a room, and every pixel of
+screen is reach. A code confined to a card is one you have to walk over to.
+Full-bleed also removes the app behind it as something to aim at by mistake.
+The code takes as much of the sheet as it can while leaving room for the name
+and the buttons; everything that is *not* the code keeps a readable measure
+rather than stretching across a desktop monitor.
+
+**It is sized in whole modules, in JS, and never by CSS.** Asking CSS for
+`width: min(100%, 62dvh)` hands the browser a backing store of one size to
+resample into a box of another, and at a fractional ratio the module edges
+land between pixels. That is not a "slightly softer" code, it is a coin flip:
+scaling the same 121-module code into 350px and 420px boxes decoded, 500px and
+558px found no code at all, and turning `image-rendering: pixelated` on or off
+changed nothing — both modes failed at exactly the same two sizes. So
+`ui/share.js` measures the room the sheet has, asks `drawQR` for the largest
+**whole** number of pixels per module that fits, and sets the canvas to
+exactly that. Nothing is resampled, and the result is correct by construction
+rather than by luck: 363px at 3px/module on a 390px phone, 605px at 5px/module
+on a 1440px desktop — against the 300px the old card capped it at.
+
+The sheet's side padding is 8px for the same reason. The code can only grow in
+whole steps, so a step of padding is often a whole step of code: at 20px the
+phone fell back to 2px per module and a 242px code. A phone's keyboard does not
+shrink the layout viewport, so when the name field takes focus the sheet is
+moved and resized to `visualViewport` — otherwise its bottom half, buttons
+included, would sit behind the keys.
 
 The state is compressed and carried in the URL **fragment**, which is never sent
 to a server. There is no server; a shared setup stays between the two people
@@ -575,43 +605,33 @@ instrument, and **not** cleared when you move a slider — you are still playing
 your setup, just changed, and a name that vanished on the first knob turn would
 be a name nobody trusts.
 
-**In DEV mode, the setup itself is on the frame as a QR code** (bottom-right,
-opposite the tracker toggles). It is there so a setup can be handed over by
-photographing or screenshotting the picture, with no dialog in the way — which
-raised the question of how small such a code can honestly be.
+**A QR code on the camera view was tried, and dropped.** The idea was that a
+setup could be handed over by screenshotting the picture, with no dialog in
+the way — which raised a question worth answering on its own: how small can a
+QR code be and still be read?
 
-**How small: measured, not guessed.** Render the code at N device pixels per
-module, screenshot the pixels the browser actually painted, and hand them to
-**jsQR** — an independent decoder, not our own encoder agreeing with itself.
-The answer is **one pixel per module**: the default setup's link is 1328
-characters, which at ECC L needs a 121×121-module code — 121px, plus the
-spec's four-module quiet zone on each side, 129px square in all — and it
-decodes. (L for the same reason the SHARE dialog uses it: the tolerance the
-higher levels buy is for a code that is torn, dirty or badly lit, none of
-which happens to a screenshot taken seconds ago. It is also the fewest
-modules — M would need 137, so 145px.) The
-floor is not the module *size* but the requirement that modules land on
-**whole** pixels — a code scaled to 1.5× smears every module edge across two
-pixels and stops decoding long before a 1× one does. So the canvas is drawn at
-exactly 1 px per module and CSS never scales it:
-`drawQR(canvas, qr, { quiet: 4, min: 1, target: qr.size + 8 })`. `min` is
-drawQR's usual floor of 2 px per module, and that floor is there for a
-*camera* — the SHARE dialog keeps it, because a phone is reading a screen
-across a room. Only a caller whose reader is a screenshot of
-those exact pixels, with nothing optical in the path, should lower it. The
-layout suite pins the whole claim end to end — the 1:1 drawing, that the code
-stays inside the picture and anchored to its corner, and a real Playwright
-screenshot decoding back to the link the app would have shared — and
-`tests/unit/qr.test.js` pins the encoder half of it at 1 px/module across a
-range of payload sizes and both of the levels the app uses, so a regression
-surfaces in `npm run test:unit` and not only under a browser.
+**Measured, not guessed.** Render at N device pixels per module, screenshot
+the pixels the browser actually painted, and hand them to **jsQR** — an
+independent decoder, not our own encoder agreeing with itself. The answer is
+**one pixel per module**. The floor is not the module *size* but the
+requirement that modules land on **whole** pixels: a code scaled to 1.5×
+smears every module edge across two pixels and stops decoding long before a 1×
+one does. `tests/unit/qr.test.js` pins that at 1 px/module across a range of
+payload sizes and both ECC levels the app uses.
 
-Small does not mean *tiny in the frame*, though. The code is as small as the
-payload allows and no smaller, so a dense setup makes it a large fraction of a
-narrow camera panel — there is no scaling it down without breaking the thing
-that makes it readable. What holds instead is that it is `pointer-events:
-none`: it is a picture to photograph, never a control, so a code that reaches
-over a button can't take that button's click.
+**And the answer was still too big.** The default setup's link is 1328
+characters, which at ECC L needs a 121×121-module code — 129px square with the
+spec's quiet zone. That is a quarter of the width of a phone's camera panel: a
+corner ornament in name only, and there is no shrinking it, because 1 px per
+module is where the format bottoms out. A code that size has to be somewhere
+it can be the whole point. So it is not on the camera view, and **SHARE takes
+the screen instead** (below) — which is a better answer to the original
+problem anyway, since the thing being read is somebody else's camera across a
+table, and every pixel of screen is reach.
+
+The measurement is kept here rather than deleted because it is the reason the
+feature is *not* there. Anyone who proposes putting a code back on the frame
+is proposing 129px of it.
 
 The store is `src/saved.js`, in localStorage under `motionmuse-saved-v1`. It
 filters what it reads: an entry that is not a named snapshot is dropped rather
@@ -1639,7 +1659,24 @@ size" is exactly the claim a stylesheet quietly stops honouring.
 
 What is left in the page header is what belongs to the **tool** rather than
 the instrument: settings and the tour. And what the camera *tracks* went the
-other way, off the picture and into **Camera Input** beside it (above).
+other way, off the picture and into **Camera Input** beside it (above) — and
+specifically *inside* that container, with the picture the toggles apply to.
+They had been put in `#cam-extras`, the drop host that sits below the video,
+and on a phone that box **leaves the section entirely**: it is moved out to
+escape the sticky camera, which pins its whole box, so the toggles rendered
+outside the border labelled Camera Input. The drop host still leaves; the
+tracker row does not, because it is not a section someone dragged there — it
+is part of this input.
+
+**And the controls clear the keyboard.** With the fullscreen keyboard overlay
+up, the actions bar was drawn on top of the keys — which are a control surface
+you play with your thumbs, so the bar was both in the way and one mis-tap from
+muting. `ui/fullscreen.js` publishes the overlay's height as `--fs-kbd-h` and
+the bar (and the ♥ popover it opens) rides above it. Published rather than
+duplicated: the height is `makeKbdView`'s to decide — 14% of the frame,
+floored at 40px — and a second copy of that expression in CSS is a copy that
+goes stale. Leaving fullscreen resets it to zero, or the bar would float a
+keyboard's height off the bottom of a windowed view.
 
 ## Fullscreen camera view
 
@@ -1648,6 +1685,18 @@ the native Fullscreen API where available, or a CSS takeover on iPhone Safari
 (which has no element fullscreen). In fullscreen, **🎹 KEYS** overlays the live
 pitch-quantise keyboard along the bottom of the view. Gesture overlays keep
 their alignment at any screen shape.
+
+The CSS takeover is `position: fixed; inset: 0`, and it spent a while losing a
+specificity tie. `.panel-cam #video-wrap` — the responsive rule that gives the
+camera its width in each orientation — and `#video-wrap.fake-fullscreen` both
+weigh one id and one class, and the responsive one is declared later, so it
+won: "fullscreen" on a desktop was 400px wide and centred, with the page still
+visible either side of it. Portrait hid the bug completely, because `--cam-w`
+defaults to `100%` there and 100% of a fixed, `inset: 0` box *is* the
+viewport — so the phone looked right and the laptop did not. The responsive
+rules now exclude `:not(.fs-active)`, which both fixes it and says why; the
+layout suite measures the fullscreen box against the viewport at both widths,
+since either one alone would have passed.
 
 ## Hand cursor (drive the UI by hand)
 
