@@ -20,7 +20,7 @@ import { chordmode }                        from './chordmode.js';
 import { radial }                           from './radial.js';
 import { metronome }                        from './metronome.js';
 import { graph }                            from './graph.js';
-import { watchRanges }                      from './ui/numeric.js';
+import { watchRanges, syncNumbers }         from './ui/numeric.js';
 import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
@@ -77,6 +77,9 @@ function loop() {
   if (pedalPressed()) looper.pedal();
   tickLooperUI();
   updateSigPanel();
+  // Sliders' typed twins follow their slider, whatever moved it — a drag, a
+  // cable, a preset load (see ui/numeric.js).
+  syncNumbers();
   // Mic meter: the one piece of feedback that tells you the browser is actually
   // hearing you, which is otherwise invisible until you have wired a cable.
   if (micSource.active) {
@@ -439,8 +442,14 @@ async function applyTrackers(want) {
 // Face and gaze need a running camera, so a preset chosen before the camera
 // starts leaves its intent here and the camera-start path applies it.
 async function applyFaceIntent() {
-  if (!pendingFace || !cvSource.running) return [];
-  const { face, gaze } = pendingFace;
+  if (!cvSource.running) return [];
+  // A pending intent is a one-shot: a preset or a starting point asking for
+  // face/gaze before there was a stream to run them on. Falling back to the
+  // SAVED intent is what makes tracking resume when the camera does —
+  // stopping the camera switches face and gaze off (they read that stream),
+  // but putting the camera down is not a decision to stop using your
+  // eyebrows, which is exactly why the choice is remembered separately.
+  const { face, gaze } = pendingFace ?? savedFaceIntent();
   pendingFace = null;
   const changed = [];
   try {
