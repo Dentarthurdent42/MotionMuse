@@ -1037,6 +1037,32 @@ body.no-scroll { overflow: hidden; }
 /* The whole pill starts a wire, so claim horizontal drags — but leave
    vertical ones to the browser so the panel still scrolls on touch. */
 .ng-node { touch-action: pan-y; cursor: grab; }
+/* Live level, as a bar along the pill's bottom edge. Absolutely positioned and
+   scaled rather than sized, so it never participates in layout: the wires are
+   drawn from measured socket positions, and a node that changed height every
+   frame would drag every cable on the canvas with it.
+   `transform` also keeps the whole thing on the compositor — this is written
+   once per node per frame. */
+.ng-level {
+  position: absolute; left: 5px; right: 5px; bottom: 2px; height: 2px;
+  transform: scaleX(var(--lvl, 0)); transform-origin: left center;
+  background: var(--wire, var(--dim));
+  border-radius: 1px;
+  opacity: 0.9; pointer-events: none;
+}
+/* An unwired output has no cable colour to borrow, and its bar is reporting
+   something other than a cable, so it stays neutral rather than picking one. */
+.ng-node.ng-out:not(.wired) .ng-level { background: var(--dim); opacity: 0.5; }
+/* A bar pinned at zero is indistinguishable from a node with no bar, which
+   reads as "broken" rather than "quiet" — so the track it fills is always
+   visible underneath it. Faint, though: at full strength on the light themes
+   the track reads as a FILLED bar, which is the same lie the other way up. */
+.ng-node::after {
+  content: ''; position: absolute; left: 5px; right: 5px; bottom: 2px;
+  height: 2px; background: var(--border2); opacity: 0.4;
+  border-radius: 1px; pointer-events: none;
+}
+.ng-level { z-index: 1; }
 .ng-node-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Room for the × on the pill's outer edge (opposite its socket). */
 .ng-node.ng-in  .ng-node-title { padding-left: 16px; }

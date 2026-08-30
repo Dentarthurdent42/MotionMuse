@@ -1528,6 +1528,96 @@ for (const [key, vp] of [['desktop', { width: 1440, height: 900 }],
   await ctx.close();
 }
 
+// ── Level bars on the patchbay nodes ──
+//
+// Asked for from playing: "display the input and output strengths as bars on
+// the patchbay nodes." The pair is only worth having if it is honest about
+// what each end means — the input bar is the 0–1 the cable is HANDED
+// (bus.norm, adaptive range and all) and the output bar is what it DELIVERS
+// after curve, invert and steps, so the gap between them is the curve made
+// visible. On a plain linear cable they must therefore read identically.
+//
+// And they must cost the layout nothing: the wires are drawn from measured
+// socket positions, so a bar that participated in layout would drag every
+// cable on the canvas every frame.
+const ngBars = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1440, height: 1000 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(350);
+
+  const m = await page.evaluate(async () => {
+    const { mapper } = await import('/src/mapper.js');
+    const { bus } = await import('/src/bus.js');
+    const { renderMapper, updateMapperBars } = await import('/src/ui/mapper-ui.js');
+    mapper.applyPreset('hands');
+    renderMapper();
+    await new Promise(r => requestAnimationFrame(r));
+
+    const lvl = (side, key) => parseFloat(
+      document.querySelector(`.ng-level[data-side="${side}"][data-key="${key}"]`)
+        ?.style.getPropertyValue('--lvl') ?? 'NaN');
+    // Smoothed signals creep toward a target, so settle before reading.
+    const settle = (key, target) => {
+      for (let i = 0; i < 400; i++) bus.update(key, target);
+      for (let i = 0; i < 5; i++) mapper.tick();
+      updateMapperBars();
+    };
+
+    // One bar per node, on both sides.
+    const nodes = [...document.querySelectorAll('.ng-node')];
+    const everyNodeHasOne = nodes.every(n => n.querySelector('.ng-level'));
+    const sides = [...document.querySelectorAll('.ng-level')]
+      .map(el => el.dataset.side);
+    const positioned = getComputedStyle(document.querySelector('.ng-level')).position;
+
+    const cable = mapper.mappings.find(x =>
+      x.signal && x.curve === 'linear' && !x.invert && !x.steps);
+    const sig = bus.signals.get(cable.signal);
+    const at = f => sig.min + (sig.max - sig.min) * f;
+
+    // Driving a bar from empty to full must not move the sockets the wires
+    // are drawn between.
+    const socketY = () => [...document.querySelectorAll('.ng-socket')]
+      .map(el => Math.round(el.getBoundingClientRect().top));
+    settle(cable.signal, at(0));
+    const yEmpty = socketY();
+    settle(cable.signal, at(1));
+    const yFull = socketY();
+    const socketsMoved = yEmpty.some((v, i) => v !== yFull[i]);
+
+    // A linear cable delivers what it is handed.
+    const tracks = [];
+    for (const f of [0, 0.25, 0.5, 0.75, 1]) {
+      settle(cable.signal, at(f));
+      tracks.push({ f, in: lvl('in', cable.signal), out: lvl('out', cable.audioParam) });
+    }
+
+    // INVERT mirrors the output bar without touching the input one.
+    const inv = mapper.mappings.find(x => x.signal && x.audioParam !== cable.audioParam);
+    const isig = bus.signals.get(inv.signal);
+    const iat = isig.min + (isig.max - isig.min) * 0.8;
+    const was = inv.invert;
+    inv.invert = false; settle(inv.signal, iat);
+    const straight = { in: lvl('in', inv.signal), out: lvl('out', inv.audioParam) };
+    inv.invert = true;  settle(inv.signal, iat);
+    const flipped = { in: lvl('in', inv.signal), out: lvl('out', inv.audioParam) };
+    inv.invert = was;
+
+    // The track under the bar is what stops an idle node reading as broken.
+    const trackShown = getComputedStyle(
+      document.querySelector('.ng-node'), '::after').content !== 'none';
+
+    return { everyNodeHasOne, sides, positioned, socketsMoved, tracks,
+             straight, flipped, nodeCount: nodes.length, trackShown };
+  });
+
+  await ctx.close();
+  return { ...m, errs };
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -2182,6 +2272,42 @@ for (const [label, m] of Object.entries(gestureCfg)) {
   check(m.accBusy.every(d => d === true),
     `${label}: and stand down with the picker when the other hand is busy`,
     JSON.stringify(m.accBusy));
+}
+
+// ── Level bars on the patchbay nodes ──
+console.log('\nPatchbay level bars\n');
+{
+  const m = ngBars;
+  check(m.errs.length === 0, 'no page errors', m.errs.join(' | '));
+  check(m.nodeCount > 0 && m.everyNodeHasOne,
+    'every node carries a level bar', `${m.nodeCount} nodes`);
+  check(m.sides.includes('in') && m.sides.includes('out'),
+    'on both the input and the output side', m.sides.join(','));
+
+  // The one that would be expensive to get wrong: the wires are drawn from
+  // measured socket positions every render.
+  check(m.positioned === 'absolute',
+    'the bar is taken out of flow, so it cannot resize its node');
+  check(!m.socketsMoved,
+    'and driving a bar from empty to full moves no socket, so no wire moves');
+  check(m.trackShown, 'an idle node still shows its empty track, not nothing');
+
+  // Input = what the cable is handed; output = what it delivers. On a linear
+  // cable those are the same number, which is what makes the pair readable.
+  const near = (a, b) => Math.abs(a - b) <= 0.02;
+  check(m.tracks.every(t => near(t.in, t.out)),
+    'a linear cable delivers what it is handed, so the two bars agree',
+    JSON.stringify(m.tracks));
+  check(near(m.tracks[0].in, 0) && near(m.tracks.at(-1).in, 1),
+    'and the input bar spans its full travel', JSON.stringify(m.tracks));
+
+  // INVERT is an output-side reversal: the input is unchanged, the output
+  // mirrors. (This cable is on a curve, so the pair mirrors about 1 rather
+  // than matching — which is the point: the gap IS the curve.)
+  check(near(m.straight.in, m.flipped.in),
+    'INVERT leaves the input bar alone', `${m.straight.in} vs ${m.flipped.in}`);
+  check(near(m.straight.out + m.flipped.out, 1),
+    'and mirrors the output bar', `${m.straight.out} + ${m.flipped.out}`);
 }
 
 console.log(`\n${fail} failure(s)\n`);
