@@ -17,6 +17,7 @@ import { engine }                from '../engine.js';
 import { cvSource }              from '../cv.js';
 import { metronome }             from '../metronome.js';
 import { arpRowHTML, wireArpRow, updateArpRow } from './arp-ui.js';
+import { setReadout } from './numeric.js';
 import { faceSource }            from '../face.js';
 
 const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`;
@@ -250,8 +251,8 @@ export function wireRadialSection(rerender) {
     el.addEventListener('input', e => {
       const k = e.target.dataset.env;
       const v = engine.setChordEnv({ [k]: +e.target.value })[k];
-      const out = document.getElementById(`rk-env-${k}`);
-      if (out) out.textContent = k === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`;
+      setReadout(document.getElementById(`rk-env-${k}`),
+                 k === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`);
     });
   });
 

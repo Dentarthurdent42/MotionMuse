@@ -6,6 +6,7 @@
 // steals the pointer mid-adjustment.
 
 import { metronome, SIGNATURES, BPM_MIN, BPM_MAX } from '../metronome.js';
+import { setReadout } from './numeric.js';
 
 export function metronomeSection() {
   const c = metronome.config();
@@ -28,24 +29,24 @@ export function metronomeSection() {
         <button class="wave-btn${c.on ? ' on' : ''}" id="metro-toggle" aria-pressed="${c.on}"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${c.on ? 'ON' : 'OFF'}</button>
       </div>
-      <div class="ctrl-row">
-        <span class="ctrl-lbl">TEMPO</span>
-        <button type="button" class="wave-btn" id="metro-down" title="Slow down">−</button>
+      <div class="met-row">
+        <span class="chord-key-lbl">TEMPO</span>
+        <button type="button" class="wave-btn met-nudge" id="metro-down" aria-label="Slower" title="Slow down">−</button>
         <input type="range" id="metro-bpm" min="${BPM_MIN}" max="${BPM_MAX}" step="1" value="${c.bpm}"
                aria-label="Tempo in beats per minute">
-        <button type="button" class="wave-btn" id="metro-up" title="Speed up">+</button>
+        <button type="button" class="wave-btn met-nudge" id="metro-up" aria-label="Faster" title="Speed up">+</button>
         <span class="ctrl-val" id="metro-bpm-val">${c.bpm}</span>
       </div>
-      <div class="ctrl-row">
-        <span class="ctrl-lbl">TIME</span>
+      <div class="met-row">
+        <span class="chord-key-lbl">TIME</span>
         <select id="metro-sig" aria-label="Time signature"
                 title="Beats per bar — the camera strip, the SAMPLE row and the downbeat accent all follow it">${sigOpts}</select>
-        <button type="button" class="wave-btn${c.muted ? ' on' : ''}" id="metro-mute" aria-pressed="${c.muted}"
+        <button type="button" class="wave-btn met-mute${c.muted ? ' on' : ''}" id="metro-mute" aria-pressed="${c.muted}"
                 title="Silence the click. The clock keeps counting: the camera strip still pulses and the beat-sampled modes still sample.">MUTE</button>
       </div>
-      <div class="ctrl-row" title="Which beats the beat-sampled volume modes strike on — set VOLUME (Radial Mode) or PLAY WITH (Gesture Mode) to “Metronome beats” to use them">
-        <span class="ctrl-lbl">SAMPLE</span>
-        <div class="wave-btns" id="metro-beats" style="flex:1;">${beatBtns}</div>
+      <div class="met-row" title="Which beats the beat-sampled volume modes strike on — set VOLUME (Radial Mode) or PLAY WITH (Gesture Mode) to “Metronome beats” to use them">
+        <span class="chord-key-lbl">SAMPLE</span>
+        <div class="met-beats" id="metro-beats">${beatBtns}</div>
       </div>
       <div class="quant-notes" id="metro-read">${c.on
         ? '● counting'
@@ -62,7 +63,7 @@ export function wireMetronomeSection(rerender) {
   // re-render mid-drag drops the pointer.
   const bpmEl = document.getElementById('metro-bpm');
   const bpmVal = document.getElementById('metro-bpm-val');
-  const showBpm = v => { if (bpmVal) bpmVal.textContent = String(v); };
+  const showBpm = v => setReadout(bpmVal, String(v));
   bpmEl?.addEventListener('input', e => showBpm(metronome.setBpm(+e.target.value)));
   const nudge = dir => {
     const v = metronome.nudge(dir);

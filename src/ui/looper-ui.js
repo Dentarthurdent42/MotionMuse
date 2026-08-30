@@ -40,9 +40,14 @@ export const pedal = makePedal({
   source: PEDAL_SOURCES[lsGet(KEY_SRC)] ? lsGet(KEY_SRC) : DEFAULT_PEDAL,
   sensitivity: Number(lsGet(KEY_SENS)) || DEFAULT_SENSITIVITY,
 });
-// Off by default is the wrong default for a pedal — it is the whole feature —
-// but a switch has to exist, because a nod is also a thing people do.
-let pedalOn = lsGet(KEY_ON) !== '0';
+// OFF by default. A nod is the pedal because it is something you can do
+// without interrupting a phrase — which is exactly why it is also something
+// you do constantly without meaning anything by it: agreeing, glancing down
+// at your hands, moving to the beat you are playing. Armed from the first
+// run, that made the instrument start recording loops nobody asked for. The
+// gesture is opt-in now; the transport buttons work from the start either
+// way, so nothing is out of reach, only out of the way.
+let pedalOn = lsGet(KEY_ON) === '1';
 export const pedalEnabled = () => pedalOn;
 
 // The tracker the chosen pedal needs, and whether it is actually running.
@@ -62,7 +67,7 @@ export function looperSectionHTML() {
         <div class="loop-bar"><div class="loop-bar-fill" id="loop-pos"></div></div>
         <div class="loop-read">
           <div class="loop-state" id="loop-state">READY</div>
-          <div class="loop-next" id="loop-next">nod to start recording</div>
+          <div class="loop-next" id="loop-next">PEDAL to start recording</div>
         </div>
       </div>
       <div class="wave-btns">
@@ -82,7 +87,7 @@ export function looperSectionHTML() {
         </select>
         <button type="button" class="wave-btn${pedalOn ? ' on' : ''}" id="pedal-on"
                 aria-pressed="${pedalOn}"
-                title="Stop the gesture pressing the pedal — the buttons above still work">${pedalOn ? 'ON' : 'OFF'}</button>
+                title="Let the gesture press the pedal. Off by default: a nod is also something people do without meaning it. The buttons above work either way.">${pedalOn ? 'ON' : 'OFF'}</button>
       </div>
       <label class="ctrl-row" title="How hard the movement has to be. Watch the meter and nod: a deliberate stab should fill it.">
         <span class="ctrl-lbl">SENSITIVITY</span>
@@ -145,8 +150,10 @@ function render(s) {
   els.state.dataset.state = s.state;
   // The prompt names the chosen gesture rather than always saying "nod", so
   // somebody on the brow pedal is not told to do something else.
-  els.next.textContent = (NEXT_LABEL[s.state] ?? '')
-    .replace('nod', PEDAL_SOURCES[pedal.source]?.hint.toLowerCase() ?? 'press');
+  els.next.textContent = pedalOn
+    ? (NEXT_LABEL[s.state] ?? '')
+        .replace('nod', PEDAL_SOURCES[pedal.source]?.hint.toLowerCase() ?? 'press')
+    : (NEXT_LABEL[s.state] ?? '').replace('nod', 'PEDAL');
   const bits = [];
   if (s.seconds) bits.push(`${s.seconds.toFixed(1)}s`);
   if (s.layers) bits.push(`${s.layers} layer${s.layers === 1 ? '' : 's'}${s.full ? ' · full' : ''}`);
@@ -165,7 +172,7 @@ export function tickLooperUI() {
   const m = `${(pedal.reading() * 100).toFixed(0)}%`;
   if (els.meter.style.width !== m) els.meter.style.width = m;
   const why = pedalReady();
-  const note = !pedalOn ? 'Pedal off — the buttons above still work'
+  const note = !pedalOn ? 'Gesture off — the buttons above still work; ON arms the nod'
              : why      ? `Pedal needs the tracker — ${why}`
              : PEDAL_SOURCES[pedal.source]?.hint ?? '';
   if (els.pnote.textContent !== note) els.pnote.textContent = note;

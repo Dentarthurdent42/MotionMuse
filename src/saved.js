@@ -78,3 +78,68 @@ export function deleteConfig(name) {
   write(kept);
   return true;
 }
+
+// ── Renaming ──────────────────────────────────────────────────────────────
+//
+// A name is a label you chose in a hurry, usually while sharing — "test",
+// "asdf", "ambient 2" — and the setup outlives the moment you typed it.
+// Renaming keeps the snapshot and changes only what it is called; saving
+// under a new name instead would leave the old one behind, so the menu grows
+// a duplicate every time somebody corrects a typo.
+//
+// Returns the stored entry, or null when there is nothing to rename, the new
+// name is empty, or the new name already belongs to a DIFFERENT setup.
+//
+// That last one is where renaming parts company with saving. Saving under a
+// used name replaces it because you just built the thing you are storing —
+// the name is the identity, and you said which identity. Renaming onto a used
+// name would destroy a setup you did not touch in this action, to make room
+// for one you only meant to relabel. Refused here rather than only in the
+// menu, so no future caller can lose a patch by being careless.
+export function renameConfig(from, to) {
+  const a = configName(from), b = configName(to);
+  if (!a || !b) return null;
+  const list = read();
+  const entry = list.find(e => e.name === a);
+  if (!entry) return null;
+  if (a === b) return entry;
+  if (list.some(e => e.name === b)) return null;
+  // Read the marker BEFORE the write: currentConfig() only reports a name
+  // whose setup still exists, and after the write the old name does not.
+  const wasCurrent = currentConfig() === a;
+  const renamed = { ...entry, name: b };
+  // In place, not moved to the front: renaming is not saving. A row that
+  // jumped to the top of the menu because its label was corrected would be
+  // the list reordering itself for no reason the user can see.
+  write(list.map(e => (e.name === a ? renamed : e)));
+  if (wasCurrent) setCurrentConfig(b);
+  return renamed;
+}
+
+// ── Which setup is loaded ─────────────────────────────────────────────────
+//
+// The instrument shows its name on the camera view, so it has to know which
+// named setup it is currently playing. Kept beside the setups rather than in
+// the session snapshot: it is a fact about THIS browser's state ("you are
+// playing the one called X"), not part of the setup itself — a shared link
+// carrying "currently loaded: X" would be meaningless to whoever opened it.
+//
+// Cleared, not preserved, the moment the instrument stops being that setup:
+// a built-in preset applied over the top, or a blank start. Editing a slider
+// does NOT clear it — you are still playing your setup, just changed, and a
+// name that vanished on the first knob turn would be a name nobody trusts.
+const CURRENT_KEY = 'motionmuse-current-config';
+
+export const currentConfig = () => {
+  const n = configName(lsGet(CURRENT_KEY) ?? '');
+  // A name whose setup has been forgotten is not a name any more.
+  return n && findConfig(n) ? n : '';
+};
+
+export function setCurrentConfig(name) {
+  const n = configName(name ?? '');
+  lsSet(CURRENT_KEY, n);
+  return n;
+}
+
+export const clearCurrentConfig = () => setCurrentConfig('');

@@ -12,7 +12,8 @@ import { renderMapper, updateMapperBars }   from './ui/mapper-ui.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
 import { initResize }                       from './ui/resize.js';
-import { initFullscreen, updateFsOverlay }  from './ui/fullscreen.js';
+import { initFullscreen, updateFsOverlay, fullscreen } from './ui/fullscreen.js';
+import { initCamBadge, updateCamBadge }     from './ui/cam-badge.js';
 import { playalong }                        from './playalong.js';
 import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
 import { gesture }                          from './gesture.js';
@@ -20,12 +21,15 @@ import { chordmode }                        from './chordmode.js';
 import { radial }                           from './radial.js';
 import { metronome }                        from './metronome.js';
 import { graph }                            from './graph.js';
+import { watchRanges, syncNumbers }         from './ui/numeric.js';
 import { devmode }                          from './devmode.js';
 import { shader }                           from './shader.js';
+import { audioSession }                     from './audiosession.js';
 import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
-import { findConfig }                       from './saved.js';
+import { findConfig, setCurrentConfig,
+         clearCurrentConfig }               from './saved.js';
 import { initTutorial, maybeOfferTour, offerTourForMode, offerTourForSharedSetup } from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { enhanceSections, colorSections }   from './ui/sections.js';
@@ -76,6 +80,9 @@ function loop() {
   if (pedalPressed()) looper.pedal();
   tickLooperUI();
   updateSigPanel();
+  // Sliders' typed twins follow their slider, whatever moved it — a drag, a
+  // cable, a preset load (see ui/numeric.js).
+  syncNumbers();
   // Mic meter: the one piece of feedback that tells you the browser is actually
   // hearing you, which is otherwise invisible until you have wired a cable.
   if (micSource.active) {
@@ -87,6 +94,7 @@ function loop() {
   drawViz();
   shader.render();       // cheap no-op unless the shader panel is active
   updateFsOverlay();     // cheap no-op unless fullscreen is active
+  updateCamBadge();      // which saved setup is playing; dev-mode share code
   updateGamePanel();     // cheap no-op unless a song is running
   updateUicOverlay();    // cheap no-op unless the hand cursor is live
   updateStage();         // cheap no-op unless the gesture stage is up
@@ -102,32 +110,37 @@ const setLabel = (btn, text) => {
   if (t) t.textContent = text; else btn.textContent = text;
 };
 
-// ── Camera button ────────────────────────────────────────────────────────
+// ── Camera: START is the blank frame, STOP is on the picture ─────────────
+//
+// Two elements rather than one toggle, because they are never both meaningful:
+// the target to press when there is no picture is the whole empty frame, and
+// once there IS a picture that target is gone — covering the view with a
+// button would be covering the instrument.
+function stopCamera() {
+  cvSource.stopCamera();                 // releases the camera hardware
+  faceSource.setFace(false);             // face/gaze read the same stream
+  faceSource.setGaze(false);
+  ['face-btn', 'gaze-btn'].forEach(id => {
+    const b = document.getElementById(id);
+    b.disabled = true; b.classList.remove('on');
+  });
+  setStatus('', 'STOPPED');
+  setLabel(document.getElementById('cv-btn'), 'START CAMERA');
+  document.body.classList.remove('cam-on');
+}
+document.getElementById('cv-stop').addEventListener('click', stopCamera);
+
 document.getElementById('cv-btn').addEventListener('click', async () => {
   const btn = document.getElementById('cv-btn');
-  if (cvSource.running) {
-    cvSource.stopCamera();               // releases the camera hardware
-    faceSource.setFace(false);           // face/gaze read the same stream
-    faceSource.setGaze(false);
-    ['face-btn', 'gaze-btn'].forEach(id => {
-      const b = document.getElementById(id);
-      b.disabled = true; b.classList.remove('on');
-    });
-    setStatus('', 'STOPPED');
-    setLabel(btn, 'START CAMERA');
-    btn.classList.remove('on');
-    document.body.classList.remove('cam-on');
-    return;
-  }
+  if (cvSource.running) return;          // the picture hides this button anyway
   btn.disabled = true;
   setLabel(btn, 'LOADING…');
   try {
     await cvSource.init();
     await cvSource.startCamera();
     setStatus('active', 'CV ACTIVE');
-    setLabel(btn, 'STOP CAMERA');
+    setLabel(btn, 'START CAMERA');
     btn.disabled = false;
-    btn.classList.add('on');
     buildSigPanel();
     renderMapper();
     // Face & gaze tracking are opt-in once the camera is running: they load a
@@ -282,7 +295,9 @@ const vizMuted = document.getElementById('viz-muted');
 // banner and the assistive-tech state can't drift apart.
 function syncMuteUI() {
   const m = engine.muted;
-  setLabel(audioBtn, m ? '🔇 MUTED' : '🔊 SOUND ON');
+  // An icon, not a caption: it sits on the picture now, where the shortest
+  // thing that still says which state you are in is the right size.
+  setLabel(audioBtn, m ? '🔇' : '🔊');
   audioBtn.classList.toggle('muted', m);
   audioBtn.classList.toggle('on', !m);
   audioBtn.setAttribute('aria-pressed', String(m));
@@ -303,7 +318,12 @@ async function toggleMute() {
   // frozen clock is safe: the AudioParam timeline is absolute, so it plays out
   // normally once the clock starts.
   engine.resume();
-  engine.setMuted(!engine.muted);
+  const nowMuted = engine.setMuted(!engine.muted);
+  // On an iPhone this click is also what decides whether the Ring/Silent
+  // switch applies to us — see audiosession.js. It hangs off unmuting rather
+  // than off startup because holding the session is not free: it stops
+  // whatever the phone was already playing.
+  if (nowMuted) audioSession.release(); else audioSession.hold();
   syncMuteUI();
 }
 
@@ -360,6 +380,9 @@ startAudio();
 // switched on (camera / face / gaze) rather than loading silently.
 initPresetMenu({
   onApply: async (preset, missing) => {
+    // A built-in patch is not one of your named setups: whatever was playing
+    // has been replaced, so the name on the camera view goes with it.
+    clearCurrentConfig();
     renderMapper();
     // Choosing a patch from the menu is the same statement the first-run picker
     // makes, so it earns the same tour — offered once per mode, and silently
@@ -380,6 +403,8 @@ initPresetMenu({
     if (!entry) { toast(`No saved setup called “${name}”`); return; }
     const { ok, uiChanged } = preset.applyAll(entry.snap);
     if (!ok) { toast(`Could not restore “${name}”`); return; }
+    // This IS what you are playing now — the camera view says so.
+    setCurrentConfig(name);
     refreshFromState();
     preset.saveLocal();
     if (uiChanged) {
@@ -431,8 +456,14 @@ async function applyTrackers(want) {
 // Face and gaze need a running camera, so a preset chosen before the camera
 // starts leaves its intent here and the camera-start path applies it.
 async function applyFaceIntent() {
-  if (!pendingFace || !cvSource.running) return [];
-  const { face, gaze } = pendingFace;
+  if (!cvSource.running) return [];
+  // A pending intent is a one-shot: a preset or a starting point asking for
+  // face/gaze before there was a stream to run them on. Falling back to the
+  // SAVED intent is what makes tracking resume when the camera does —
+  // stopping the camera switches face and gaze off (they read that stream),
+  // but putting the camera down is not a decision to stop using your
+  // eyebrows, which is exactly why the choice is remembered separately.
+  const { face, gaze } = pendingFace ?? savedFaceIntent();
   pendingFace = null;
   const changed = [];
   try {
@@ -505,8 +536,12 @@ cvSource.registerSignals();    // hand/pose signals are mappable up front
 faceSource.registerSignals();  // face/gaze signals are mappable up front
 gesture.registerSignals();     // gesture_<id> signals are mappable up front
 metronome.registerSignals();   // the beat clock is wirable like any signal
+// Every slider in the app gets a typed twin, including panels that rebuild
+// themselves and any slider added later — see ui/numeric.js.
+watchRanges();
 initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
+initCamBadge();           // saved-setup name (and, in dev, its QR) on the frame
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
 initSettings();           // ⚙ theme + hotkeys: how the tool looks and is driven
@@ -545,11 +580,23 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
     },
   });
 } else if (openedShare) {
-  // A setup that arrived by link gets the tour for what the link actually
-  // brought — and only the first time that link is followed. Reopening a QR
-  // pinned to a wall, or reloading, lands you on a setup that is already
-  // yours; being walked through it again is something to dismiss.
-  if (openedShare.first) offerTourForSharedSetup();
+  // A link is an invitation to PLAY, not to read a patchbay: someone pointed
+  // a phone at a QR code and the next thing they should see is themselves,
+  // full frame, with one thing to press. So a shared setup opens straight
+  // into the fullscreen camera view.
+  fullscreen.open();
+  // …and the tour waits for them to come back out of it. A walkthrough of
+  // panels that are currently behind a fullscreen camera is a walkthrough of
+  // nothing, and only the first time that link is followed: reopening a QR
+  // pinned to a wall lands you on a setup that is already yours.
+  if (openedShare.first) {
+    let toured = false;
+    fullscreen.onChange(active => {
+      if (active || toured) return;
+      toured = true;
+      offerTourForSharedSetup();
+    });
+  }
 } else {
   maybeOfferTour();
 }
