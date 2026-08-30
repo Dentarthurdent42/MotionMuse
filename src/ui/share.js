@@ -9,7 +9,7 @@ import { shareableSnapshot, encodeState, decodeState, shareUrl, readShareUrl,
          cleanShareLabel, SHARE_LABEL_MAX, shareFingerprint,
          QR_COMFORTABLE_VERSION } from '../share.js';
 import { encodeQR, drawQR } from '../qr.js';
-import { saveConfig } from '../saved.js';
+import { saveConfig, setCurrentConfig } from '../saved.js';
 import { toast } from './status.js';
 import { lsGet, lsSet } from '../storage.js';
 
@@ -74,6 +74,8 @@ function keep() {
   // named configuration is the instrument as it stands at the moment you named
   // it, and this is the same state the link is being built from.
   const entry = saveConfig(name, shareableSnapshot(snapshot()));
+  // Naming it is keeping it, and what you just named is what you are playing.
+  if (entry) setCurrentConfig(entry.name);
   if (entry && name !== kept) {
     kept = name;
     toast(`Kept as “${name}” — it is in PRESET`);
@@ -222,7 +224,8 @@ export async function consumeSharedLink() {
     // slider — there would be no way back to what arrived short of finding the
     // QR code again. Stored before the reload below, because localStorage is
     // what survives it.
-    saveConfig(data.label, shareableSnapshot(data));
+    const kept = saveConfig(data.label, shareableSnapshot(data));
+    if (kept) setCurrentConfig(kept.name);
     // Is this the first time this particular link has been followed? Only a
     // first open is worth a tour: reopening a pinned QR, or reloading, lands
     // you on a setup that is already yours.

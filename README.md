@@ -273,6 +273,19 @@ picture on a screen being read seconds later. If a setup is too large to fit
 any version, the popover says so and offers **COPY LINK**; the link always
 works, only the picture of it does not.
 
+**One cell is skipped: version 23 at ECC L.** Walking all 160 version/ECC
+combinations through jsQR turned up exactly one that does not survive the round
+trip — every mask, every payload length, on a clean 3×-scaled bitmap. The block
+layout for that cell agrees with the reader's own table (30 EC codewords over
+4×121 + 5×122), so the fault is somewhere not yet found rather than in a number
+that can simply be corrected. Until it is understood, `encodeQR` steps over it:
+a payload that would land on version 23 at L takes version 24 instead, four
+modules wider and scannable. A code nobody can read is worth strictly less than
+a slightly larger one, and finding out from a user whose QR does not work is not
+a trade worth making. The test sweep pins both the 159 that work and the one
+step-over, so this cannot be quietly undone — and if the underlying bug is ever
+found, one deleted line restores the cell.
+
 The **oscilloscope** at the top of the audio column is a section like any
 other: it folds away with its caret and can be dragged to another column. It
 lives *outside* the panel that `renderAudioPanel` rebuilds, because that rebuild
@@ -497,12 +510,76 @@ the QR code again.
 - **Capped at 24**, oldest dropped, with a **×** on each row to forget one. A
   name you have not saved under in months is the one you have stopped using,
   and a menu nobody can scroll is not a feature.
+- **Renamable in place** — **✎** on the row turns it into a text field. Enter
+  or clicking away commits, Escape abandons the edit (and only the edit: the
+  menu behind it is not what the key was aimed at). A rename in a dialog would
+  cover the list you are renaming *within*, and the one thing you need while
+  choosing a name is the names you have already used. Renaming onto a name
+  already in use is refused out loud rather than merged. This is where
+  renaming parts company with saving: saving under a used name replaces it
+  because you just built the thing you are storing, while renaming onto one
+  would destroy a setup you did not touch, to make room for one you only meant
+  to relabel. `renameConfig` refuses it too, not just the menu, so no future
+  caller can lose a patch by being careless.
+
+**The camera view says which one you are playing.** A patchbay full of cables
+does not tell you whether this is "ambient pads" or the thing you made after
+it, and in fullscreen the patchbay is not even on screen — so the name sits in
+the top-left corner of the frame (`src/ui/cam-badge.js`), out of the middle
+where you are. The marker behind it lives beside the setups, in
+`motionmuse-current-config`, and *not* in the session snapshot: "you are
+currently playing X" is a fact about this browser, and a shared link carrying
+it would mean nothing to whoever opened it. It is set when you load one of your
+setups or follow a named link, cleared when a built-in patch replaces the whole
+instrument, and **not** cleared when you move a slider — you are still playing
+your setup, just changed, and a name that vanished on the first knob turn would
+be a name nobody trusts.
+
+**In DEV mode, the setup itself is on the frame as a QR code** (bottom-right,
+opposite the tracker toggles). It is there so a setup can be handed over by
+photographing or screenshotting the picture, with no dialog in the way — which
+raised the question of how small such a code can honestly be.
+
+**How small: measured, not guessed.** Render the code at N device pixels per
+module, screenshot the pixels the browser actually painted, and hand them to
+**jsQR** — an independent decoder, not our own encoder agreeing with itself.
+The answer is **one pixel per module**: the default setup's link is 1328
+characters, which at ECC L needs a 121×121-module code — 121px, plus the
+spec's four-module quiet zone on each side, 129px square in all — and it
+decodes. (L for the same reason the SHARE dialog uses it: the tolerance the
+higher levels buy is for a code that is torn, dirty or badly lit, none of
+which happens to a screenshot taken seconds ago. It is also the fewest
+modules — M would need 137, so 145px.) The
+floor is not the module *size* but the requirement that modules land on
+**whole** pixels — a code scaled to 1.5× smears every module edge across two
+pixels and stops decoding long before a 1× one does. So the canvas is drawn at
+exactly 1 px per module and CSS never scales it:
+`drawQR(canvas, qr, { quiet: 4, min: 1, target: qr.size + 8 })`. `min` is
+drawQR's usual floor of 2 px per module, and that floor is there for a
+*camera* — the SHARE dialog keeps it, because a phone is reading a screen
+across a room. Only a caller whose reader is a screenshot of
+those exact pixels, with nothing optical in the path, should lower it. The
+layout suite pins the whole claim end to end — the 1:1 drawing, that the code
+stays inside the picture and anchored to its corner, and a real Playwright
+screenshot decoding back to the link the app would have shared — and
+`tests/unit/qr.test.js` pins the encoder half of it at 1 px/module across a
+range of payload sizes and both of the levels the app uses, so a regression
+surfaces in `npm run test:unit` and not only under a browser.
+
+Small does not mean *tiny in the frame*, though. The code is as small as the
+payload allows and no smaller, so a dense setup makes it a large fraction of a
+narrow camera panel — there is no scaling it down without breaking the thing
+that makes it readable. What holds instead is that it is `pointer-events:
+none`: it is a picture to photograph, never a control, so a code that reaches
+over a button can't take that button's click.
 
 The store is `src/saved.js`, in localStorage under `motionmuse-saved-v1`. It
 filters what it reads: an entry that is not a named snapshot is dropped rather
 than handed to the menu, which would otherwise render `undefined` and apply
 nothing when clicked. `tests/unit/saved-configs.test.js` covers the round trip,
-the replace-by-name rule, the cap, and what happens to junk in storage.
+the replace-by-name rule, the cap, and what happens to junk in storage;
+`tests/unit/saved-rename.test.js` covers renaming, the refusal to rename onto
+a name in use, and the "currently playing" marker following a rename.
 
 ## Loop pedal
 
@@ -1840,6 +1917,7 @@ src/
     resize.js       Draggable panel splitters (desktop)
     viewport.js     isDesktop() breakpoint check, shared with main.css
     fullscreen.js   Fullscreen camera view + keyboard overlay
+    cam-badge.js    Setup name on the frame (+ the DEV-mode QR of it)
     keyboard.js     Shared piano-keyboard renderer
     playalong-ui.js Falling-note highway renderer + game panel
     gesture-ui.js   Gesture Mode panel section (assignments + handshape library)

@@ -882,6 +882,147 @@ const firstrun = await (async () => {
   return { shown, blank, again, chords, errs };
 })();
 
+// ── Saved setups: the name on the camera view, renaming, and the dev QR ───
+//
+// Three claims, all of which have to hold at once for the feature to be worth
+// anything: the frame says WHICH of your setups is playing, the name can be
+// changed without losing the setup, and the dev-mode code on the frame is
+// small AND still decodes from a screenshot of the screen. The last one is
+// measured the only way it can honestly be measured — screenshot the pixels
+// Chromium actually painted, hand them to an independent decoder, and compare
+// the text with the link the app would have shared.
+const presets = await (async () => {
+  const page = await b.newPage({ viewport: { width: 1280, height: 900 } });
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+
+  // Saved from what is already loaded, minus the `ui` block: restoring theme
+  // and tracker state reloads the page (those are read at startup by the
+  // modules that own them), and a reload mid-test would be measuring the
+  // reload rather than the badge. A setup without one is a real shape — it is
+  // what a config saved before UI keys existed looks like — and everything
+  // under test here is downstream of `applyAll` either way.
+  await page.evaluate(async () => {
+    const { saveConfig } = await import('/src/saved.js');
+    const { snapshot }   = await import('/src/preset.js');
+    const bare = () => { const s = snapshot(); delete s.ui; return s; };
+    saveConfig('evening pads', bare());
+    saveConfig('bright lead', bare());
+  });
+
+  const openMenu = async () => {
+    await page.evaluate(() => {
+      if (document.getElementById('preset-pop')?.hidden !== false)
+        document.getElementById('preset-btn').click();
+    });
+    await page.waitForTimeout(150);
+  };
+  const names = () => page.evaluate(() =>
+    [...document.querySelectorAll('#preset-pop [data-config]')].map(e => e.dataset.config));
+  const badge = () => page.evaluate(() => {
+    const el = document.getElementById('cam-name');
+    return { text: el.textContent, hidden: el.hidden };
+  });
+
+  await openMenu();
+  const listed = await names();
+  await page.click('#preset-pop [data-config="evening pads"]');
+  await page.waitForTimeout(300);
+  const applied = await badge();
+
+  // Renaming: the badge mirrors the marker, so it has to follow the new name
+  // rather than keep pointing at a setup that no longer exists.
+  await openMenu();
+  await page.click('#preset-pop [data-ren="evening pads"]');
+  await page.fill('#preset-pop .preset-rename', 'midnight pads');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  const renamed = { list: await names(), badge: await badge() };
+
+  // Onto a name already in use: refused, and BOTH setups survive. Allowing it
+  // would quietly delete the other one's patch.
+  await openMenu();
+  await page.click('#preset-pop [data-ren="midnight pads"]');
+  await page.fill('#preset-pop .preset-rename', 'bright lead');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  const collided = await names();
+
+  // Escape abandons the edit — and only the edit. The menu underneath it is
+  // not what the key was aimed at.
+  await openMenu();
+  await page.click('#preset-pop [data-ren="midnight pads"]');
+  await page.fill('#preset-pop .preset-rename', 'gone');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  const escaped = {
+    list: await names(),
+    open: await page.evaluate(() => document.getElementById('preset-pop').hidden === false),
+  };
+
+  // A built-in patch replaces the whole thing, so the name goes with it.
+  await openMenu();
+  await page.click('#preset-pop [data-preset="hands"]');
+  await page.waitForTimeout(400);
+  const afterPreset = await badge();
+
+  // ── The dev-mode code, read back off the screen ──
+  await toggleDev(page);
+  await page.waitForTimeout(2600);          // past cam-badge's re-encode window
+  const qr = await page.evaluate(() => {
+    const wrap = document.getElementById('cam-qr');
+    const c = document.getElementById('cam-qr-canvas');
+    const r = c.getBoundingClientRect();
+    const w = wrap.getBoundingClientRect();
+    const frame = document.getElementById('video-wrap').getBoundingClientRect();
+    return {
+      shown: !wrap.hidden && getComputedStyle(wrap).display !== 'none',
+      px: c.width,
+      // Drawn at exactly one CSS pixel per module: any scaling is what puts
+      // module edges between pixels, and that is what a decoder trips on.
+      cssW: Math.round(r.width), cssH: Math.round(r.height),
+      wrapW: Math.round(w.width), wrapH: Math.round(w.height),
+      frameW: Math.round(frame.width), frameH: Math.round(frame.height),
+      // The code cannot shrink to fit — that is the whole point — so what has
+      // to hold instead is that it never takes a click away from a control.
+      clickThrough: getComputedStyle(wrap).pointerEvents === 'none',
+      // Anchored to the corner it was put in, whatever size it comes out.
+      inset: {
+        right:  Math.round(frame.right - w.right),
+        bottom: Math.round(frame.bottom - w.bottom),
+      },
+    };
+  });
+  // The link the app would share right now, and the code it needs — for
+  // comparison with what the decoder reads back out of the picture, and with
+  // the number of pixels it was given to say it in.
+  const want = await page.evaluate(async () => {
+    const { shareableSnapshot, encodeState, shareUrl } = await import('/src/share.js');
+    const { encodeQR } = await import('/src/qr.js');
+    const url = shareUrl(await encodeState(shareableSnapshot()));
+    return { url, modules: encodeQR(url, { ecc: 'L' }).size };
+  });
+  const shot = await page.locator('#cam-qr').screenshot();
+  await page.addScriptTag({ path: join(ROOT, 'node_modules/jsqr/dist/jsQR.js') });
+  const decoded = await page.evaluate(async b64 => {
+    const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+    const bmp = await createImageBitmap(new Blob([bin], { type: 'image/png' }));
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    const img = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+    return {
+      w: bmp.width, h: bmp.height,
+      text: globalThis.jsQR(img.data, img.width, img.height)?.data ?? null,
+    };
+  }, shot.toString('base64'));
+
+  await page.close();
+  return { listed, applied, renamed, collided, escaped, afterPreset, qr, want, decoded, errs };
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -1274,6 +1415,60 @@ for (const t of hud.themes) {
   // not with it, or it disappears into the feed the stage has tinted.
   check(t.dark ? t.ink > 0.7 : t.ink < 0.3,
     `${t.id}: the overlay's neutral ink opposes the stage`, `luminance ${t.ink.toFixed(3)}`);
+}
+
+// ── Saved setups: name on the frame, renaming, and the dev QR ──
+console.log('\nSaved setups\n');
+{
+  const p = presets;
+  check(p.errs.length === 0, 'no page errors', p.errs.join(' | '));
+  check(p.listed.join('|') === 'bright lead|evening pads',
+    'your setups are listed, newest first', p.listed.join('|'));
+  check(p.renamed.list.join('|') === 'bright lead|midnight pads',
+    'a rename does not reorder the list — renaming is not saving',
+    p.renamed.list.join('|'));
+  check(p.applied.text === 'evening pads' && !p.applied.hidden,
+    'loading a setup names the camera view', `“${p.applied.text}” hidden=${p.applied.hidden}`);
+  check(p.renamed.list.includes('midnight pads') && !p.renamed.list.includes('evening pads'),
+    'renaming replaces the name rather than adding a second row', p.renamed.list.join('|'));
+  check(p.renamed.badge.text === 'midnight pads',
+    'the camera view follows the rename', `“${p.renamed.badge.text}”`);
+  check(p.collided.length === 2 && p.collided.includes('midnight pads')
+     && p.collided.includes('bright lead'),
+    'renaming onto a name in use is refused, and neither setup is lost',
+    p.collided.join('|'));
+  check(p.escaped.list.includes('midnight pads') && !p.escaped.list.includes('gone'),
+    'Escape abandons the edit', p.escaped.list.join('|'));
+  check(p.escaped.open, 'Escape closes the field, not the menu behind it');
+  check(p.afterPreset.hidden && p.afterPreset.text === '',
+    'a built-in patch clears the name — it is not one of yours',
+    `“${p.afterPreset.text}” hidden=${p.afterPreset.hidden}`);
+
+  const q = p.qr, w = p.want;
+  check(q.shown, 'DEV puts the setup on the frame as a code');
+  // One pixel per module, plus the spec's 4-module quiet zone on each side,
+  // and no CSS scaling on top — a module smeared across a pixel boundary is
+  // what actually stops a code decoding, not a module being small.
+  check(q.px === w.modules + 8,
+    'the code is drawn at exactly one pixel per module, quiet zone included',
+    `${w.modules} modules + 8 → ${q.px}px`);
+  check(q.cssW === q.px && q.cssH === q.px,
+    'and CSS does not scale it back up', `${q.cssW}x${q.cssH}px on a ${q.px}px canvas`);
+  // The code cannot be made smaller — that is the finding — so a dense setup
+  // makes it a large fraction of a small camera panel. What has to hold is
+  // that it stays INSIDE the picture, in the corner it was put in, and never
+  // takes a click from the controls it may reach over.
+  check(q.wrapW <= q.frameW && q.wrapH <= q.frameH,
+    'it fits inside the picture', `${q.wrapW}x${q.wrapH} in ${q.frameW}x${q.frameH}`);
+  check(q.inset.right === 6 && q.inset.bottom === 6,
+    'anchored to the bottom-right corner', JSON.stringify(q.inset));
+  check(q.clickThrough, 'and never swallows a click — it is a picture, not a control');
+  // The claim being tested: readable from a SCREENSHOT of the screen, which is
+  // what someone photographing or grabbing the window actually gets.
+  check(p.decoded.text === w.url,
+    'a screenshot of that code decodes back to this setup’s link',
+    p.decoded.text === null ? `no code found in ${p.decoded.w}x${p.decoded.h}px`
+      : `${p.decoded.text.length} chars, ${p.decoded.text === w.url ? 'match' : 'MISMATCH'}`);
 }
 
 console.log(`\n${fail} failure(s)\n`);
