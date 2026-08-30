@@ -22,7 +22,10 @@ test('feature vector, weights and neutrals stay the same length', () => {
 });
 
 test('identical features match at distance 0', () => {
-  const t = gesture.list()[0];
+  // Any measured template will do — asked for by hand rather than taken from
+  // the front of the list, which is ordered by ASL gloss and so is not a
+  // promise about which shape sits there, or that it has a template at all.
+  const t = gesture.list().find(g => g.f);
   const m = matchGesture(t.f, [t]);
   assert.equal(m.id, t.id);
   assert.ok(m.dist < 1e-9);

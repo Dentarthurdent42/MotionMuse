@@ -156,6 +156,28 @@ const BUILTINS = [
 // Display name including the ASL numeral, e.g. "Point · ASL 1".
 export const gestureLabel = g => g.asl ? `${g.name} · ASL ${g.asl}` : g.name;
 
+// Display order.
+//
+// Declaration order above is a *narrative* — the classic shapes, then the
+// numbers, then the two the classifier brings — which is the right order to
+// read the table in and the wrong one to hunt a shape in. Where a handshape
+// IS an ASL handshape, its gloss is the name it already has in the language,
+// so the gloss is what orders it.
+//
+// Lexicographically, and literally so: a plain string sort, which puts "10"
+// between "1" and "2". That is what lexicographic means, and it is also the
+// only ordering that seats one sequence of glosses that are numerals AND
+// letters — special-casing the numerals numerically would leave "L", "S" and
+// "ILY" with no defined place among them.
+//
+// Handshapes with no gloss are not ASL and are not reordered: Rock Horns and
+// Thumbs Down follow, in the order they are declared, and recorded shapes are
+// the user's own and stay in the order they made them (they are appended by
+// the caller, after this).
+const byGloss = (a, b) => (a.asl < b.asl ? -1 : a.asl > b.asl ? 1 : 0);
+export const orderByGloss = list =>
+  [...list.filter(g => g.asl).sort(byGloss), ...list.filter(g => !g.asl)];
+
 // ── MediaPipe canned gestures ─────────────────────────────────────────────
 //
 // The hand model is now MediaPipe's GestureRecognizer, which is the same hand
@@ -306,8 +328,8 @@ export const gesture = (() => {
   const CANNED_TTL = 4;          // frames; the hand model runs every other one
 
   const all = () => [
-    ...BUILTINS.filter(g => !hiddenBuiltins.has(g.id))
-               .map(g => recal.has(g.id) ? { ...g, f: recal.get(g.id), est: false } : g),
+    ...orderByGloss(BUILTINS.filter(g => !hiddenBuiltins.has(g.id)))
+        .map(g => recal.has(g.id) ? { ...g, f: recal.get(g.id), est: false } : g),
     ...custom,
   ];
 

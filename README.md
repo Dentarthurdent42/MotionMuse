@@ -1039,13 +1039,34 @@ carry recognition exactly as before. Detection is per-instance at the call
 site, so nothing downstream knows which one it got.
 
 The **Gestures** section recognizes hand poses and turns them into discrete
-triggers. Sixteen built-in gestures ship ready to use — **fist, point, peace,
-thumbs-up, thumbs-down, open palm, rock horns, finger gun** (thumb and index
-extended, the ASL **L**) and **I love you**, plus the **ASL number handshapes**
-in their own collapsed group — and **● REC** records your own: name it, hold the pose
-during the 3-2-1 countdown, and it's captured (camera must be running).
-Any gesture, built-in included, can be removed with its × (removals persist;
-**RESTORE BUILT-IN GESTURES** brings the defaults back).
+triggers. Sixteen built-in gestures ship ready to use — **closed O, point,
+thumbs-up, peace, three, four, open palm** and the four **fingertip-touch**
+numbers, then **I love you, finger gun** (thumb and index extended, the ASL
+**L**), **fist, rock horns** and **thumbs-down** — and **● REC** records your
+own: name it, hold the pose during the 3-2-1 countdown, and it's captured
+(camera must be running). Any gesture, built-in included, can be removed with
+its × (removals persist; **RESTORE BUILT-IN GESTURES** brings the defaults
+back).
+
+**One list, in ASL gloss order.** Where a handshape *is* an ASL handshape it
+already has a name in the language, so that name is what orders it: 0, 1, 10,
+2, 3, 4, 5, 6, 7, 8, 9, ILY, L, S. Lexicographically, and literally so — a
+plain string sort, which is why 10 sits between 1 and 2. That looks like a bug
+and is the point. Sorting the numerals numerically would read better for
+exactly as long as it took to ask where **L**, **S** and **ILY** go, and the
+answer would have to be a second rank maintained by hand beside the glosses.
+One sort over one field seats all fourteen. Handshapes with no gloss — rock
+horns, thumbs-down — are not ASL and are not reordered; they follow, and
+recorded shapes stay last in the order you made them.
+
+The number handshapes used to fold away into their own **ASL NUMBERS** group,
+on the theory that they were a set you opted into. But that split the library
+by an accident of which shapes happen to have descriptive names as well as
+glosses: 1, 2, 5 and 10 sat above the fold as Point, Peace, Open Palm and
+Thumbs Up, while 0 and 3–9 sat below it. Ordering everything by gloss is what
+makes a single list scannable, so the group had nothing left to do.
+`tests/unit/gesture-order.test.js` pins the sequence, including the 1 · 10 · 2
+run, so it cannot be quietly "fixed".
 
 Every gesture is also exposed as a mappable bus signal `gesture_<id>`, so a
 gesture can drive *any* audio parameter, not just chords.
