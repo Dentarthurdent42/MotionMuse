@@ -17,6 +17,7 @@ import { diatonicChord, diatonicNote, isDiatonic, isDegreeScale, degreeCountOf,
 import { NOTE_NAMES }                 from './scale.js';
 import { notePool }                   from './arp.js';
 import { arpvoice }                   from './arpvoice.js';
+import { isString }                   from './is.js';
 
 export const DEFAULT_KEY = {
   root: 'C',
@@ -708,6 +709,16 @@ export const chordmode = (() => {
 
     serialize() {
       return { enabled, key: { ...key }, assignments: { ...assignments },
+               // The panel's own view of the mapping: one slot per degree,
+               // null where you cleared it. `assignments` is gestureId → degree
+               // and so cannot say "this degree is empty" — an emptied degree
+               // simply has no entry, which on the way back in is
+               // indistinguishable from a save that predates the degree, and
+               // the merge below then handed the default straight back. That is
+               // why a cleared chord kept reappearing after following a link.
+               // Both are written: `degrees` is authoritative, `assignments`
+               // keeps older readers working.
+               degrees: Array.from({ length: DEGREES }, (_, i) => gestureFor(i)),
                sevenths: sevenths.slice(), releaseGesture, expression: { ...expr },
                voicing, namingHand, accidentals: { ...accGestures } };
     },
@@ -722,9 +733,19 @@ export const chordmode = (() => {
         ? Array.from({ length: DEGREES }, (_, i) => !!data.sevenths[i])
         : [...DEFAULT_SEVENTHS];
 
-      if (data.assignments) {
-        // Merge over the defaults rather than replacing them, so gestures added
-        // in a later version still arrive with a chord for existing users.
+      if (Array.isArray(data.degrees)) {
+        // The authoritative form: exactly what the panel showed, empties and
+        // all. No merge — every degree is accounted for, so a default filling
+        // one in could only contradict what was saved.
+        assignments = {};
+        data.degrees.slice(0, DEGREES).forEach((id, i) => {
+          if (isString(id) && id) assignments[id] = normDegree(i);
+        });
+      } else if (data.assignments) {
+        // Older saves. Merge over the defaults rather than replacing them, so
+        // gestures added in a later version still arrive with a chord for
+        // existing users — accepting that an emptied degree comes back filled,
+        // because nothing in this format distinguishes the two.
         const merged = { ...DEFAULT_ASSIGNMENTS };
         for (const [id, a] of Object.entries(data.assignments)) {
           if (Number.isFinite(a)) { merged[id] = normDegree(a); continue; }

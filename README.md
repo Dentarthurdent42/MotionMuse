@@ -478,6 +478,41 @@ it. `tests/layout/index.js` checks, in a real browser at every width, that
 every slider is paired, that a typed value reaches the parameter exactly, and
 that no section starts scrolling because of it.
 
+### What a link carries, and three things it used to drop
+
+A shared link is `shareableSnapshot()` — the whole `snapshot()`, with the `ui`
+block filtered down to what describes the *instrument* rather than the window.
+Three things were escaping it, and they were not all the same kind of bug:
+
+- **Shepard was never in `engine.snapshot()` at all.** Not a share bug: a saved
+  file and a session restore lost it too. It is a different *sound* — the
+  voices are rebuilt as octave stacks — so it was the one part of the patch no
+  snapshot could describe. It restores *before* the parameters, because
+  `setShepard` rebuilds the affected bank and a rebuild afterwards would hand
+  the new voices their defaults.
+- **A chord-gesture selection survived unless you had cleared one.** The saved
+  form is `assignments`, a `gestureId → degree` map, in which an emptied degree
+  simply has no entry — which on the way back in is indistinguishable from a
+  save made before that degree existed, and the merge-over-defaults then handed
+  the default straight back. `serialize()` now also writes `degrees`: one slot
+  per degree, `null` where you cleared it, which is exactly what the panel
+  shows. When present it is authoritative and nothing is merged; when absent
+  (an older save) the merge runs as before, because for *that* format filling
+  a gap in really is the better guess.
+- **The pedal lived in three loose keys nothing collected.** Which gesture
+  drives the looper transport, its sensitivity, and whether it is armed sat in
+  `motionmuse-pedal-{src,sens,on}`, outside `UI_KEYS` — so the one thing about
+  the pedal you actually have to tune was lost by every save, every session
+  restore and every link.
+
+`hotkeys` and `uicontrol` now travel too, for the reason `tracking` always did:
+they are how a setup is *played*. A patch whose looper answers a nod at a tuned
+sensitivity, or whose author expects you to drive the panel with your hands,
+arrives unplayable without them — the same failure as handing someone a mapping
+without the tracker that feeds it. Geometry still stays behind: panel widths,
+section order, folds and heights describe the screen it was arranged on, and so
+does the pose-model choice, which is a judgement about one machine's GPU.
+
 ### Two bars, two different numbers
 
 Every node shows its live strength as a bar along its bottom edge, in the
