@@ -13,6 +13,7 @@ import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
 import { initResize }                       from './ui/resize.js';
 import { initFullscreen, updateFsOverlay, fullscreen } from './ui/fullscreen.js';
+import { initCamBadge, updateCamBadge }     from './ui/cam-badge.js';
 import { playalong }                        from './playalong.js';
 import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
 import { gesture }                          from './gesture.js';
@@ -26,7 +27,8 @@ import { shader }                           from './shader.js';
 import { initDonate }                       from './ui/donate.js';
 import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
-import { findConfig }                       from './saved.js';
+import { findConfig, setCurrentConfig,
+         clearCurrentConfig }               from './saved.js';
 import { initTutorial, maybeOfferTour, offerTourForMode, offerTourForSharedSetup } from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { enhanceSections, colorSections }   from './ui/sections.js';
@@ -91,6 +93,7 @@ function loop() {
   drawViz();
   shader.render();       // cheap no-op unless the shader panel is active
   updateFsOverlay();     // cheap no-op unless fullscreen is active
+  updateCamBadge();      // which saved setup is playing; dev-mode share code
   updateGamePanel();     // cheap no-op unless a song is running
   updateUicOverlay();    // cheap no-op unless the hand cursor is live
   updateStage();         // cheap no-op unless the gesture stage is up
@@ -371,6 +374,9 @@ startAudio();
 // switched on (camera / face / gaze) rather than loading silently.
 initPresetMenu({
   onApply: async (preset, missing) => {
+    // A built-in patch is not one of your named setups: whatever was playing
+    // has been replaced, so the name on the camera view goes with it.
+    clearCurrentConfig();
     renderMapper();
     // Choosing a patch from the menu is the same statement the first-run picker
     // makes, so it earns the same tour — offered once per mode, and silently
@@ -391,6 +397,8 @@ initPresetMenu({
     if (!entry) { toast(`No saved setup called “${name}”`); return; }
     const { ok, uiChanged } = preset.applyAll(entry.snap);
     if (!ok) { toast(`Could not restore “${name}”`); return; }
+    // This IS what you are playing now — the camera view says so.
+    setCurrentConfig(name);
     refreshFromState();
     preset.saveLocal();
     if (uiChanged) {
@@ -527,6 +535,7 @@ metronome.registerSignals();   // the beat clock is wirable like any signal
 watchRanges();
 initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
+initCamBadge();           // saved-setup name (and, in dev, its QR) on the frame
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
 initSettings();           // ⚙ theme + hotkeys: how the tool looks and is driven

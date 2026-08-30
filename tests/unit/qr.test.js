@@ -49,6 +49,25 @@ test('jsQR is available — otherwise these tests prove nothing', () => {
   assert.ok(jsQR, 'devDependency jsqr is missing; `npm install` before running');
 });
 
+// The camera view's DEV badge draws one pixel per module — the smallest a
+// code can honestly be — and that claim is only worth making if a decoder
+// agrees. The browser suite checks the real canvas and a real screenshot;
+// this checks the encoder itself at that density, at realistic link sizes,
+// so a regression shows up in `npm run test:unit` rather than only under
+// Playwright.
+test('a code decodes at ONE pixel per module', { skip: !jsQR }, () => {
+  for (const ecc of ['L', 'M']) {
+    for (const len of [64, 256, 512, 900, 1400]) {
+      const text = `https://example.com/#s=${'AbC-9_zQ'.repeat(Math.ceil(len / 8)).slice(0, len)}`;
+      const qr = encodeQR(text, { ecc });
+      const { data, width, height } = bitmap(qr, 1);
+      assert.equal(width, qr.size + 8, 'one pixel per module, plus the quiet zone');
+      assert.equal(jsQR(data, width, height)?.data, text,
+        `ECC ${ecc} v${qr.version} (${qr.size} modules) at 1px/module`);
+    }
+  }
+});
+
 test('a short payload round-trips', () => {
   const { decoded } = roundTrip('HELLO');
   assert.equal(decoded, 'HELLO');
@@ -121,4 +140,33 @@ test('raw bytes encode as well as strings', () => {
   const qr = encodeQR(bytes, { ecc: 'M' });
   const { data, width, height } = bitmap(qr);
   assert.equal(jsQR(data, width, height)?.data, 'raw-bytes-path');
+});
+
+// Every version at every ECC level, round-tripped. Written after a share
+// payload produced a code no decoder could read: the app defaults to ECC M,
+// so nothing shipped broken, but "the encoder works" was only ever checked on
+// the handful of sizes a test happened to reach. 160 cells is cheap certainty.
+test('every version/ECC cell round-trips through a real decoder', { skip: !jsQR }, () => {
+  const bad = [];
+  for (const ecc of ['L', 'M', 'Q', 'H']) {
+    for (let v = 1; v <= 40; v++) {
+      const text = `v${v}${ecc}`;
+      let out;
+      try { out = roundTrip(text, { ecc, minVersion: v }); } catch { continue; }
+      if (out.decoded !== text) bad.push(`${ecc}v${out.qr.version}`);
+    }
+  }
+  assert.deepEqual(bad, [], `unreadable: ${bad.join(', ')}`);
+});
+
+// The one cell that does not survive that trip is skipped rather than shipped
+// (see isBadCell in qr.js). Pinned so it cannot be quietly re-enabled: asking
+// for it hands back the next version up, which is scannable.
+test('version 23 at ECC L is stepped over, not emitted', { skip: !jsQR }, () => {
+  const qr = encodeQR('anything', { ecc: 'L', minVersion: 23 });
+  assert.equal(qr.version, 24,
+    'a payload that would land on 23-L takes 24 instead');
+  // …and the neighbours are untouched: this is one cell, not a range.
+  assert.equal(encodeQR('anything', { ecc: 'L', minVersion: 22 }).version, 22);
+  assert.equal(encodeQR('anything', { ecc: 'M', minVersion: 23 }).version, 23);
 });

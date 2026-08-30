@@ -108,6 +108,16 @@
           <video id="video" autoplay playsinline muted></video>
           <canvas id="overlay"></canvas>
           <canvas id="face-overlay"></canvas>
+          <!-- Which of YOUR setups is playing, if it is one of yours. Top-left,
+               opposite the picture's own controls, so it reads as a caption on
+               the view rather than another button. Absent entirely when
+               nothing is named — an empty label is worse than no label. -->
+          <div class="cam-name" id="cam-name" hidden></div>
+          <!-- DEV: the setup as a QR code, at the smallest size that survives
+               a screenshot. Measured, not guessed — see the README. -->
+          <div class="cam-qr uc-feature" id="cam-qr" role="img" hidden>
+            <canvas id="cam-qr-canvas"></canvas>
+          </div>
           <!-- What you reach for while playing, or while handing the thing to
                someone else: on the picture, where your eyes already are, and
                small and quiet so it never competes with what it sits over.

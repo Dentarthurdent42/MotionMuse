@@ -352,6 +352,41 @@ html, body {
   border-bottom: 1px solid var(--border);
 }
 
+/* The name of the setup you are playing, captioning the view. Quiet: it is a
+   label, not a control, and it sits over a moving picture. */
+.cam-name {
+  position: absolute; top: 6px; left: 6px; z-index: 3;
+  max-width: 60%;
+  padding: 2px 7px;
+  font-size: 9px; letter-spacing: 1px;
+  /* The same tinted glass the picture's own controls sit on, so the caption
+     belongs to the view in every theme — a hardcoded dark plate would be a
+     hole punched in the light ones, with dark ink on it. */
+  color: var(--glass-ink);
+  background: color-mix(in oklab, var(--glass) 55%, transparent);
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
+}
+/* DEV only: the whole setup as a QR code, small enough to be a corner of the
+   picture and no smaller — 1 pixel per module is the floor a screenshot can
+   still be read at, so the canvas is never scaled up or down (a fractional
+   module is what makes a QR blur into something no camera locks onto). The
+   quiet zone is drawn INSIDE the canvas; this padding is a frame, so the
+   code has an edge against a bright frame of video as well as a dark one. */
+.cam-qr {
+  position: absolute; bottom: 6px; right: 6px; z-index: 3;
+  padding: 3px;
+  background: #fff;
+  border-radius: 2px;
+  line-height: 0;
+  /* A picture to photograph, never a control. A dense setup makes a code
+     wider than a small camera panel's corner, and a code that swallowed the
+     clicks of whatever it reached over would be worse than one that overlaps. */
+  pointer-events: none;
+}
+.cam-qr canvas { image-rendering: pixelated; display: block; }
 /* The picture's own controls: what you reach for while playing or while
    handing the instrument to someone else. Bottom-left, opposite the
    .cam-toggles strip, so neither covers the other and the middle of the
@@ -630,7 +665,16 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .preset-row .preset-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Named by its owner, so it can be anything — including a name long enough to
    push the × off the edge if it were allowed to set the width. */
-.preset-del { flex: 0 0 auto; align-self: flex-start; margin-top: 5px; }
+.preset-del,
+.preset-ren { flex: 0 0 auto; align-self: flex-start; margin-top: 5px; }
+/* The field takes the whole row it replaces, so the name is edited at the size
+   and place it is read. */
+.preset-rename {
+  flex: 1; min-width: 0; width: 100%;
+  background: var(--bg); border: 1px solid var(--purple);
+  color: var(--fg); font: inherit; font-size: 11px;
+  padding: 5px 6px;
+}
 
 /* ── Loop pedal ──────────────────────────────────────────── */
 /* The transport reads left to right: where the playhead is, then what state
@@ -768,6 +812,11 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
 /* A clean, video-player-like view: no latency HUD while fullscreen. */
 #video-wrap.fs-active #latency-bar { display: none; }
 body.no-scroll { overflow: hidden; }
+
+/* Fullscreen is where the name matters most — the patchbay that would
+   otherwise tell you which setup this is has gone off screen — and it is also
+   where a 9px caption disappears. It grows with the picture. */
+#video-wrap.fs-active .cam-name { top: 12px; left: 12px; font-size: 13px; padding: 4px 10px; }
 
 /* The KEYS toggle only makes sense in fullscreen. */
 .cam-toggles .fs-only { display: none; }
@@ -2663,6 +2712,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   .preset-item:hover { background: var(--faint); }
   .preset-item:hover .preset-name { color: var(--cyan); }
   .preset-del:hover { color: var(--red); border-color: var(--red); }
+  .preset-ren:hover { color: var(--purple); border-color: var(--purple); }
   .depth-toggle:hover { color: var(--cyan); border-color: var(--cyan); }
   .sig-row:hover { background: var(--faint); }
   .ng-node-del:hover { background: var(--faint); color: var(--text); }
