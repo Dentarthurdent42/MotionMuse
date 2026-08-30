@@ -24,6 +24,12 @@
 
 const PAIRED = 'data-num-paired';
 
+// Every (slider, field) pair on the page, so the fields can be brought back
+// into step once a frame. Entries whose slider has left the document are
+// dropped as they are noticed — panels rebuild their own markup, and holding
+// their old nodes would be a leak that grows with every re-render.
+const pairs = [];
+
 // Units live in the readout text ("0.55s", "40%"), which a number input
 // cannot hold. The suffix moves to a sibling so the value stays a number —
 // and so a cable-driven value can be written back without re-parsing it.
@@ -121,8 +127,14 @@ export function enhanceRanges(root = document) {
     } else {
       range.insertAdjacentElement('afterend', f);
     }
-    // Dragging the slider moves the number with it.
+    // Dragging the slider moves the number with it…
     range.addEventListener('input', () => { if (!editing(f)) f.value = trim(range.value); });
+    // …and so does anything that moves the slider WITHOUT an event: a cable
+    // driving the parameter, a preset load, a panel writing `.value` back.
+    // Setting `.value` in script fires nothing, so an event listener alone
+    // leaves the number reading whatever it last saw. Cheap: a few dozen
+    // elements, one string compare each.
+    pairs.push({ range, f });
   }
 }
 
@@ -138,6 +150,19 @@ export function setReadout(el, text) {
   if (editing(el)) return;
   const num = trim(String(text).replace(UNIT_RE, '').trim());
   if (el.value !== num) el.value = num;
+}
+
+// Called once a frame from the main loop. The field follows the slider, which
+// is the one thing that is always current: it is what the app's own handlers
+// write, what a cable drives, and what a drag moves.
+export function syncNumbers() {
+  for (let i = pairs.length - 1; i >= 0; i--) {
+    const { range, f } = pairs[i];
+    if (!range.isConnected) { pairs.splice(i, 1); continue; }
+    if (editing(f)) continue;              // never fight the caret
+    const v = trim(range.value);
+    if (f.value !== v) f.value = v;
+  }
 }
 
 // Panels rebuild their own innerHTML, so the pairing has to be re-applied —
