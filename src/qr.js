@@ -125,6 +125,21 @@ class Bits {
  * @returns {{size: number, version: number, ecc: string, modules: Uint8Array}}
  *          modules is row-major, 1 = dark.
  */
+// Version 23 at ECC L does not survive a round trip through an independent
+// decoder — every mask, every payload length, on a clean 3×-scaled bitmap.
+// Our block layout for that cell agrees with the reader's own table (30 EC
+// codewords over 4×121 + 5×122), so the fault is somewhere we have not yet
+// found rather than in a number we can correct; every one of the other 159
+// version/ECC cells round-trips (tests/unit/qr.test.js walks all of them).
+//
+// Until it is understood, that cell is skipped: a payload that would land
+// there takes version 24 instead, which is 4 modules wider and scannable. A
+// code nobody can read is worth strictly less than a slightly larger one, and
+// the alternative — shipping it and finding out from a user whose QR does not
+// work — is not a trade worth making. `minVersion: 23, ecc: 'L'` therefore
+// returns version 24, which the tests pin so this cannot be quietly undone.
+const isBadCell = (ver, ecc) => ver === 23 && ecc === 'L';
+
 export function encodeQR(input, { ecc = 'M', minVersion = 1 } = {}) {
   // `=== undefined`, not falsy: level L is index 0.
   if (ECC_LEVELS[ecc] === undefined) throw new Error(`unknown ECC level ${ecc}`);
@@ -134,6 +149,7 @@ export function encodeQR(input, { ecc = 'M', minVersion = 1 } = {}) {
   // capacity is checked against the version actually being tried.
   let ver = -1;
   for (let v = Math.max(1, minVersion); v <= 40; v++) {
+    if (isBadCell(v, ecc)) continue;
     const cap = dataCodewords(v, ecc) * 8;
     if (4 + countBits(v) + bytes.length * 8 <= cap) { ver = v; break; }
   }
@@ -368,14 +384,19 @@ function penalty(m, size) {
  * module size is what makes a QR blur and stop scanning.
  * `quiet` is the mandatory light border, in modules (the standard says 4).
  */
-export function drawQR(canvas, qr, { quiet = 4, dark = '#000', light = '#fff', target = 640 } = {}) {
+export function drawQR(canvas, qr, { quiet = 4, dark = '#000', light = '#fff', target = 640, min = 2 } = {}) {
   const total = qr.size + quiet * 2;
   // Backing store sized independently of the CSS box, and generously: a phone
   // reading a code off another screen is working from whatever the display
   // renders, and at 2px per module a dense code is at the edge of legible.
   // Whole pixels per module, always — a fractional module is what makes a QR
   // blur into something no camera will lock onto.
-  const scale = Math.max(2, Math.floor(target / total));
+  //
+  // `min` is that 2px floor, and it is a floor for a CAMERA. A caller whose
+  // reader is a screenshot of these exact pixels — nothing optical in the
+  // path, nothing to focus — can lower it to 1, which is where the format
+  // itself bottoms out. Nobody should lower it for a code a phone will read.
+  const scale = Math.max(min, Math.floor(target / total));
   const px = total * scale;
   canvas.width = px;
   canvas.height = px;

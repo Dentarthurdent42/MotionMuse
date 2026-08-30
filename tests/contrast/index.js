@@ -130,6 +130,10 @@ const PAIRS = [
   ['--amber',      '--glass',   'MUTED banner over the oscilloscope'],
   ['--led-accent', '--glass',   'Scope trace on the glass',            3],
   ['--glass-ink',  '--glass',   'Neutral overlay mark on the stage',   3],
+  // The same ink, but as READING matter: the name of the saved setup you are
+  // playing, captioning the camera view. A mark only has to be seen; a word
+  // has to be read, so this pair is held to the text threshold as well.
+  ['--glass-ink',  '--glass',   'Saved-setup name on the camera view'],
 ];
 
 const THRESHOLD = 4.5; // WCAG AA normal text; LED pairs carry their own 3:1

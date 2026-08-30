@@ -220,6 +220,43 @@ if (target) {
   await p.evaluate(() => { document.documentElement.style.zoom = ''; });
 }
 
+// ── A setup arriving by link ──────────────────────────────────────────────
+//
+// A link is an invitation to play: it opens straight into the fullscreen
+// camera view, and the tour waits until you come back out of it — a
+// walkthrough of panels that are behind a fullscreen camera is a walkthrough
+// of nothing. Driven on its own page because it is a boot-time path.
+// Its own CONTEXT, not just its own page: pages in one context share
+// localStorage, and this suite has already walked both tours — with every
+// step marked seen the shared tour would correctly decline, and this would be
+// testing nothing. A fresh visitor following a link is a fresh profile.
+const shareCtx = await b.newContext({ viewport: { width: 1440, height: 950 } });
+const share = await shareCtx.newPage();
+await share.addInitScript(() => {
+  // Exactly the mark consumeSharedLink() leaves for the far side of its
+  // reload, plus the session it saves before reloading — without that the
+  // first-run picker wins and the shared-link branch never runs.
+  sessionStorage.setItem('motionmuse-shared', JSON.stringify({ label: 'Shared Setup', first: true }));
+  localStorage.setItem('motionmuse-started', '1');
+  // The app never auto-opens a modal under automation, by design; this path
+  // is precisely about one, so the real branch has to be reachable.
+  Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
+});
+await share.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+await share.waitForTimeout(2200);          // past the tour's 1200 ms settle
+const arrival = await share.evaluate(() => ({
+  fs: document.getElementById('video-wrap').classList.contains('fs-active'),
+  tour: !!document.getElementById('tour-card'),
+  start: document.getElementById('cv-btn').getClientRects().length > 0,
+}));
+await share.click('#fs-btn');
+await share.waitForTimeout(2200);
+const exited = await share.evaluate(() => ({
+  fs: document.getElementById('video-wrap').classList.contains('fs-active'),
+  tour: !!document.getElementById('tour-card'),
+}));
+await shareCtx.close();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -268,6 +305,14 @@ check(target !== null, 'a spotlit step was found to test zoom against', target ?
 for (const [label, off] of zoom) {
   check(off <= 2, `the spotlight holds its target — ${label}`, `off by ${off}px`);
 }
+
+// A setup arriving by link: fullscreen first, tour only on the way out.
+check(arrival.fs, 'a shared link opens into the fullscreen camera view');
+check(arrival.start, 'with the start button on it, so the camera is one tap away');
+check(!arrival.tour, 'and the tour does not open over it');
+check(!exited.fs, 'leaving fullscreen works from the shared-link arrival');
+check(exited.tour, 'and THAT is when the tour for the shared setup opens');
+
 check(pageErrors.length === 0, 'no page errors', pageErrors.join('; '));
 
 for (const v of r.visited) console.log(`      ${v}`);

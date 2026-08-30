@@ -85,7 +85,9 @@ export function updateArpRow(p, poolSize) {
   if (!arpRead) return;
   const a = arpvoice.state();
   const synced = a.sync > 0 && metronome.on;
-  const rate = synced ? (metronome.config().bpm / 60) * a.sync : engine.PARAMS.arp_rate.val;
+  // Straight from the transport, so the number on screen is the number the
+  // notes are going out at.
+  const rate = arpvoice.stepsPerSecond();
   const gate = engine.PARAMS.arp_gate.val;
   const step = arpvoice.sounding();
   const where = poolSize ? ` · ${step >= 0 ? step + 1 : '–'}/${poolSize}` : '';

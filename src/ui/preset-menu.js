@@ -6,7 +6,9 @@
 // needs switched on, then choose.
 
 import { mapper, PRESETS } from '../mapper.js';
-import { savedConfigs, deleteConfig } from '../saved.js';
+import { savedConfigs, deleteConfig, renameConfig, findConfig, configName } from '../saved.js';
+import { SHARE_LABEL_MAX } from '../share.js';
+import { toast } from './status.js';
 
 // Human-readable prerequisite, so a preset can't leave you with a silent patch
 // and no clue why.
@@ -74,6 +76,8 @@ export function initPresetMenu({ onApply, onApplyConfig, state }) {
             <span class="preset-name">${esc(c.name)}</span>
             <span class="preset-hint">Your saved setup${savedWhen(c.saved) ? ` · ${savedWhen(c.saved)}` : ''}</span>
           </button>
+          <button class="rm-btn preset-ren" type="button" data-ren="${esc(c.name)}"
+                  title="Rename this setup" aria-label="Rename ${esc(c.name)}">✎</button>
           <button class="rm-btn preset-del" type="button" data-del="${esc(c.name)}"
                   title="Forget this setup" aria-label="Forget ${esc(c.name)}">×</button>
         </div>`).join('') : '') +
@@ -109,6 +113,64 @@ export function initPresetMenu({ onApply, onApplyConfig, state }) {
         deleteConfig(el.dataset.del);
         render();
       }));
+    pop.querySelectorAll('[data-ren]').forEach(el =>
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        beginRename(el.closest('.preset-row'), el.dataset.ren);
+      }));
+  };
+
+  // Renaming happens in the row itself. A dialog would cover the list you are
+  // renaming within, and the one thing you need while choosing a new name is
+  // to see the names you have already used.
+  const beginRename = (row, name) => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'preset-rename';
+    input.value = name;
+    input.maxLength = SHARE_LABEL_MAX;
+    input.setAttribute('aria-label', `New name for ${name}`);
+    // The row's buttons go while the field is up — a × one tab-stop from a
+    // half-typed name is a way to lose the setup you were renaming — and are
+    // put back, the same nodes with the same handlers, when it comes down.
+    const kept = [...row.children];
+    row.replaceChildren(input);
+    input.focus();
+    input.select();
+
+    let settled = false;
+    const finish = commit => {
+      if (settled) return;
+      settled = true;
+      const to = configName(input.value);
+      // Renaming onto a name in use would fold two setups into one and drop
+      // the other's patch. Refused, and said out loud — silently keeping the
+      // old name looks like the app ignored the keystroke.
+      const clash = commit && to && to !== name && findConfig(to);
+      if (clash) toast(`A setup called “${to}” already exists`);
+      if (!commit || !to || to === name || clash) {
+        // Nothing changed, so nothing needs rebuilding — and rebuilding would
+        // delete the control the user is in the middle of clicking. Blur
+        // fires on mousedown; the click that follows still has to find its
+        // target, or leaving a field by choosing the next thing to do would
+        // swallow that choice.
+        row.replaceChildren(...kept);
+        return;
+      }
+      renameConfig(name, to);
+      render();       // the row is a different name now, and so is its badge
+    };
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); finish(true); }
+      // Escape cancels the rename, not the menu — the document-level handler
+      // that closes the popover must not also see this one.
+      if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+    });
+    // Clicking away keeps what was typed. The field is the whole row, so a
+    // click that leaves it is a click on something else the user meant to do,
+    // and throwing the name away to punish them for it helps nobody.
+    input.addEventListener('blur', () => finish(true));
   };
 
   const setOpen = open => {

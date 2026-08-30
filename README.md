@@ -9,10 +9,10 @@ A browser-based instrument that maps live webcam data — hand position, gesture
 <sub>Kept in step with the UI automatically — see [Keeping the screenshot honest](#keeping-the-screenshot-honest). Regenerate by hand with `npm run screenshot`.</sub>
 
 Open `index.html` (or the Netlify deploy) and:
-1. Click **START CAMERA** — MediaPipe loads and begins detecting hands and pose
+1. Click **START CAMERA** — the blank frame *is* the button — MediaPipe loads and begins detecting hands and pose
 2. Click **PRESET** — pick a starting patch (hands, face, gaze or whole-body)
-3. Press **Space** (or click **🔇 MUTED**) to unmute, then move and play — the synthesiser
-   is already running, it just starts silent
+3. Press **Space** (or click the amber **🔇** on the camera view) to unmute, then move
+   and play — the synthesiser is already running, it just starts silent
 
 ## Support
 
@@ -36,7 +36,7 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 ```
 
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1. Registering with `velocity: true` also creates a `<key>_vel` sibling the bus keeps fed with the rate of change — see [Velocities](#velocities--every-measure-also-reports-how-fast-it-is-changing).
-- **Tracking toggles**: **✋ L**, **R ✋** and **🧍 POSE** — the TRACKING strip overlaid on the camera view, with ☺ FACE and ◉ GAZE below them — switch each model off outright. (They live on the camera picture because what the camera tracks is a property of that input, not of the app's header; hands and pose can be set before the camera starts, face and gaze wake once there is a stream to run on.) Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
+- **Tracking toggles**: **✋ L**, **R ✋**, **🧍 POSE**, **☺ FACE** and **◉ GAZE** — one row of chips inside **Camera Input**, under the picture — switch each model off outright. (They live with that input because what the camera tracks is a property of it, not of the app's header; they are beside the picture rather than on top of it because a control over the frame covers the thing you are watching. Hands and pose can be set before the camera starts; face and gaze wake once there is a stream to run on.) Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` plus a swappable **pose backend** (`src/posebackends.js` — MediaPipe lite/full/heavy or TF.js MoveNet), extracts ~30 signals per frame, and writes them into the bus. Hand and pose inference **alternate frames** (each still ≥15 Hz at a 30 fps camera) so per-frame cost stays half of running both, and every positional signal passes through a per-signal **One-Euro filter** (`src/filter.js`, applied in `bus.update`) — the standard low-latency jitter filter: heavy smoothing on a held pose, light smoothing on fast moves.
 - **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert, invert+ease), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **inverted** with its `⇅ INVERT` toggle — the input's high end then drives the output's low end, which composes with (rather than replaces) the curve, so any response shape can run either way round. A cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired. An output also *remembers* its range, curve, steps and invert flag, so re-wiring a different input into it (or unplugging and re-plugging) doesn't reset them. Each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
 - **Audio Engine** (`src/engine.js`): a **resizable oscillator bank** — one oscillator by default, up to eight, each with its own frequency, detune, waveform and **level** (`oscN_freq` / `oscN_detune` / `oscN_volume`) — through a BiquadFilter, and the chord-mode voice bank through a **second, independent filter and level** (`chord_filter_freq` / `chord_filter_q` / `chord_volume`, with `osc_volume` as the whole bank's level, the lead's counterpart to `chord_volume`). The two sources converge into a shared convolution reverb and main gain. All driven by the Web Audio API with 25 ms parameter smoothing. **Volume is the exception**: it snaps onto a perceptual step ladder and fires *one* envelope per level change instead of re-smoothing every frame — see Volume quantisation below. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
@@ -54,7 +54,8 @@ room, and most of all to someone who came to read about it.
 Muted is shown three ways, because a silent instrument and a broken one look
 identical otherwise:
 
-- the header button reads **🔇 MUTED** in amber (**🔊 SOUND ON** when live);
+- the mute button on the camera view turns amber (muted is a *state*, not a
+  disabled control);
 - a **MUTED** banner sits over the visualiser;
 - the waveform **keeps moving** behind that banner. The mute gain is placed
   *after* the analyser precisely so it does — you can see the instrument
@@ -64,6 +65,45 @@ Three ways to toggle it: the header button, **tapping the visualiser** (the
 biggest thing on screen already showing the state), and **Spacebar**. The key
 binding is shown, and changed, under **Mute Hotkey** in the audio panel: click
 it, press the key you want, Esc cancels.
+
+### The iPhone Ring/Silent switch
+
+Reported as the instrument being completely silent on an iPhone, while a
+screen recording of that same session had sound in it — which makes it look
+like a phone bug and is in fact ours.
+
+iOS gives every page an **audio session category**, and WebKit picks it from
+what the page plays rather than from anything the page asks for. Web Audio on
+its own gets **ambient**: the category for incidental noise — a game's bleeps,
+a video autoplaying in a feed — and ambient obeys the Ring/Silent switch. A
+page playing a media element with a real, unmuted audio track gets
+**playback**, the category for something a person came here to listen to, and
+playback ignores the switch. MotionMuse is Web Audio end to end and had no
+media element, so the switch silenced all of it. The recording still had audio
+because a screen recorder taps app audio upstream of the category.
+
+The fix is the door WebKit leaves open: while the instrument is audible, keep
+a silent, looping, **unmuted** audio element playing. Two things about it are
+easy to get backwards, and both are pinned by tests:
+
+- **Silence has to come from the file, not the element.** A `muted` element —
+  or one at volume 0 — does not count as playing audio, so it leaves the page
+  in ambient and changes nothing. What loops is half a second of digital
+  silence at full volume, built in `src/audiosession.js` rather than shipped
+  as an asset so a reader can check the header against the WAV spec. It is
+  16-bit specifically: 16-bit PCM silence is 0, so an untouched buffer is
+  already silent, where 8-bit silence is 128 and an all-zero buffer would be
+  full-scale DC — a click on every loop.
+- **It is held only while unmuted, and only on iOS.** A page in the playback
+  category stops whatever the phone was already playing, so taking someone's
+  music the moment they open a page that is not making a sound yet would be a
+  worse bug than the one being fixed. Off iOS it is never created at all:
+  Android would lose audio focus for nothing and the desktop would raise media
+  keys for a track that does not exist, and neither platform has the switch.
+
+iPadOS needs it too and is the awkward case — it reports itself as `MacIntel`
+and keeps "iPad" out of the agent string. A Mac with a touchscreen does not
+exist, which is what makes `maxTouchPoints` the tiebreak.
 
 Two details worth knowing about the spacebar in particular. It's the key
 browsers use to activate whatever has focus, so the app claims it — a focused
@@ -212,6 +252,16 @@ exercise the real path rather than a stand-in for it.
 
 ## Share: a QR code of your setup
 
+**Following a link opens straight into the fullscreen camera view.** A link is
+an invitation to *play*, not to read a patchbay: someone pointed a phone at a
+QR code, and the next thing they should see is themselves, full frame, with
+one thing to press. (The CSS fullscreen path, not the native one — a link
+lands after a reload with no user gesture anywhere near it, and the native
+Fullscreen API rejects anything else.) The tour for the arriving setup then
+**waits until you leave fullscreen**: a walkthrough of panels that are behind
+a fullscreen camera is a walkthrough of nothing.
+
+
 **SHARE** (beside SAVE and LOAD) shows a QR code of everything you have set up.
 Point a phone at it and the app opens configured the same way — the point being
 that handing someone a patch should not require a file, an account or a server.
@@ -262,6 +312,19 @@ and the tolerance it gives up, for a torn or dirty code, does not apply to a
 picture on a screen being read seconds later. If a setup is too large to fit
 any version, the popover says so and offers **COPY LINK**; the link always
 works, only the picture of it does not.
+
+**One cell is skipped: version 23 at ECC L.** Walking all 160 version/ECC
+combinations through jsQR turned up exactly one that does not survive the round
+trip — every mask, every payload length, on a clean 3×-scaled bitmap. The block
+layout for that cell agrees with the reader's own table (30 EC codewords over
+4×121 + 5×122), so the fault is somewhere not yet found rather than in a number
+that can simply be corrected. Until it is understood, `encodeQR` steps over it:
+a payload that would land on version 23 at L takes version 24 instead, four
+modules wider and scannable. A code nobody can read is worth strictly less than
+a slightly larger one, and finding out from a user whose QR does not work is not
+a trade worth making. The test sweep pins both the 159 that work and the one
+step-over, so this cannot be quietly undone — and if the underlying bug is ever
+found, one deleted line restores the cell.
 
 The **oscilloscope** at the top of the audio column is a section like any
 other: it folds away with its caret and can be dragged to another column. It
@@ -353,6 +416,37 @@ still see yourself — and the tracking overlay — while working the patchbay a
 audio controls below it. This is an instrument you play by moving in front of a
 camera; losing sight of the camera while reaching for a control is backwards.
 The handle is there for when the height gets in the way.
+
+## Every slider also takes a typed number
+
+A slider is for *finding* a value; a number is for *knowing* one. "Filter at
+3 kHz", "96 BPM", "attack 0.02 s" are values you arrive at once and then want
+to set exactly, and hunting for them with a thumb on a 200-pixel track is a
+game, not a control. So **every range in the app has a numeric twin** — the
+audio parameters, both ADSR banks, the arpeggiator's rate and gate, the
+metronome's tempo, the expression ranges, the pedal's sensitivity, a graph
+node's own knobs.
+
+Nothing new appears on screen: where a slider already had a **readout**, that
+readout *is* the field — the number you were reading is the number you type
+into, in the same box, so no layout moves. Where there was none, a compact
+field is appended. The twin writes through the slider (it sets the value and
+dispatches a real `input` event), so every existing handler runs exactly as
+it does for a drag, and nothing had to be rewired to accept typing.
+
+Typing is **exact**. A range's value setter rounds to the slider's step, and
+those steps exist for dragging — `(max − min) / 300` on the filter is 53 Hz,
+so a typed 5000 would land on 5015.51. The write happens with the step out of
+the way, and the field then shows what was actually *taken*, since a slider
+with magnetic detents rewrites the value it is handed. A value a cable is
+driving keeps updating in the field, except while you are typing into it.
+
+It is applied by watching the DOM (`src/ui/numeric.js`) rather than by each
+panel remembering to ask, so a panel that rebuilds its own markup gets its
+fields back and a slider added later is typable without anyone thinking about
+it. `tests/layout/index.js` checks, in a real browser at every width, that
+every slider is paired, that a typed value reaches the parameter exactly, and
+that no section starts scrolling because of it.
 
 ## Function nodes — the patchbay's interior
 
@@ -456,12 +550,76 @@ the QR code again.
 - **Capped at 24**, oldest dropped, with a **×** on each row to forget one. A
   name you have not saved under in months is the one you have stopped using,
   and a menu nobody can scroll is not a feature.
+- **Renamable in place** — **✎** on the row turns it into a text field. Enter
+  or clicking away commits, Escape abandons the edit (and only the edit: the
+  menu behind it is not what the key was aimed at). A rename in a dialog would
+  cover the list you are renaming *within*, and the one thing you need while
+  choosing a name is the names you have already used. Renaming onto a name
+  already in use is refused out loud rather than merged. This is where
+  renaming parts company with saving: saving under a used name replaces it
+  because you just built the thing you are storing, while renaming onto one
+  would destroy a setup you did not touch, to make room for one you only meant
+  to relabel. `renameConfig` refuses it too, not just the menu, so no future
+  caller can lose a patch by being careless.
+
+**The camera view says which one you are playing.** A patchbay full of cables
+does not tell you whether this is "ambient pads" or the thing you made after
+it, and in fullscreen the patchbay is not even on screen — so the name sits in
+the top-left corner of the frame (`src/ui/cam-badge.js`), out of the middle
+where you are. The marker behind it lives beside the setups, in
+`motionmuse-current-config`, and *not* in the session snapshot: "you are
+currently playing X" is a fact about this browser, and a shared link carrying
+it would mean nothing to whoever opened it. It is set when you load one of your
+setups or follow a named link, cleared when a built-in patch replaces the whole
+instrument, and **not** cleared when you move a slider — you are still playing
+your setup, just changed, and a name that vanished on the first knob turn would
+be a name nobody trusts.
+
+**In DEV mode, the setup itself is on the frame as a QR code** (bottom-right,
+opposite the tracker toggles). It is there so a setup can be handed over by
+photographing or screenshotting the picture, with no dialog in the way — which
+raised the question of how small such a code can honestly be.
+
+**How small: measured, not guessed.** Render the code at N device pixels per
+module, screenshot the pixels the browser actually painted, and hand them to
+**jsQR** — an independent decoder, not our own encoder agreeing with itself.
+The answer is **one pixel per module**: the default setup's link is 1328
+characters, which at ECC L needs a 121×121-module code — 121px, plus the
+spec's four-module quiet zone on each side, 129px square in all — and it
+decodes. (L for the same reason the SHARE dialog uses it: the tolerance the
+higher levels buy is for a code that is torn, dirty or badly lit, none of
+which happens to a screenshot taken seconds ago. It is also the fewest
+modules — M would need 137, so 145px.) The
+floor is not the module *size* but the requirement that modules land on
+**whole** pixels — a code scaled to 1.5× smears every module edge across two
+pixels and stops decoding long before a 1× one does. So the canvas is drawn at
+exactly 1 px per module and CSS never scales it:
+`drawQR(canvas, qr, { quiet: 4, min: 1, target: qr.size + 8 })`. `min` is
+drawQR's usual floor of 2 px per module, and that floor is there for a
+*camera* — the SHARE dialog keeps it, because a phone is reading a screen
+across a room. Only a caller whose reader is a screenshot of
+those exact pixels, with nothing optical in the path, should lower it. The
+layout suite pins the whole claim end to end — the 1:1 drawing, that the code
+stays inside the picture and anchored to its corner, and a real Playwright
+screenshot decoding back to the link the app would have shared — and
+`tests/unit/qr.test.js` pins the encoder half of it at 1 px/module across a
+range of payload sizes and both of the levels the app uses, so a regression
+surfaces in `npm run test:unit` and not only under a browser.
+
+Small does not mean *tiny in the frame*, though. The code is as small as the
+payload allows and no smaller, so a dense setup makes it a large fraction of a
+narrow camera panel — there is no scaling it down without breaking the thing
+that makes it readable. What holds instead is that it is `pointer-events:
+none`: it is a picture to photograph, never a control, so a code that reaches
+over a button can't take that button's click.
 
 The store is `src/saved.js`, in localStorage under `motionmuse-saved-v1`. It
 filters what it reads: an entry that is not a named snapshot is dropped rather
 than handed to the menu, which would otherwise render `undefined` and apply
 nothing when clicked. `tests/unit/saved-configs.test.js` covers the round trip,
-the replace-by-name rule, the cap, and what happens to junk in storage.
+the replace-by-name rule, the cap, and what happens to junk in storage;
+`tests/unit/saved-rename.test.js` covers renaming, the refusal to rename onto
+a name in use, and the "currently playing" marker following a rename.
 
 ## Loop pedal
 
@@ -484,6 +642,14 @@ is one press however many frames it spans, and the return stroke (an equal spike
 the other way) is not counted. **SENSITIVITY** sets the bar, and the meter beside
 it shows how close the last movement came, so calibrating is watching rather
 than guessing.
+
+**The gesture is OFF by default** — press **ON** beside the pedal picker to arm
+it. A nod is the pedal precisely because you can do it without interrupting a
+phrase, which is also why you do it constantly without meaning anything by it:
+agreeing, glancing at your hands, moving to your own beat. Armed on a fresh
+install, that recorded loops nobody asked for. The transport **buttons work
+from the start** either way, so looping is never out of reach — only out of the
+way until you ask for it.
 
 **One press cycles the transport:**
 
@@ -913,13 +1079,37 @@ carry recognition exactly as before. Detection is per-instance at the call
 site, so nothing downstream knows which one it got.
 
 The **Gestures** section recognizes hand poses and turns them into discrete
-triggers. Sixteen built-in gestures ship ready to use — **fist, point, peace,
-thumbs-up, thumbs-down, open palm, rock horns, finger gun** (thumb and index
-extended, the ASL **L**) and **I love you**, plus the **ASL number handshapes**
-in their own collapsed group — and **● REC** records your own: name it, hold the pose
-during the 3-2-1 countdown, and it's captured (camera must be running).
-Any gesture, built-in included, can be removed with its × (removals persist;
-**RESTORE BUILT-IN GESTURES** brings the defaults back).
+triggers. Sixteen built-in gestures ship ready to use — **closed O, point,
+peace, three, four, open palm**, the four **fingertip-touch** numbers,
+**thumbs-up**, then **I love you, finger gun** (thumb and index extended, the
+ASL **L**), **fist, rock horns** and **thumbs-down** — and **● REC** records
+your own: name it, hold the pose during the 3-2-1 countdown, and it's captured
+(camera must be running). Any gesture, built-in included, can be removed with
+its × (removals persist; **RESTORE BUILT-IN GESTURES** brings the defaults
+back).
+
+**One list, in ASL gloss order, gloss first.** Where a handshape *is* an ASL
+handshape it already has a name in the language, so that name is what orders
+it and what leads its label — "ASL 1 · Point", not "Point · ASL 1", because
+the thing you scan a sorted column for should be the thing at the front of the
+row.
+
+**Numerals count, letters spell**: 0–10, then ILY, L, S. A plain string sort
+would be lexicographic and would seat 10 between 1 and 2 — correct for
+strings, wrong for a person counting on their hand. Letters have no numeric
+reading, so they sort among themselves and follow the numbers; each half is
+ordered the way that half is actually read. Handshapes with no gloss — rock
+horns, thumbs-down — are not ASL and are not reordered; they follow, and
+recorded shapes stay last in the order you made them.
+
+The number handshapes used to fold away into their own **ASL NUMBERS** group,
+on the theory that they were a set you opted into. But that split the library
+by an accident of which shapes happen to have descriptive names as well as
+glosses: 1, 2, 5 and 10 sat above the fold as Point, Peace, Open Palm and
+Thumbs Up, while 0 and 3–9 sat below it. Ordering everything by gloss is what
+makes a single list scannable, so the group had nothing left to do.
+`tests/unit/gesture-order.test.js` pins the sequence — 10 after 9, the letters
+after every number, and the gloss at the front of the label.
 
 Every gesture is also exposed as a mappable bus signal `gesture_<id>`, so a
 gesture can drive *any* audio parameter, not just chords.
@@ -1163,10 +1353,17 @@ sounds both endpoints twice, which lands as a stumble on every turn.
 **Rate and gate are patchbay outputs** (`Arp Rate`, `Arp Gate`, under Chord
 Mode), which is the point of expressing the rate as a plain number rather than
 a tempo: wire a signal to `arp_rate` and your hand drives how fast the chord
-churns, the same way it drives the filter. And when there IS a clock — the
-metronome — **SYNC** locks the run to it: a steps-per-beat division
-(1–4/BEAT) that takes effect while the metronome runs, dimming RATE so the
-panel never shows a number you are not hearing. FREE keeps the slider.
+churns, the same way it drives the filter.
+
+And when there IS a clock — the metronome — **SYNC** locks the run to it,
+which is the **default** (`2/BEAT`, eighth notes). It does two things,
+because rate alone is not sync: the steps take their tempo from the clock's
+BPM, *and* the run is **phase-locked** — its first step lands on the next
+division of the beat rather than wherever the chord happened to be struck.
+An arp at exactly the right speed but a semiquaver off the grid still sounds
+like two musicians who have not met. Sync applies only while the metronome
+is running (RATE dims to say so); with the clock stopped the slider stands
+unchanged, and **FREE** opts out of the grid entirely.
 
 Timing comes off the **audio clock**, not the frame loop: each frame looks
 120 ms ahead and schedules whatever falls due, so a dropped frame cannot put a
@@ -1381,6 +1578,68 @@ only changes once per frame anyway. Settings save with presets and travel in
 shared links; the module is `src/metronome.js`, the panel
 `src/ui/metronome-ui.js`, both driven by `tests/unit/metronome.test.js` plus
 beat-mode tests in the radial and chord-expression suites.
+
+## The camera view is the instrument's face
+
+Four things moved onto the picture, because the picture is where your eyes
+already are while you play — and, in fullscreen, the only thing on screen at
+all:
+
+- **The blank frame IS the start button.** There is nothing to look at before
+  the camera runs, so the empty frame is the target: one big **START CAMERA**,
+  centred, at any size and in fullscreen alike, where a control in the page
+  header would be off-screen entirely. It is a real `<button>`, so the tap
+  that requests camera access is a user gesture wherever it happens. Once
+  there is a picture that target is gone — covering the view with a button
+  would be covering the instrument — and **⏹ STOP** takes its place in the
+  strip beside ⛶ FULL.
+- **Mute, SHARE, the source link and ♥** sit bottom-left, opposite that
+  strip, so neither covers the other and the middle of the frame — where you
+  are — stays clear. Small and quiet: they never compete with what they sit
+  over. Mute keeps its amber, because muted is a *state*, not a disabled
+  control. The ♥ popover opens upward from there, and hangs off the frame
+  rather than off the strip — the strip clips its segments to its own rounded
+  corners, and would clip the popover with them.
+
+### One system, not eight chips
+
+Everything floating over the picture obeys one set of measurements. It used to
+obey none: each control sized itself from whatever was inside it, so an 11px
+GitHub glyph, a 9px ♥ and an emoji made three different heights in a single row
+and four different widths, and the result read as debris scattered on the
+picture rather than as the instrument's controls.
+
+Four tokens, in their own `:root` because they are geometry rather than colour:
+`--cam-ctrl-h` (one height), `--cam-icon` (one box every icon is drawn into),
+`--cam-inset` (one distance from the edge a thing hugs) and `--cam-radius`.
+A labelled control grows sideways only; one with no label is a **square** of
+the shared height, which is what stops ♥ from being a sliver beside SHARE.
+
+**A cluster is one object, not a row of chips.** The container (`.cam-bar`)
+carries the border, the background and the radius, and 1px gaps let that
+background through as hairline dividers between segments. That is not just a
+look: a segment hidden with `display: none` — the DEV-only toggles, ⏹ STOP
+before a camera is running — collapses without leaving a stray divider, and the
+ends stay round without a `:first-child` rule that a hidden sibling would
+break. A vertical cluster stretches its segments to the widest, so the stack
+has one edge instead of a ragged one.
+
+The **metronome strip** is a readout rather than a control, but it shares the
+top edge of the frame with controls, so it reads the same tokens off the frame
+and paints its scrim at a control's height, inset and radius — the three things
+on that line are one line. It reads the live custom properties rather than
+copying the numbers, because fullscreen redefines them.
+
+Fullscreen *is* that redefinition: the same system one size up (26 → 34px tall,
+8 → 14px inset), not a second design. `tests/layout/index.js` measures the lot
+in both states — one height across every control, squares where there are no
+words, one width down the stack, no border on any segment, hairline dividers,
+one radius, both strips at the shared inset — because "they all look the same
+size" is exactly the claim a stylesheet quietly stops honouring.
+
+What is left in the page header is what belongs to the **tool** rather than
+the instrument: settings and the tour. And what the camera *tracks* went the
+other way, off the picture and into **Camera Input** beside it (above).
 
 ## Fullscreen camera view
 
@@ -1760,6 +2019,7 @@ src/
     resize.js       Draggable panel splitters (desktop)
     viewport.js     isDesktop() breakpoint check, shared with main.css
     fullscreen.js   Fullscreen camera view + keyboard overlay
+    cam-badge.js    Setup name on the frame (+ the DEV-mode QR of it)
     keyboard.js     Shared piano-keyboard renderer
     playalong-ui.js Falling-note highway renderer + game panel
     gesture-ui.js   Gesture Mode panel section (assignments + handshape library)

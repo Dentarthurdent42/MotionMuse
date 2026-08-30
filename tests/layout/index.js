@@ -403,7 +403,47 @@ const off = await measure();
     };
   });
 
-  results.push({ width, off, on, sections, camSticky, sigPanel });
+  // Every slider takes a typed value (ui/numeric.js). Checked in the browser
+  // because the pairing is applied by observing the DOM: a panel that rebuilds
+  // its own innerHTML has to get its fields back, and a slider added later has
+  // to get them without anyone remembering to ask.
+  const nums = await page.evaluate(async () => {
+    // Wake the panels that keep sliders behind a toggle, so this covers all
+    // of them rather than the handful visible on load.
+    const { chordmode } = await import('/src/chordmode.js');
+    const { arpvoice } = await import('/src/arpvoice.js');
+    const { metronome } = await import('/src/metronome.js');
+    chordmode.setEnabled(true);
+    chordmode.setExpression({ mode: 'hand', control: 'volume' });
+    arpvoice.set({ enabled: true });
+    metronome.setOn(true);
+    const { renderAudioPanel } = await import('/src/ui/audio-ui.js');
+    renderAudioPanel();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const ranges = [...document.querySelectorAll('input[type="range"]')];
+    const paired = ranges.filter(r => r.hasAttribute('data-num-paired'));
+    // A typed value must reach the parameter, not just the field.
+    const { engine } = await import('/src/engine.js');
+    const f = document.getElementById('av-filter_freq');
+    let typed = null;
+    if (f && f.tagName === 'INPUT') {
+      f.focus(); f.value = '5000';
+      f.dispatchEvent(new Event('input', { bubbles: true }));
+      f.blur();
+      typed = Math.round(engine.PARAMS.filter_freq.val);
+    }
+    return {
+      ranges: ranges.length, paired: paired.length,
+      missing: ranges.filter(r => !r.hasAttribute('data-num-paired'))
+        .map(r => r.id || r.className || 'anonymous'),
+      typed,
+      // The field sits where the readout did, so nothing may start scrolling.
+      overflow: [...document.querySelectorAll('.audio-section')]
+        .filter(e => e.scrollWidth > e.clientWidth + 1).length,
+    };
+  });
+
+  results.push({ width, off, on, sections, camSticky, sigPanel, nums });
   await page.close();
 }
 
@@ -842,6 +882,225 @@ const firstrun = await (async () => {
   return { shown, blank, again, chords, errs };
 })();
 
+// ── Saved setups: the name on the camera view, renaming, and the dev QR ───
+//
+// Three claims, all of which have to hold at once for the feature to be worth
+// anything: the frame says WHICH of your setups is playing, the name can be
+// changed without losing the setup, and the dev-mode code on the frame is
+// small AND still decodes from a screenshot of the screen. The last one is
+// measured the only way it can honestly be measured — screenshot the pixels
+// Chromium actually painted, hand them to an independent decoder, and compare
+// the text with the link the app would have shared.
+const presets = await (async () => {
+  const page = await b.newPage({ viewport: { width: 1280, height: 900 } });
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+
+  // Saved from what is already loaded, minus the `ui` block: restoring theme
+  // and tracker state reloads the page (those are read at startup by the
+  // modules that own them), and a reload mid-test would be measuring the
+  // reload rather than the badge. A setup without one is a real shape — it is
+  // what a config saved before UI keys existed looks like — and everything
+  // under test here is downstream of `applyAll` either way.
+  await page.evaluate(async () => {
+    const { saveConfig } = await import('/src/saved.js');
+    const { snapshot }   = await import('/src/preset.js');
+    const bare = () => { const s = snapshot(); delete s.ui; return s; };
+    saveConfig('evening pads', bare());
+    saveConfig('bright lead', bare());
+  });
+
+  const openMenu = async () => {
+    await page.evaluate(() => {
+      if (document.getElementById('preset-pop')?.hidden !== false)
+        document.getElementById('preset-btn').click();
+    });
+    await page.waitForTimeout(150);
+  };
+  const names = () => page.evaluate(() =>
+    [...document.querySelectorAll('#preset-pop [data-config]')].map(e => e.dataset.config));
+  const badge = () => page.evaluate(() => {
+    const el = document.getElementById('cam-name');
+    return { text: el.textContent, hidden: el.hidden };
+  });
+
+  await openMenu();
+  const listed = await names();
+  await page.click('#preset-pop [data-config="evening pads"]');
+  await page.waitForTimeout(300);
+  const applied = await badge();
+
+  // Renaming: the badge mirrors the marker, so it has to follow the new name
+  // rather than keep pointing at a setup that no longer exists.
+  await openMenu();
+  await page.click('#preset-pop [data-ren="evening pads"]');
+  await page.fill('#preset-pop .preset-rename', 'midnight pads');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  const renamed = { list: await names(), badge: await badge() };
+
+  // Onto a name already in use: refused, and BOTH setups survive. Allowing it
+  // would quietly delete the other one's patch.
+  await openMenu();
+  await page.click('#preset-pop [data-ren="midnight pads"]');
+  await page.fill('#preset-pop .preset-rename', 'bright lead');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  const collided = await names();
+
+  // Escape abandons the edit — and only the edit. The menu underneath it is
+  // not what the key was aimed at.
+  await openMenu();
+  await page.click('#preset-pop [data-ren="midnight pads"]');
+  await page.fill('#preset-pop .preset-rename', 'gone');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  const escaped = {
+    list: await names(),
+    open: await page.evaluate(() => document.getElementById('preset-pop').hidden === false),
+  };
+
+  // A built-in patch replaces the whole thing, so the name goes with it.
+  await openMenu();
+  await page.click('#preset-pop [data-preset="hands"]');
+  await page.waitForTimeout(400);
+  const afterPreset = await badge();
+
+  // ── The dev-mode code, read back off the screen ──
+  await toggleDev(page);
+  await page.waitForTimeout(2600);          // past cam-badge's re-encode window
+  const qr = await page.evaluate(() => {
+    const wrap = document.getElementById('cam-qr');
+    const c = document.getElementById('cam-qr-canvas');
+    const r = c.getBoundingClientRect();
+    const w = wrap.getBoundingClientRect();
+    const frame = document.getElementById('video-wrap').getBoundingClientRect();
+    return {
+      shown: !wrap.hidden && getComputedStyle(wrap).display !== 'none',
+      px: c.width,
+      // Drawn at exactly one CSS pixel per module: any scaling is what puts
+      // module edges between pixels, and that is what a decoder trips on.
+      cssW: Math.round(r.width), cssH: Math.round(r.height),
+      wrapW: Math.round(w.width), wrapH: Math.round(w.height),
+      frameW: Math.round(frame.width), frameH: Math.round(frame.height),
+      // The code cannot shrink to fit — that is the whole point — so what has
+      // to hold instead is that it never takes a click away from a control.
+      clickThrough: getComputedStyle(wrap).pointerEvents === 'none',
+      // Anchored to the corner it was put in, at the shared inset every other
+      // thing on the picture uses, whatever size it comes out.
+      inset: {
+        right:  Math.round(frame.right - w.right),
+        bottom: Math.round(frame.bottom - w.bottom),
+        want: parseFloat(getComputedStyle(document.getElementById('video-wrap'))
+                .getPropertyValue('--cam-inset')),
+      },
+    };
+  });
+  // The link the app would share right now, and the code it needs — for
+  // comparison with what the decoder reads back out of the picture, and with
+  // the number of pixels it was given to say it in.
+  const want = await page.evaluate(async () => {
+    const { shareableSnapshot, encodeState, shareUrl } = await import('/src/share.js');
+    const { encodeQR } = await import('/src/qr.js');
+    const url = shareUrl(await encodeState(shareableSnapshot()));
+    return { url, modules: encodeQR(url, { ecc: 'L' }).size };
+  });
+  const shot = await page.locator('#cam-qr').screenshot();
+  await page.addScriptTag({ path: join(ROOT, 'node_modules/jsqr/dist/jsQR.js') });
+  const decoded = await page.evaluate(async b64 => {
+    const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+    const bmp = await createImageBitmap(new Blob([bin], { type: 'image/png' }));
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    const img = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+    return {
+      w: bmp.width, h: bmp.height,
+      text: globalThis.jsQR(img.data, img.width, img.height)?.data ?? null,
+    };
+  }, shot.toString('base64'));
+
+  await page.close();
+  return { listed, applied, renamed, collided, escaped, afterPreset, qr, want, decoded, errs };
+})();
+
+// ── The controls on the picture are one system ───────────────────────────
+//
+// They were not. Each sized itself from whatever was inside it, so an 11px
+// GitHub glyph, a 9px ♥ and an emoji made three heights in one row and four
+// widths, and eight loose chips sat at two corners of the frame. Reported as
+// "the buttons are all different heights and widths, and spread around the
+// screen which makes it look sloppy", which is what it was.
+//
+// Measured rather than eyeballed, because "they all look the same size" is
+// exactly the claim a stylesheet quietly stops honouring. Both view states:
+// fullscreen re-declares the tokens one size up, and the point of a system is
+// that the RELATIONSHIPS survive that, not the numbers.
+const camctl = await (async () => {
+  const page = await b.newPage({ viewport: { width: 1280, height: 900 } });
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+  // STOP only exists while a camera is running, and that class is exactly what
+  // cv.js toggles — so the strip can be measured at full strength, no webcam.
+  await page.evaluate(() => document.body.classList.add('cam-on'));
+
+  const read = () => page.evaluate(() => {
+    const wrap = document.getElementById('video-wrap');
+    const frame = wrap.getBoundingClientRect();
+    const cs = getComputedStyle(wrap);
+    const tok = n => parseFloat(cs.getPropertyValue(n));
+    const seg = el => {
+      const r = el.getBoundingClientRect();
+      return {
+        id: el.id, w: Math.round(r.width), h: Math.round(r.height),
+        // A segment carries no border of its own: the bar around it does, and
+        // the 1px gaps between segments are that colour showing through.
+        border: parseFloat(getComputedStyle(el).borderTopWidth),
+        labelled: el.textContent.trim().replace(/[^\w]/g, '').length > 0,
+      };
+    };
+    const bar = sel => {
+      const el = document.querySelector(sel);
+      const r = el.getBoundingClientRect();
+      return {
+        segs: [...el.children].filter(c => c.getClientRects().length).map(seg),
+        gap: parseFloat(getComputedStyle(el).gap),
+        radius: parseFloat(getComputedStyle(el).borderTopLeftRadius),
+        inset: { left: Math.round(r.left - frame.left), top: Math.round(r.top - frame.top),
+                 right: Math.round(frame.right - r.right), bottom: Math.round(frame.bottom - r.bottom) },
+      };
+    };
+    return {
+      ctrlH: tok('--cam-ctrl-h'), inset: tok('--cam-inset'), radius: tok('--cam-radius'),
+      actions: bar('.cam-actions'), toggles: bar('.cam-toggles'),
+      // The name badge is a caption, not a control, but it shares the line.
+      nameH: (() => {
+        const n = document.getElementById('cam-name');
+        n.hidden = false; n.textContent = 'x';
+        const h = Math.round(n.getBoundingClientRect().height);
+        n.hidden = true; n.textContent = '';
+        return h;
+      })(),
+      // An unnamed setup must leave NO box behind: `display: flex` outranks
+      // the [hidden] the markup ships with, and did.
+      emptyBadge: document.getElementById('cam-name').getClientRects().length,
+    };
+  });
+
+  const small = await read();
+  await page.evaluate(() =>
+    document.getElementById('video-wrap').classList.add('fs-active', 'fake-fullscreen'));
+  await page.waitForTimeout(150);
+  const full = await read();
+
+  await page.close();
+  return { small, full, errs };
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -870,7 +1129,7 @@ check(reset.after.keys === 0, 'reset: and forgets every stored layout key',
 check(reset.reloaded.order === 'camera mic patchbay',
   'reset: and it survives a reload', reset.reloaded.order);
 
-for (const { width, off, on, sections, camSticky, sigPanel } of results) {
+for (const { width, off, on, sections, camSticky, sigPanel, nums } of results) {
   const w = `${width}px`;
 
   check(sections.total >= 12, `${w}: sections are wrapped`, `${sections.total} found`);
@@ -968,6 +1227,14 @@ for (const { width, off, on, sections, camSticky, sigPanel } of results) {
     check(sections.caret.target >= 18, `${w}: the caret's hit target is large enough`,
       `${sections.caret.target}px`);
   }
+
+  check(nums.ranges > 0, `${w}: there are sliders to check`, String(nums.ranges));
+  check(nums.paired === nums.ranges, `${w}: every slider takes a typed value`,
+    nums.missing.join(' '));
+  check(nums.typed === 5000, `${w}: a typed value reaches the parameter exactly`,
+    `filter_freq = ${nums.typed}`);
+  check(nums.overflow === 0, `${w}: the typed fields do not overflow their sections`,
+    `${nums.overflow} section(s)`);
 
   check(off.escapees.length === 0, `${w} camera off: every control inside the header`, off.escapees.join(' '));
   check(on.escapees.length === 0,  `${w} camera on:  every control inside the header`, on.escapees.join(' '));
@@ -1226,6 +1493,115 @@ for (const t of hud.themes) {
   // not with it, or it disappears into the feed the stage has tinted.
   check(t.dark ? t.ink > 0.7 : t.ink < 0.3,
     `${t.id}: the overlay's neutral ink opposes the stage`, `luminance ${t.ink.toFixed(3)}`);
+}
+
+// ── Saved setups: name on the frame, renaming, and the dev QR ──
+console.log('\nSaved setups\n');
+{
+  const p = presets;
+  check(p.errs.length === 0, 'no page errors', p.errs.join(' | '));
+  check(p.listed.join('|') === 'bright lead|evening pads',
+    'your setups are listed, newest first', p.listed.join('|'));
+  check(p.renamed.list.join('|') === 'bright lead|midnight pads',
+    'a rename does not reorder the list — renaming is not saving',
+    p.renamed.list.join('|'));
+  check(p.applied.text === 'evening pads' && !p.applied.hidden,
+    'loading a setup names the camera view', `“${p.applied.text}” hidden=${p.applied.hidden}`);
+  check(p.renamed.list.includes('midnight pads') && !p.renamed.list.includes('evening pads'),
+    'renaming replaces the name rather than adding a second row', p.renamed.list.join('|'));
+  check(p.renamed.badge.text === 'midnight pads',
+    'the camera view follows the rename', `“${p.renamed.badge.text}”`);
+  check(p.collided.length === 2 && p.collided.includes('midnight pads')
+     && p.collided.includes('bright lead'),
+    'renaming onto a name in use is refused, and neither setup is lost',
+    p.collided.join('|'));
+  check(p.escaped.list.includes('midnight pads') && !p.escaped.list.includes('gone'),
+    'Escape abandons the edit', p.escaped.list.join('|'));
+  check(p.escaped.open, 'Escape closes the field, not the menu behind it');
+  check(p.afterPreset.hidden && p.afterPreset.text === '',
+    'a built-in patch clears the name — it is not one of yours',
+    `“${p.afterPreset.text}” hidden=${p.afterPreset.hidden}`);
+
+  const q = p.qr, w = p.want;
+  check(q.shown, 'DEV puts the setup on the frame as a code');
+  // One pixel per module, plus the spec's 4-module quiet zone on each side,
+  // and no CSS scaling on top — a module smeared across a pixel boundary is
+  // what actually stops a code decoding, not a module being small.
+  check(q.px === w.modules + 8,
+    'the code is drawn at exactly one pixel per module, quiet zone included',
+    `${w.modules} modules + 8 → ${q.px}px`);
+  check(q.cssW === q.px && q.cssH === q.px,
+    'and CSS does not scale it back up', `${q.cssW}x${q.cssH}px on a ${q.px}px canvas`);
+  // The code cannot be made smaller — that is the finding — so a dense setup
+  // makes it a large fraction of a small camera panel. What has to hold is
+  // that it stays INSIDE the picture, in the corner it was put in, and never
+  // takes a click from the controls it may reach over.
+  check(q.wrapW <= q.frameW && q.wrapH <= q.frameH,
+    'it fits inside the picture', `${q.wrapW}x${q.wrapH} in ${q.frameW}x${q.frameH}`);
+  check(q.inset.right === q.inset.want && q.inset.bottom === q.inset.want,
+    'anchored to the bottom-right corner, at the shared inset',
+    JSON.stringify(q.inset));
+  check(q.clickThrough, 'and never swallows a click — it is a picture, not a control');
+  // The claim being tested: readable from a SCREENSHOT of the screen, which is
+  // what someone photographing or grabbing the window actually gets.
+  check(p.decoded.text === w.url,
+    'a screenshot of that code decodes back to this setup’s link',
+    p.decoded.text === null ? `no code found in ${p.decoded.w}x${p.decoded.h}px`
+      : `${p.decoded.text.length} chars, ${p.decoded.text === w.url ? 'match' : 'MISMATCH'}`);
+}
+
+// ── The controls on the picture are one system ──
+console.log('\nCamera-view controls\n');
+{
+  check(camctl.errs.length === 0, 'no page errors', camctl.errs.join(' | '));
+  for (const [view, m] of [['windowed', camctl.small], ['fullscreen', camctl.full]]) {
+    const segs = [...m.actions.segs, ...m.toggles.segs];
+    check(segs.length >= 6, `${view}: both strips have their controls`, `${segs.length} segments`);
+
+    // ONE height. The complaint, and the first thing a stylesheet forgets.
+    const heights = [...new Set(segs.map(s => s.h))];
+    check(heights.length === 1 && heights[0] === m.ctrlH,
+      `${view}: every control is exactly one height`,
+      `${heights.join('/')} against --cam-ctrl-h ${m.ctrlH}`);
+    check(m.nameH === m.ctrlH,
+      `${view}: the name caption shares it, so the top edge is one line`,
+      `${m.nameH} vs ${m.ctrlH}`);
+
+    // Square when there are no words; wider only to hold them.
+    const icons = segs.filter(s => !s.labelled);
+    check(icons.length >= 3 && icons.every(s => s.w === m.ctrlH),
+      `${view}: a control with no label is a square`,
+      icons.map(s => `${s.id} ${s.w}x${s.h}`).join(' '));
+    check(segs.filter(s => s.labelled).every(s => s.w > m.ctrlH),
+      `${view}: a labelled one grows sideways only`);
+
+    // A stack has one edge, not a ragged one.
+    const stacked = [...new Set(m.toggles.segs.map(s => s.w))];
+    check(stacked.length === 1, `${view}: the stacked strip has one width`, stacked.join('/'));
+
+    // One object, not a row of chips: the bar draws the border and the
+    // hairlines, the segments draw nothing.
+    check(segs.every(s => s.border === 0),
+      `${view}: segments carry no border of their own`,
+      segs.filter(s => s.border !== 0).map(s => s.id).join(' '));
+    check(m.actions.gap === 1 && m.toggles.gap === 1,
+      `${view}: dividers are hairlines`, `${m.actions.gap} / ${m.toggles.gap}`);
+    check(m.actions.radius === m.radius && m.toggles.radius === m.radius,
+      `${view}: one corner radius`, `${m.actions.radius} / ${m.toggles.radius} vs ${m.radius}`);
+
+    // One inset, so the strips hug the frame by the same amount at both ends.
+    check(m.actions.inset.left === m.inset && m.actions.inset.bottom === m.inset
+       && m.toggles.inset.right === m.inset && m.toggles.inset.top === m.inset,
+      `${view}: both strips sit at the shared inset`,
+      `${JSON.stringify(m.actions.inset)} ${JSON.stringify(m.toggles.inset)}`);
+
+    check(m.emptyBadge === 0,
+      `${view}: an unnamed setup leaves no empty badge on the picture`);
+  }
+  // Fullscreen is the same system one size up — not a second design.
+  check(camctl.full.ctrlH > camctl.small.ctrlH && camctl.full.inset > camctl.small.inset,
+    'fullscreen scales the system rather than replacing it',
+    `${camctl.small.ctrlH}px→${camctl.full.ctrlH}px, inset ${camctl.small.inset}→${camctl.full.inset}`);
 }
 
 console.log(`\n${fail} failure(s)\n`);
