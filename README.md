@@ -1554,7 +1554,45 @@ all:
   strip, so neither covers the other and the middle of the frame — where you
   are — stays clear. Small and quiet: they never compete with what they sit
   over. Mute keeps its amber, because muted is a *state*, not a disabled
-  control.
+  control. The ♥ popover opens upward from there, and hangs off the frame
+  rather than off the strip — the strip clips its segments to its own rounded
+  corners, and would clip the popover with them.
+
+### One system, not eight chips
+
+Everything floating over the picture obeys one set of measurements. It used to
+obey none: each control sized itself from whatever was inside it, so an 11px
+GitHub glyph, a 9px ♥ and an emoji made three different heights in a single row
+and four different widths, and the result read as debris scattered on the
+picture rather than as the instrument's controls.
+
+Four tokens, in their own `:root` because they are geometry rather than colour:
+`--cam-ctrl-h` (one height), `--cam-icon` (one box every icon is drawn into),
+`--cam-inset` (one distance from the edge a thing hugs) and `--cam-radius`.
+A labelled control grows sideways only; one with no label is a **square** of
+the shared height, which is what stops ♥ from being a sliver beside SHARE.
+
+**A cluster is one object, not a row of chips.** The container (`.cam-bar`)
+carries the border, the background and the radius, and 1px gaps let that
+background through as hairline dividers between segments. That is not just a
+look: a segment hidden with `display: none` — the DEV-only toggles, ⏹ STOP
+before a camera is running — collapses without leaving a stray divider, and the
+ends stay round without a `:first-child` rule that a hidden sibling would
+break. A vertical cluster stretches its segments to the widest, so the stack
+has one edge instead of a ragged one.
+
+The **metronome strip** is a readout rather than a control, but it shares the
+top edge of the frame with controls, so it reads the same tokens off the frame
+and paints its scrim at a control's height, inset and radius — the three things
+on that line are one line. It reads the live custom properties rather than
+copying the numbers, because fullscreen redefines them.
+
+Fullscreen *is* that redefinition: the same system one size up (26 → 34px tall,
+8 → 14px inset), not a second design. `tests/layout/index.js` measures the lot
+in both states — one height across every control, squares where there are no
+words, one width down the stack, no border on any segment, hairline dividers,
+one radius, both strips at the shared inset — because "they all look the same
+size" is exactly the claim a stylesheet quietly stops honouring.
 
 What is left in the page header is what belongs to the **tool** rather than
 the instrument: settings and the tour. And what the camera *tracks* went the

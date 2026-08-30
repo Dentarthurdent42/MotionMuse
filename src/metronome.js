@@ -35,6 +35,20 @@ const LOOKAHEAD = 0.12;               // seconds of clicks scheduled ahead
 
 export const numOf = sig => Number(String(sig).split('/')[0]) || 4;
 
+// ── The camera-view control tokens ────────────────────────────────────────
+// Mirrored from CSS (main.css, "Controls on the picture") so the canvas
+// readout below can sit on the same line as the DOM controls around it. Read
+// from the custom properties themselves rather than copied as numbers: the
+// fullscreen view redefines them, and a hardcoded 26 would quietly stop
+// matching there. Falls back to the small-view values when there is no
+// document to ask (unit tests) or the property is missing.
+const camToken = (name, fallback) => {
+  const el = globalThis.document?.getElementById('video-wrap');
+  if (!el) return fallback;
+  const v = parseFloat(getComputedStyle(el).getPropertyValue(name));
+  return Number.isFinite(v) ? v : fallback;
+};
+
 export const metronome = (() => {
   const DEFAULTS = { on: false, bpm: 100, sig: '4/4', muted: false };
 
@@ -168,24 +182,32 @@ export const metronome = (() => {
     // the markers are laid out right-to-left in canvas space to read
     // left-to-right on screen. Self-contained contrast, radial mode's
     // lesson: a scrim band and dark halos, owing nothing to the background.
-    draw(ctx, w, h) {
+    draw(ctx, w) {
       const view = this.view();
       if (!view) return;
       const { num, beat, phase, mask } = view;
-      const r   = Math.max(5, Math.min(9, w * 0.011));
+      // A readout, not a control — but it shares the top edge of the frame
+      // with the ones that are, so it takes its height, its inset and its
+      // corner radius from the same tokens they do. The overlay canvas is
+      // sized in CSS pixels (cv.js writes wrap.offsetWidth), same units.
+      const ctrl  = camToken('--cam-ctrl-h', 26);
+      const inset = camToken('--cam-inset', 8);
+      const r   = Math.max(4, Math.min(9, ctrl * 0.26));
       const gap = r * 3.2;
-      const y   = Math.max(18, h * 0.055);
+      const y   = inset + ctrl / 2;                // centred in the same band
       const x0  = w / 2 + ((num - 1) * gap) / 2;   // beat 0, screen-left
       const HALO = 'rgba(6, 10, 14, 0.75)';
       const INK  = 'rgba(255, 255, 255, 0.92)';
       const LIT  = '#ffd166';                      // the beat that is landing
 
       ctx.save();
-      // The scrim band behind the whole strip.
+      // The scrim band behind the whole strip — a control's height and radius,
+      // so the three things on this line read as one line.
       ctx.fillStyle = 'rgba(6, 10, 14, 0.5)';
       ctx.beginPath();
-      const pad = r * 2;
-      ctx.roundRect(x0 - (num - 1) * gap - pad, y - pad, (num - 1) * gap + pad * 2, pad * 2, pad);
+      const padX = Math.max(r * 2, ctrl * 0.42);
+      ctx.roundRect(x0 - (num - 1) * gap - padX, y - ctrl / 2,
+                    (num - 1) * gap + padX * 2, ctrl, camToken('--cam-radius', 4));
       ctx.fill();
 
       for (let i = 0; i < num; i++) {

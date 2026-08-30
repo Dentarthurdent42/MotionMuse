@@ -352,12 +352,82 @@ html, body {
   border-bottom: 1px solid var(--border);
 }
 
+/* ── Controls on the picture ──────────────────────────────────────────────
+   Everything that floats over the camera view obeys one set of measurements.
+   It used to obey none: each control sized itself from whatever was inside it,
+   so an 11px GitHub glyph, a 9px ♥ and an emoji made three different heights
+   in one row, and content-width made every button a different width. Eight
+   loose chips at two corners read as debris on the picture.
+
+   So: ONE height, ONE box every icon is drawn into, ONE inset from the frame
+   edge, ONE radius. Labelled controls grow sideways only; icon-only ones are
+   square. Geometry, not colour — hence its own :root rather than a line in
+   each theme's token block. */
+:root {
+  --cam-ctrl-h: 26px;   /* every control on the picture is exactly this tall */
+  --cam-icon:   14px;   /* …and every icon is drawn into a box this size */
+  --cam-inset:   8px;   /* …and sits this far from the edge it hugs */
+  --cam-radius:  4px;
+}
+/* Fullscreen is a different viewing distance, not a different design: the same
+   system, one size up. */
+#video-wrap.fs-active {
+  --cam-ctrl-h: 34px;
+  --cam-icon:   18px;
+  --cam-inset:  14px;
+  --cam-radius:  5px;
+}
+
+/* A cluster of controls is ONE object, not a row of chips: the container holds
+   the border, the background and the radius, and 1px gaps let that background
+   through as hairline dividers between segments. Which means a segment hidden
+   with `display: none` — the DEV-only toggles, STOP before the camera runs —
+   collapses without leaving a divider behind, and the ends stay round without
+   a :first-child rule that a hidden sibling would break. */
+.cam-bar {
+  position: absolute; z-index: 3;
+  display: flex;
+  gap: 1px; padding: 1px;
+  background: var(--border2);
+  border-radius: var(--cam-radius);
+  overflow: hidden;
+}
+.cam-bar .depth-toggle {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--cam-ctrl-h);
+  /* Square when there is only a glyph, wider when there are words. This is
+     what stops ♥ from being a sliver next to SHARE. */
+  min-width: var(--cam-ctrl-h);
+  padding: 0 10px;
+  border: 0; border-radius: 0;
+  background: color-mix(in oklab, var(--glass) 78%, transparent);
+  text-decoration: none; white-space: nowrap;
+  font-size: 10px;
+}
+/* One icon box, whatever is in it: an inline SVG, an emoji, a typographic
+   arrow. The SVG is the only one that can be told a size directly. */
+.cam-bar .depth-toggle svg { width: var(--cam-icon); height: var(--cam-icon); }
+/* A segment with no words is a SQUARE of the shared height — the side padding
+   that makes room for a label has nothing to make room for, and leaving it in
+   is what made ♥, the GitHub mark and the mute glyph three different widths
+   while all three said the same amount. */
+.cam-bar .cam-ico-only { padding: 0; width: var(--cam-ctrl-h); }
+/* A vertical cluster stretches its segments to the widest, so the stack has
+   one edge instead of a ragged one. */
+.cam-bar.cam-stack { flex-direction: column; align-items: stretch; }
+
 /* The name of the setup you are playing, captioning the view. Quiet: it is a
-   label, not a control, and it sits over a moving picture. */
+   label, not a control, and it sits over a moving picture — but it shares the
+   controls' height and inset so the top edge of the frame reads as one line. */
+.cam-name[hidden] { display: none; }
 .cam-name {
-  position: absolute; top: 6px; left: 6px; z-index: 3;
+  position: absolute; top: var(--cam-inset); left: var(--cam-inset); z-index: 3;
   max-width: 60%;
-  padding: 2px 7px;
+  display: flex; align-items: center;
+  /* `display: flex` outranks the UA's [hidden] rule, so the empty badge would
+     draw as a bordered box over the picture whenever no setup was named. */
+  height: var(--cam-ctrl-h);
+  padding: 0 9px;
   font-size: 9px; letter-spacing: 1px;
   /* The same tinted glass the picture's own controls sit on, so the caption
      belongs to the view in every theme — a hardcoded dark plate would be a
@@ -365,7 +435,7 @@ html, body {
   color: var(--glass-ink);
   background: color-mix(in oklab, var(--glass) 55%, transparent);
   border: 1px solid var(--border2);
-  border-radius: 2px;
+  border-radius: var(--cam-radius);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   pointer-events: none;
 }
@@ -376,10 +446,10 @@ html, body {
    quiet zone is drawn INSIDE the canvas; this padding is a frame, so the
    code has an edge against a bright frame of video as well as a dark one. */
 .cam-qr {
-  position: absolute; bottom: 6px; right: 6px; z-index: 3;
+  position: absolute; bottom: var(--cam-inset); right: var(--cam-inset); z-index: 3;
   padding: 3px;
   background: #fff;
-  border-radius: 2px;
+  border-radius: var(--cam-radius);
   line-height: 0;
   /* A picture to photograph, never a control. A dense setup makes a code
      wider than a small camera panel's corner, and a code that swallowed the
@@ -391,18 +461,16 @@ html, body {
    handing the instrument to someone else. Bottom-left, opposite the
    .cam-toggles strip, so neither covers the other and the middle of the
    frame — where you are — stays clear. */
-.cam-actions {
-  position: absolute; bottom: 6px; left: 6px; z-index: 3;
-  display: flex; align-items: center; gap: 4px;
-}
-.cam-actions .depth-toggle { display: inline-flex; align-items: center; gap: 3px; text-decoration: none; }
+.cam-actions { bottom: var(--cam-inset); left: var(--cam-inset); }
 /* Muted is a state, not a disabled control — amber, as it was in the header. */
 #audio-btn.muted { color: var(--amber); border-color: var(--amber); background: #f0a50022; }
 
 /* Stopping the camera only means anything once one is running; starting it is
    the big target in the middle of the blank frame. */
 .cam-on-only { display: none; }
-body.cam-on .cam-on-only { display: block; }
+/* inline-flex, not block: it is a segment of .cam-bar and has to keep the
+   centring every other segment has. */
+body.cam-on .cam-on-only { display: inline-flex; }
 
 /* The blank frame IS the start button. It fills the picture because that is
    the thing you are looking at when there is nothing to look at yet — and in
@@ -569,11 +637,16 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 #model-stats { font-size: 9px; color: var(--dim); line-height: 1.5; }
 
 /* ── Support / donations popover ─────────────────────────── */
-#header { position: relative; }   /* containing block for #donate-pop */
-#donate-btn { padding: 4px 8px; }
+/* The ♥ lives on the picture now, in the actions bar at the bottom-left, so
+   the popover opens UP from there — and is a child of the frame rather than
+   of the bar, because the bar clips its segments to its own rounded corners
+   and would clip this with them. It was still being appended to the header
+   after the button moved, which put it a panel away from the ♥ that opened
+   it, and nowhere at all in fullscreen. */
 #donate-pop {
   position: absolute;
-  top: calc(100% + 4px); right: 10px;
+  left: var(--cam-inset);
+  bottom: calc(var(--cam-inset) + var(--cam-ctrl-h) + 6px);
   z-index: 60;
   min-width: 170px;
   background: var(--panel);
@@ -778,10 +851,7 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
   position: absolute; inset: 0;
   transform: scaleX(-1);
 }
-.cam-toggles {
-  position: absolute; top: 6px; right: 6px; z-index: 3;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
-}
+.cam-toggles { top: var(--cam-inset); right: var(--cam-inset); }
 .depth-toggle {
   background: color-mix(in oklab, var(--glass) 55%, transparent);
   border: 1px solid var(--border2);
@@ -815,12 +885,13 @@ body.no-scroll { overflow: hidden; }
 
 /* Fullscreen is where the name matters most — the patchbay that would
    otherwise tell you which setup this is has gone off screen — and it is also
-   where a 9px caption disappears. It grows with the picture. */
-#video-wrap.fs-active .cam-name { top: 12px; left: 12px; font-size: 13px; padding: 4px 10px; }
+   where a 9px caption disappears. Its box already grew with the system's
+   tokens; only the type has to be told. */
+#video-wrap.fs-active .cam-name { font-size: 12px; padding: 0 12px; }
 
 /* The KEYS toggle only makes sense in fullscreen. */
 .cam-toggles .fs-only { display: none; }
-#video-wrap.fs-active .fs-only { display: block; }
+#video-wrap.fs-active .fs-only { display: inline-flex; }
 
 /* Keyboard / play-along overlay strip, docked at the bottom. */
 #fs-kbd {
