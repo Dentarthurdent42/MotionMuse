@@ -108,9 +108,10 @@ test('ASL numbers ship with both a name and a numeral', () => {
   for (const id of ['asl0', 'asl3', 'asl4', 'asl6', 'asl7', 'asl8', 'asl9'])
     assert.ok(ids.includes(id), `missing ${id}`);
   const three = gesture.list().find(g => g.id === 'asl3');
-  assert.equal(gestureLabel(three), 'Three · ASL 3');
+  // Gloss first: it is what the list is ordered by, so it leads the label.
+  assert.equal(gestureLabel(three), 'ASL 3 · Three');
   // 1, 2, 5 and 10 reuse the existing shapes rather than duplicating them.
-  assert.equal(gestureLabel(gesture.list().find(g => g.id === 'point')), 'Point · ASL 1');
+  assert.equal(gestureLabel(gesture.list().find(g => g.id === 'point')), 'ASL 1 · Point');
   assert.equal(gestureLabel(gesture.list().find(g => g.id === 'horns')), 'Rock Horns');
 });
 

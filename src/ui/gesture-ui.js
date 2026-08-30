@@ -53,11 +53,13 @@ export function gestureModeSection() {
 
   const row = g => {
     const label = gestureLabel(g);
-    // The panel column is narrow, so the row shows "Pinky Touch · 6" and keeps
+    // The panel column is narrow, so the row shows "6 · Pinky Touch" and keeps
     // the spelled-out "ASL 6" for the tooltip, the signals panel and the chord
-    // readout, where there's room. Only `custom` earns a tag of its own —
-    // "built-in" on nine of eleven rows is noise that squeezes out the name.
-    const short = g.name + (g.asl ? ` · ${g.asl}` : '');
+    // readout, where there's room. Gloss first either way: it is what the list
+    // is sorted by, so it belongs in the column the eye runs down. Only
+    // `custom` earns a tag of its own — "built-in" on nine of eleven rows is
+    // noise that squeezes out the name.
+    const short = g.asl ? `${g.asl} · ${g.name}` : g.name;
     const tag = g.est
       ? `<span class="gesture-tag est" title="Estimated template — calibrate it on your own hand">est</span>`
       : (g.builtin ? '' : `<span class="gesture-tag">custom</span>`);

@@ -1,36 +1,47 @@
 // The order handshapes are listed in.
 //
 // Where a handshape IS an ASL handshape it already has a name in the language
-// — its gloss — and that gloss orders it, lexicographically. The point of
-// pinning it here is the awkward part: it is a STRING sort, so "10" lands
-// between "1" and "2", and a well-meant "fix" to a numeric sort would look
-// right for the numerals and have nowhere to put "L", "S" or "ILY".
+// — its gloss — and that gloss orders it. Numerals count and letters spell:
+// a plain string sort would be lexicographic and would put "10" between "1"
+// and "2", which is right for strings and wrong for a person counting on
+// their hand. What is pinned here is that 10 lands after 9, that the letters
+// follow the numbers rather than interleaving, and that the gloss leads the
+// label it is sorted by.
 //
 // Run: npm run test:unit
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { gesture, orderByGloss } from '../../src/gesture.js';
+import { gesture, gestureLabel, orderByGloss } from '../../src/gesture.js';
 
 const glosses = list => list.filter(g => g.asl).map(g => g.asl);
 
-test('ASL handshapes are listed in lexicographic gloss order', () => {
+test('ASL handshapes are listed in gloss order', () => {
   assert.deepEqual(glosses(gesture.list()),
-    ['0', '1', '10', '2', '3', '4', '5', '6', '7', '8', '9', 'ILY', 'L', 'S']);
+    ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'ILY', 'L', 'S']);
 });
 
-test('"10" sits between "1" and "2" — lexicographic, not numeric', () => {
+test('the numerals count — 10 lands after 9, not after 1', () => {
   const g = glosses(gesture.list());
-  assert.equal(g.indexOf('10'), g.indexOf('1') + 1);
-  assert.equal(g.indexOf('2'), g.indexOf('10') + 1);
+  assert.equal(g.indexOf('10'), g.indexOf('9') + 1);
+  // The failure this guards against is a plain string sort, which is
+  // lexicographic and would seat "10" between "1" and "2".
+  assert.ok(g.indexOf('10') > g.indexOf('2'));
 });
 
-test('lettered glosses follow the numerals, and each other', () => {
+test('lettered glosses follow the numerals, and spell among themselves', () => {
   const g = glosses(gesture.list());
-  assert.ok(g.indexOf('ILY') > g.indexOf('9'), 'letters come after digits');
+  assert.ok(g.indexOf('ILY') > g.indexOf('10'), 'letters come after every number');
   assert.ok(g.indexOf('ILY') < g.indexOf('L'));
   assert.ok(g.indexOf('L') < g.indexOf('S'));
+});
+
+test('the gloss leads the label it is sorted by', () => {
+  const point = gesture.list().find(g => g.id === 'point');
+  assert.equal(gestureLabel(point), 'ASL 1 · Point');
+  assert.equal(gestureLabel(gesture.list().find(g => g.id === 'horns')), 'Rock Horns',
+    'a shape with no gloss is just its name');
 });
 
 test('handshapes with no gloss are not ASL, so they are not reordered', () => {
@@ -43,11 +54,12 @@ test('handshapes with no gloss are not ASL, so they are not reordered', () => {
 });
 
 test('ordering keeps every handshape, exactly once', () => {
-  const before = [{ id: 'z', asl: 'S' }, { id: 'y' }, { id: 'x', asl: '1' }];
+  const before = [{ id: 'z', asl: 'S' }, { id: 'y' }, { id: 'x', asl: '10' },
+                  { id: 'w', asl: '2' }];
   const after = orderByGloss(before);
   assert.equal(after.length, before.length);
-  assert.deepEqual([...after].map(g => g.id).sort(), ['x', 'y', 'z']);
-  assert.deepEqual(after.map(g => g.id), ['x', 'z', 'y']);
+  assert.deepEqual([...after].map(g => g.id).sort(), ['w', 'x', 'y', 'z']);
+  assert.deepEqual(after.map(g => g.id), ['w', 'x', 'z', 'y']);
 });
 
 test('recorded handshapes are the user’s own, and stay last in the order made', () => {
