@@ -599,6 +599,12 @@ export const engine = (() => {
     return { params, tuning: { ...tuning }, volStep: { ...volStep },
              oscCount, oscTypes: getOscTypes(),
              filterType, chordFilterType,
+             // Shepard is a different SOUND, not a different setting: the
+             // voices are rebuilt as octave stacks. It was missing here, so a
+             // saved file, a session restore and a shared link all came back
+             // with it off — the one part of the patch a snapshot could not
+             // describe.
+             shepard: { lead: shepLead, chord: shepChord },
              chordEnv: { ...chordEnv } };
   }
   function restore(s) {
@@ -610,6 +616,9 @@ export const engine = (() => {
     if (s.filterType) setFilterType(s.filterType);
     if (s.chordFilterType) setChordFilterType(s.chordFilterType);
     if (s.chordEnv) setChordEnv(s.chordEnv);
+    // Before the params: setShepard rebuilds the affected bank, and a rebuild
+    // after them would hand the new voices their defaults instead.
+    if (s.shepard) setShepard(s.shepard);
     if (s.tuning) setTuning(s.tuning);
     if (s.volStep) setVolStep(s.volStep);   // before params, so volume quantises on the way in
     if (s.params) for (const k in s.params) if (PARAMS[k]) set(k, s.params[k]);

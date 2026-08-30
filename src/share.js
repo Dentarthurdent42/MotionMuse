@@ -25,7 +25,14 @@ export const SHARE_PARAM = 's';
 // without the tracker that feeds it hands them an instrument that does
 // nothing. The pose MODEL choice stays out, for the reason at the top of this
 // file — that is a judgement about one machine's GPU, not about the music.
-const SHARE_UI_KEYS = ['theme', 'tracking', 'face', 'dev'];
+// `hotkeys`, `uicontrol` and the three `pedal*` keys are here for the same
+// reason `tracking` is: they are how the setup is PLAYED, not what screen it
+// was arranged on. A patch whose looper is driven by a nod at a tuned
+// sensitivity, or whose author expects you to drive the panel with your hands,
+// arrives unplayable without them — which is the same failure as handing
+// someone a mapping without the tracker that feeds it.
+const SHARE_UI_KEYS = ['theme', 'tracking', 'face', 'dev', 'hotkeys', 'uicontrol',
+                       'pedalSrc', 'pedalSens', 'pedalOn'];
 
 export function shareableSnapshot(snap = snapshot()) {
   const ui = {};
