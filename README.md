@@ -9,7 +9,7 @@ A browser-based instrument that maps live webcam data — hand position, gesture
 <sub>Kept in step with the UI automatically — see [Keeping the screenshot honest](#keeping-the-screenshot-honest). Regenerate by hand with `npm run screenshot`.</sub>
 
 Open `index.html` (or the Netlify deploy) and:
-1. Click **START CAMERA** — MediaPipe loads and begins detecting hands and pose
+1. Click **START CAMERA** — the blank frame *is* the button — MediaPipe loads and begins detecting hands and pose
 2. Click **PRESET** — pick a starting patch (hands, face, gaze or whole-body)
 3. Press **Space** (or click **🔇 MUTED**) to unmute, then move and play — the synthesiser
    is already running, it just starts silent
@@ -36,7 +36,7 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 ```
 
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1. Registering with `velocity: true` also creates a `<key>_vel` sibling the bus keeps fed with the rate of change — see [Velocities](#velocities--every-measure-also-reports-how-fast-it-is-changing).
-- **Tracking toggles**: **✋ L**, **R ✋** and **🧍 POSE** — the TRACKING strip overlaid on the camera view, with ☺ FACE and ◉ GAZE below them — switch each model off outright. (They live on the camera picture because what the camera tracks is a property of that input, not of the app's header; hands and pose can be set before the camera starts, face and gaze wake once there is a stream to run on.) Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
+- **Tracking toggles**: **✋ L**, **R ✋**, **🧍 POSE**, **☺ FACE** and **◉ GAZE** — one row of chips inside **Camera Input**, under the picture — switch each model off outright. (They live with that input because what the camera tracks is a property of it, not of the app's header; they are beside the picture rather than on top of it because a control over the frame covers the thing you are watching. Hands and pose can be set before the camera starts; face and gaze wake once there is a stream to run on.) Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` plus a swappable **pose backend** (`src/posebackends.js` — MediaPipe lite/full/heavy or TF.js MoveNet), extracts ~30 signals per frame, and writes them into the bus. Hand and pose inference **alternate frames** (each still ≥15 Hz at a 30 fps camera) so per-frame cost stays half of running both, and every positional signal passes through a per-signal **One-Euro filter** (`src/filter.js`, applied in `bus.update`) — the standard low-latency jitter filter: heavy smoothing on a held pose, light smoothing on fast moves.
 - **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert, invert+ease), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **inverted** with its `⇅ INVERT` toggle — the input's high end then drives the output's low end, which composes with (rather than replaces) the curve, so any response shape can run either way round. A cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired. An output also *remembers* its range, curve, steps and invert flag, so re-wiring a different input into it (or unplugging and re-plugging) doesn't reset them. Each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
 - **Audio Engine** (`src/engine.js`): a **resizable oscillator bank** — one oscillator by default, up to eight, each with its own frequency, detune, waveform and **level** (`oscN_freq` / `oscN_detune` / `oscN_volume`) — through a BiquadFilter, and the chord-mode voice bank through a **second, independent filter and level** (`chord_filter_freq` / `chord_filter_q` / `chord_volume`, with `osc_volume` as the whole bank's level, the lead's counterpart to `chord_volume`). The two sources converge into a shared convolution reverb and main gain. All driven by the Web Audio API with 25 ms parameter smoothing. **Volume is the exception**: it snaps onto a perceptual step ladder and fires *one* envelope per level change instead of re-smoothing every frame — see Volume quantisation below. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
@@ -211,6 +211,16 @@ all of them. `tests/layout` therefore overrides `navigator.webdriver` to
 exercise the real path rather than a stand-in for it.
 
 ## Share: a QR code of your setup
+
+**Following a link opens straight into the fullscreen camera view.** A link is
+an invitation to *play*, not to read a patchbay: someone pointed a phone at a
+QR code, and the next thing they should see is themselves, full frame, with
+one thing to press. (The CSS fullscreen path, not the native one — a link
+lands after a reload with no user gesture anywhere near it, and the native
+Fullscreen API rejects anything else.) The tour for the arriving setup then
+**waits until you leave fullscreen**: a walkthrough of panels that are behind
+a fullscreen camera is a walkthrough of nothing.
+
 
 **SHARE** (beside SAVE and LOAD) shows a QR code of everything you have set up.
 Point a phone at it and the app opens configured the same way — the point being
@@ -1427,6 +1437,30 @@ only changes once per frame anyway. Settings save with presets and travel in
 shared links; the module is `src/metronome.js`, the panel
 `src/ui/metronome-ui.js`, both driven by `tests/unit/metronome.test.js` plus
 beat-mode tests in the radial and chord-expression suites.
+
+## The camera view is the instrument's face
+
+Four things moved onto the picture, because the picture is where your eyes
+already are while you play — and, in fullscreen, the only thing on screen at
+all:
+
+- **The blank frame IS the start button.** There is nothing to look at before
+  the camera runs, so the empty frame is the target: one big **START CAMERA**,
+  centred, at any size and in fullscreen alike, where a control in the page
+  header would be off-screen entirely. It is a real `<button>`, so the tap
+  that requests camera access is a user gesture wherever it happens. Once
+  there is a picture that target is gone — covering the view with a button
+  would be covering the instrument — and **⏹ STOP** takes its place in the
+  strip beside ⛶ FULL.
+- **Mute, SHARE, the source link and ♥** sit bottom-left, opposite that
+  strip, so neither covers the other and the middle of the frame — where you
+  are — stays clear. Small and quiet: they never compete with what they sit
+  over. Mute keeps its amber, because muted is a *state*, not a disabled
+  control.
+
+What is left in the page header is what belongs to the **tool** rather than
+the instrument: settings and the tour. And what the camera *tracks* went the
+other way, off the picture and into **Camera Input** beside it (above).
 
 ## Fullscreen camera view
 

@@ -23,6 +23,15 @@ export const fullscreen = {
   toggle() {
     if (this.active) exit(); else enter();
   },
+  // Open it without a click. The native Fullscreen API requires a user
+  // gesture and rejects anything else, so a setup arriving by link — which
+  // lands after a reload, with no gesture anywhere near it — takes the CSS
+  // takeover instead. Same view, same exit (Esc, or the button), no promise
+  // to be refused.
+  open() {
+    if (this.active) return;
+    fakeEnter();
+  },
   onChange(cb) { changeCbs.push(cb); },
 };
 

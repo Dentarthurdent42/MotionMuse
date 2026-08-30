@@ -367,7 +367,6 @@ export const cvSource = {
     this.canvas.width  = wrap.offsetWidth;
     this.canvas.height = wrap.offsetHeight;
 
-    document.getElementById('cam-placeholder').style.display = 'none';
     this.video.classList.add('ready');
 
     this._lat = { hand: [], pose: [], total: [], interval: [], lastT: 0, frame: 0 };
@@ -393,7 +392,6 @@ export const cvSource = {
       this.video.classList.remove('ready');
     }
     this.ctx?.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    document.getElementById('cam-placeholder').style.display = '';
     document.getElementById('latency-bar').style.display = 'none';
     this.lastTime = -1;
   },

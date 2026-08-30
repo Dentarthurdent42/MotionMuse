@@ -138,7 +138,11 @@ check(onLoad.started, 'the engine starts with the page');
 check(onLoad.ctxState === 'suspended', 'the test really is exercising a suspended context', onLoad.ctxState);
 check(onLoad.muted, 'output is muted on launch');
 check(sliders > 0, 'the audio panel renders anyway, so controls are usable', `${sliders} sliders`);
-check(onLoadBtn.muted && /MUTED/.test(onLoadBtn.text), 'the button shows the muted state', onLoadBtn.text);
+// The button lives on the camera view now, among the other icons there, so
+// the state it shows is the speaker glyph plus its amber styling rather than
+// a caption. aria-pressed and the title carry it for anyone not looking at
+// the picture — checked immediately below.
+check(onLoadBtn.muted && onLoadBtn.text === '🔇', 'the button shows the muted state', onLoadBtn.text);
 check(onLoadBtn.pressed === 'true', 'the muted state is exposed to assistive tech');
 check(bannerOn, 'the visualiser carries a MUTED banner');
 check(!afterClick.muted, 'clicking unmutes');
