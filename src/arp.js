@@ -91,6 +91,40 @@ export function noteEnvelope(step, gate, sustain = 0) {
   return { hold, tail: Math.min(room, want) };
 }
 
+// ── The shape of one arp note ─────────────────────────────────────────────
+//
+// Stated ONCE, here, because two things need it and they must not disagree:
+// engine.arpNote schedules its gain breakpoints from it, and the keyboard
+// overlay draws each note's live loudness from it. A display that modelled
+// the envelope separately would be a second opinion about the sound, and the
+// first thing to go stale the next time the envelope changes.
+export const ARP_ATTACK = 0.006;
+
+// `dur` is the gate (noteEnvelope's `hold`), `tail` its ring.
+// Returns the three spans of one note measured from its onset: the attack,
+// the plateau's END, and the fall. With a tail the gate is held for all of `dur` and the fall happens
+// after it; without one the fall has to happen INSIDE the gate, because the
+// note still has to be over when the gate says it is.
+export function noteSpans(dur, tail = 0) {
+  const ring = Math.max(0, tail);
+  const rel = ring > 0 ? ring : Math.min(0.09, dur * 0.5);
+  const hold = ring > 0 ? Math.max(ARP_ATTACK, dur)
+                        : Math.max(ARP_ATTACK, dur - rel);
+  return { atk: ARP_ATTACK, hold, rel };
+}
+
+// Where that shape is, `age` seconds after the note was struck: 0 before it
+// starts and after it has faded, 1 across the plateau, linear in between —
+// the same piecewise line engine.arpNote asks the audio param for.
+export function noteLevelAt(age, spans) {
+  const { atk, hold, rel } = spans;
+  if (age <= 0) return 0;
+  if (age < atk) return age / atk;
+  if (age < hold) return 1;
+  if (age < hold + rel) return rel > 0 ? 1 - (age - hold) / rel : 0;
+  return 0;
+}
+
 // Never schedule more than this in one pass. The catch-up rule below should
 // make it unreachable; it is here because the alternative to a wrong number of
 // notes is an unbounded loop inside a frame.

@@ -1618,6 +1618,102 @@ const ngBars = await (async () => {
   return { ...m, errs };
 })();
 
+// ── The keyboard overlay under the arpeggiator ──
+//
+// Asked for from playing: "keep the keyboard display honest when the
+// arpeggiator is running — currently it just displays all notes in the
+// arpeggio being held, rather than showing what gets pressed, held, released,
+// and faded." The shape of a note and the reading of the schedule are unit
+// tested (tests/unit/arp-keyboard.test.js); what needs a browser is that the
+// overlay ASKS the arpeggiator at all, and that a level actually reaches the
+// canvas rather than being rounded away.
+const arpKbd = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1024, height: 800 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(350);
+
+  const m = await page.evaluate(async () => {
+    const { chordmode } = await import('/src/chordmode.js');
+    const { arpvoice } = await import('/src/arpvoice.js');
+    const { updateFsOverlay } = await import('/src/ui/fullscreen.js');
+    chordmode.setEnabled(true);
+    document.getElementById('fskbd-btn').click();
+    await new Promise(r => setTimeout(r, 250));
+
+    const shot = () => {
+      const c = document.getElementById('fs-kbd');
+      return c.getContext('2d').getImageData(0, 0, c.width, c.height).data.join(',');
+    };
+    // Total cyan INK on the keyboard: how many pixels are tinted, weighted by
+    // how strongly. Counting pixels over a fixed threshold instead would be
+    // blind to exactly the thing under test — a note at 35% is drawn, just
+    // pale, and a threshold tuned for a struck note scores it the same as
+    // silence. (It did, on the first run of this block: "dimmer than a struck
+    // one — 0px vs 378px" passed while proving nothing.) The chord tint is
+    // cyan over grey keys, so green-minus-red rises with the level.
+    const ink = () => {
+      const c = document.getElementById('fs-kbd');
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = d[i + 1] - d[i];        // green over red
+        if (v > 4) sum += v;              // ignore the keys' own faint tint
+      }
+      return Math.round(sum / 1000);
+    };
+    const redraw = async () => {
+      const { makeKbdView } = await import('/src/ui/keyboard.js');
+      void makeKbdView;                 // the view caches; force it to repaint
+      updateFsOverlay();
+      await new Promise(r => requestAnimationFrame(r));
+      updateFsOverlay();
+    };
+
+    const CHORD = [261.63, 329.63, 392.0];
+    Object.defineProperty(arpvoice, 'enabled', { get: () => true, configurable: true });
+
+    // The keys have a colour of their own, so an empty keyboard is not zero
+    // ink. Measure that floor rather than assuming one — comparing against a
+    // guessed zero is how the previous version of this block passed while the
+    // note under test was invisible.
+    arpvoice.voices = () => [];
+    await redraw();
+    const baseline = ink();
+
+    // One note, full — an arpeggio's actual state.
+    arpvoice.voices = () => [{ freq: CHORD[0], level: 1 }];
+    await redraw();
+    const oneNote = ink();
+    const oneShot = shot();
+
+    // The whole chord down — what the overlay used to draw regardless.
+    arpvoice.voices = () => CHORD.map(f => ({ freq: f, level: 1 }));
+    await redraw();
+    const wholeChord = ink();
+
+    // The same one note, half faded: fewer cyan pixels, and a different
+    // picture — a level that got rounded to "on" would give an identical one.
+    arpvoice.voices = () => [{ freq: CHORD[0], level: 0.35 }];
+    await redraw();
+    const faded = ink();
+    const fadedShot = shot();
+
+    // Faded all the way out is nothing at all.
+    arpvoice.voices = () => [];
+    await redraw();
+    const silent = ink();
+
+    return { baseline, oneNote, wholeChord, faded, silent,
+             fadeChangedPicture: fadedShot !== oneShot };
+  });
+
+  await ctx.close();
+  return { ...m, errs };
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -2308,6 +2404,31 @@ console.log('\nPatchbay level bars\n');
     'INVERT leaves the input bar alone', `${m.straight.in} vs ${m.flipped.in}`);
   check(near(m.straight.out + m.flipped.out, 1),
     'and mirrors the output bar', `${m.straight.out} + ${m.flipped.out}`);
+}
+
+// ── The keyboard overlay under the arpeggiator ──
+console.log('\nKeyboard overlay while the arpeggiator runs\n');
+{
+  const m = arpKbd;
+  check(m.errs.length === 0, 'no page errors', m.errs.join(' | '));
+  check(m.oneNote > m.baseline,
+    'a struck note lights the keyboard', `${m.oneNote} vs empty ${m.baseline}`);
+  // The bug, stated as a measurement: a run sounds one note at a time, so it
+  // must not paint as much of the keyboard as a block chord does.
+  check(m.wholeChord > m.oneNote * 1.5,
+    'and one note is visibly less than the whole chord — an arpeggio is not a chord',
+    `${m.oneNote} vs ${m.wholeChord} ink`);
+  // Strictly BETWEEN silence and a struck note: dimmer than struck, and still
+  // actually on the screen. Half of that is what the first version of this
+  // block failed to check, and it passed while the note was invisible.
+  check(m.faded < m.oneNote && m.faded > m.baseline,
+    'a note part-way through its release is dimmer than a struck one, and still lit',
+    `${m.faded} vs struck ${m.oneNote}, empty ${m.baseline}`);
+  check(m.fadeChangedPicture,
+    'so the level reaches the canvas rather than being rounded to on/off');
+  check(m.silent === m.baseline,
+    'and a note that has faded out leaves the keyboard exactly as it found it',
+    `${m.silent} vs empty ${m.baseline}`);
 }
 
 console.log(`\n${fail} failure(s)\n`);

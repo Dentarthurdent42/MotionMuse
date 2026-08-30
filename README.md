@@ -1906,6 +1906,42 @@ the frame ride above it rather than sitting on the keys, and released the
 moment it is switched off. Gesture overlays keep
 their alignment at any screen shape.
 
+### The keyboard tells the truth about an arpeggio
+
+The overlay paints the sounding harmony onto the keys. For a **block chord**
+that is every note at full strength, because every note really is down. For an
+**arpeggio** it was the same picture — and that was a lie: a run sounds one
+note at a time, and the keyboard claimed all four were held for as long as you
+held the gesture. It was describing a way of playing nobody had chosen.
+
+Under the arp the overlay reads the *schedule* instead, so a note is drawn
+being **struck, held for its gate, falling through its tail, and gone**. The
+numbers it draws from are the ones `engine.arpNote` scheduled the gain from:
+`noteSpans()` states the envelope once in `arp.js`, the engine asks it for its
+gain breakpoints, and `noteLevelAt()` evaluates the same piecewise line for the
+display. A display that modelled the envelope separately would be a second
+opinion about the sound, and the first thing to go stale the next time the
+envelope changed.
+
+Three details this needed:
+
+- **A note is drawn the way it was played.** Gate, sustain and rate are all
+  live patchbay outputs, so the setting in force *now* is not necessarily the
+  one a still-ringing note was struck under — each scheduled note therefore
+  carries its own envelope and frequency rather than having them re-derived.
+- **Notes still in the future are not "pressed".** The scheduler runs a horizon
+  ahead of the audio clock, so at any instant half the schedule has not
+  happened yet.
+- **Letting the chord go is not the same as cutting it.** `release()` hands the
+  voices to the chord's own release, so the display follows them down over that
+  time instead of blanking while the room is still sounding — the same lie as
+  showing every chord note at once, at the other end of the note. `stop()` is
+  the hard cut and does blank, because there really is nothing left ringing.
+
+`drawKeyboard`'s `chord` option therefore takes either bare midis (all equally
+down) or `{m, level}` pairs. Bare numbers still mean full strength, so every
+caller with no opinion about loudness is unchanged.
+
 The CSS takeover is `position: fixed; inset: 0`, and it spent a while losing a
 specificity tie. `.panel-cam #video-wrap` — the responsive rule that gives the
 camera its width in each orientation — and `#video-wrap.fake-fullscreen` both

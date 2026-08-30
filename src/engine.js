@@ -1,5 +1,5 @@
 import { makeQuantizer } from './scale.js';
-import { ARP_MAX_GATE, ARP_MAX_SUSTAIN } from './arp.js';
+import { ARP_MAX_GATE, ARP_MAX_SUSTAIN, noteSpans } from './arp.js';
 import { isString } from './is.js';
 import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 
@@ -775,15 +775,10 @@ export const engine = (() => {
     // silent at that instant, so a ramp from the previous note's frequency
     // would be a swoop nobody asked for.
     v.setFreq(freq, t - 0.004, 0);
-    const atk = 0.006;
-    const ring = Math.max(0, tail);
-    // With a tail, the gate is held for all of `dur` and the fall happens
-    // after it. Without one the fall has to happen INSIDE the gate, because
-    // the note still has to be over when the gate says it is — which is the
-    // behaviour every caller had before SUSTAIN existed, and the reason an
-    // arp note could never ring: a fade capped at 90 ms is a cut, not a tail.
-    const rel = ring > 0 ? ring : Math.min(0.09, dur * 0.5);
-    const holdUntil = t + (ring > 0 ? Math.max(atk, dur) : Math.max(atk, dur - rel));
+    // The shape lives in arp.js so the keyboard overlay can draw exactly the
+    // envelope this schedules, rather than its own guess at it.
+    const { atk, hold, rel } = noteSpans(dur, tail);
+    const holdUntil = t + hold;
     g.cancelScheduledValues(t - 0.004);
     g.setValueAtTime(0, t);
     g.linearRampToValueAtTime(peak, t + atk);
