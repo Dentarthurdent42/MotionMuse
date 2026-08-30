@@ -2,17 +2,23 @@
 // live updates (match dots, chord readout). Kept separate so audio-ui.js stays
 // focused on the synth panel.
 //
-// Gesture Mode and the handshape library used to be two sections — "Chord
-// Mode" assigned shapes to degrees, "Gestures" defined the shapes — and each
-// grew read-only echoes of the other to stay legible: chips on the shape rows
+// Gesture Mode and the gesture library used to be two sections — "Chord Mode"
+// assigned shapes to degrees, "Gestures" defined the shapes — and each grew
+// read-only echoes of the other to stay legible: chips on the shape rows
 // saying what a shape played, `· est` riding along in the assignment selects.
 // They are one section now, because they were always one subject: what your
-// hands mean. The assignments sit on top (they are the instrument); the
-// library folds away underneath as HANDSHAPES, where a shape is calibrated,
-// recorded and removed. The chips died with the split that made them
-// necessary.
+// body means. The assignments sit on top (they are the instrument); the
+// library folds away underneath as GESTURE CONFIGURATIONS, where a gesture is
+// calibrated, recorded, renamed and removed. The chips died with the split
+// that made them necessary.
+//
+// It is not only handshapes any more — a gesture declares a kind, and the face
+// and pose models publish channel sets the same matcher runs over (see KINDS
+// in gesture.js) — which is why the fold is named for gestures rather than for
+// hands, and why calibrating no longer means going and finding the shape in
+// it: every assignment row calibrates its own.
 
-import { gesture, gestureLabel } from '../gesture.js';
+import { gesture, gestureLabel, KINDS, kindOf } from '../gesture.js';
 import { arpRowHTML, wireArpRow, updateArpRow } from './arp-ui.js';
 import { setReadout } from './numeric.js';
 import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS,
@@ -27,13 +33,21 @@ import { buildSigPanel } from './signals.js';
 
 const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`;
 
-// Whether the HANDSHAPES library is unfolded, same pattern as above. Starts
+// What you are asked to hold, per kind — "hold the pose" is wrong advice for
+// an expression, and "your own hand" is wrong for a stance.
+const KIND_NOUN = { hand: 'hand', face: 'face', body: 'body' };
+const KIND_HOLD = { hand: 'hold the pose', face: 'hold the expression',
+                    body: 'hold the stance' };
+// Which tracker has to be running before a kind can be read at all.
+const KIND_NEEDS = { hand: 'hands', face: 'the face tracker', body: 'pose tracking' };
+
+// Whether the library is unfolded, same pattern as above. Starts
 // unresolved rather than false: until the user has an opinion it follows the
 // mode — folded while the mode is on (the assignments above are the playing
 // surface, and doubling the section's length by default buries the ADSR),
 // open while it is off (with no assignments showing, the library IS the
 // section).
-let handshapeLibOpen = null;
+let gestureLibOpen = null;
 
 // The key select is narrow; scale.js's full names ("major (ionian)") get
 // clipped mid-word, so shorten them for this one control.
@@ -60,9 +74,15 @@ export function gestureModeSection() {
     // `custom` earns a tag of its own — "built-in" on nine of eleven rows is
     // noise that squeezes out the name.
     const short = g.asl ? `${g.asl} · ${g.name}` : g.name;
+    const kind = kindOf(g);
     const tag = g.est
       ? `<span class="gesture-tag est" title="Estimated template — calibrate it on your own hand">est</span>`
       : (g.builtin ? '' : `<span class="gesture-tag">custom</span>`);
+    // Only the non-hand kinds are badged: "hand" on nine of eleven rows is the
+    // same noise "built-in" was, and a gesture read from somewhere other than
+    // your hands is exactly the thing you cannot tell from the name.
+    const kindTag = kind === 'hand' ? ''
+      : `<span class="gesture-tag kind" title="Read from your ${KIND_NOUN[kind]}, not your hands — needs ${KIND_NEEDS[kind]} switched on">${kind}</span>`;
     // Illustration — DEV ONLY, and under construction.
     //
     // These are rendered from each template's own feature vector
@@ -90,9 +110,13 @@ export function gestureModeSection() {
       <span class="gesture-dot" id="gdot-${g.id}"></span>
       ${pic}
       <span class="gesture-name">${short}</span>
+      ${kindTag}
       ${tag}
+      <button class="rm-btn gesture-ren" data-gid="${g.id}"
+              title="Rename ${label}" aria-label="Rename ${label}">✎</button>
       <button class="rm-btn gesture-cal" data-gid="${g.id}"
-              title="Calibrate ${label} on your own hand" aria-label="Calibrate ${label}">⊙</button>
+              title="Calibrate ${label} on your own ${KIND_NOUN[kind]}"
+              aria-label="Calibrate ${label}">⊙</button>
       <button class="rm-btn gesture-del" data-gid="${g.id}"
               title="Remove ${label}" aria-label="Remove ${label}">×</button>
     </div>`;
@@ -119,7 +143,7 @@ export function gestureModeSection() {
   // can do both jobs without the two ever being asked at once. `· est` rides
   // along with the name: whether a shape is calibrated is exactly what you
   // want to know at the moment you wire it to something.
-  const handshapeOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
+  const gestureOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
     + gestures.map(g =>
         `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
         + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
@@ -159,6 +183,22 @@ export function gestureModeSection() {
   // there is not one: that hand is already the volume. Say so rather than
   // leaving two live-looking selects that quietly do nothing.
   const accBusy = ex.mode === 'hand';
+  // Calibrating from where the gesture is CHOSEN, not only from the library.
+  // The library is where a gesture is defined, but the moment you find out a
+  // template is wrong is the moment a chord will not sound — and that is this
+  // row, with the fold below it very possibly shut. Disabled with no gesture
+  // on the row, because there is then nothing to calibrate.
+  const calBtn = (gid, busy = false) => {
+    const g = gid ? gestures.find(x => x.id === gid) : null;
+    const what = g ? gestureLabel(g) : null;
+    const off = !g || busy;
+    return `<button class="rm-btn ch-cal" data-gid="${gid || ''}" ${off ? 'disabled' : ''}
+            title="${!g ? 'Choose a gesture first'
+                        : busy ? 'Unavailable while the picker beside it is'
+                        : `Re-record ${what} from your own ${KIND_NOUN[kindOf(g)]}`}"
+            aria-label="${what ? `Calibrate ${what}` : 'Calibrate'}">⊙</button>`;
+  };
+
   const voicingRow = `
     <div class="chord-voicing">
       <span class="chord-key-lbl">PLAY</span>
@@ -175,13 +215,15 @@ export function gestureModeSection() {
         ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
         : 'Hold this on your other hand to raise the note a semitone'}">♯ SHARP
         <select id="ck-acc-sharp" ${accBusy ? 'disabled' : ''}
-                aria-label="Handshape that sharpens the note">${handshapeOptions(accG.sharp)}</select>
+                aria-label="Gesture that sharpens the note">${gestureOptions(accG.sharp)}</select>
+        ${calBtn(accG.sharp, accBusy)}
       </label>
       <label class="ctrl-lbl" title="${accBusy
         ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
         : 'Hold this on your other hand to lower the note a semitone'}">♭ FLAT
         <select id="ck-acc-flat" ${accBusy ? 'disabled' : ''}
-                aria-label="Handshape that flattens the note">${handshapeOptions(accG.flat)}</select>
+                aria-label="Gesture that flattens the note">${gestureOptions(accG.flat)}</select>
+        ${calBtn(accG.flat, accBusy)}
       </label>
       <div class="quant-notes" style="grid-column:1 / -1;margin:0;">${accBusy
         ? 'The other hand is playing the volume, so every note sounds natural.'
@@ -216,8 +258,9 @@ export function gestureModeSection() {
       <span class="chord-degree" title="${n ? `${n.numeral} · ${n.name}` : `${c.numeral} · ${c.rootName} ${c.quality}`}"
         >${n ? `${n.numeral} · ${n.name}` : `${c.numeral} · ${c.rootName}`}</span>
       <select class="ch-shape" data-degree="${i}"
-              aria-label="Handshape that plays ${c.numeral}"
-        >${handshapeOptions(gid)}</select>
+              aria-label="Gesture that plays ${c.numeral}"
+        >${gestureOptions(gid)}</select>
+      ${calBtn(gid)}
       <button class="wave-btn ch-sev${sevenths[i] ? ' on' : ''}" data-degree="${i}"
               aria-pressed="${sevenths[i]}" ${isNote ? 'disabled' : ''}
               title="${isNote
@@ -233,6 +276,24 @@ export function gestureModeSection() {
     beat:    'Metronome beats',
   };
   const CONTROL_LABEL = { gate: 'ATTACK / RELEASE', volume: 'VOLUME' };
+  // In `hand` expression mode the naming hand is already decided — it is the
+  // one not playing — so this shows that rather than offering a second, and
+  // possibly contradicting, opinion about it.
+  const nameHand = chordmode.getNamingHand();
+  const nameFixed = ex.mode === 'hand';
+  const nameShown = nameFixed ? (ex.hand === 'L' ? 'R' : 'L') : nameHand;
+  const nameRow = `
+    <div class="chord-expr">
+      <span class="chord-key-lbl">NAMED BY</span>
+      <select id="ck-name-hand" aria-label="Which hand names the chord"
+              ${nameFixed ? 'disabled' : ''}
+              title="${nameFixed
+                ? 'Set by PLAY WITH: the hand that is not playing names the chord.'
+                : 'Which hand a handshape is read from. Naming one hand frees the other to drive a cable — an open hand held out to move a filter is a handshape whether or not you meant it as one, and EITHER reads both.'}">
+        ${[['any', 'EITHER hand'], ['L', 'LEFT hand'], ['R', 'RIGHT hand']].map(([v, l]) =>
+          `<option value="${v}"${v === nameShown ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+    </div>`;
   const exprRow = `
     <div class="chord-expr">
       <span class="chord-key-lbl">PLAY WITH</span>
@@ -283,16 +344,19 @@ export function gestureModeSection() {
         : 'Only used when a handshape holds the chord — here the signal above does the releasing'}"
         >RELEASE</span>
       <select class="ch-shape" data-degree="release" ${ex.mode === 'gesture' ? '' : 'disabled'}
-              aria-label="Handshape that releases a held chord"
-        >${handshapeOptions(relId)}</select>
+              aria-label="Gesture that releases a held chord"
+        >${gestureOptions(relId)}</select>
+      ${calBtn(relId)}
       <span class="ch-sev-gap"></span>
     </div>`;
 
   // The instrument on top, the library folded underneath. The mode's rows are
-  // what you look at while playing; HANDSHAPES is where a shape is defined —
-  // calibrated, illustrated, recorded, removed — which is setup, not
-  // performance, so it earns a fold rather than a second section.
-  const libOpen = handshapeLibOpen ?? !on;
+  // what you look at while playing; GESTURE CONFIGURATIONS is where a gesture
+  // is defined — calibrated, illustrated, recorded, renamed, removed — which is
+  // setup, not performance, so it earns a fold rather than a second section.
+  // (Calibration is the one part of it that ALSO lives upstairs, on the rows:
+  // it is the only one you reach for mid-play.)
+  const libOpen = gestureLibOpen ?? !on;
   return `
     <div class="audio-section" data-sec="gesture-mode">
       <div class="audio-section-label">
@@ -303,7 +367,9 @@ export function gestureModeSection() {
       ${keyRow}
       ${voicingRow}
       ${exprRow}
+      ${nameRow}
       <div id="chord-assigns">${assignRows}</div>
+      <div id="chord-cal-status" class="quant-notes" role="status" aria-live="polite"></div>
       ${arpRow}
       <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;">
         ${['attack', 'decay', 'sustain', 'release'].map(k => `
@@ -328,13 +394,20 @@ export function gestureModeSection() {
         </div>
       </div>
       ${on ? '' : `<div class="quant-notes">switch on to play a ${isNote ? 'note' : 'chord'} by holding its handshape</div>`}
-      <details class="gesture-group" id="handshape-lib"${libOpen ? ' open' : ''}>
-        <summary class="handshape-lib-summary">HANDSHAPES
+      <details class="gesture-group" id="gesture-lib"${libOpen ? ' open' : ''}>
+        <summary class="gesture-lib-summary"><span class="gesture-lib-title">GESTURE CONFIGURATIONS</span>
           <span class="gesture-tag">${gestures.length}</span>
           ${est ? `<span class="gesture-tag est" title="${est} still estimated — calibrate them on your own hand">${est} est</span>` : ''}
-          <button type="button" class="wave-btn" id="record-gesture-btn"
-               title="Record a new handshape from the camera"
-               style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">● REC</button>
+          <span class="gesture-rec-add">
+            <select id="record-kind" aria-label="What the new gesture is read from"
+                    title="A gesture does not have to be a handshape: the same template matching runs over the face model's expression channels and the pose model's joint angles.">
+              ${Object.entries(KINDS).map(([k, v]) =>
+                  `<option value="${k}">${v.label.toUpperCase()}</option>`).join('')}
+            </select>
+            <button type="button" class="wave-btn" id="record-gesture-btn"
+                 title="Record a new gesture from the camera"
+                 style="flex:0 0 auto;padding:2px 9px;">● REC</button>
+          </span>
         </summary>
         <div id="gesture-list">${gestureRows}</div>
         <div id="gesture-cal-status" class="quant-notes"></div>
@@ -360,19 +433,37 @@ const HOW_TO = {
   asl0:  'All fingertips curved to meet the thumb in an O',
 };
 
-// Countdown → record, shared by the single-gesture button and the walkthrough.
-// `onDone` receives true when a template was captured.
+// A recording only completes once ~10 frames of features arrive, and features
+// only arrive while the model that produces them is running. Switch the face
+// tracker off and a face recording waits forever — no error, just a countdown
+// that never resolves. Give up out loud instead.
+const CAPTURE_TIMEOUT = 5000;
+function watchCapture(kind, onGiveUp) {
+  return setTimeout(() => {
+    if (!gesture.recordingActive) return;
+    gesture.cancelRecord();
+    onGiveUp(`Nothing to read — switch ${KIND_NEEDS[kind]} on and stay in frame`);
+  }, CAPTURE_TIMEOUT);
+}
+
+// Countdown → record, shared by the single-gesture button, the chord rows and
+// the walkthrough. `onDone` receives true when a template was captured.
 function runCalibration(id, statusEl, onDone) {
   const g = gesture.list().find(x => x.id === id);
   const label = g ? gestureLabel(g) : id;
+  const kind = kindOf(g);
+  const how = HOW_TO[id] ?? KIND_HOLD[kind];
   const say = t => { if (statusEl) statusEl.textContent = t; };
   let n = 3;
-  say(`${label} — ${HOW_TO[id] ?? 'hold the pose'} … ${n}`);
+  say(`${label} — ${how} … ${n}`);
   const iv = setInterval(() => {
-    if (--n > 0) { say(`${label} — ${HOW_TO[id] ?? 'hold the pose'} … ${n}`); return; }
+    if (--n > 0) { say(`${label} — ${how} … ${n}`); return; }
     clearInterval(iv);
     say(`${label} — hold still…`);
-    gesture.recalibrate(id, () => { say(`${label} ✓`); onDone(true); });
+    const bail = watchCapture(kind, msg => { say(msg); toast(msg); onDone(false); });
+    gesture.recalibrate(id, () => {
+      clearTimeout(bail); say(`${label} ✓`); onDone(true);
+    });
   }, 900);
 }
 
@@ -389,8 +480,8 @@ export function wireGestureSections(rerender) {
   // pre-toggle value inside the click handler, so the choice being made is
   // its negation. REC lives in this summary and stops propagation, so a
   // recording press never reads as a fold.)
-  document.querySelector('#handshape-lib > summary')
-    ?.addEventListener('click', e => { handshapeLibOpen = !e.currentTarget.parentElement.open; });
+  document.querySelector('#gesture-lib > summary')
+    ?.addEventListener('click', e => { gestureLibOpen = !e.currentTarget.parentElement.open; });
 
   const calGuard = () => {
     if (gesture.recordingActive) return false;
@@ -402,6 +493,30 @@ export function wireGestureSections(rerender) {
     b.addEventListener('click', () => {
       if (!calGuard()) return;
       runCalibration(b.dataset.gid, status, () => rerender());
+    }));
+
+  // The same calibration, started from the chord row that uses the gesture.
+  // It reports into its own status line rather than the library's, which may
+  // well be folded shut underneath.
+  const chordStatus = document.getElementById('chord-cal-status');
+  document.querySelectorAll('.ch-cal').forEach(b =>
+    b.addEventListener('click', e => {
+      e.preventDefault();     // the accidental buttons sit inside their <label>
+      if (!b.dataset.gid || !calGuard()) return;
+      runCalibration(b.dataset.gid, chordStatus, () => rerender());
+    }));
+
+  // Renaming. Built-in or custom, an ASL gloss survives it — the gloss is what
+  // the shape IS and what the list is ordered by; the name is what you call it.
+  document.querySelectorAll('.gesture-ren').forEach(b =>
+    b.addEventListener('click', () => {
+      const g = gesture.list().find(x => x.id === b.dataset.gid);
+      if (!g) return;
+      const next = prompt(`Rename "${g.name}" to:`, g.name);
+      if (next === null) return;
+      if (!gesture.rename(g.id, next)) { toast('Name unchanged'); return; }
+      buildSigPanel();      // the signal's label carries the new name too
+      rerender();
     }));
 
   document.querySelector('.gesture-cal-all')?.addEventListener('click', () => {
@@ -420,26 +535,36 @@ export function wireGestureSections(rerender) {
     };
     step();
   });
+  // The kind picker sits inside the summary, so its clicks would fold the
+  // library out from under the choice being made.
+  const kindSel = document.getElementById('record-kind');
+  ['click', 'keydown'].forEach(ev =>
+    kindSel?.addEventListener(ev, e => e.stopPropagation()));
+
   recBtn?.addEventListener('click', e => {
     e.preventDefault();
     e.stopPropagation();
     if (gesture.recordingActive) return;
     if (!cvSource.running) { toast('Start the camera first'); return; }
-    const name = prompt('Name this gesture:');
+    const kind = kindSel?.value && KINDS[kindSel.value] ? kindSel.value : 'hand';
+    const name = prompt(`Name this ${KIND_NOUN[kind]} gesture:`);
     if (name === null) return;
     let n = 3;
     recBtn.classList.add('on');
     recBtn.textContent = `${n}…`;
+    const reset = () => { recBtn.classList.remove('on'); recBtn.textContent = '● REC'; };
     const iv = setInterval(() => {
       n--;
       if (n > 0) { recBtn.textContent = `${n}…`; return; }
       clearInterval(iv);
       recBtn.textContent = '● REC…';
+      const bail = watchCapture(kind, msg => { toast(msg); reset(); });
       gesture.record(name.trim() || 'Gesture', g => {
+        clearTimeout(bail);
         toast(`Recorded "${g.name}"`);
         buildSigPanel();     // new gesture_<id> signal appears in the panel + mapper
         rerender();
-      });
+      }, 'any', null, kind);
     }, 700);
   });
 
@@ -519,6 +644,11 @@ export function wireGestureSections(rerender) {
   // in gesture mode), so they all re-render.
   const setExpr = partial => { chordmode.setExpression(partial); rerender?.(); };
   document.getElementById('ck-expr-mode')?.addEventListener('change', e => setExpr({ mode: e.target.value }));
+  // Re-render: the row dims and re-reads when PLAY WITH decides the hand for it.
+  document.getElementById('ck-name-hand')?.addEventListener('change', e => {
+    chordmode.setNamingHand(e.target.value);
+    rerender();
+  });
   document.getElementById('ck-expr-hand')?.addEventListener('change', e => setExpr({ hand: e.target.value }));
   document.getElementById('ck-expr-control')?.addEventListener('change', e => setExpr({ control: e.target.value }));
   // The range sliders mutate in place — a re-render mid-drag drops the pointer

@@ -239,7 +239,7 @@ const sections = await page.evaluate(() => {
                // The library folded inside it: present, and its summary
                // clickable even when the fold is shut.
                lib: (() => {
-                 const d = document.getElementById('handshape-lib');
+                 const d = document.getElementById('gesture-lib');
                  return !!d && d.querySelector('summary').getClientRects().length > 0;
                })(),
                models: vis('models'),
@@ -1155,8 +1155,10 @@ const camView = await (async () => {
                     .getPropertyValue('--fs-kbd-h').trim(),
       };
     });
-    // Leaving fullscreen takes the keyboard's reserved space with it, or the
-    // bar floats a keyboard's height off the bottom of a windowed view.
+    // The keyboard is no longer fullscreen-only, so leaving fullscreen keeps
+    // it — and the reserved space shrinks to the windowed keyboard's own
+    // height rather than going away. What must not happen is the FULLSCREEN
+    // height outliving fullscreen: that is what floats the bar off the bottom.
     await page.evaluate(() => document.getElementById('fs-btn').click());
     await page.waitForTimeout(300);
     const afterExit = await page.evaluate(() =>
@@ -1243,6 +1245,288 @@ const camRestore = await (async () => {
   await ctx.close();
   return { ...out, errs };
 })();
+
+// ── Pulling a node out of the patchbay ───────────────────────────────────
+//
+// Reported: "when deleting an output that's connected to an input, the input
+// shouldn't be automatically deleted." It was — an asymmetry, not a policy.
+// Deleting an INPUT already kept its outputs on the board; deleting an output
+// did not keep its input, so pulling one node took two, and the one that went
+// uninvited was the one carrying the range and curve.
+const patchDelete = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+
+  const board = () => page.evaluate(() => ({
+    ins:  [...document.querySelectorAll('.ng-col-in  .ng-node')].map(n => n.dataset.key),
+    outs: [...document.querySelectorAll('.ng-col-out .ng-node')].map(n => n.dataset.key),
+    cables: document.querySelectorAll('.ng-wire').length,
+  }));
+  const del = async (kind, key) => {
+    await page.click(`.ng-node-del[data-kind="${kind}"][data-key="${key}"]`);
+    await page.waitForTimeout(200);
+  };
+
+  // A fresh automated context starts blank — the first-run picker is skipped
+  // under webdriver — so string some cables the way a player would, by
+  // applying a starting patch, rather than reaching past the app to build a
+  // rig by hand.
+  await page.evaluate(async () => {
+    const { mapper } = await import('/src/mapper.js');
+    const { renderMapper } = await import('/src/ui/mapper-ui.js');
+    mapper.applyPreset('hands');
+    renderMapper();
+  });
+  await page.waitForTimeout(250);
+  const start = await board();
+  const pair = await page.evaluate(async () => {
+    const { mapper } = await import('/src/mapper.js');
+    const m = mapper.mappings[0];
+    return m ? { signal: m.signal, param: m.audioParam } : null;
+  });
+
+  // Delete the OUTPUT end. The input it was wired to must stay.
+  await del('out', pair.param);
+  const afterOut = await board();
+
+  // And the mirror image, which already worked — pinned so the two halves
+  // cannot drift apart again.
+  const pair2 = await page.evaluate(async () => {
+    const { mapper } = await import('/src/mapper.js');
+    const m = mapper.mappings[0];
+    return m ? { signal: m.signal, param: m.audioParam } : null;
+  });
+  await del('in', pair2.signal);
+  const afterIn = await board();
+
+  await ctx.close();
+  return { start, pair, afterOut, pair2, afterIn, errs };
+})();
+
+// ── The keyboard overlay, and which hand names a chord ───────────────────
+//
+// Two asks from playing. The keyboard was fullscreen-only; the notes it shows
+// are the notes the instrument is quantised to, which is as worth seeing while
+// wiring as while performing. And chord mode read handshapes off BOTH hands
+// outside `hand` expression mode, so a hand held open to drive a filter kept
+// being read as an open palm — "NAMED BY" is what frees it.
+const camKeys = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(350);
+
+  const reserved = () => page.evaluate(() =>
+    getComputedStyle(document.getElementById('video-wrap'))
+      .getPropertyValue('--fs-kbd-h').trim());
+  const keys = async () => {
+    await page.evaluate(() => document.getElementById('fskbd-btn').click());
+    await page.waitForTimeout(350);
+  };
+  const geom = () => page.evaluate(() => {
+    const c = document.getElementById('fs-kbd');
+    const w = document.getElementById('video-wrap');
+    const a = document.querySelector('.cam-actions');
+    const cr = c.getBoundingClientRect(), wr = w.getBoundingClientRect();
+    const ar = a.getBoundingClientRect();
+    return {
+      visible: getComputedStyle(c).display !== 'none' && cr.height > 0,
+      insideFrame: Math.round(cr.bottom) <= Math.round(wr.bottom) + 1,
+      clearsActions: Math.round(ar.bottom) <= Math.round(cr.top),
+    };
+  });
+
+  const btnVisible = await page.evaluate(() => {
+    const e = document.getElementById('fskbd-btn');
+    return !!e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0;
+  });
+  await keys();
+  const on = { ...(await geom()), reserved: await reserved() };
+  await keys();
+  const off = await reserved();
+
+  // …and the fullscreen size is still its own, with the windowed one restored
+  // on the way back out.
+  await keys();
+  await page.evaluate(async () => (await import('/src/ui/fullscreen.js')).fullscreen.open());
+  await page.waitForTimeout(400);
+  const fs = await reserved();
+  await page.evaluate(() => document.getElementById('fs-btn').click());
+  await page.waitForTimeout(400);
+  const back = await reserved();
+
+  // NAMED BY
+  const named = await page.evaluate(async () => {
+    const { chordmode } = await import('/src/chordmode.js');
+    const { renderAudioPanel } = await import('/src/ui/audio-ui.js');
+    const read = () => {
+      const el = document.getElementById('ck-name-hand');
+      return el ? { value: el.value, disabled: el.disabled } : null;
+    };
+    chordmode.setEnabled(true);
+    chordmode.setExpression({ mode: 'gesture' });
+    renderAudioPanel();
+    const free = read();
+    // Choosing a hand has to reach the module, not just the <select>.
+    const el = document.getElementById('ck-name-hand');
+    el.value = 'R';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    const applied = chordmode.getNamingHand();
+    // In `hand` expression mode the naming hand is already decided by which
+    // hand plays, so the control shows that rather than a second opinion.
+    chordmode.setExpression({ mode: 'hand', hand: 'L' });
+    renderAudioPanel();
+    const derived = read();
+    chordmode.setExpression({ mode: 'gesture' });
+    chordmode.setNamingHand('any');
+    renderAudioPanel();
+    return { free, applied, derived };
+  });
+
+  await ctx.close();
+  return { btnVisible, on, off, fs, back, named, errs };
+})();
+
+// ── Calibrating from where a gesture is CHOSEN, and gestures that are not
+// handshapes ──
+//
+// Two asks from playing: "add calibrate buttons to the chord section, so the
+// user can calibrate whatever gesture is chosen for the chord without needing
+// to find it in the handshapes section", and "allow the user to add new
+// gestures, including ones that don't use hands, as well as rename existing
+// ones". Measured at both ends of the width range because the library heading
+// now carries a kind picker as well as REC, and 320px is where that stops
+// fitting on one line.
+const gestureCfg = {};
+for (const [key, vp] of [['desktop', { width: 1440, height: 900 }],
+                         ['phone',   { width: 320,  height: 780 }]]) {
+  const ctx = await b.newContext({ viewport: vp });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  // The rename affordance goes through prompt(); an unhandled dialog blocks
+  // the page rather than failing, which reads as a hang, not a failure.
+  page.on('dialog', d => d.accept('Renamed Palm'));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(350);
+
+  const m = await page.evaluate(async () => {
+    const { chordmode } = await import('/src/chordmode.js');
+    const { gesture, KINDS } = await import('/src/gesture.js');
+    const { cvSource } = await import('/src/cv.js');
+    const { renderAudioPanel } = await import('/src/ui/audio-ui.js');
+    chordmode.setEnabled(true);
+    chordmode.setDegreeGesture(0, 'palm');
+    renderAudioPanel();
+    document.querySelector('[data-sec="gesture-mode"]').scrollIntoView();
+
+    // Every row that can name a chord can also calibrate what names it —
+    // including RELEASE, which is the same question about the same shapes.
+    const rows = [...document.querySelectorAll('.chord-assign')].map(r => ({
+      degree: r.dataset.degree,
+      gid: r.querySelector('.ch-cal')?.dataset.gid ?? null,
+      disabled: r.querySelector('.ch-cal')?.disabled ?? null,
+    }));
+    // …and a row with nothing on it offers nothing to calibrate.
+    chordmode.setDegreeGesture(0, null);
+    renderAudioPanel();
+    const emptyRow = (() => {
+      const b = document.querySelector('.chord-assign[data-degree="0"] .ch-cal');
+      return { present: !!b, disabled: !!b?.disabled, gid: b?.dataset.gid ?? null };
+    })();
+    chordmode.setDegreeGesture(0, 'palm');
+    renderAudioPanel();
+
+    // The status line has to be reachable with the library shut — that is the
+    // whole point of not having to go and find the shape in it.
+    const lib = document.getElementById('gesture-lib');
+    lib.open = false;
+    const statusEl = document.getElementById('chord-cal-status');
+    const statusInFold = lib.contains(statusEl);
+    const statusHiddenWhenIdle = getComputedStyle(statusEl).display === 'none';
+
+    // Wiring: the row's button reaches the recogniser, naming the gesture on
+    // THAT row. Stubbed, because the real one waits for camera frames.
+    let asked = null;
+    const realRecal = gesture.recalibrate.bind(gesture);
+    gesture.recalibrate = (id, done) => { asked = id; done({ id, name: 'x' }); };
+    Object.defineProperty(cvSource, 'running', { value: true, configurable: true });
+    document.querySelector('.chord-assign[data-degree="0"] .ch-cal').click();
+    await new Promise(r => setTimeout(r, 3200));
+    gesture.recalibrate = realRecal;
+    const statusText = statusEl.textContent;
+
+    // Renaming, from the library row.
+    const wasNamed = gesture.list().find(g => g.id === 'palm').name;
+    lib.open = true;
+    document.querySelector('.gesture-ren[data-gid="palm"]').click();
+    await new Promise(r => setTimeout(r, 150));
+    const { bus } = await import('/src/bus.js');
+    const renamed = {
+      was: wasNamed,
+      now: gesture.list().find(g => g.id === 'palm').name,
+      signal: bus.signals.get('gesture_palm')?.label,
+      row: document.querySelector('.gesture-row[data-gid="palm"] .gesture-name')?.textContent,
+    };
+    gesture.resetNames();
+    renderAudioPanel();
+
+    // The accidentals choose a gesture too — same complaint, same button. In
+    // note voicing with a free hand they are live; when the other hand is
+    // already playing the volume both the picker and its button stand down.
+    chordmode.setVoicing('note');
+    chordmode.setExpression({ mode: 'gesture' });
+    chordmode.setAccidentalGestures({ sharp: 'point', flat: 'peace' });
+    renderAudioPanel();
+    const accFree = ['ck-acc-sharp', 'ck-acc-flat'].map(id => {
+      const b = document.getElementById(id)?.parentElement.querySelector('.ch-cal');
+      return { gid: b?.dataset.gid ?? null, disabled: b?.disabled ?? null };
+    });
+    chordmode.setExpression({ mode: 'hand', hand: 'L' });
+    renderAudioPanel();
+    const accBusy = ['ck-acc-sharp', 'ck-acc-flat'].map(id =>
+      document.getElementById(id)?.parentElement.querySelector('.ch-cal')?.disabled ?? null);
+    chordmode.setExpression({ mode: 'gesture' });
+    chordmode.setVoicing('chord');
+    renderAudioPanel();
+
+    // The picker lives INSIDE the <summary>, so without stopPropagation
+    // choosing a kind folds the library out from under the choice.
+    const kindFolds = await (async () => {
+      lib.open = true;
+      const sel = document.getElementById('record-kind');
+      sel.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 120));
+      return !lib.open;
+    })();
+
+    // The heading, and the recording controls it now carries.
+    const title = document.querySelector('.gesture-lib-title');
+    const rec = document.querySelector('.gesture-rec-add');
+    const kindSel = document.getElementById('record-kind');
+    const line = el => Math.round(el.getBoundingClientRect().height);
+    return {
+      rows, emptyRow, statusInFold, statusHiddenWhenIdle, asked, statusText, renamed,
+      kindFolds, accFree, accBusy,
+      heading: title?.textContent.trim(),
+      titleH: line(title), oneLine: line(title),
+      recH: line(rec), kindH: line(kindSel),
+      kinds: [...kindSel.querySelectorAll('option')].map(o => o.value),
+      declared: Object.keys(KINDS),
+      // The whole summary must stay inside the panel, not run out of it.
+      overflows: document.querySelector('.gesture-lib-summary').scrollWidth
+               > document.querySelector('.gesture-lib-summary').clientWidth + 1,
+    };
+  });
+  gestureCfg[key] = { ...m, errs };
+  await ctx.close();
+}
 
 await b.close(); server.close();
 
@@ -1759,8 +2043,9 @@ for (const [label, m] of Object.entries(camView)) {
     `actions end ${m.kbd.actions.bottom}, keys start ${m.kbd.keys.top}`);
   check(parseFloat(m.kbd.reserved) > 0,
     `${label}: and the space they clear is the keyboard's own height`, m.kbd.reserved);
-  check(parseFloat(m.afterExit) === 0,
-    `${label}: leaving fullscreen gives that space back`, m.afterExit || '(unset)');
+  check(parseFloat(m.afterExit) > 0 && parseFloat(m.afterExit) < parseFloat(m.kbd.reserved),
+    `${label}: leaving fullscreen resizes that space rather than keeping it`,
+    `${m.kbd.reserved} → ${m.afterExit || '(unset)'}`);
   check(m.trackers.inBody && m.trackers.within,
     `${label}: the tracker toggles are inside the Camera Input container`,
     `inBody=${m.trackers.inBody} withinBox=${m.trackers.within}`);
@@ -1787,6 +2072,116 @@ console.log('\nCamera restore after losing focus\n');
   check(m.viaEvent === 1,
     'and a real visibilitychange drives it, not just a direct call',
     `play() called ${m.viaEvent}×`);
+}
+
+// ── Pulling a node out of the patchbay ──
+console.log('\nPatchbay node deletion\n');
+{
+  const p = patchDelete;
+  check(p.errs.length === 0, 'no page errors', p.errs.join(' | '));
+  check(!!p.pair, 'the default patch has a cable to work on');
+  check(!p.afterOut.outs.includes(p.pair.param),
+    'deleting an output removes that output', p.pair.param);
+  // The bug, in one line.
+  check(p.afterOut.ins.includes(p.pair.signal),
+    'and LEAVES the input it was wired to on the board',
+    `${p.pair.signal} in [${p.afterOut.ins.join(', ')}]`);
+  check(p.afterOut.cables === p.start.cables - 1,
+    'exactly one cable goes with it',
+    `${p.start.cables} → ${p.afterOut.cables}`);
+  check(!p.afterIn.ins.includes(p.pair2.signal),
+    'deleting an input removes that input', p.pair2.signal);
+  check(p.afterIn.outs.includes(p.pair2.param),
+    'and leaves ITS output — the two halves behave the same way now',
+    `${p.pair2.param} in [${p.afterIn.outs.join(', ')}]`);
+}
+
+// ── Keyboard overlay + NAMED BY ──
+console.log('\nKeyboard overlay and the naming hand\n');
+{
+  const m = camKeys;
+  check(m.errs.length === 0, 'no page errors', m.errs.join(' | '));
+  check(m.btnVisible, '🎹 KEYS is reachable without going fullscreen first');
+  check(m.on.visible, 'and it shows the keyboard in the windowed view');
+  check(m.on.insideFrame, 'inside the frame, not hanging off the bottom');
+  check(m.on.clearsActions, 'with the controls riding above it, as in fullscreen');
+  check(parseFloat(m.on.reserved) > 0, 'the space it takes is reserved', m.on.reserved);
+  // The bug this exposed: the button removes the class itself, so the RAF
+  // path's early-out skipped the publish and the space stayed reserved.
+  check(parseFloat(m.off) === 0, 'and given back when the keyboard is switched off', m.off);
+  check(parseFloat(m.fs) > parseFloat(m.on.reserved),
+    'fullscreen still gets its own, larger keyboard', `${m.on.reserved} → ${m.fs}`);
+  check(m.back === m.on.reserved,
+    'and the windowed size comes back on the way out', `${m.fs} → ${m.back}`);
+
+  check(m.named.free?.value === 'any' && m.named.free?.disabled === false,
+    'NAMED BY offers a choice, defaulting to EITHER — the old behaviour',
+    JSON.stringify(m.named.free));
+  check(m.named.applied === 'R', 'and choosing a hand reaches chord mode', m.named.applied);
+  check(m.named.derived?.disabled === true && m.named.derived?.value === 'R',
+    'in hand-expression mode it shows the hand PLAY WITH already decided',
+    JSON.stringify(m.named.derived));
+}
+
+// ── Calibrate where you choose, and gestures that are not handshapes ──
+console.log('\nGesture configurations — calibrating in place, and non-hand kinds\n');
+for (const [label, m] of Object.entries(gestureCfg)) {
+  check(m.errs.length === 0, `${label}: no page errors`, m.errs.join(' | '));
+
+  // Every degree, plus RELEASE — one gesture each, one calibrate each.
+  check(m.rows.length === 8, `${label}: seven degrees and RELEASE`, `${m.rows.length} rows`);
+  check(m.rows.every(r => r.gid !== null),
+    `${label}: every row that names a chord can calibrate what names it`,
+    JSON.stringify(m.rows.filter(r => r.gid === null)));
+  check(m.rows.every(r => r.disabled === false),
+    `${label}: and they are live wherever a gesture is assigned`,
+    JSON.stringify(m.rows.filter(r => r.disabled)));
+  check(m.emptyRow.present && m.emptyRow.disabled,
+    `${label}: an unassigned row offers nothing to calibrate`,
+    JSON.stringify(m.emptyRow));
+
+  // The point of the button is not having to go and find the shape, so its
+  // status must not report into the fold it saves you opening.
+  check(m.statusInFold === false,
+    `${label}: it reports outside the library, which may well be shut`);
+  check(m.statusHiddenWhenIdle,
+    `${label}: and takes no room while nothing is calibrating`);
+  check(m.asked === 'palm', `${label}: the button calibrates ITS OWN row's gesture`, m.asked);
+  check(/Open Palm/.test(m.statusText) && /✓/.test(m.statusText),
+    `${label}: naming the gesture and saying when it is done`, m.statusText);
+
+  // Renaming.
+  check(m.renamed.now === 'Renamed Palm' && m.renamed.was !== m.renamed.now,
+    `${label}: a gesture can be renamed`, JSON.stringify(m.renamed));
+  check(m.renamed.signal === 'ASL 5 · Renamed Palm',
+    `${label}: the gloss survives it, and the signal label follows`, m.renamed.signal);
+  check(m.renamed.row === '5 · Renamed Palm',
+    `${label}: and so does the row`, m.renamed.row);
+
+  // Non-hand kinds.
+  check(m.heading === 'GESTURE CONFIGURATIONS',
+    `${label}: the library is no longer only handshapes`, m.heading);
+  check(m.kinds.join() === 'hand,face,body' && m.kinds.join() === m.declared.join(),
+    `${label}: REC offers every kind the recogniser actually has`,
+    `${m.kinds.join()} vs ${m.declared.join()}`);
+
+  // "GESTURE" over "CONFIGURATIONS" reads as two headings, and REC parted
+  // from its own picker reads as an unlabelled button.
+  check(m.titleH <= 20, `${label}: the heading stays on one line`, `${m.titleH}px`);
+  check(m.recH <= m.kindH + 4,
+    `${label}: REC stays beside the picker that says what it will record`,
+    `rec ${m.recH}px vs picker ${m.kindH}px`);
+  check(!m.overflows, `${label}: and the heading does not run out of the panel`);
+  check(!m.kindFolds,
+    `${label}: choosing a kind does not fold the library it sits in`);
+
+  // The accidentals choose a gesture as much as a degree row does.
+  check(m.accFree.every(a => a.gid && a.disabled === false),
+    `${label}: the accidental pickers calibrate their own gesture too`,
+    JSON.stringify(m.accFree));
+  check(m.accBusy.every(d => d === true),
+    `${label}: and stand down with the picker when the other hand is busy`,
+    JSON.stringify(m.accBusy));
 }
 
 console.log(`\n${fail} failure(s)\n`);

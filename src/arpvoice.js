@@ -98,12 +98,33 @@ export const arpvoice = (() => {
 
     // Hand the voices back and forget the clock. Stopping the clock alone is
     // not enough: the arp schedules into the future, so notes are already queued.
+    //
+    // This is the HARD stop, for a chord handing these voices to another owner
+    // — anything left ringing would sound under the new one. A player letting
+    // go of a chord is the other case; see release().
     stop() {
       if (!clock && !sched.length) return;
       clock = null;
       sched = [];
       voicedSig = null;
       engine.silenceChordVoices?.();
+    },
+
+    // The chord is over and nothing is replacing it, so what is already
+    // sounding should fall with it. Same bookkeeping as stop(); the difference
+    // is entirely in what happens to the sound — notes that have not started
+    // are dropped (they belong to a chord that has ended), and the one still
+    // ringing fades over the chord's release instead of being cut in 30 ms.
+    //
+    // Cutting it was audible before and is more so now: a note has a sustain
+    // tail, and chopping the release threw exactly that away. Letting go of a
+    // chord sounded like switching it off.
+    release() {
+      if (!clock && !sched.length) return;
+      clock = null;
+      sched = [];
+      voicedSig = null;
+      engine.releaseChordVoices?.();
     },
 
     // Start the run from the top of the pattern on the next look — and drop

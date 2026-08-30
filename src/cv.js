@@ -757,6 +757,12 @@ export const cvSource = {
       put('nose_y', nose.y); // raw: high = head down
     }
     for (const k of POSE_SIGNALS) if (!fresh.has(k)) bus.decay(k);
+    // Body gestures are matched off the joint angles above, and a decayed
+    // channel reads the same as a genuine zero — so a body is only present
+    // for matching while the model is actually placing the joints a stance is
+    // made of. (Landmarks it merely guessed at are already gated out above.)
+    gesture.setPresence('body', fresh.has('elbow_L') || fresh.has('elbow_R')
+                             || fresh.has('shoulder_elev_L') || fresh.has('shoulder_elev_R'));
 
     // Torso distance-from-camera (LiDAR if active, else shoulder-span estimate).
     depthSource.feedPose(lm ?? null);

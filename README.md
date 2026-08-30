@@ -499,6 +499,16 @@ choices (a Math node's op, an LFO's wave) and its ×, which also takes every
 cable attached to it. Values are 0..1 on both sides — the cable's out-range
 does the scaling into real units, exactly as it always has.
 
+**A × takes one node, never two.** Pulling a node takes the cables that ran to
+it — a cable to nowhere is not a thing — but the node at the *far* end of each
+of those cables stays on the board. This was an asymmetry rather than a
+policy: deleting an input already kept its outputs, and deleting an output did
+not keep its input, so pulling one node quietly took a second one with it, and
+the one that vanished uninvited was the one carrying the range and the curve.
+A node with no cable is a perfectly good thing to have — it is what
+**add an input ↓** produces — so there is no reason for one to be swept up by
+a deletion at the other end.
+
 | Node | What it computes |
 |---|---|
 | **Const** | A knob. The graph's way of writing a number onto any input. |
@@ -962,15 +972,91 @@ labels, and icon **plus** text — never icon-only). Toggle controls expose
 ## Gesture mode
 
 **Gesture Mode** (formerly *Chord Mode*) is one section holding both halves of
-playing by handshape: the instrument on top — key, voicing, expression, the
-degree assignments, the arpeggiator and envelope — and the **HANDSHAPES**
-library folded underneath, where a shape is calibrated, recorded and removed.
-They were two sections once, and each grew read-only echoes of the other to
-stay legible (chips on the shape rows repeating the assignments, calibration
-state repeated beside the selects). Merging them retired the echoes: the
-assignment is stated once, in the rows, and the library is one fold away. The
-fold follows the mode until you touch it — closed while the mode is on, open
-while it is off, and your own choice wins from then on.
+playing by gesture: the instrument on top — key, voicing, expression, the
+degree assignments, the arpeggiator and envelope — and the **GESTURE
+CONFIGURATIONS** library folded underneath, where a gesture is calibrated,
+recorded, renamed and removed. They were two sections once, and each grew
+read-only echoes of the other to stay legible (chips on the shape rows
+repeating the assignments, calibration state repeated beside the selects).
+Merging them retired the echoes: the assignment is stated once, in the rows,
+and the library is one fold away. The fold follows the mode until you touch it
+— closed while the mode is on, open while it is off, and your own choice wins
+from then on.
+
+### Calibrating where you chose, not where it is defined
+
+Every assignment row — the seven degrees and **RELEASE** — carries a **⊙**
+beside its picker that calibrates whatever gesture is on that row. The library
+is where a gesture is *defined*, but the moment you discover a template is
+wrong is the moment a chord does not sound, and that is the row, with the fold
+below it very possibly shut. Its countdown reports into a status line that
+lives *outside* that fold, since not having to open it is the entire point. A
+row with nothing assigned has nothing to calibrate, and says so by being
+disabled rather than by failing when pressed.
+
+### Gestures that are not handshapes
+
+Nothing in the recogniser was ever about hands. `templateDistance` is a
+weighted RMS over channels normalized to 0–1, and the bus already publishes two
+more sets of exactly that: the face model's expression channels and the pose
+model's joint angles. So a gesture now declares a **kind** — a named channel
+list with its own weights — and **● REC** takes a picker saying which to
+record:
+
+| Kind | Read from | Channels |
+| --- | --- | --- |
+| `hand` | the hand model | 12: finger extension, openness, spread, thumb carry, four thumb-to-fingertip contacts |
+| `face` | the face model | 14: brows, mouth, smile, pucker, funnel, tongue, cheeks, head yaw and roll |
+| `body` | the pose model | 9: elbow angles, arm raise, shoulder lift and swing, torso tilt |
+
+Two channel groups are deliberately *excluded*. Gaze is not in the face vector
+and `head_x`/`head_y`/`shoulder_width` are not in the body vector: a gesture
+must not also require that you look where you looked, or stand where you stood,
+when you recorded it.
+
+`hand` is the only **sided** kind, because there are two hands and which one is
+making the shape is load-bearing — it is what lets one hand drive a cable while
+the other names chords (see *Which hand names the chord*). A face or a torso is
+singular, so a sideless gesture is held on neither hand and is therefore
+available to *either*: `activeOn('L')` answers with it, and so does
+`activeOn('R')`, or **NAMED BY: LEFT** would quietly make face gestures
+unplayable. A hand gesture on the hand actually asked about still wins, being
+the more specific answer to the question.
+
+Two things this had to get right, both pinned in
+`tests/unit/gesture-kinds.test.js`:
+
+- **A vector read for one kind is never scored against another kind's
+  template.** The arrays are different lengths and mean different things, so a
+  face template asked about a hand vector does not return a *wrong* answer — it
+  returns a confident one. `matchGesture` filters by kind, and
+  `templateSeparation` returns `Infinity` across kinds, because two gestures
+  that are never asked at the same time cannot collide however close their
+  numbers look.
+- **A resting face and no face at all are the same all-zero vector.** The hand
+  kind can read presence off its own channels (a hand that leaves frame decays
+  to zero on channels that are never zero while it is there), but an
+  expression cannot. So `face.js` and `cv.js` report presence explicitly —
+  the same way `cv.js` already reports the canned classification — and a
+  sideless gesture matches nothing until its model says there is something to
+  read. Without that, a recorded neutral expression sits permanently matched
+  against a model that is switched off.
+
+A gesture with no `kind` is a hand gesture: every built-in, and every setup
+ever saved. Recording that never receives a frame — the face tracker is off,
+say — gives up after five seconds and names the tracker you need, rather than
+counting down forever.
+
+### Renaming
+
+**✎** on any row renames a gesture. Built-ins are code, so the new name is kept
+*beside* the built-in (the same way a recalibrated template is) rather than
+edited into it, and `resetNames()` gives the shipped name back. An **ASL gloss
+is never touched**: the gloss is what the shape *is* and what the list is
+ordered by; the name is only what you call it. So renaming *Open Palm* leaves
+`ASL 5 · Whatever You Called It`, in the row, in the pickers, and on the
+`gesture_<id>` bus signal, which is re-labelled so the patchbay agrees with the
+panel.
 
 ### One hand means one hand
 
@@ -1254,6 +1340,25 @@ zero, so fast chord changes don't click.
   metronome's SAMPLE beats lands is struck then, and only then. See the
   Metronome section; needs it switched on.
 
+**NAMED BY** is which hand a handshape is read from: **EITHER**, **LEFT** or
+**RIGHT**.
+
+It exists because the other hand is usually busy. Reported from playing: *"I'm
+trying to use my left hand openness to adjust filter, but it keeps getting read
+as an open palm gesture."* An open hand held out to drive a cable **is** an
+open palm — the recognizer is not wrong, it is just answering a question nobody
+asked. Outside the two-handed mode, chord mode scanned both hands, so a hand
+doing continuous work could not help also naming chords. Naming one hand is
+what frees the other for the patchbay: the shapes it makes are then simply the
+shapes a hand makes while it works.
+
+**EITHER** is the default and the behaviour that shipped, so nothing that
+worked before changes, and a setup saved without the setting loads as EITHER —
+which is exactly what it was doing. In **Other hand — openness** the naming
+hand is already decided (it is the one not playing), so the control shows that
+and dims rather than offering a second, contradicting opinion — the same
+arrangement as RATE dimming under SYNC in the arpeggiator.
+
 and how that signal is read (the two signal modes only):
 
 - **ATTACK / RELEASE** — past a threshold it attacks, below it releases, and the
@@ -1399,6 +1504,27 @@ holds the budget.
 The default moved with it: **gate 0.9, sustain 0.6**, where gate alone used to
 be 0.55. A note that stopped just past halfway through its own step is what
 "too staccato" was.
+
+### Letting go is not the same as swapping
+
+Reported alongside it: "when releasing a chord that's being sustained, it
+should continue sustaining, rather than immediately silencing it."
+
+The arp owns four voices, and it had one way of handing them back — a 30 ms
+cut. That is right when *another chord* is taking those voices over, because
+anything still ringing would sound underneath the new one. It is wrong when
+nothing is taking them: the player let go, and what was ringing should fall
+with the chord's own release. Every release path was calling the cut, so
+letting go of a chord sounded like switching it off — and once notes had a
+sustain tail, the cut was throwing away most of the note.
+
+So there are two of them now. `arpvoice.stop()` is the hard stop and belongs
+to the arp flip, where the block chord really is taking the voices. `release()`
+does the same bookkeeping but drops only the notes that have **not sounded
+yet** — they belong to a chord that has ended — and lets the one still ringing
+fade over `engine.releaseChordVoices()`. One pass covers both cases because a
+voice mid-note is at its peak and falls from there, while a voice holding only
+a note that never started is already at zero, so its ramp is silence.
 
 **Rate, gate and sustain are patchbay outputs** (`Arp Rate`, `Arp Gate`,
 `Arp Sustain`, under Gesture Mode), which is the point of expressing the rate
@@ -1737,8 +1863,13 @@ start a camera nobody asked for.
 
 **⛶ FULL** (below the camera toggles) makes the camera view fullscreen — via
 the native Fullscreen API where available, or a CSS takeover on iPhone Safari
-(which has no element fullscreen). In fullscreen, **🎹 KEYS** overlays the live
-pitch-quantise keyboard along the bottom of the view. Gesture overlays keep
+(which has no element fullscreen). **🎹 KEYS** overlays the live pitch-quantise
+keyboard along the bottom of the view — in the windowed camera panel as well as
+in fullscreen, since the notes it shows are the notes the instrument is
+quantised to, which is as worth seeing while you are wiring something as while
+you are playing it. Its height is published as `--fs-kbd-h` so the controls on
+the frame ride above it rather than sitting on the keys, and released the
+moment it is switched off. Gesture overlays keep
 their alignment at any screen shape.
 
 The CSS takeover is `position: fixed; inset: 0`, and it spent a while losing a

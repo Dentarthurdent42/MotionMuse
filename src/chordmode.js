@@ -174,6 +174,7 @@ export const chordmode = (() => {
   let playing = null;   // gestureId currently sounding
   let expr = { ...DEFAULT_EXPRESSION };
   let voicing = 'chord';
+  let namingHand = 'any';    // 'any' | 'L' | 'R' — see namingSides()
   let accGestures = { ...DEFAULT_ACCIDENTAL_GESTURES };
   let playingAcc = NATURAL;   // accidental the sounding note was voiced with
   let latched = null;   // chord handshape held over, in hand/brow modes
@@ -188,7 +189,11 @@ export const chordmode = (() => {
   // runs the same one, and two arpeggiators for two modes that park each
   // other would be redundant on their face. State and transport live in
   // arpvoice.js; these aliases keep this file reading as it always did.
-  const stopArp    = () => arpvoice.stop();
+  // Every call site here is a RELEASE — the player let go, and nothing is
+  // taking these voices over — so what is ringing falls with the chord
+  // rather than being cut. The hard stop belongs to the arp flip, which
+  // arpvoice owns.
+  const stopArp    = () => arpvoice.release();
   const restartArp = () => arpvoice.restart();
   const runArp     = (freqs, level = 1) => arpvoice.run(freqs, level);
   // An arp flip invalidates this mode's private chord state (the flip itself
@@ -208,6 +213,19 @@ export const chordmode = (() => {
   // Which hand names the chord: the one that is not expressing. In brow mode
   // both hands are free to, since the eyebrows are doing the expressing.
   const chordHand = () => (expr.hand === 'L' ? 'R' : 'L');
+
+  // …and which hands are ALLOWED to, which is a different question.
+  //
+  // Reported from playing: "I'm trying to use my left hand openness to adjust
+  // filter, but it keeps getting read as an open palm gesture." An open hand
+  // held out to drive a cable is a handshape whether or not it was meant as
+  // one, and outside `hand` expression mode every mode scanned both hands —
+  // so a hand doing continuous work could not help also naming chords.
+  //
+  // 'any' is the old behaviour and stays the default. Naming one hand is what
+  // frees the other for the patchbay: the shapes it makes are then just the
+  // shapes a hand makes while it works.
+  const namingSides = () => (namingHand === 'any' ? ['L', 'R'] : [namingHand]);
 
   // The key actually used to build chords. With `follow` on, Pitch Quantize
   // drives it so chords land in the same key the melody snaps to — for any
@@ -288,7 +306,7 @@ export const chordmode = (() => {
   // just also reports where it is, which is what the off hand is measured
   // against.
   const namedWithSide = () => {
-    for (const side of ['L', 'R']) {
+    for (const side of namingSides()) {
       const id = gesture.activeOn(side);
       if (id !== null && liveDegree(assignments[id])) return { id, side };
     }
@@ -535,7 +553,9 @@ export const chordmode = (() => {
       // and the off hand is defined against the hand that CHOSE the note.
       let named = null, namedSide = null;
       if (expr.mode === 'brow') {
-        for (const side of ['R', 'L']) {
+        // R first here, unlike namedWithSide: brow mode has no expressing hand
+        // to define an off hand against, so this is just "whichever is up".
+        for (const side of namingSides().slice().reverse()) {
           const id = gesture.activeOn(side);
           if (id !== null) { named = id; namedSide = side; break; }
         }
@@ -673,15 +693,31 @@ export const chordmode = (() => {
       return releaseGesture;
     },
 
+    // Which hand is allowed to name a chord. Setting it to one hand is what
+    // frees the other to drive a cable without its shapes being read.
+    // The shape naming a degree right now and the hand holding it, after the
+    // naming-hand filter. Exposed because "which hand did that come from" is
+    // the question this setting exists to answer.
+    namedNow: () => namedWithSide(),
+
+    setNamingHand(v) {
+      namingHand = (v === 'L' || v === 'R') ? v : 'any';
+      return namingHand;
+    },
+    getNamingHand: () => namingHand,
+
     serialize() {
       return { enabled, key: { ...key }, assignments: { ...assignments },
                sevenths: sevenths.slice(), releaseGesture, expression: { ...expr },
-               voicing, accidentals: { ...accGestures } };
+               voicing, namingHand, accidentals: { ...accGestures } };
     },
 
     load(data) {
       if (!data) return;
       key = { ...DEFAULT_KEY, ...data.key };
+      // Absent in setups saved before this existed, and 'any' is what those
+      // were doing — so an old patch loads playing exactly as it did.
+      namingHand = (data.namingHand === 'L' || data.namingHand === 'R') ? data.namingHand : 'any';
       sevenths = Array.isArray(data.sevenths)
         ? Array.from({ length: DEGREES }, (_, i) => !!data.sevenths[i])
         : [...DEFAULT_SEVENTHS];

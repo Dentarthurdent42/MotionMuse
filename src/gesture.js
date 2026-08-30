@@ -65,6 +65,77 @@ const care = (except = []) => FEATURES.map(f => (except.includes(f) ? 0 : 1));
 const CONTACTS = ['cIndex', 'cMiddle', 'cRing', 'cPinky'];
 export const maskFromLength = len => FEATURES.map((_, i) => (i < len ? 1 : 0));
 
+// ── Kinds: what a gesture is read FROM ────────────────────────────────────
+//
+// Everything above describes the hand vector, which is where this module
+// started and is still where every built-in lives. But nothing in the metric
+// is about hands: templateDistance is a weighted RMS over "some channels
+// normalized to 0–1", and the bus already publishes two more sets of exactly
+// that — the face model's expression channels and the pose model's joint
+// angles. A kind is that: a named channel list with weights, plus whether it
+// has sides.
+//
+// `hand` is sided because there are two of them and which one is making the
+// shape is load-bearing (chord mode reads one hand and leaves the other free).
+// A face or a torso is singular, so those kinds have no side — see activeOn.
+//
+// Channels are read through each signal's DECLARED min/max, not bus.norm():
+// norm() adapts to the range actually observed, which would quietly move a
+// template out from under a recording made an hour ago.
+const KIND_LABEL = { hand: 'Hand', face: 'Face', body: 'Body' };
+
+// Expression channels only. Gaze is deliberately absent: where you are
+// looking is a continuous pointing control, and folding it in would make every
+// recorded expression also demand that you look where you looked when you
+// recorded it.
+const FACE_FEATURES = [
+  'brow_raise', 'brow_furrow', 'brow_L', 'brow_R',
+  'mouth_open', 'smile', 'pucker', 'lips_funnel', 'tongue_out',
+  'cheek_puff', 'cheek_squint_L', 'cheek_squint_R',
+  'head_yaw', 'head_roll',
+];
+// brow_L/brow_R only add asymmetry on top of brow_raise, and head orientation
+// is incidental to most expressions, so both vote quietly.
+const FACE_WEIGHTS = [1, 1, 0.8, 0.8, 1, 1, 1, 1, 1, 1, 0.8, 0.8, 0.6, 0.6];
+
+// Pose-intrinsic channels only. head_x/head_y (where you are standing) and
+// shoulder_width (how far away you are) are excluded for the same reason gaze
+// is: a gesture must not require you to stand where you stood.
+const BODY_FEATURES = [
+  'elbow_L', 'elbow_R', 'arm_raise_L', 'arm_raise_R',
+  'shoulder_elev_L', 'shoulder_elev_R', 'shoulder_azim_L', 'shoulder_azim_R',
+  'torso_tilt',
+];
+const BODY_WEIGHTS = [1, 1, 1.1, 1.1, 0.9, 0.9, 0.9, 0.9, 0.8];
+
+export const KINDS = {
+  hand: { label: KIND_LABEL.hand, sided: true,
+          features: FEATURES, weights: WEIGHTS, neutral: NEUTRAL },
+  face: { label: KIND_LABEL.face, sided: false, signals: FACE_FEATURES,
+          features: FACE_FEATURES, weights: FACE_WEIGHTS,
+          neutral: FACE_FEATURES.map(() => 0) },
+  body: { label: KIND_LABEL.body, sided: false, signals: BODY_FEATURES,
+          features: BODY_FEATURES, weights: BODY_WEIGHTS,
+          neutral: BODY_FEATURES.map(() => 0) },
+};
+
+// A gesture with no `kind` is a hand gesture — every built-in, and everything
+// any earlier version ever saved.
+export const kindOf = g => (g?.kind && KINDS[g.kind] ? g.kind : 'hand');
+export const specOf = g => KINDS[kindOf(g)];
+export const SIDELESS_KINDS = Object.keys(KINDS).filter(k => !KINDS[k].sided);
+
+// Kind-aware forms of padTemplate/maskFromLength above. Both exist because the
+// hand vector grew once and may again: a template shorter than its channel
+// list is padded, and the padded channels masked out of the metric — against
+// ITS own channel list, never the hand's.
+export const padFor = (kind, f) => {
+  const spec = KINDS[kind] ?? KINDS.hand;
+  return spec.features.map((_, i) => Number.isFinite(f?.[i]) ? f[i] : spec.neutral[i]);
+};
+export const maskFor = (kind, len) =>
+  (KINDS[kind] ?? KINDS.hand).features.map((_, i) => (i < len ? 1 : 0));
+
 // ── Built-in templates ────────────────────────────────────────────────────
 //
 // Every shape with a reference photo in tests/gesture-img is *measured*:
@@ -229,13 +300,13 @@ export const CANNED_MIN_SCORE = 0.6;
 // is open. So a template match the classifier can't name wins; a template
 // match it CAN name loses to it, because there it is the better instrument.
 export function resolveGesture(features, templates, canned, stickyId = null,
-                               threshold = MATCH_THRESHOLD) {
+                               threshold = MATCH_THRESHOLD, kind = 'hand') {
   // No hand, no gesture — whatever the classifier last said. This lives here
   // rather than only at the call site because this function IS the policy, and
   // "the hand left but the last classification stuck" is precisely the kind of
   // ghost the debounce below would then hold on to.
   if (!features) return null;
-  const tmpl = matchGesture(features, templates, threshold, stickyId);
+  const tmpl = matchGesture(features, templates, threshold, stickyId, kind);
   const cannedId = canned && canned.score >= CANNED_MIN_SCORE
     ? CANNED_TO_ID[canned.name] : null;
   // A canned id the user has hidden (or that no template list carries) is not
@@ -276,12 +347,16 @@ const RELEASE_FRAMES = 3;      // frames of no match before letting go
 // FEATURES (recorded before the vector grew) read NEUTRAL for missing
 // channels, which their mask excludes anyway.
 export function templateDistance(features, t) {
+  // Which channel list applies is the TEMPLATE's to say — a face template is
+  // 14 expression channels, a hand template 12 finger ones, and the live
+  // vector handed in was read for that kind by the caller.
+  const spec = specOf(t);
   let d2 = 0, wsum = 0;
-  for (let i = 0; i < FEATURES.length; i++) {
-    const w = WEIGHTS[i] * (t.m ? (t.m[i] ?? 1) : 1);
+  for (let i = 0; i < spec.features.length; i++) {
+    const w = spec.weights[i] * (t.m ? (t.m[i] ?? 1) : 1);
     if (!w) continue;
-    const fv = Number.isFinite(features[i]) ? features[i] : NEUTRAL[i];
-    const tv = Number.isFinite(t.f?.[i])    ? t.f[i]      : NEUTRAL[i];
+    const fv = Number.isFinite(features[i]) ? features[i] : spec.neutral[i];
+    const tv = Number.isFinite(t.f?.[i])    ? t.f[i]      : spec.neutral[i];
     const dv = fv - tv;
     d2 += w * dv * dv;
     wsum += w;
@@ -300,15 +375,22 @@ export function templateDistance(features, t) {
 // which is Infinity, not zero. templateDistance already tolerates a missing
 // TEMPLATE vector; passing a missing FEATURE vector into it threw, which is
 // why the gesture-image suite crashed the moment it had a model to run with.
+// Two gestures read from different kinds are never asked at the same time, so
+// they cannot collide however close their numbers happen to look.
 export const templateSeparation = (a, b) =>
-  (a.f && b.f) ? Math.min(templateDistance(a.f, b), templateDistance(b.f, a)) : Infinity;
+  (a.f && b.f && kindOf(a) === kindOf(b))
+    ? Math.min(templateDistance(a.f, b), templateDistance(b.f, a)) : Infinity;
 
 // Pure nearest-template match — unit-tested.
 // features: number[]; templates: [{id, f}]; returns {id, dist} or null.
-export function matchGesture(features, templates, threshold = MATCH_THRESHOLD, stickyId = null) {
+export function matchGesture(features, templates, threshold = MATCH_THRESHOLD,
+                             stickyId = null, kind = 'hand') {
   let best = null;
   for (const t of templates) {
     if (!t.f) continue;          // classifier-only entry — nothing to match on
+    // `features` was read for ONE kind; templates of any other are being
+    // asked a question about channels this vector does not contain.
+    if (kindOf(t) !== kind) continue;
     const dist = templateDistance(features, t);
     if (!best || dist < best.dist) best = { id: t.id, dist };
   }
@@ -328,7 +410,17 @@ export const gesture = (() => {
     L: { active: null, cand: null, candFrames: 0, missFrames: 0 },
     R: { active: null, cand: null, candFrames: 0, missFrames: 0 },
   };
-  let recording = null;          // { name, hand, frames: [], onDone }
+  // The same recognition state for the kinds that have no sides — one slot
+  // per kind rather than one per hand.
+  const sideless = Object.fromEntries(SIDELESS_KINDS.map(k =>
+    [k, { active: null, cand: null, candFrames: 0, missFrames: 0 }]));
+  // Whether each sideless model is actually looking at anything. The hand kind
+  // reads this off its own channels (a hand that leaves the frame decays to
+  // zero), but a face at rest and no face at all are the same all-zero vector,
+  // so the sources say so explicitly — the same way cv.js reports setCanned.
+  const present = Object.fromEntries(SIDELESS_KINDS.map(k => [k, false]));
+  const renamed = new Map();          // gesture id → user-chosen name
+  let recording = null;          // { name, hand, kind, frames: [], onDone }
   // Latest canned classification per hand, written by cv.js each time the hand
   // model produces a frame. Stamped with the frame counter so a stale answer
   // from a hand that has since left the picture expires instead of sticking.
@@ -336,11 +428,25 @@ export const gesture = (() => {
   let frameNo = 0;
   const CANNED_TTL = 4;          // frames; the hand model runs every other one
 
+  const named = g => renamed.has(g.id) ? { ...g, name: renamed.get(g.id) } : g;
   const all = () => [
     ...orderByGloss(BUILTINS.filter(g => !hiddenBuiltins.has(g.id)))
-        .map(g => recal.has(g.id) ? { ...g, f: recal.get(g.id), est: false } : g),
-    ...custom,
+        .map(g => recal.has(g.id) ? { ...g, f: recal.get(g.id), est: false } : g)
+        .map(named),
+    ...custom.map(named),
   ];
+
+  // One channel of a sideless kind, mapped through its DECLARED range so a
+  // template keeps meaning the same pose for as long as it exists.
+  const normSignal = key => {
+    const sig = bus.signals.get(key);
+    if (!sig) return 0;
+    const lo = sig.min ?? 0, hi = sig.max ?? 1;
+    if (hi === lo) return 0;
+    return Math.min(1, Math.max(0, (sig.value - lo) / (hi - lo)));
+  };
+  const featuresForKind = kind =>
+    present[kind] ? KINDS[kind].signals.map(normSignal) : null;
 
   const featuresFor = side => {
     const v = k => bus.signals.get(k)?.value ?? 0;
@@ -384,12 +490,14 @@ export const gesture = (() => {
       frameNo++;
       // Recording captures raw features, bypassing recognition.
       if (recording) {
-        const f = featuresFor(recording.hand === 'any' ? 'R' : recording.hand)
-               ?? featuresFor(recording.hand === 'any' ? 'L' : recording.hand);
+        const f = recording.kind === 'hand'
+          ? (featuresFor(recording.hand === 'any' ? 'R' : recording.hand)
+             ?? featuresFor(recording.hand === 'any' ? 'L' : recording.hand))
+          : featuresForKind(recording.kind);
         if (f) recording.frames.push(f);
         if (recording.frames.length >= 10) {
           const n = recording.frames.length;
-          const avg = FEATURES.map((_, i) =>
+          const avg = KINDS[recording.kind].features.map((_, i) =>
             +(recording.frames.reduce((s, fr) => s + fr[i], 0) / n).toFixed(3));
           let g;
           if (recording.target) {
@@ -400,7 +508,7 @@ export const gesture = (() => {
             g = all().find(x => x.id === recording.target);
           } else {
             g = { id: `custom${nextCustom++}`, name: recording.name, f: avg,
-                  builtin: false, hand: 'any' };
+                  builtin: false, hand: 'any', kind: recording.kind };
             custom.push(g);
             bus.register(`gesture_${g.id}`,
               { label: gestureLabel(g), group: 'gesture', min: 0, max: 1, source: 'gesture' });
@@ -413,25 +521,16 @@ export const gesture = (() => {
 
       const matched = new Set();
       const templates = all();
-      for (const side of ['L', 'R']) {
-        const st = state[side];
-        const f = featuresFor(side);
-        // The classifier only speaks for a hand that is actually in frame, and
-        // only for as long as its answer is fresh.
-        const c = f && canned[side] && frameNo - canned[side].at <= CANNED_TTL
-          ? canned[side] : null;
-        // Hysteresis in matchGesture biases toward the currently-held gesture.
-        const m = resolveGesture(f, templates, c, st.active);
+      // Debounce, shared by every slot. Switching costs the same as engaging:
+      // without that, `active` was reassigned on *every* matching frame, so
+      // with templates sitting close together the winner could flip frame to
+      // frame — and gesture mode, which is edge-triggered on the active id,
+      // would re-attack the chord each time.
+      const settle = (st, m) => {
         if (m) {
           st.missFrames = 0;
-          if (m.id === st.active) {
-            st.cand = null; st.candFrames = 0;
-          } else {
-            // Switching costs the same debounce as engaging. Without this,
-            // `active` was reassigned on *every* matching frame, so with
-            // templates sitting close together the winner could flip frame to
-            // frame — and gesture mode, which is edge-triggered on the active
-            // id, would re-attack the chord each time.
+          if (m.id === st.active) { st.cand = null; st.candFrames = 0; }
+          else {
             if (m.id === st.cand) st.candFrames++;
             else { st.cand = m.id; st.candFrames = 1; }
             if (st.candFrames >= HOLD_FRAMES) {
@@ -445,6 +544,25 @@ export const gesture = (() => {
           if (++st.missFrames >= RELEASE_FRAMES) st.active = null;
         }
         if (st.active) matched.add(st.active);
+      };
+
+      for (const side of ['L', 'R']) {
+        const st = state[side];
+        const f = featuresFor(side);
+        // The classifier only speaks for a hand that is actually in frame, and
+        // only for as long as its answer is fresh.
+        const c = f && canned[side] && frameNo - canned[side].at <= CANNED_TTL
+          ? canned[side] : null;
+        // Hysteresis in matchGesture biases toward the currently-held gesture.
+        settle(st, resolveGesture(f, templates, c, st.active));
+      }
+      // The sideless kinds run the same way minus the classifier, which only
+      // ever had opinions about hands.
+      for (const kind of SIDELESS_KINDS) {
+        const st = sideless[kind];
+        const f = featuresForKind(kind);
+        settle(st, f
+          ? matchGesture(f, templates, MATCH_THRESHOLD, st.active, kind) : null);
       }
 
       all().forEach(g => {
@@ -453,29 +571,70 @@ export const gesture = (() => {
       });
     },
 
-    // Currently engaged gesture ids (order: L then R, deduped).
+    // Currently engaged gesture ids (order: L then R, then sideless, deduped).
     current() {
       const ids = [];
-      for (const side of ['L', 'R']) {
-        const a = state[side].active;
-        if (a && !ids.includes(a)) ids.push(a);
-      }
+      const add = a => { if (a && !ids.includes(a)) ids.push(a); };
+      for (const side of ['L', 'R']) add(state[side].active);
+      for (const kind of SIDELESS_KINDS) add(sideless[kind].active);
       return ids;
     },
 
     // The gesture held on ONE hand. current() dedupes across both, which is
     // right for "is this shape being made" and useless for two-handed play,
     // where which hand is making it is the whole point.
-    activeOn(side) { return state[side]?.active ?? null; },
+    //
+    // A sideless gesture — an expression, a stance — is held on neither hand
+    // and so is available to either: asking "what is the left hand doing"
+    // while your eyebrows are up should answer the eyebrows, or NAMED BY: LEFT
+    // would make face gestures unplayable. A hand gesture on that hand still
+    // wins, being the more specific answer to the question asked.
+    activeOn(side) {
+      if (state[side]?.active) return state[side].active;
+      for (const kind of SIDELESS_KINDS) {
+        if (sideless[kind].active) return sideless[kind].active;
+      }
+      return null;
+    },
+
+    // Which model a sideless gesture needs running before it can ever match.
+    // The UI uses this to say so instead of letting a recording sit at zero.
+    setPresence(kind, on) { if (kind in present) present[kind] = !!on; },
 
     // Begin recording; resolves via callback once ~10 frames are captured.
     // Caller is responsible for checking that the camera is running.
     // Pass `target` to overwrite an existing gesture's template instead of
     // creating a new one — that's what calibration does.
-    record(name, onDone, hand = 'any', target = null) {
-      recording = { name: name || `Gesture ${nextCustom}`, hand, frames: [], onDone, target };
+    record(name, onDone, hand = 'any', target = null, kind = 'hand') {
+      recording = { name: name || `Gesture ${nextCustom}`, hand, frames: [],
+                    onDone, target, kind: KINDS[kind] ? kind : 'hand' };
     },
-    recalibrate(id, onDone, hand = 'any') { this.record(null, onDone, hand, id); },
+    // Recalibration always records the channels the gesture is already made
+    // of: asking a face gesture to re-record as a hand would not calibrate it,
+    // it would overwrite it with a vector of the wrong length.
+    recalibrate(id, onDone, hand = 'any') {
+      this.record(null, onDone, hand, id, kindOf(all().find(g => g.id === id)));
+    },
+    // Rename anything. Built-ins are code, so their new name is kept beside
+    // them (like a recalibration) rather than edited into them; an ASL gloss
+    // is not touched either way, since it is what the list is ordered by and
+    // what the shape actually is.
+    rename(id, name) {
+      const clean = String(name ?? '').trim().slice(0, 40);
+      const g = all().find(x => x.id === id);
+      if (!g || !clean || clean === g.name) return null;
+      if (BUILTINS.some(b => b.id === id)) renamed.set(id, clean);
+      else {
+        const own = custom.find(x => x.id === id);
+        if (!own) return null;
+        own.name = clean;
+        renamed.delete(id);
+      }
+      const updated = all().find(x => x.id === id);
+      bus.register(`gesture_${id}`, { label: gestureLabel(updated), group: 'gesture',
+                                      min: 0, max: 1, source: 'gesture' });
+      return updated;
+    },
     get recordingActive() { return !!recording; },
     get recordingTarget() { return recording?.target ?? null; },
     cancelRecord() { recording = null; },
@@ -484,6 +643,13 @@ export const gesture = (() => {
     // something measured — the ones worth calibrating first.
     estimated: () => all().filter(g => g.est).map(g => g.id),
     resetCalibration(id) { if (id) recal.delete(id); else recal.clear(); },
+    // Give a built-in its shipped name back — the counterpart to
+    // resetCalibration, and the only way back from a rename, since the
+    // original name lives in the code rather than in the override.
+    resetNames(id) {
+      if (id) renamed.delete(id); else renamed.clear();
+      this.registerSignals();
+    },
 
     remove(id) {
       if (BUILTINS.some(g => g.id === id)) {
@@ -500,9 +666,11 @@ export const gesture = (() => {
     hiddenCount: () => hiddenBuiltins.size,
 
     serialize() {
-      return { custom: custom.map(({ id, name, f, hand, m }) => ({ id, name, f, hand, m })),
+      return { custom: custom.map(({ id, name, f, hand, m, kind }) =>
+                                  ({ id, name, f, hand, m, kind })),
                hidden: [...hiddenBuiltins],
-               recal: Object.fromEntries(recal) };
+               recal: Object.fromEntries(recal),
+               renamed: Object.fromEntries(renamed) };
     },
     load(data) {
       // Back-compat: older presets stored just an array of custom gestures.
@@ -511,14 +679,21 @@ export const gesture = (() => {
       // current length (left short they'd compare as NaN and become silently
       // unmatchable) and the padded channels are masked out of the metric —
       // the recording never saw them, so it has no opinion about them.
-      custom = arr.map(g => ({
-        ...g,
-        f: padTemplate(g.f),
-        m: g.m ?? maskFromLength(Array.isArray(g.f) ? g.f.length : 0),
-        builtin: false, hand: g.hand ?? 'any',
-      }));
+      custom = arr.map(g => {
+        const kind = kindOf(g);
+        return {
+          ...g, kind,
+          f: padFor(kind, g.f),
+          m: g.m ?? maskFor(kind, Array.isArray(g.f) ? g.f.length : 0),
+          builtin: false, hand: g.hand ?? 'any',
+        };
+      });
       hiddenBuiltins.clear();
       recal.clear();
+      renamed.clear();
+      for (const [id, name] of Object.entries((Array.isArray(data) ? {} : data?.renamed) ?? {})) {
+        if (name) renamed.set(id, String(name));
+      }
       for (const [id, f] of Object.entries((Array.isArray(data) ? {} : data?.recal) ?? {})) {
         if (BUILTINS.some(g => g.id === id)) recal.set(id, padTemplate(f));
       }

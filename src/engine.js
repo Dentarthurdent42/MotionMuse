@@ -791,6 +791,32 @@ export const engine = (() => {
     g.linearRampToValueAtTime(0, holdUntil + rel);
   }
 
+  // Let go of the voices the way a chord is let go of: cancel what has not
+  // sounded yet, and fade what IS sounding over the chord's own release.
+  //
+  // The difference from silenceChordVoices() is who is next. That one is for a
+  // chord handing these voices to another owner, where anything still ringing
+  // would sound UNDER the new chord — so it cuts, in 30 ms. Releasing is the
+  // opposite case: nothing is replacing the sound, and cutting it there throws
+  // away the tail the player asked for. With a sustain on every arp note that
+  // is most of the note.
+  //
+  // Cancelling first and reading the value BEFORE cancelling is what makes one
+  // pass cover both: a voice mid-note is at its peak and falls from there, and
+  // a voice holding only a note that has not started yet is at zero, so its
+  // ramp is silence and the queued note never arrives.
+  function releaseChordVoices(seconds) {
+    if (!started) return;
+    const t = ctx.currentTime;
+    const fall = Math.max(CHORD_ENV_MIN, Number(seconds) || chordEnv.release);
+    for (const n of chordVGains) {
+      const held = n.gain.value;
+      n.gain.cancelScheduledValues(t);
+      n.gain.setValueAtTime(held, t);
+      n.gain.linearRampToValueAtTime(0, t + fall);
+    }
+  }
+
   // Drop whatever the voices are holding without touching the shared gain —
   // the arpeggiator's counterpart to releaseChord(), which owns the other end.
   // Needed because the arp leaves notes scheduled into the future: stopping
@@ -945,7 +971,7 @@ export const engine = (() => {
     registerParams, unregisterParams,
     defineWave, playTone, now, click,
     playChord, releaseChord, chordActive, setChordVoices, setChordLevel, chordLevel,
-    attackChord, arpNote, silenceChordVoices,
+    attackChord, arpNote, silenceChordVoices, releaseChordVoices,
     setChordEnv, getChordEnv, CHORD_ENV_RANGE, CHORD_PEAK,
     setLeadEnv, getLeadEnv, LEAD_ENV_RANGE,
     setShepard, getShepard,
