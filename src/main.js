@@ -12,7 +12,7 @@ import { renderMapper, updateMapperBars }   from './ui/mapper-ui.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
 import { initResize }                       from './ui/resize.js';
-import { initFullscreen, updateFsOverlay }  from './ui/fullscreen.js';
+import { initFullscreen, updateFsOverlay, fullscreen } from './ui/fullscreen.js';
 import { playalong }                        from './playalong.js';
 import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
 import { gesture }                          from './gesture.js';
@@ -103,32 +103,37 @@ const setLabel = (btn, text) => {
   if (t) t.textContent = text; else btn.textContent = text;
 };
 
-// ── Camera button ────────────────────────────────────────────────────────
+// ── Camera: START is the blank frame, STOP is on the picture ─────────────
+//
+// Two elements rather than one toggle, because they are never both meaningful:
+// the target to press when there is no picture is the whole empty frame, and
+// once there IS a picture that target is gone — covering the view with a
+// button would be covering the instrument.
+function stopCamera() {
+  cvSource.stopCamera();                 // releases the camera hardware
+  faceSource.setFace(false);             // face/gaze read the same stream
+  faceSource.setGaze(false);
+  ['face-btn', 'gaze-btn'].forEach(id => {
+    const b = document.getElementById(id);
+    b.disabled = true; b.classList.remove('on');
+  });
+  setStatus('', 'STOPPED');
+  setLabel(document.getElementById('cv-btn'), 'START CAMERA');
+  document.body.classList.remove('cam-on');
+}
+document.getElementById('cv-stop').addEventListener('click', stopCamera);
+
 document.getElementById('cv-btn').addEventListener('click', async () => {
   const btn = document.getElementById('cv-btn');
-  if (cvSource.running) {
-    cvSource.stopCamera();               // releases the camera hardware
-    faceSource.setFace(false);           // face/gaze read the same stream
-    faceSource.setGaze(false);
-    ['face-btn', 'gaze-btn'].forEach(id => {
-      const b = document.getElementById(id);
-      b.disabled = true; b.classList.remove('on');
-    });
-    setStatus('', 'STOPPED');
-    setLabel(btn, 'START CAMERA');
-    btn.classList.remove('on');
-    document.body.classList.remove('cam-on');
-    return;
-  }
+  if (cvSource.running) return;          // the picture hides this button anyway
   btn.disabled = true;
   setLabel(btn, 'LOADING…');
   try {
     await cvSource.init();
     await cvSource.startCamera();
     setStatus('active', 'CV ACTIVE');
-    setLabel(btn, 'STOP CAMERA');
+    setLabel(btn, 'START CAMERA');
     btn.disabled = false;
-    btn.classList.add('on');
     buildSigPanel();
     renderMapper();
     // Face & gaze tracking are opt-in once the camera is running: they load a
@@ -283,7 +288,9 @@ const vizMuted = document.getElementById('viz-muted');
 // banner and the assistive-tech state can't drift apart.
 function syncMuteUI() {
   const m = engine.muted;
-  setLabel(audioBtn, m ? '🔇 MUTED' : '🔊 SOUND ON');
+  // An icon, not a caption: it sits on the picture now, where the shortest
+  // thing that still says which state you are in is the right size.
+  setLabel(audioBtn, m ? '🔇' : '🔊');
   audioBtn.classList.toggle('muted', m);
   audioBtn.classList.toggle('on', !m);
   audioBtn.setAttribute('aria-pressed', String(m));
@@ -549,11 +556,23 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
     },
   });
 } else if (openedShare) {
-  // A setup that arrived by link gets the tour for what the link actually
-  // brought — and only the first time that link is followed. Reopening a QR
-  // pinned to a wall, or reloading, lands you on a setup that is already
-  // yours; being walked through it again is something to dismiss.
-  if (openedShare.first) offerTourForSharedSetup();
+  // A link is an invitation to PLAY, not to read a patchbay: someone pointed
+  // a phone at a QR code and the next thing they should see is themselves,
+  // full frame, with one thing to press. So a shared setup opens straight
+  // into the fullscreen camera view.
+  fullscreen.open();
+  // …and the tour waits for them to come back out of it. A walkthrough of
+  // panels that are currently behind a fullscreen camera is a walkthrough of
+  // nothing, and only the first time that link is followed: reopening a QR
+  // pinned to a wall lands you on a setup that is already yours.
+  if (openedShare.first) {
+    let toured = false;
+    fullscreen.onChange(active => {
+      if (active || toured) return;
+      toured = true;
+      offerTourForSharedSetup();
+    });
+  }
 } else {
   maybeOfferTour();
 }

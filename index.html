@@ -32,43 +32,14 @@
     </div>
     <div class="hsep"></div>
     <div class="hbtns">
-      <!-- .btn-sizer holds the longest label this button can ever show, hidden
-           but occupying the same grid cell, so the button keeps one width as
-           its label changes (START CAMERA → LOADING… → STOP CAMERA) instead of
-           reflowing the whole header mid-press. JS writes .btn-text. -->
-      <button class="btn btn-fixed" id="cv-btn">
-        <span class="btn-sizer" aria-hidden="true">START CAMERA</span>
-        <span class="btn-text">START CAMERA</span>
-      </button>
-      <!-- The engine starts with the page, so this is a mute toggle, not a
-           power switch. Muted is the launch state and must look like a state,
-           not a disabled control — hence the caption naming what you'd get,
-           the amber styling, and the banner over the visualiser. -->
-      <button class="btn purple btn-fixed muted" id="audio-btn" aria-pressed="true">
-        <!-- Sizer holds the LONGER of the two captions, not the initial one:
-             "🔊 SOUND ON" is 24px wider than "🔇 MUTED". -->
-        <span class="btn-sizer" aria-hidden="true">🔊 SOUND ON</span>
-        <span class="btn-text">🔇 MUTED</span>
-      </button>
-      <!-- SHARE sits with the top-level controls rather than in the patchbay
-           toolbar beside SAVE/LOAD: those are about a file, this is about
-           handing the whole instrument to the person next to you, and it is
-           not specific to the patchbay any more than the camera is. -->
-      <button class="btn" id="share-btn" aria-haspopup="dialog" aria-expanded="false"
-              title="Show a QR code of this setup — someone can scan it to open the app configured the same way">SHARE</button>
+      <!-- Starting the camera, muting, sharing, the source and the heart all
+           live ON the picture now (see .cam-actions and #cv-btn below): they
+           are the things you reach for while playing or while showing someone
+           else, and the picture is where your eyes already are. What is left
+           here is what belongs to the TOOL rather than to the instrument. -->
       <button class="btn" id="settings-btn" aria-haspopup="menu" aria-expanded="false"
               title="Settings — theme, hotkeys and other controls for the tool rather than the sound">⚙</button>
       <button class="btn" id="tour-btn" title="Guided tour">?</button>
-      <!-- A plain link, not a popover: "where is the code" deserves one click.
-           An <a> styled as a .btn so it sits in the row as a peer — it opens
-           a new tab, since leaving the instrument mid-patch loses nothing
-           saved but everything playing. -->
-      <a class="btn" id="repo-link" href="https://github.com/Dentarthurdent42/MotionMuse"
-         target="_blank" rel="noopener" title="Source code on GitHub" aria-label="Source code on GitHub">
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-      </a>
-      <button class="btn" id="donate-btn" aria-haspopup="menu" aria-expanded="false"
-              title="Support this project — donation links">♥</button>
     </div>
   </header>
 
@@ -137,30 +108,33 @@
           <video id="video" autoplay playsinline muted></video>
           <canvas id="overlay"></canvas>
           <canvas id="face-overlay"></canvas>
-          <!-- What the camera tracks — a property of this input, so the
-               toggles wear the picture itself rather than the header they
-               used to share with SHARE and the theme. A strip overlaid like
-               .cam-toggles opposite, because a stacked row would grow the
-               camera panel and steal that height from the patchbay below.
-               Hands and pose work before the camera starts (they set intent
-               the loop reads); FACE and GAZE load a model onto the live
-               stream, so they stay disabled until there is one. -->
-          <div class="cam-trackers">
-            <!-- Hand tracking costs about twice what pose does and is the usual
-                 frame-rate bottleneck, so both are switchable outright. With one
-                 off the other stops sharing frames and runs at the full rate. -->
-            <button class="depth-toggle on" id="hands-l-btn"
-                    title="Track the left hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">✋ L</button>
-            <button class="depth-toggle on" id="hands-r-btn"
-                    title="Track the right hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">R ✋</button>
-            <button class="depth-toggle on" id="pose-btn"
-                    title="Body pose tracking. Turn it off to give hand tracking the whole frame budget.">🧍 POSE</button>
-            <button class="depth-toggle" id="face-btn" disabled
-                    title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears — start the camera first">☺ FACE</button>
-            <button class="depth-toggle" id="gaze-btn" disabled
-                    title="Track pupil orientation as gaze_x / gaze_y signals — start the camera first">◉ GAZE</button>
+          <!-- What you reach for while playing, or while handing the thing to
+               someone else: on the picture, where your eyes already are, and
+               small and quiet so it never competes with what it sits over.
+               Bottom-left, opposite .cam-toggles, so neither strip covers the
+               other and the middle of the frame — where you are — stays clear. -->
+          <div class="cam-actions">
+            <!-- The engine starts with the page, so this is a mute toggle, not
+                 a power switch. Muted is the launch state and must look like a
+                 state, not a disabled control. -->
+            <button class="depth-toggle muted" id="audio-btn" aria-pressed="true"
+                    title="Mute / unmute — the engine is always running, this is the output"><span class="btn-text">🔇</span></button>
+            <button class="depth-toggle" id="share-btn" aria-haspopup="dialog" aria-expanded="false"
+                    title="Show a QR code of this setup — someone can scan it to open the app configured the same way">⇪ SHARE</button>
+            <a class="depth-toggle" id="repo-link" href="https://github.com/Dentarthurdent42/MotionMuse"
+               target="_blank" rel="noopener" title="Source code on GitHub" aria-label="Source code on GitHub">
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+            </a>
+            <button class="depth-toggle" id="donate-btn" aria-haspopup="menu" aria-expanded="false"
+                    title="Support this project — donation links">♥</button>
           </div>
           <div class="cam-toggles">
+            <!-- Stopping the camera lives here because STARTING it is the big
+                 target in the middle of the blank frame, and once there is a
+                 picture that target is gone — the strip is where the picture's
+                 own controls already are. Only while it is running. -->
+            <button id="cv-stop" class="depth-toggle cam-on-only"
+                    title="Stop the camera and release it">⏹ STOP</button>
             <button id="depth-btn" class="depth-toggle uc-feature"
                     title="Under construction — use an optical depth sensor (WebXR LiDAR / ToF) for true metric depth (DEV mode feature)"><span id="depth-btn-lbl">◈ LiDAR</span><span class="src-tab-wip">🚧</span></button>
             <button id="fs-btn" class="depth-toggle"
@@ -189,12 +163,18 @@
             <span id="lat-model-wrap">MODEL <b id="lat-model">—</b></span>
             <span id="lat-depth-wrap" style="display:none">DEPTH <b id="lat-depth">—</b></span>
           </div>
-          <div id="cam-placeholder">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <!-- The blank frame IS the start button: the thing you are looking
+               at when there is nothing to look at yet is the thing to press,
+               at any size and in fullscreen alike, where a control in the page
+               header would be off-screen entirely. A real <button>, so the tap
+               that requests camera access is a user gesture wherever it
+               happens. `.btn-text` is what JS relabels (LOADING… / RETRY). -->
+          <button id="cv-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
               <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
             </svg>
-            <span>START CAMERA</span>
-          </div>
+            <span class="btn-text">START CAMERA</span>
+          </button>
           <canvas id="fs-kbd"></canvas>
           <div id="stage-layer"></div>
         </div>
@@ -209,6 +189,30 @@
              scrolls inside this box instead of growing the section that is
              pinned to the top of a phone screen. -->
         <div id="cam-extras" data-sec-host="cam">
+          <!-- What the camera tracks — a property of this input, so it lives
+               in this input's container rather than on the picture (where it
+               covered the frame) or in the page header (where it belonged to
+               nothing). One compact row: these are chips, not buttons, so the
+               row costs the column a line rather than a block.
+               Hands and pose work before the camera starts (they set intent
+               the loop reads); FACE and GAZE load a model onto the live
+               stream, so they stay disabled until there is one. -->
+          <div class="cam-trackers" id="tracker-row"
+               title="What the camera tracks. Hands and pose can be set before the camera starts; FACE and GAZE load a model onto the live stream.">
+              <!-- Hand tracking costs about twice what pose does and is the usual
+                   frame-rate bottleneck, so both are switchable outright. With one
+                   off the other stops sharing frames and runs at the full rate. -->
+              <button class="depth-toggle on" id="hands-l-btn"
+                      title="Track the left hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">✋ L</button>
+              <button class="depth-toggle on" id="hands-r-btn"
+                      title="Track the right hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">R ✋</button>
+              <button class="depth-toggle on" id="pose-btn"
+                      title="Body pose tracking. Turn it off to give hand tracking the whole frame budget.">🧍 POSE</button>
+              <button class="depth-toggle" id="face-btn" disabled
+                      title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears — start the camera first">☺ FACE</button>
+              <button class="depth-toggle" id="gaze-btn" disabled
+                      title="Track pupil orientation as gaze_x / gaze_y signals — start the camera first">◉ GAZE</button>
+          </div>
           <!-- .audio-section, not .panel: as a subsection of Camera Input it is the
                same kind of container as its neighbours, and `.panel.sec` strips the
                border, margin and radius that make a section read as a card. -->

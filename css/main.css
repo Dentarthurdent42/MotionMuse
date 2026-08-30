@@ -343,14 +343,53 @@ html, body {
    strip agree about where the bar stands. */
 .met-beat.met-now { outline: 1px solid var(--amber); outline-offset: 1px; }
 
-/* The TRACKING strip on the camera view — what the camera tracks lives with
-   the camera, not in the header. Overlaid like .cam-toggles opposite rather
-   than stacked below the picture, because a stacked row grows the camera
-   panel and steals that height from the patchbay under it. */
+/* The TRACKING row inside Camera Input. Chips rather than buttons, wrapping
+   in one block, so what the camera tracks sits with the camera without
+   taking a stacked row's worth of height off the patchbay below it. */
 .cam-trackers {
-  position: absolute; top: 6px; left: 6px; z-index: 3;
-  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
 }
+
+/* The picture's own controls: what you reach for while playing or while
+   handing the instrument to someone else. Bottom-left, opposite the
+   .cam-toggles strip, so neither covers the other and the middle of the
+   frame — where you are — stays clear. */
+.cam-actions {
+  position: absolute; bottom: 6px; left: 6px; z-index: 3;
+  display: flex; align-items: center; gap: 4px;
+}
+.cam-actions .depth-toggle { display: inline-flex; align-items: center; gap: 3px; text-decoration: none; }
+/* Muted is a state, not a disabled control — amber, as it was in the header. */
+#audio-btn.muted { color: var(--amber); border-color: var(--amber); background: #f0a50022; }
+
+/* Stopping the camera only means anything once one is running; starting it is
+   the big target in the middle of the blank frame. */
+.cam-on-only { display: none; }
+body.cam-on .cam-on-only { display: block; }
+
+/* The blank frame IS the start button. It fills the picture because that is
+   the thing you are looking at when there is nothing to look at yet — and in
+   fullscreen a control in the page header would be off-screen entirely. */
+#cv-btn {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 8px; color: var(--dim);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  background: transparent; border: 0;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+#cv-btn svg { width: 32px; height: 32px; opacity: 0.3; transition: opacity 0.15s; }
+#cv-btn:hover { color: var(--cyan); background: var(--cyan-dim); }
+#cv-btn:hover svg { opacity: 0.6; }
+#cv-btn:disabled { cursor: default; }
+/* A picture is not something to press: the target exists only while the frame
+   is blank (cv.js hides it the moment the stream arrives). */
+body.cam-on #cv-btn { display: none; }
 
 /* Keep one width as the caption changes: the hidden sizer holds the longest
    label and shares a grid cell with the live text, so the box is sized by the
@@ -762,14 +801,7 @@ body.no-scroll { overflow: hidden; }
 }
 #latency-bar span { margin-right: 14px; }
 #latency-bar span b { color: var(--glass-ink); }
-#cam-placeholder {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: 8px; color: var(--dim);
-  font-size: 10px; letter-spacing: 1px;
-}
-#cam-placeholder svg { width: 32px; height: 32px; opacity: 0.3; }
+
 
 /* ── Signal list ─────────────────────────────────────────── */
 .sig-group {
@@ -2354,8 +2386,8 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   /* Camera */
   .depth-toggle { font-size: 11px; padding: 5px 11px; }
   #latency-bar { font-size: 10px; padding: 4px 10px; }
-  #cam-placeholder { font-size: 12px; }
-  #cam-placeholder svg { width: 40px; height: 40px; }
+  #cv-btn { font-size: 12px; }
+  #cv-btn svg { width: 40px; height: 40px; }
 
   /* Signal list */
   .sig-group { font-size: 10px; padding: 10px 14px 4px; }
