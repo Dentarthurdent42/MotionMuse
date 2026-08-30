@@ -43,12 +43,30 @@ test('a pose too far from everything is rejected', () => {
 });
 
 test('weights actually weight: the same error costs more on a louder channel', () => {
+  // The ORDER is the invariant, not any one number. The contacts are what
+  // separate the ASL numbers, so they cost the most; `spread` measured
+  // unpredictably, so it costs the least.
+  //
+  // `thumb` used to be tested as a channel the contacts should "dominate" by
+  // more than 2×, which encoded it as nearly dead — true when extension was a
+  // base-to-tip distance covering a 0.09 span. As a joint angle it carries a
+  // real ~0.45 span, and leaving it at a quarter vote is what let a hand
+  // making ASL 3 read as a peace sign (see WEIGHTS in gesture.js). So the
+  // claim here is now the ranking: louder than spread, quieter than a finger.
   const base = { id: 't', f: V(0.5) };
-  const bump = i => { const f = V(0.5); f[i] += 0.3; return f; };
-  const thumb    = templateDistance(bump(FEATURES.indexOf('thumb')), base);
-  const contact  = templateDistance(bump(FEATURES.indexOf('cPinky')), base);
-  assert.ok(contact > thumb * 2,
-    `contact ${contact.toFixed(3)} should dominate dead thumb channel ${thumb.toFixed(3)}`);
+  const cost = name => {
+    const f = V(0.5); f[FEATURES.indexOf(name)] += 0.3;
+    return templateDistance(f, base);
+  };
+  const thumb = cost('thumb'), contact = cost('cPinky');
+  const finger = cost('index'), spread = cost('spread');
+  assert.ok(contact > finger, `contact ${contact.toFixed(3)} > finger ${finger.toFixed(3)}`);
+  assert.ok(finger > thumb, `finger ${finger.toFixed(3)} > thumb ${thumb.toFixed(3)}`);
+  assert.ok(thumb > spread, `thumb ${thumb.toFixed(3)} > spread ${spread.toFixed(3)}`);
+  // And it is no longer a throwaway: a thumb that has moved has to cost
+  // something a near-tie can be decided on.
+  assert.ok(thumb > finger * 0.7,
+    `thumb ${thumb.toFixed(3)} is a real vote against finger ${finger.toFixed(3)}`);
 });
 
 test('hysteresis keeps the currently-held gesture but does not create matches', () => {

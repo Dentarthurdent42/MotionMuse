@@ -25,13 +25,20 @@ export const FEATURES = [
 //   - `thumb` was nearly pure noise while extension was a distance: the
 //     thumb's base-to-tip span barely changes as it moves, so it covered a
 //     0.09 range in total. As a joint angle it earns its place — a tucked
-//     thumb reads ~0.45 against ~0.90 carried clear — but the weight is left
-//     low because `thumbOut` already says where the thumb is, more directly.
+//     thumb reads ~0.45 against ~0.90 carried clear — and it is now weighted
+//     for that. It sat at 0.25 on the reasoning that `thumbOut` says where the
+//     thumb is more directly, which is true right up until a template MASKS
+//     thumbOut out. `peace` does exactly that (a peace sign turns up with the
+//     thumb both tucked and clear), and ASL 3 is a peace sign plus a thumb —
+//     so the one channel that separated them was voting at a quarter strength
+//     and a real hand making a 3 was read as a 2. Reported from playing.
+//     Still under the finger channels: `thumbOut` remains the more direct
+//     statement where a template is willing to hear it.
 //   - `spread` turned out to be unpredictable (a peace sign measured *lower*
 //     spread than a fist), so it gets a light vote.
 //   - the contacts are what separate the ASL number handshapes at all, so
 //     they get the loudest.
-export const WEIGHTS = [0.25, 1, 1, 1, 1, 0.7, 0.4, 1.1, 1.2, 1.2, 1.2, 1.2];
+export const WEIGHTS = [0.7, 1, 1, 1, 1, 0.7, 0.4, 1.1, 1.2, 1.2, 1.2, 1.2];
 
 // Value assumed for a channel a template doesn't carry. Templates recorded
 // before the vector grew are padded with these on load rather than being left
@@ -202,8 +209,14 @@ const BUILTINS = [
   // ASL numbers. 1, 2, 5 and 10 are the shapes above — one template each, with
   // both a descriptive name and the numeral, rather than duplicates that would
   // sit on top of each other and make the match a coin toss.
+  // Measured from TWO hands (tests/gesture-img/img/asl3.jpg and asl3b.jpg),
+  // not one. Fitted to the first photo alone this template sat at ring/pinky
+  // 0.52 — a half-curled hand — and a second person's 3, with those fingers
+  // properly folded at 0.35, landed 0.102 away with `peace` only 0.023 further
+  // off. That is the shape not being picked up. The midpoint of the two puts
+  // it 0.048 from one hand and 0.053 from the other.
   { id: 'asl3',   name: 'Three',      asl: '3', m: care(CONTACTS),
-    f: [0.89, 0.92, 0.91, 0.52, 0.52, 0.65, 0.70, 1.00, 0.00, 0.00, 0.00, 0.00] },
+    f: [0.93, 0.93, 0.90, 0.43, 0.43, 0.64, 0.64, 1.00, 0.00, 0.00, 0.00, 0.00] },
   { id: 'asl4',   name: 'Four',       asl: '4', m: care(CONTACTS),
     f: [0.48, 0.93, 0.88, 0.86, 0.93, 0.70, 0.28, 0.02, 0.00, 0.00, 0.00, 0.00] },
   { id: 'asl6',   name: 'Pinky Touch',asl: '6', m: care(),
