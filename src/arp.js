@@ -51,18 +51,45 @@ export function stepIndex(i, n, pattern = 'up', rnd = Math.random) {
 
 export const stepSeconds = rate => 1 / Math.max(0.1, Number(rate) || 0.1);
 
-// A note may ring past its own step (gate above 1) but must be done before its
-// voice comes around again: the engine round-robins four chord voices, so a
-// tail longer than three steps would be cut mid-ring by the fourth-next note
+// A note may ring past its own step, but must be done before its voice comes
+// around again: the engine round-robins four chord voices, so a note alive for
+// longer than three steps would be cut mid-ring by the fourth-next note
 // reclaiming the voice.
-export const ARP_MAX_GATE = 3;
+//
+// That budget covers the note's WHOLE life — the gate it is held for PLUS the
+// tail it rings out over — which is why the two are clamped together below
+// rather than each on its own.
+export const ARP_MAX_RING = 3;
+export const ARP_MAX_GATE = ARP_MAX_RING;
+export const ARP_MAX_SUSTAIN = ARP_MAX_RING;
 
-// How long a note sounds, with `gate` in steps: below 1 is staccato inside the
+// How long a note is HELD, with `gate` in steps: below 1 is staccato inside the
 // step, 1 is wall-to-wall, above 1 lets each note ring under the ones that
 // follow. Floored well above zero: a gate of 0.05 at 24 steps/second is 2 ms,
 // which is a click, not a note.
 export const noteSeconds = (step, gate) =>
   Math.max(0.02, step * Math.max(0, Math.min(ARP_MAX_GATE, Number(gate) || 0)));
+
+// The note's whole shape in seconds: how long it is held, and how long it
+// rings out afterwards.
+//
+// SUSTAIN is the part a gate cannot express. Before it existed the engine cut
+// every arp note at its gate with a fade of at most 90 ms, so the run was a
+// procession of flat-topped blocks however long the gate was — the reason it
+// read as staccato at any setting. A tail is what makes a note sound plucked
+// or bowed rather than switched on and off.
+//
+// Both are in STEPS, so the shape holds when the tempo changes: an arpeggio
+// that rings a half-step under the next note keeps doing that at 2/s and at
+// 16/s. The tail takes whatever the gate leaves of the ring budget, so turning
+// the gate up eats into it rather than pushing the note past the point where
+// its own voice is reclaimed.
+export function noteEnvelope(step, gate, sustain = 0) {
+  const hold = noteSeconds(step, gate);
+  const room = Math.max(0, ARP_MAX_RING * step - hold);
+  const want = step * Math.max(0, Math.min(ARP_MAX_SUSTAIN, Number(sustain) || 0));
+  return { hold, tail: Math.min(room, want) };
+}
 
 // Never schedule more than this in one pass. The catch-up rule below should
 // make it unreachable; it is here because the alternative to a wrong number of

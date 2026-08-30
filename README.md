@@ -1364,16 +1364,46 @@ mode restarts the run on each SAMPLE strike.
 | **Pattern** | `UP`, `DOWN`, `UP · DOWN`, `DOWN · UP`, `RANDOM`. |
 | **Octaves** | 1–3. Two octaves over a seventh chord is an eight-note run. |
 | **RATE** | Notes per second (0.5–24). The readout gives the tempo equivalent, reading steps as eighth notes. |
-| **GATE** | How long each note rings, in steps (0.05–3). Below 1 is staccato, 1 runs the notes wall-to-wall, and above 1 each note rings under the ones that follow — the voices overlap, like an arpeggio under a sustain pedal. |
+| **GATE** | How long each note is **held**, in steps (0.05–3, default 0.9). Below 1 is staccato inside the step, 1 runs the notes wall-to-wall, and above 1 each note is still held while the ones after it start. |
+| **SUS** | How long it **rings out after** that, also in steps (0–3, default 0.6) — the tail. |
 
 `UP · DOWN` reflects at the ends rather than concatenating an up-run with a
 down-run: over a triad it plays `0 1 2 1`, not `0 1 2 2 1 0`. The naive version
 sounds both endpoints twice, which lands as a stumble on every turn.
 
-**Rate and gate are patchbay outputs** (`Arp Rate`, `Arp Gate`, under Chord
-Mode), which is the point of expressing the rate as a plain number rather than
-a tempo: wire a signal to `arp_rate` and your hand drives how fast the chord
-churns, the same way it drives the filter.
+### Why a gate is not enough
+
+Reported as "the arpeggiator is too staccato by default", and it was — at
+*every* setting of every control, which is the part that matters. The engine
+cut each arp note dead at its gate with a fade of at most 90 ms, so the run
+was a procession of flat-topped blocks however long the blocks were. A gate
+can make a note longer; it cannot give it a **shape**, and the difference
+between a note that stops and a note that rings is most of what separates an
+instrument from a metronome with pitches.
+
+So the note's life is two controls now. GATE is how long it is held; **SUS**
+is how long it decays afterwards. Both are in *steps*, so the shape survives a
+tempo change: an arpeggio that rings a half-step under the next note keeps
+doing that at 2/s and at 20/s.
+
+They share one budget. The engine round-robins four chord voices, so a note
+still sounding three steps later would be cut mid-ring by the fourth-next note
+reclaiming its voice — which means the cap has to cover the note's *whole*
+life, gate plus tail, not each half separately. Turning the gate up therefore
+eats into the tail rather than pushing the note past the point where it gets
+chopped. The readout reports the tail the notes are **actually** getting, not
+the slider's wish, because those differ exactly when a long gate has squeezed
+it. `tests/unit/arp.test.js` walks the grid of step, gate and sustain and
+holds the budget.
+
+The default moved with it: **gate 0.9, sustain 0.6**, where gate alone used to
+be 0.55. A note that stopped just past halfway through its own step is what
+"too staccato" was.
+
+**Rate, gate and sustain are patchbay outputs** (`Arp Rate`, `Arp Gate`,
+`Arp Sustain`, under Gesture Mode), which is the point of expressing the rate
+as a plain number rather than a tempo: wire a signal to `arp_rate` and your
+hand drives how fast the chord churns, the same way it drives the filter.
 
 And when there IS a clock — the metronome — **SYNC** locks the run to it,
 which is the **default** (`2/BEAT`, eighth notes). It does two things,
@@ -1677,6 +1707,31 @@ duplicated: the height is `makeKbdView`'s to decide — 14% of the frame,
 floored at 40px — and a second copy of that expression in CSS is a copy that
 goes stale. Leaving fullscreen resets it to zero, or the bar would float a
 keyboard's height off the bottom of a windowed view.
+
+### Coming back to a backgrounded tab
+
+Reported as the camera view going black after losing and regaining focus —
+while the app still read **CV ACTIVE** with values in the signals panel. It
+looked alive because the values were *frozen*: the last ones read before the
+tab went away.
+
+Both halves are the same fault. A backgrounded tab has its `<video>` paused by
+the browser, and on iOS the camera track is often ended outright. Either way
+`currentTime` stops advancing — and the inference loop is gated on exactly
+that, so it keeps running while feeding the bus nothing. Nothing restarts the
+element on the way back in, because `autoplay` already fired once and does not
+fire again.
+
+`cvSource.restore()` handles both cases, and the cheap one is not enough on
+its own: `play()` revives a merely paused element, but a track the browser
+**ended** is gone for good and only a fresh `getUserMedia` brings the camera
+back. The models, canvases and loop are untouched — this reattaches a stream
+to a pipeline that never stopped, rather than restarting the camera. It is
+driven by three events, because they mean different things and a phone does
+not always send all of them: `visibilitychange` (tab or app switch), `pageshow`
+(back/forward cache) and `focus` (a window that was merely behind another).
+With no camera running it does nothing at all — regaining focus must never
+start a camera nobody asked for.
 
 ## Fullscreen camera view
 

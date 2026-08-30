@@ -1,5 +1,5 @@
 import { makeQuantizer } from './scale.js';
-import { ARP_MAX_GATE } from './arp.js';
+import { ARP_MAX_GATE, ARP_MAX_SUSTAIN } from './arp.js';
 import { isString } from './is.js';
 import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 
@@ -150,7 +150,15 @@ export const engine = (() => {
     arp_rate:    { label: 'Arp Rate',     min: 0.5,  max: 24,    val: 4,    unit: '/s', snaps: [2, 4, 8] },
     // Gate is in steps: 1 is wall-to-wall, above 1 each note rings under the
     // ones that follow (capped so a tail is done before its voice recycles).
-    arp_gate:    { label: 'Arp Gate',     min: 0.05, max: ARP_MAX_GATE, val: 0.55, snaps: [0.5, 1] },
+    // Default 0.9 rather than the old 0.55: a note that stopped just past
+    // halfway through its own step made every setting of every other control
+    // sound clipped, which is what "the arpeggiator is too staccato" was.
+    arp_gate:    { label: 'Arp Gate',     min: 0.05, max: ARP_MAX_GATE, val: 0.9,  snaps: [0.5, 1] },
+    // …and how long it rings out AFTER the gate closes, also in steps. The
+    // gate alone could never give an arp note a tail: the engine cut it dead
+    // with a fade of at most 90 ms, so the run was flat-topped blocks however
+    // long each block was. See noteEnvelope in arp.js.
+    arp_sustain: { label: 'Arp Sustain',  min: 0,    max: ARP_MAX_SUSTAIN, val: 0.6, snaps: [0.5, 1] },
     lfo_rate:    { label: 'LFO Rate',      min: 0.05, max: 20,    val: 1,    unit: 'Hz' },
     lfo_depth:   { label: 'LFO Depth',     min: 0,    max: 1,     val: 0,     snaps: [0.5] },
     reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12,  snaps: [0.25, 0.5] },
@@ -754,7 +762,9 @@ export const engine = (() => {
   // lands the arp about level with the block chord it replaces.
   const ARP_VOICE_GAIN = 0.7;
   let arpVoice = 0;
-  function arpNote({ freq, when = 0, dur = 0.12, gain = 1 } = {}) {
+  // `dur` is how long the note is HELD; `tail` is how long it rings out after
+  // that, and the note ends at when + dur + tail.
+  function arpNote({ freq, when = 0, dur = 0.12, gain = 1, tail = 0 } = {}) {
     if (!started || !(freq > 0)) return;
     const t = Math.max(ctx.currentTime, when);
     const g = chordVGains[arpVoice].gain;
@@ -766,12 +776,19 @@ export const engine = (() => {
     // would be a swoop nobody asked for.
     v.setFreq(freq, t - 0.004, 0);
     const atk = 0.006;
-    const rel = Math.min(0.09, dur * 0.5);
+    const ring = Math.max(0, tail);
+    // With a tail, the gate is held for all of `dur` and the fall happens
+    // after it. Without one the fall has to happen INSIDE the gate, because
+    // the note still has to be over when the gate says it is — which is the
+    // behaviour every caller had before SUSTAIN existed, and the reason an
+    // arp note could never ring: a fade capped at 90 ms is a cut, not a tail.
+    const rel = ring > 0 ? ring : Math.min(0.09, dur * 0.5);
+    const holdUntil = t + (ring > 0 ? Math.max(atk, dur) : Math.max(atk, dur - rel));
     g.cancelScheduledValues(t - 0.004);
     g.setValueAtTime(0, t);
     g.linearRampToValueAtTime(peak, t + atk);
-    g.setValueAtTime(peak, t + Math.max(atk, dur - rel));
-    g.linearRampToValueAtTime(0, t + dur);
+    g.setValueAtTime(peak, holdUntil);
+    g.linearRampToValueAtTime(0, holdUntil + rel);
   }
 
   // Drop whatever the voices are holding without touching the shared gain —
