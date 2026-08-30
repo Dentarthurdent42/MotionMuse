@@ -153,8 +153,10 @@ const BUILTINS = [
   { id: 'iloveyou',   name: 'I Love You',  asl: 'ILY', canned: 'ILoveYou' },
 ].map(g => ({ ...g, builtin: true, hand: 'any', est: !!g.est }));
 
-// Display name including the ASL numeral, e.g. "Point · ASL 1".
-export const gestureLabel = g => g.asl ? `${g.name} · ASL ${g.asl}` : g.name;
+// Display name, gloss first: "ASL 1 · Point". The gloss leads because it is
+// what the list is ordered by — a name you are scanning for should be the
+// thing your eye lands on, in the column the sort put it in.
+export const gestureLabel = g => g.asl ? `ASL ${g.asl} · ${g.name}` : g.name;
 
 // Display order.
 //
@@ -164,17 +166,24 @@ export const gestureLabel = g => g.asl ? `${g.name} · ASL ${g.asl}` : g.name;
 // IS an ASL handshape, its gloss is the name it already has in the language,
 // so the gloss is what orders it.
 //
-// Lexicographically, and literally so: a plain string sort, which puts "10"
-// between "1" and "2". That is what lexicographic means, and it is also the
-// only ordering that seats one sequence of glosses that are numerals AND
-// letters — special-casing the numerals numerically would leave "L", "S" and
-// "ILY" with no defined place among them.
+// Numerals count, letters spell. A plain string sort would be lexicographic
+// and would put "10" between "1" and "2", which is correct for strings and
+// wrong for a person: these glosses are counted on the hand, so 10 belongs
+// after 9. Letters have no numeric reading, so they sort among themselves and
+// sit after the numbers — one sequence, 0-10 then ILY, L, S, with each half
+// ordered the way that half is actually read.
 //
 // Handshapes with no gloss are not ASL and are not reordered: Rock Horns and
 // Thumbs Down follow, in the order they are declared, and recorded shapes are
 // the user's own and stay in the order they made them (they are appended by
 // the caller, after this).
-const byGloss = (a, b) => (a.asl < b.asl ? -1 : a.asl > b.asl ? 1 : 0);
+const byGloss = (a, b) => {
+  const na = Number(a.asl), nb = Number(b.asl);
+  const aNum = Number.isFinite(na), bNum = Number.isFinite(nb);
+  if (aNum && bNum) return na - nb;
+  if (aNum !== bNum) return aNum ? -1 : 1;
+  return a.asl < b.asl ? -1 : a.asl > b.asl ? 1 : 0;
+};
 export const orderByGloss = list =>
   [...list.filter(g => g.asl).sort(byGloss), ...list.filter(g => !g.asl)];
 
