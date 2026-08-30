@@ -40,11 +40,9 @@ function syncState(active) {
   wrap.classList.toggle('fs-active', active);
   fsBtn.textContent = active ? '✕ EXIT' : '⛶ FULL';
   fsBtn.classList.toggle('on', active);
-  // The keyboard overlay is fullscreen-only, so leaving takes its reserved
-  // space with it. updateFsOverlay returns early once inactive and would
-  // never get to say so, leaving the actions bar floating a keyboard's height
-  // off the bottom of a windowed camera view.
-  if (!active) { lastKbdH = 0; wrap.style.setProperty('--fs-kbd-h', '0px'); }
+  // The overlay is sized as a share of the frame, and the frame just changed
+  // size — so the reserved space is stale until the next redraw measures it.
+  lastKbdH = null;
   // Refit overlay canvases immediately (the ResizeObserver also fires, but
   // some Safari versions deliver it a frame late).
   ['overlay', 'face-overlay'].forEach(id => {
@@ -100,6 +98,10 @@ export function initFullscreen() {
     kbdShown = !kbdShown;
     kbdCanvas.classList.toggle('shown', kbdShown);
     kbdBtn.classList.toggle('on', kbdShown);
+    // The class is already correct by the time the RAF path looks, so its
+    // early-out skips the publish and the space stays reserved for a keyboard
+    // that is no longer there. Say it here, where the truth is.
+    publishKbdHeight();
     fsKbd.invalidate();
   });
 }
@@ -128,9 +130,12 @@ function publishKbdHeight() {
   wrap?.style.setProperty('--fs-kbd-h', `${h}px`);
 }
 
-// Called every RAF from main.js — cheap no-op unless fullscreen is active.
+// Called every RAF from main.js — cheap no-op unless the keyboard overlay is
+// up. It is no longer fullscreen-only: the keys show which notes the
+// instrument is quantised to, which is as worth seeing while you are wiring
+// something as while you are playing it.
 export function updateFsOverlay() {
-  if (!fullscreen.active) return;
+  if (!kbdCanvas) return;
 
   // A running game owns the overlay (and forces the canvas visible).
   if (fsGameRenderer && fsGameRenderer(kbdCanvas)) {

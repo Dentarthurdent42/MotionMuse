@@ -280,12 +280,15 @@ export const TOUR_STEPS = [
           'it off and they go away — and stop running.',
   },
   {
-    id: 'gestures', section: 'gesture-mode', target: '#handshape-lib', needs: ['audio'], title: 'Handshapes',
-    body: 'The library behind Gesture Mode — unfold it to see every shape the ' +
-          'app knows. The dot lights while you hold one. <b>est</b> marks an ' +
-          'estimated template; <b>CALIBRATE</b> records the shape from your ' +
-          'own hand and sharpens recognition. <b>● REC</b> adds a shape of ' +
-          'your own, which also becomes a signal the patchbay can wire.',
+    id: 'gestures', section: 'gesture-mode', target: '#gesture-lib', needs: ['audio'],
+    title: 'Gesture configurations',
+    body: 'The library behind Gesture Mode — unfold it to see every gesture ' +
+          'the app knows. The dot lights while you hold one. <b>est</b> marks ' +
+          'an estimated template; <b>⊙</b> records that gesture from your own ' +
+          'body and sharpens recognition, and <b>✎</b> renames it. <b>● REC</b> ' +
+          'adds one of your own — a handshape, or, with the picker beside it, ' +
+          'a face or whole-body pose — which also becomes a signal the ' +
+          'patchbay can wire.',
   },
   {
     id: 'donate', target: '#donate-btn', title: 'Support the project',

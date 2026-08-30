@@ -524,7 +524,16 @@ function removeNode(kind, key) {
     });
   } else {
     addedOutputs.delete(key);
-    mapper.mappings.filter(m => m.audioParam === key).forEach(m => { rememberSettings(m); mapper.remove(m.id); });
+    mapper.mappings.filter(m => m.audioParam === key).forEach(m => {
+      // Keep the far end's node, exactly as deleting an input keeps its
+      // outputs. A node with no cable survives only by being in these sets, so
+      // without this line pulling an output took the input it happened to be
+      // wired to with it — you deleted one thing and lost two, and the one you
+      // did not ask to lose was the one with the settings on it.
+      addedInputs.add(m.signal);
+      rememberSettings(m);
+      mapper.remove(m.id);
+    });
   }
   selectedId = null;
   renderMapper();
