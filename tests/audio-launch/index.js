@@ -125,6 +125,66 @@ await p.click('#viz-wrap');
 await p.waitForTimeout(150);
 const afterViz = (await engineState()).muted;
 
+// ── The iOS Ring/Silent switch workaround ────────────────────────────────
+//
+// On an iPhone, unmuting has to also start a silent media element, or the
+// page stays in the "ambient" audio category and the switch silences the
+// whole instrument (see src/audiosession.js). Chromium is not iOS, but the
+// decision is taken from the agent string, so an iPhone UA exercises the real
+// path: the element is created, played, and — the part that would quietly
+// undo the whole thing — left UNMUTED at a non-zero volume.
+const asIOS = await (async () => {
+  const ctx = await b.newContext({
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) '
+             + 'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+    viewport: { width: 390, height: 844 },
+  });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+
+  const read = () => page.evaluate(() => {
+    const a = document.querySelector('audio');
+    return {
+      exists: !!a,
+      paused: a?.paused ?? null,
+      muted: a?.muted ?? null,
+      volume: a?.volume ?? null,
+      loop: a?.loop ?? null,
+      inline: a?.hasAttribute('playsinline') ?? null,
+    };
+  });
+
+  // Nothing is held before the user makes the instrument audible: the
+  // playback category stops whatever the phone was already playing.
+  const before = await read();
+  await page.click('#audio-btn');
+  await page.waitForTimeout(400);
+  const unmuted = await read();
+  await page.click('#audio-btn');
+  await page.waitForTimeout(400);
+  const remuted = await read();
+  await ctx.close();
+  return { before, unmuted, remuted, errs };
+})();
+
+// …and no other platform pays for it. A playing media element costs Android
+// the user's audio focus and the desktop a set of media keys for a track that
+// does not exist, and neither has a Ring/Silent switch to work around.
+const asDesktop = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+  await page.click('#audio-btn');
+  await page.waitForTimeout(400);
+  const out = await page.evaluate(() => document.querySelectorAll('audio').length);
+  await ctx.close();
+  return out;
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -157,6 +217,28 @@ check(beforeFocused !== afterFocused, 'the spacebar toggles once, not twice, wit
 check(beforeTyping === afterTyping, 'the spacebar is left alone while typing in a field');
 check(beforeViz !== afterViz, 'tapping the visualiser toggles mute');
 check(pageErrors.length === 0, 'no page errors', pageErrors.join(' | '));
+
+console.log('\niOS Ring/Silent switch\n');
+{
+  const { before, unmuted, remuted, errs } = asIOS;
+  check(errs.length === 0, 'no page errors under an iPhone agent', errs.join(' | '));
+  check(!before.exists, 'nothing is held before the instrument is audible');
+  check(unmuted.exists && unmuted.paused === false,
+    'unmuting starts the silent element, which is what buys the playback category',
+    `exists=${unmuted.exists} paused=${unmuted.paused}`);
+  // The trap this whole thing turns on: a MUTED element does not count as
+  // playing audio, so it would leave the page in "ambient" and change
+  // nothing. Silence has to come from the file, never from the element.
+  check(unmuted.muted === false && unmuted.volume > 0,
+    'and it is unmuted at full volume — a muted element would not move the category',
+    `muted=${unmuted.muted} volume=${unmuted.volume}`);
+  check(unmuted.loop === true, 'it loops, so the category is held for as long as we play');
+  check(unmuted.inline === true, 'playsinline, so iOS does not take over the screen for it');
+  check(remuted.paused === true,
+    'muting releases it again, giving the phone its own audio back', `paused=${remuted.paused}`);
+}
+check(asDesktop === 0,
+  'no other platform pays for it — nothing is created off iOS', `${asDesktop} elements`);
 
 console.log(`\n${fail} failure(s)\n`);
 process.exit(fail ? 1 : 0);
