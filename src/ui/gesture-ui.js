@@ -27,14 +27,6 @@ import { buildSigPanel } from './signals.js';
 
 const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`;
 
-// Whether the ASL NUMBERS group is unfolded. Module state rather than markup
-// state because the panel is rebuilt wholesale — and calibrating one of those
-// handshapes ends in exactly such a rebuild, which used to fold the group shut
-// under you the moment the pose was captured, hiding the row you had just
-// calibrated (and the next one you were working towards). Deliberately not
-// persisted: it is about where you are in this session, not a setting.
-let aslGroupOpen = false;
-
 // Whether the HANDSHAPES library is unfolded, same pattern as above. Starts
 // unresolved rather than false: until the user has an opinion it follows the
 // mode — folded while the mode is on (the assignments above are the playing
@@ -103,17 +95,15 @@ export function gestureModeSection() {
               title="Remove ${label}" aria-label="Remove ${label}">×</button>
     </div>`;
   };
-  // The number handshapes are a set you opt into, so they collapse away by
-  // default rather than tripling the length of the list you actually scan.
-  const isNum = g => /^asl\d/.test(g.id);
-  const nums  = gestures.filter(isNum);
-  const est   = gesture.estimated().length;
-  const gestureRows = gestures.filter(g => !isNum(g)).map(row).join('')
-    + (nums.length ? `
-    <details class="gesture-group" id="asl-group"${aslGroupOpen ? ' open' : ''}>
-      <summary>ASL NUMBERS <span class="gesture-tag">${nums.length}</span></summary>
-      ${nums.map(row).join('')}
-    </details>` : '');
+  // One list, in ASL gloss order (see orderByGloss in gesture.js). The number
+  // handshapes used to fold away into their own ASL NUMBERS group, on the
+  // theory that they were a set you opted into — but that split the library
+  // by an accident of which shapes happen to have descriptive names as well
+  // as glosses, and it put 1, 2, 5 and 10 above the fold while 0 and 3-9 sat
+  // below it. Ordering them all by gloss is the thing that makes one list
+  // scannable, so the group had nothing left to do.
+  const est = gesture.estimated().length;
+  const gestureRows = gestures.map(row).join('');
   const restore = gesture.hiddenCount()
     ? `<button class="btn gesture-restore" style="margin-top:4px;width:100%;">RESTORE BUILT-IN GESTURES</button>` : '';
   const calibrate = est
@@ -390,8 +380,6 @@ export function wireGestureSections(rerender) {
   const status = document.getElementById('gesture-cal-status');
 
   // Remember the folds so a re-render puts them back the way you left them.
-  document.getElementById('asl-group')
-    ?.addEventListener('toggle', e => { aslGroupOpen = e.target.open; });
   // The library records on summary CLICK, not on the toggle event: a details
   // rendered with the `open` attribute fires toggle too, which would take the
   // adaptive default for a user's choice on the very first paint and pin it
