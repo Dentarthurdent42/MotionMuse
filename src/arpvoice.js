@@ -25,7 +25,7 @@
 import { engine }    from './engine.js';
 import { metronome } from './metronome.js';
 import { ARP_DEFAULTS, ARP_PATTERNS, ARP_MAX_OCTAVES,
-         notePool, stepIndex, stepSeconds, noteSeconds, dueSteps } from './arp.js';
+         notePool, stepIndex, stepSeconds, noteEnvelope, dueSteps } from './arp.js';
 
 // Steps per metronome beat, 0 = free (use arp_rate). Whole subdivisions only:
 // the point of syncing is landing ON the grid the click is sounding.
@@ -63,7 +63,8 @@ export const arpvoice = (() => {
     if (!v) return null;
     return (v.phase * arp.sync) % 1;
   };
-  const gate = () => engine.PARAMS.arp_gate?.val ?? 0.55;
+  const gate = () => engine.PARAMS.arp_gate?.val ?? 0.9;
+  const sustain = () => engine.PARAMS.arp_sustain?.val ?? 0.6;
 
   // The play modes each keep private chord state (an open gate, a voiced
   // signature) that an arp flip invalidates; they register here rather than
@@ -160,10 +161,10 @@ export const arpvoice = (() => {
       const { steps, state } = dueSteps(clock, now, HORIZON, r);
       clock = state;
       if (!steps.length) return;
-      const dur = noteSeconds(stepSeconds(r), gate());
+      const { hold, tail } = noteEnvelope(stepSeconds(r), gate(), sustain());
       for (const s of steps) {
         const idx = stepIndex(s.i, pool.length, arp.pattern);
-        engine.arpNote({ freq: pool[idx], when: s.at, dur, gain: level });
+        engine.arpNote({ freq: pool[idx], when: s.at, dur: hold, tail, gain: level });
         sched.push({ at: s.at, idx });
       }
       // Only the recent past is interesting, and this runs every frame.

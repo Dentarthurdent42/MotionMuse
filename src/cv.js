@@ -12,6 +12,15 @@ import { uicontrol }                                        from './uicontrol.js
 import { metronome }                                        from './metronome.js';
 import { radial }                                           from './radial.js';
 
+// 30fps is plenty for musical control; a 60Hz camera would double the
+// inference load for no audible benefit. A module constant because the camera
+// is asked for in two places now — the first start, and the recovery after a
+// browser hands it back (see `restore`) — and two copies of a constraint set
+// is two cameras that can differ.
+const CAMERA_CONSTRAINTS = {
+  video: { width: 640, height: 480, frameRate: { ideal: 30 }, facingMode: 'user' },
+};
+
 // How sure the handedness guess has to be before it is allowed to REJECT a
 // hand. MediaPipe reports a score per detection; below this the label is a coin
 // toss and rejecting on it would cost dropouts on a correctly-shown hand.
@@ -355,11 +364,7 @@ export const cvSource = {
     this.canvas = document.getElementById('overlay');
     this.ctx    = this.canvas.getContext('2d');
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      // 30fps is plenty for musical control; a 60Hz camera would double
-      // the inference load for no audible benefit.
-      video: { width: 640, height: 480, frameRate: { ideal: 30 }, facingMode: 'user' },
-    });
+    const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
     this.video.srcObject = stream;
     await new Promise(r => this.video.onloadedmetadata = r);
 
@@ -380,6 +385,45 @@ export const cvSource = {
   // ── Camera shutdown ──────────────────────────────────────────────────
   // Actually releases the camera: stops every MediaStream track (turning the
   // hardware indicator off), detaches the stream, and resets the view.
+  // ── Coming back to a backgrounded tab ────────────────────────────────
+  //
+  // Reported as the camera view going black after losing and regaining focus,
+  // with the app otherwise looking alive: the status still read CV ACTIVE and
+  // the signals panel still showed values. It looked alive because the values
+  // were FROZEN — the last ones read before the tab went away.
+  //
+  // Both halves come from the same thing. A backgrounded tab has its <video>
+  // paused by the browser, and on iOS the camera track is often ended
+  // outright; either way `currentTime` stops advancing, and the inference loop
+  // is gated on exactly that (see `loop`), so it stops feeding the bus while
+  // still running. Nothing restarts the element on the way back in: `autoplay`
+  // already fired once and does not fire again.
+  //
+  // So the fix has two cases, and the cheap one is not enough on its own:
+  // play() revives a merely paused element, but a track the browser ENDED is
+  // gone for good and only a fresh getUserMedia brings the camera back. The
+  // models, the canvases and the loop are untouched — this reattaches a stream
+  // to a pipeline that never stopped, rather than restarting the camera.
+  async restore() {
+    if (!this.running || !this.video) return false;
+    const track = this.video.srcObject?.getVideoTracks?.()[0];
+    if (!track || track.readyState === 'ended') {
+      try {
+        this.video.srcObject = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
+      } catch {
+        // Permission withdrawn, or the device taken by another app while we
+        // were away. Leave the view as it is rather than tearing the session
+        // down: STOP and START are right there, and they say what happened.
+        return false;
+      }
+    }
+    // A paused element that is not resumed is the black frame. play() can also
+    // be refused when the tab is not really foregrounded yet, which is why the
+    // caller listens for the events that mean it is.
+    try { await this.video.play(); } catch { /* not focused yet */ }
+    return !this.video.paused;
+  },
+
   stopCamera() {
     this.running = false;
     // No camera means no hands to steer with — an armed cursor would be a

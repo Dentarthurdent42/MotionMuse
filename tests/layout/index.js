@@ -1169,6 +1169,81 @@ const camView = await (async () => {
   return out;
 })();
 
+// ── Coming back to a backgrounded tab ────────────────────────────────────
+//
+// Reported as the camera view going black after losing and regaining focus,
+// while the app still read CV ACTIVE with values in the signals panel — values
+// that were frozen, because the inference loop is gated on the video's clock
+// and a paused element has no clock.
+//
+// There is no camera here, so the stream is a stub: what is under test is the
+// wiring, which is the part that was missing. A paused element has to be
+// played again, an ENDED track has to be replaced (play() alone cannot bring
+// back a camera the browser took), and neither may happen while the tab is
+// still hidden.
+const camRestore = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+
+  const out = await page.evaluate(async () => {
+    const { cvSource } = await import('/src/cv.js');
+    const track = state => ({ readyState: state, stop() {} });
+    // Stand in for the element and the camera. `play()` records that it was
+    // asked and un-pauses, exactly as the real one does.
+    const stub = trackState => {
+      const el = {
+        paused: true, plays: 0,
+        srcObject: trackState ? { getVideoTracks: () => [track(trackState)] } : null,
+        play() { this.plays++; this.paused = false; return Promise.resolve(); },
+      };
+      cvSource.video = el;
+      cvSource.running = true;
+      return el;
+    };
+    let acquired = 0;
+    navigator.mediaDevices.getUserMedia = async () => {
+      acquired++;
+      return { getVideoTracks: () => [track('live')], getTracks: () => [track('live')] };
+    };
+
+    // 1. A live track that is merely paused: play it, do not take the camera.
+    const paused = stub('live');
+    await cvSource.restore();
+    const livePaused = { plays: paused.plays, acquired };
+
+    // 2. A track the browser ended: play() cannot bring that back.
+    const ended = stub('ended');
+    await cvSource.restore();
+    const endedTrack = { acquired, replaced: !!ended.srcObject, plays: ended.plays };
+
+    // 3. With no camera running, nothing happens at all — restore() must not
+    //    start a camera nobody asked for.
+    cvSource.running = false;
+    const before = acquired;
+    const idle = stub('live');
+    cvSource.running = false;
+    await cvSource.restore();
+    const whenStopped = { acquired: acquired - before, plays: idle.plays };
+
+    // 4. The real listener, through a real visibilitychange — the wiring.
+    const wired = stub('live');
+    cvSource.running = true;
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise(r => setTimeout(r, 60));
+    const viaEvent = wired.plays;
+
+    cvSource.running = false;
+    cvSource.video = null;
+    return { livePaused, endedTrack, whenStopped, viaEvent };
+  });
+  await ctx.close();
+  return { ...out, errs };
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -1689,6 +1764,29 @@ for (const [label, m] of Object.entries(camView)) {
   check(m.trackers.inBody && m.trackers.within,
     `${label}: the tracker toggles are inside the Camera Input container`,
     `inBody=${m.trackers.inBody} withinBox=${m.trackers.within}`);
+}
+
+// ── Coming back to a backgrounded tab ──
+console.log('\nCamera restore after losing focus\n');
+{
+  const m = camRestore;
+  check(m.errs.length === 0, 'no page errors', m.errs.join(' | '));
+  check(m.livePaused.plays === 1,
+    'a paused element is played again — that is the black frame',
+    `play() called ${m.livePaused.plays}×`);
+  check(m.livePaused.acquired === 0,
+    'and a live track is reused rather than the camera being taken again',
+    `${m.livePaused.acquired} getUserMedia calls`);
+  check(m.endedTrack.acquired === 1 && m.endedTrack.replaced,
+    'an ENDED track is replaced — play() cannot bring back a camera the browser took',
+    `${m.endedTrack.acquired} getUserMedia calls, stream replaced=${m.endedTrack.replaced}`);
+  check(m.endedTrack.plays === 1, 'and the new stream is played');
+  check(m.whenStopped.acquired === 0 && m.whenStopped.plays === 0,
+    'with no camera running it does nothing — focus never starts one uninvited',
+    `${m.whenStopped.acquired} getUserMedia, ${m.whenStopped.plays} play()`);
+  check(m.viaEvent === 1,
+    'and a real visibilitychange drives it, not just a direct call',
+    `play() called ${m.viaEvent}×`);
 }
 
 console.log(`\n${fail} failure(s)\n`);
