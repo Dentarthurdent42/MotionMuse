@@ -46,7 +46,14 @@ test('a gesture with no kind is a hand gesture — every built-in, and every sav
   assert.equal(kindOf({ id: 'x', kind: 'nonsense' }), 'hand');
   assert.equal(kindOf({ id: 'x', kind: 'face' }), 'face');
   assert.equal(specOf({ kind: 'face' }).features.length, KINDS.face.features.length);
-  gesture.list().forEach(g => assert.equal(kindOf(g), 'hand', `${g.id} is a handshape`));
+  // Every built-in that does not SAY otherwise is a handshape — which is the
+  // claim that matters, because no save ever written carries a `kind` for the
+  // shapes that predate kinds. The semaphore poses say otherwise, out loud.
+  gesture.list().forEach(g => assert.equal(kindOf(g), g.kind ?? 'hand', g.id));
+  const body = gesture.list().filter(g => kindOf(g) === 'body');
+  assert.ok(body.length > 0, 'the semaphore poses ship');
+  assert.ok(body.every(g => g.id.startsWith('sem_')), body.map(g => g.id).join());
+  assert.ok(gesture.list().filter(g => !g.kind).every(g => kindOf(g) === 'hand'));
 });
 
 test('the face vector excludes gaze, and the body vector excludes where you are standing', () => {
