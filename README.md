@@ -1198,6 +1198,60 @@ pose landmarks that survived the gate — rather than the raw model output. The
 picture and the signals now come from the same values, so the overlay cannot
 show a hand that is not playing anything.
 
+### The skeleton palette follows the theme
+
+The skeletons used to be three hardcoded hexes — one per hand, one for the
+pose — which ignored the theme entirely and, within a hand, made every bone
+and joint the same mark. They are now **derived from the active theme's own
+accent tokens** (`src/overlaypalette.js`), and derived into structure:
+
+- **Chassis** — the palm web, wrist and arm of each side wear the theme's own
+  side accents: right = `--cyan`, left = `--purple`, *whatever the theme put
+  in those slots*. On ember, whose "cyan" slot holds orange, the right hand is
+  orange — the skeleton follows the theme's decision, not a colour of its own.
+- **A hue per finger, in chromatic order** — thumb → pinky is red, yellow,
+  green, blue, violet, the same on both hands, at the theme's chroma and
+  lightness. The first cut spread each hand's hues around its own side anchor
+  — which made every hand a monotonic hue sweep and the pair of them
+  illegible: two sweeps starting from different anchors read as ten assorted
+  colours. An ordering is only an ordering if the viewer already knows it,
+  and the spectrum is the one hue order everyone arrives knowing; with the
+  fingers shared between hands, the chassis and arms are what say left from
+  right.
+- **A lightness ramp along each chain** — joints step through four
+  lightnesses from knuckle to tip, bones take the midpoints, fingertips get
+  the lightest step and a bigger dot. The pose's arms ramp the same way,
+  upper arm darker than forearm, ending at a wrist dot in the palm colour —
+  the arm flows into the hand it belongs to. The torso stays one quiet
+  `--amber`: furniture, not a limb.
+
+The space is **OKLab, in its polar OKLCH form** — not OKHSL/OKHSV, for a
+concrete reason: the theme tokens are authored in OKLCH in `main.css`, and
+OKHSL/OKHSV renormalise lightness and saturation against the sRGB gamut's
+shape, so "the token's lightness, one step lighter" would stop being that the
+moment it was computed. Better still, what the palette hands the canvas is
+oklch() **strings**: the browser renders the skeleton through the same code
+that renders the stylesheet, so the two cannot drift. (`src/okcolor.js` exists
+so the *tests* can measure those rendered colours without a browser; it is
+verified against Chrome's canvas — which, measured, resolves out-of-gamut
+oklch() by per-channel clipping, not by the css-color-4 chroma mapping, which
+disagreed with the browser by up to ΔEok 0.22.)
+
+"Distinguishable" is **measured, not asserted**
+(`tests/unit/overlay-palette.test.js`, against the real tokens parsed out of
+`main.css`, so a new or retuned theme is covered the day it lands): every
+pairwise ΔEok between the marks on a hand, every adjacent ramp step, and the
+two hands against each other, all with floors sitting near three times the
+~0.02 just-noticeable difference. Two bugs those floors caught before any eye
+did: the middle finger's centre bone was the palm's *exact* colour (same hue,
+same lightness — ΔEok 0.000), and on high-lightness themes the ramp's top
+steps ran off the sRGB gamut ceiling, where the browser's clip crushed two
+"different" steps to ΔEok 0.003 — one colour wearing two names. The fixes are
+the palm sitting below the whole ramp at half chroma (lightness survives
+gamut clipping; chroma near the edge does not — several themes author accents
+slightly *outside* sRGB), and the ramp window sliding down so its top step
+stays where chroma still has room to live.
+
 ### Presets switch the models they need
 
 Choosing a preset now switches every tracker to what the patch actually uses,
@@ -1792,10 +1846,12 @@ envelope to run — you are the envelope.
 The ring is drawn on the **camera overlay**, under the skeletons, in the
 overlay's own mirrored space, with note-name labels (numerals in chord
 voicing) counter-flipped so they read correctly in the mirror. Its contrast
-is **self-contained**, for the same reason the skeleton colours are fixed
-rather than themed: the ring sits over arbitrary camera content — a cluttered
-room, a striped shirt, a face — and legibility over that is not a job for the
-palette. Every section carries its own **dark glass scrim**, every edge and
+is **self-contained**: the ring sits over arbitrary camera content — a
+cluttered room, a striped shirt, a face — and it brings its own scrim and
+halos rather than borrowing contrast. (The skeletons, which once kept fixed
+colours for that reason, are now derived from the theme — see *The skeleton
+palette follows the theme* — but they draw over the ring's scrim, which is
+what keeps them legible there.) Every section carries its own **dark glass scrim**, every edge and
 glyph is **haloed** in that dark under light ink, and the active section's
 tint (the pointing hand's overlay colour, stronger while sounding) sits on
 top of the scrim rather than replacing it. A pointer line, haloed the same

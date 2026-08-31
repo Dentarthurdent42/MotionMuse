@@ -152,10 +152,22 @@ test('one hand detected twice draws one skeleton', () => {
   const sides = ['L', 'R'].filter(s => cvSource._hands[s]);
   assert.deepEqual(sides, ['R'], 'one hand is filed under one side');
 
+  const strokes = () => ops.filter(o => o[0] === 'stroke').length;
   cvSource.drawOverlay(cvSource._hands, null);
-  // One stroked skeleton per hand drawn.
-  assert.equal(ops.filter(o => o[0] === 'stroke').length, 1,
-    'two skeletons intersecting on one hand is the bug');
+  const dup = strokes();
+  // The invariant is "a duplicate adds no second skeleton" — measured against
+  // what one hand and two hands actually cost, not against a stroke count
+  // that hardcodes the palette. (It used to be exactly 1 stroke per hand;
+  // the theme-derived palette batches by colour, so a hand is now many
+  // strokes, and the number is the palette's business, not this test's.)
+  ops.length = 0;
+  cvSource.drawOverlay({ R: hand(0.5, 0.5) }, null);
+  const one = strokes();
+  ops.length = 0;
+  cvSource.drawOverlay({ L: hand(0.3, 0.5), R: hand(0.7, 0.5) }, null);
+  const two = strokes();
+  assert.equal(dup, one, 'two skeletons intersecting on one hand is the bug');
+  assert.ok(two > one, 'and a genuine second hand does draw more');
 });
 
 test('_pickSide only considers the distinct hands', () => {
