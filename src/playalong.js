@@ -149,7 +149,7 @@ export const playalong = {
     if (isGenSong(songId)) {
       // A generated chart is already built in this key; it only needs voicing.
       mode = genModeOf(songId);
-      song = generateSong(mode, { key, diffId });
+      song = generateSong(mode, { key });
       song.id = songId;
     } else {
       mode = 'pitch';

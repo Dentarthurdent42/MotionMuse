@@ -2296,9 +2296,12 @@ chart for **every way of playing**, not just the oscillator patch:
 
 A quiet **guide** melody can be toggled; hits and misses get audio feedback.
 
-**⚄ Generated charts** are procedural: seeded, sized by the difficulty, and
-built **in the key the instrument is currently set to** — the shared key both
-play modes read — so practising a progression practises *your* key. Melodies
+**⚄ Generated charts** are procedural: seeded, and built **in the key the
+instrument is currently set to** — the shared key both play modes read — so
+practising a progression practises *your* key. Tempo, length and density are
+the seed's, not the difficulty's: difficulty is polyphony now, so a generator
+still grading its own density by it was reading a setting that no longer takes
+those values. Melodies
 walk the scale (stepwise mostly, chord tones favoured on downbeats, a real
 cadence onto the tonic); degree charts follow a functional-harmony walk whose
 last two bars are always dominant → tonic, so even a random progression ends

@@ -52,15 +52,28 @@ const weighted = (rng, pairs) => {
   return pairs[pairs.length - 1][0];
 };
 
-// Rhythm patterns per bar (4/4), by difficulty: each entry sums to 4 beats.
-const RHYTHMS = {
-  easy:   [[4], [2, 2], [1, 1, 2], [2, 1, 1]],
-  medium: [[2, 2], [1, 1, 2], [1, 1, 1, 1], [2, 1, 1], [1, 2, 1]],
-  hard:   [[1, 1, 1, 1], [0.5, 0.5, 1, 1, 1], [1, 0.5, 0.5, 1, 1],
-           [1, 1, 0.5, 0.5, 0.5, 0.5], [1.5, 0.5, 1, 1]],
-};
-const TEMPO = { easy: 88, medium: 100, hard: 116 };
-const BARS  = { easy: 8, medium: 8, hard: 12 };
+// Rhythm patterns per bar (4/4): each entry sums to 4 beats.
+//
+// ONE pool, not three keyed by difficulty. Difficulty is polyphony now — how
+// many notes sound at once, not how many there are (chart.js) — so a
+// generator still grading its own density by difficulty was reading a setting
+// that no longer takes those values, and fell through to the densest branch
+// for every level while looking like it worked.
+//
+// Drawing every bar from the whole range is also better music than the table
+// it replaces: a tune now varies WITHIN itself instead of holding one density
+// for eight bars.
+const RHYTHMS = [
+  [4], [2, 2], [1, 1, 2], [2, 1, 1],
+  [1, 1, 1, 1], [1, 2, 1],
+  [0.5, 0.5, 1, 1, 1], [1, 0.5, 0.5, 1, 1],
+  [1, 1, 0.5, 0.5, 0.5, 0.5], [1.5, 0.5, 1, 1],
+];
+// Tempo and length belong to the seed for the same reason: every press of
+// PLAY is a different tune, and one that is always eight bars at 100 bpm is
+// only half generated.
+const TEMPO_LO = 88, TEMPO_HI = 116;
+const BAR_CHOICES = [8, 8, 12];
 
 // Where each degree of a seven-note key likes to go — functional harmony as
 // a weight table. Pentatonic keys reuse the same idea over five degrees.
@@ -94,23 +107,26 @@ const dominantOf = n => (n === 7 ? 4 : 3);
  *   laneCount   degree modes: how many lanes the highway needs
  *   laneLabels  degree modes: what to print under each lane
  * and each degree-mode note carries `deg` beside its guide-midi `m`.
+ *
+ * No difficulty argument: what a level changes is how many notes sound at
+ * once, which voiceChart() does to a finished chart. The generator's job is
+ * the tune.
  */
 export function generateSong(mode, {
   key = { root: 'C', mode: 'major (ionian)', octave: 4 },
-  diffId = 'medium',
   seed = Math.floor(Math.random() * 2 ** 31),
 } = {}) {
   const rng = makeRng(seed);
   const scaleName = isDegreeScale(key.mode) ? key.mode : 'major (ionian)';
   const degrees = SCALES[scaleName];
   const n = degreeCountOf(scaleName);
-  const bars = BARS[diffId] ?? 8;
+  const bars = pick(rng, BAR_CHOICES);
   const beatsPerBar = 4;
   const rootM = 12 * (key.octave + 1) + NOTE_NAMES.indexOf(key.root);
   const base = {
     id: `gen-${mode}`, mode, seed,
     name: `Generated · ${key.root} ${scaleName}`,
-    bpm: TEMPO[diffId] ?? 100, beatsPerBar,
+    bpm: Math.round(TEMPO_LO + rng() * (TEMPO_HI - TEMPO_LO)), beatsPerBar,
     root: key.root, scale: scaleName,
   };
 
@@ -133,7 +149,7 @@ export function generateSong(mode, {
         notes.push({ b: b + 1, m: rootM, d: beatsPerBar - 1 });
         break;
       }
-      for (const d of pick(rng, RHYTHMS[diffId] ?? RHYTHMS.medium)) {
+      for (const d of pick(rng, RHYTHMS)) {
         const step = weighted(rng, [[1, 4], [-1, 4], [2, 2], [-2, 2], [0, 1]]);
         at = Math.max(lo, Math.min(hi, at + step));
         // Downbeats prefer chord tones of the tonic: land on 0, 2 or 4 mod n.
@@ -148,11 +164,12 @@ export function generateSong(mode, {
     return { ...base, notes };
   }
 
-  // Degree charts: a chord walk, one lane per degree, ending V → I. Density
-  // by difficulty: easy holds a bar, medium half-bars, hard mixes in single
-  // beats. The guide-midi is the degree's chord root, so the guide melody
+  // Degree charts: a chord walk, one lane per degree, ending V → I. The
+  // harmonic rhythm is drawn per chord — whole bars mostly, half-bars often,
+  // the occasional single beat — so a progression breathes instead of
+  // marching. The guide-midi is the degree's chord root, so the guide melody
   // sings the progression.
-  const durPool = diffId === 'easy' ? [4] : diffId === 'medium' ? [4, 2, 2] : [2, 2, 1, 1];
+  const durPool = [4, 4, 2, 2, 2, 1];
   const totalBeats = bars * beatsPerBar;
   const cadenceAt = totalBeats - 2 * beatsPerBar;
   const notes = [];
