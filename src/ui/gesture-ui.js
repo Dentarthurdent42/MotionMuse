@@ -586,7 +586,7 @@ export function wireGestureSections(rerender) {
   document.getElementById('chord-toggle')?.addEventListener('click', () => {
     const on = !chordmode.enabled;
     // One instrument on the chord bank at a time — radial mode voices
-    // through the same four voices, and radial.setEnabled enforces the same
+    // through the same chord bank, and radial.setEnabled enforces the same
     // rule from its own side.
     if (on) radial.setEnabled(false);
     chordmode.setEnabled(on);

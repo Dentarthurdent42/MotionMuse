@@ -1747,10 +1747,12 @@ is how long it decays afterwards. Both are in *steps*, so the shape survives a
 tempo change: an arpeggio that rings a half-step under the next note keeps
 doing that at 2/s and at 20/s.
 
-They share one budget. The engine round-robins four chord voices, so a note
-still sounding three steps later would be cut mid-ring by the fourth-next note
-reclaiming its voice — which means the cap has to cover the note's *whole*
-life, gate plus tail, not each half separately. Turning the gate up therefore
+They share one budget. The engine round-robins its chord voices, so a note
+still sounding when its own voice comes round again would be cut mid-ring by
+the note reclaiming it — which means the cap has to cover the note's *whole*
+life, gate plus tail, not each half separately. Eight voices leave room for
+seven steps; the cap stays at **three**, because past that every note of a bar
+is sounding at once and the pattern stops reading as an arpeggio at all. Turning the gate up therefore
 eats into the tail rather than pushing the note past the point where it gets
 chopped. The readout reports the tail the notes are **actually** getting, not
 the slider's wish, because those differ exactly when a long gate has squeezed
@@ -1766,8 +1768,8 @@ be 0.55. A note that stopped just past halfway through its own step is what
 Reported alongside it: "when releasing a chord that's being sustained, it
 should continue sustaining, rather than immediately silencing it."
 
-The arp owns four voices, and it had one way of handing them back — a 30 ms
-cut. That is right when *another chord* is taking those voices over, because
+The arp owns the chord bank's voices, and it had one way of handing them back
+— a 30 ms cut. That is right when *another chord* is taking those voices over, because
 anything still ringing would sound underneath the new one. It is wrong when
 nothing is taking them: the player let go, and what was ringing should fall
 with the chord's own release. Every release path was calling the cut, so
@@ -1803,7 +1805,7 @@ hole in the pulse. A tab left in the background stops `requestAnimationFrame`
 entirely — on return the clock resyncs to now rather than firing the minutes of
 steps it "owes", which would arrive as one burst of noise.
 
-Notes go out round-robin across the four voices of the same chord bank, so each
+Notes go out round-robin across the voices of the same chord bank, so each
 note's release tail rings under the next note's attack; with a single voice the
 gate would have to shut before the next note could open, which is the
 difference between an arpeggio and a stutter. The pattern order, the note pool
@@ -1928,7 +1930,7 @@ Toggling SHEPARD from the radial panel overrules the default for good; the
 auto-on never fights a choice you have made.
 
 Only **one** of Radial Mode and Gesture Mode is on at a time — both voice
-through the same four chord voices, and two writers on one bank is a race, not
+through the same chord bank, and two writers on one bank is a race, not
 a duet. Enabling either parks the other; both toggles say so by their state.
 The parked mode's **controls stay visible**: only what SOUNDS is exclusive,
 and setting a mode up before switching to it is half the point of having two —
