@@ -103,17 +103,27 @@ export function transposeChart(song, key) {
 
 // ── Difficulty is polyphony ───────────────────────────────────────────────
 
+// TWO voices, not three. A triad is the prettier number and the wrong one:
+// MULTI has to be PLAYABLE in every mode the game judges, and the pitch game
+// steers one oscillator per hand. Two notes is what two hands can hold —
+// which is the whole point of the level — and it is still harmony.
 export const LEVELS = [
-  { id: 'single', name: 'single note',   voices: 1 },
-  { id: 'multi',  name: 'multiple notes', voices: 3 },
+  { id: 'single', name: 'single note',    voices: 1 },
+  { id: 'multi',  name: 'multiple notes', voices: 2 },
 ];
 export const isLevel = id => LEVELS.some(l => l.id === id);
 export const levelOf = id => LEVELS.find(l => l.id === id) ?? LEVELS[0];
 
-// Every chart note gains a `notes` array: the MIDI it takes to satisfy it.
-// SINGLE is the note itself. MULTI is the key's chord on that note's degree —
-// so a melody becomes the harmony under it, and a degree chart becomes the
-// chord that degree already stood for.
+// Every chart note gains TWO target lists, because the game judges two
+// different vocabularies and a lane is not a pitch:
+//
+//   notes  MIDI — what the guide sounds, and what the pitch game must cover
+//   degs   scale degrees — what the degree modes (handshapes, the ring) must
+//          cover, and what the highway draws lanes for
+//
+// SINGLE is the note itself, one of each. MULTI stacks the diatonic third on
+// top: the note plus the chord tone above it in the key, in both vocabularies
+// at once, so what you hear and what you have to hold are the same thing.
 //
 // Nothing is added or removed from the TIMELINE either way: the same hits at
 // the same moments, with more or fewer notes in each. That is the whole point
@@ -123,21 +133,28 @@ export function voiceChart(song, levelId, key) {
   const root = key?.root ?? song.root;
   const scale = isDegreeScale(key?.mode) ? key.mode : song.scale;
   const octave = key?.octave ?? 4;
+  const count = degreeCountOf(scale);
   return {
     ...song,
     level: level.id,
     notes: song.notes.map(n => {
-      if (level.voices <= 1) return { ...n, notes: [n.m] };
-      const deg = n.deg !== undefined
-        ? n.deg
-        : readDegree(n.m, root, scale).degree;
+      const deg = n.deg !== undefined ? n.deg : readDegree(n.m, root, scale).degree;
+      // Stacked thirds, which in degree space is every other degree.
+      const degs = [deg];
+      for (let k = 1; k < level.voices; k++) degs.push(mod(deg + 2 * k, count));
+      if (n.deg !== undefined) {
+        // A degree chart's guide sings the degrees themselves, so the ear and
+        // the lanes agree about what is being asked for.
+        return { ...n, degs, notes: degs.map(d => diatonicChord(root, octave, scale, d).midi[0]) };
+      }
       const c = diatonicChord(root, octave, scale, deg);
-      // A melody note keeps its own octave: the chord is built under the note
-      // being sung, not parked wherever the key's default octave happens to
-      // be, or the harmony wanders away from the tune.
-      const shift = n.deg !== undefined ? 0
-        : 12 * Math.round((n.m - c.midi[0]) / 12);
-      return { ...n, notes: c.midi.map(m => m + shift) };
+      // The melody note is kept EXACTLY, not rebuilt from its degree: a
+      // chromatic passing tone reads as "the degree below it, sharpened", and
+      // rebuilding would quietly flatten it back onto the scale. The harmony
+      // is stacked above it, in the melody's own octave rather than parked
+      // wherever the key's default octave happens to be.
+      const shift = 12 * Math.round((n.m - c.midi[0]) / 12);
+      return { ...n, degs, notes: [n.m, ...c.midi.slice(1, level.voices).map(m => m + shift)] };
     }),
   };
 }

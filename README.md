@@ -2335,10 +2335,18 @@ mid-song discards the run.
   beginner picks. Both levels now play the **whole song**, and both share one
   timing window (±200 ms), because how long you have to hit a note is a
   property of the game rather than of how many notes it is asking for — the
-  old `easy` bought its wider window by also deleting music. *Multiple notes*
-  voices each melody note into a chord from the key and wants **all** of it
-  held, which is what the second hand in Gesture Mode is for. Transposition
-  and voicing live in `src/chart.js` (`tests/unit/chart.test.js`).
+  old `easy` bought its wider window by also deleting music.
+
+  *Multiple notes* adds the **diatonic third above** each note and wants both
+  held — in whichever vocabulary the chart speaks. A pitch chart asks for two
+  MIDI notes and reads **every sounding oscillator**, so the round sets up one
+  steerable pitch per voice (a second oscillator and a Right-Wrist-Y mapping,
+  and says so); a degree chart lights **two lanes**, which is exactly what
+  Gesture Mode's second hand is for and what it could not do at all before.
+  Two voices rather than a triad, deliberately: MULTI has to be playable in
+  every mode the game judges, and two notes is what two hands can hold.
+  Transposition and voicing live in `src/chart.js`
+  (`tests/unit/chart.test.js`).
 - The game renders in the panel and — best experience — on the fullscreen
   overlay. Game logic: `src/playalong.js`; renderer: `src/ui/playalong-ui.js`.
 

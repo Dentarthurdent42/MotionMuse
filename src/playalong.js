@@ -9,7 +9,7 @@ import { mtof }         from './scale.js';
 import { lsGet, lsSet } from './storage.js';
 import { mapper }       from './mapper.js';
 import { SONGS, songById } from './songs.js';
-import { transposeChart, voiceChart, covers, isLevel, LEVELS } from './chart.js';
+import { transposeChart, voiceChart, covers, isLevel, levelOf, LEVELS } from './chart.js';
 import { isGenSong, genModeOf, generateSong } from './songgen.js';
 import { shepardPartials } from './shepard.js';
 import { chordmode }    from './chordmode.js';
@@ -103,8 +103,17 @@ const shepardGuide = () => !!engine.getShepard?.().lead;
 // (see chordmode.soundingDegrees), which is what makes MULTI playable there.
 function playerNotes() {
   if (mode === 'pitch') {
-    if (!engine.PARAMS.osc1_freq) return null;
-    return [midiOf(engine.PARAMS.osc1_freq.val)];
+    // EVERY oscillator that is actually sounding, not only the first: MULTI
+    // asks for two notes and the bank is where a second one can come from.
+    // One at zero volume is not a note you are playing.
+    const out = [];
+    for (let i = 1; i <= (engine.getOscCount?.() ?? 1); i++) {
+      const f = engine.PARAMS[`osc${i}_freq`];
+      if (!f) continue;
+      if ((engine.PARAMS[`osc${i}_volume`]?.val ?? 1) <= 0) continue;
+      out.push(midiOf(f.val));
+    }
+    return out.length ? out : null;
   }
   if (mode === 'gesture') return chordmode.soundingDegrees();
   const sec = radial.soundingSection();
@@ -153,7 +162,7 @@ export const playalong = {
     const chart = voiceChart(song, diffId, key).notes;
     if (!chart.length) { toast('Empty chart'); return false; }
     notes = chart.map(n => ({
-      m: n.m, deg: n.deg, notes: n.notes,
+      m: n.m, deg: n.deg, notes: n.notes, degs: n.degs,
       tMs: n.b * spb * 1000, durMs: n.d * spb * 1000, status: 'upcoming',
     }));
     endMs = notes[notes.length - 1].tMs + notes[notes.length - 1].durMs + 1500;
@@ -166,17 +175,27 @@ export const playalong = {
       savedTuning = engine.getTuning();
       engine.setTuning({ enabled: true, root: song.root, scale: song.scale, system: 'equal (12-TET)' });
 
-      // The game is played through oscillator 1's pitch — so it needs one to
-      // exist. The bank can be emptied (gesture mode alone), and the game is not a
-      // reason to refuse that; it just has to put a lead voice back before it can
-      // score anything.
-      if (!engine.PARAMS.osc1_freq) engine.setOscCount(1);
-      // …and make sure something drives it.
-      if (!mapper.mappings.some(m => m.audioParam === 'osc1_freq' && m.signal)) {
-        mapper.add('osc1_freq', 'hand_L_y', 80, 880, 'quad');
-        renderMapper();
-        toast('Added mapping: Left Wrist Y → Osc1 pitch');
+      // The game is played through oscillator pitch — so it needs ONE PER
+      // VOICE the level asks for. The bank can be emptied (gesture mode
+      // alone), and the game is not a reason to refuse that; it just has to
+      // put lead voices back before it can score anything. MULTI wants two
+      // notes at once and one oscillator can only ever be one of them, so a
+      // round it could not possibly win is not a round worth starting.
+      const voices = levelOf(diffId).voices;
+      if (engine.getOscCount() < voices) engine.setOscCount(voices);
+      // …and make sure something drives each of them: one hand each, which is
+      // the same two-handed play the degree modes ask for at this level.
+      const WRIST = ['hand_L_y', 'hand_R_y'];
+      let added = 0;
+      for (let i = 1; i <= voices; i++) {
+        const param = `osc${i}_freq`;
+        if (mapper.mappings.some(m => m.audioParam === param && m.signal)) continue;
+        const sig = WRIST[(i - 1) % WRIST.length];
+        mapper.add(param, sig, 80, 880, 'quad');
+        toast(`Added mapping: ${sig === 'hand_L_y' ? 'Left' : 'Right'} Wrist Y → Osc${i} pitch`);
+        added++;
       }
+      if (added) renderMapper();
     } else {
       // A degree chart is played through a play mode, so that mode has to be
       // on — same rule as the lead voice above: the game sets up what it
@@ -259,7 +278,9 @@ export const playalong = {
     for (const n of notes) {
       if (n.status !== 'upcoming') continue;
       if (n.tMs - t > cfg.window) break;          // notes sorted; rest are future
-      const wanted = mode === 'pitch' ? (n.notes ?? [n.m]) : [n.deg];
+      // Two vocabularies: the pitch game covers MIDI, the degree modes cover
+      // lanes. MULTI asks for two of whichever this chart speaks.
+      const wanted = mode === 'pitch' ? (n.notes ?? [n.m]) : (n.degs ?? [n.deg]);
       const r = judge(sounding, wanted, t, n.tMs, jcfg);
       if (r === 'perfect' || r === 'good') {
         n.status = 'hit'; n.tier = r; n.hitAtMs = t;
