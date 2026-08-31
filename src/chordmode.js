@@ -718,7 +718,7 @@ export const chordmode = (() => {
           return;
         }
         // Only re-point the voices when the chord actually changes. Ramping
-        // four oscillator frequencies every frame is the same never-settling
+        // the whole bank's frequencies every frame is the same never-settling
         // glide that made continuous volume unplayable in the first place.
         // The accidental is in the signature because bending a note IS the
         // chord changing, and it is the one part of it the off hand can move
