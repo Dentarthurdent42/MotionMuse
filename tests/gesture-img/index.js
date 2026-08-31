@@ -85,8 +85,15 @@ const results = await p.evaluate(async (imgs) => {
     baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate: 'CPU' },
     numHands: 1, runningMode: 'IMAGE' });
   const { fingerExt, handOpenness, dist3, thumbOut, thumbContact } = await import('/src/math.js');
-  const { gesture, matchGesture, templateDistance, templateSeparation, FEATURES, SEPARATION_FLOOR } =
-    await import('/src/gesture.js');
+  const { gesture, matchGesture, templateDistance, templateSeparation, kindOf,
+          FEATURES, SEPARATION_FLOOR } = await import('/src/gesture.js');
+  // This suite measures HANDS from photographs of hands, so it asks the hand
+  // templates. The arm poses are a different channel list and a different
+  // question — scoring one against a finger vector does not give a wrong
+  // answer, it gives a confident one — and matchGesture already refuses to.
+  // The ranked runners-up below would otherwise report that refusal as a
+  // near miss.
+  const handTemplates = gesture.list().filter(g => kindOf(g) === 'hand');
   const load = src => new Promise(r => { const im = new Image(); im.onload = () => r(im); im.src = src; });
   const out = { images: {}, features: FEATURES, floor: SEPARATION_FLOOR };
   for (const [name, src] of Object.entries(imgs)) {
@@ -100,7 +107,7 @@ const results = await p.evaluate(async (imgs) => {
       thumbOut(lm),
       thumbContact(lm,1), thumbContact(lm,2), thumbContact(lm,3), thumbContact(lm,4),
     ].map(x => +x.toFixed(3));
-    const all = gesture.list();
+    const all = handTemplates;
     const m = matchGesture(f, all);
     out.images[name] = {
       detected: true, match: m?.id ?? null, dist: m ? +m.dist.toFixed(3) : null, f,
@@ -112,7 +119,7 @@ const results = await p.evaluate(async (imgs) => {
   // Pairwise separation over the whole shipped template set — via the shared
   // templateSeparation (min over both directions, since masks are
   // asymmetric), the same definition the unit floor test uses.
-  const T = gesture.list();
+  const T = handTemplates;
   const pairs = [];
   for (let i = 0; i < T.length; i++)
     for (let j = i + 1; j < T.length; j++)
