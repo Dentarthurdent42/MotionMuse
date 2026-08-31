@@ -60,7 +60,7 @@ function drawLanes(ctx, W, yTop, keysH, view) {
     const x = i * lw;
     ctx.fillStyle = i % 2 ? '#252b34' : '#1e242c';
     ctx.fillRect(x + 0.5, yTop, lw - 1, keysH);
-    if (i === view.playerLane) {
+    if (view.playerLanes?.includes(i)) {
       ctx.fillStyle = 'rgba(0,229,204,0.32)';
       ctx.fillRect(x + 0.5, yTop, lw - 1, keysH);
     }
@@ -69,7 +69,7 @@ function drawLanes(ctx, W, yTop, keysH, view) {
     // Faint guide up the highway, so a falling bar can be aimed at early.
     ctx.strokeStyle = 'rgba(255,255,255,0.05)';
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, yTop); ctx.stroke();
-    ctx.fillStyle = i === view.playerLane ? '#0b0d12' : '#cfd4db';
+    ctx.fillStyle = view.playerLanes?.includes(i) ? '#0b0d12' : '#cfd4db';
     ctx.font = `${Math.max(10, Math.round(keysH * 0.34))}px "IBM Plex Mono", monospace`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(view.laneLabels?.[i] ?? String(i + 1), x + lw / 2, yTop + keysH / 2);

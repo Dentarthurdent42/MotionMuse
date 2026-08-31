@@ -52,9 +52,11 @@ export function stepIndex(i, n, pattern = 'up', rnd = Math.random) {
 export const stepSeconds = rate => 1 / Math.max(0.1, Number(rate) || 0.1);
 
 // A note may ring past its own step, but must be done before its voice comes
-// around again: the engine round-robins four chord voices, so a note alive for
-// longer than three steps would be cut mid-ring by the fourth-next note
-// reclaiming the voice.
+// around again: the engine round-robins its chord voices, so a note alive for
+// longer than (voices − 1) steps would be cut mid-ring by the note that
+// reclaims it. Eight voices leave room for seven — the cap stays at three
+// anyway, because past that every note of a bar is sounding at once and the
+// pattern stops reading as an arpeggio at all.
 //
 // That budget covers the note's WHOLE life — the gate it is held for PLUS the
 // tail it rings out over — which is why the two are clamped together below

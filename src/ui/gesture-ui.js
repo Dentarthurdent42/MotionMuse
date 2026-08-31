@@ -710,13 +710,17 @@ export function updateGesturePanel() {
     // Two states, because latched-but-silent is a real one: in volume mode a
     // chord stays selected while your hand is closed. A single lit dot at 0%
     // volume would read as "this is playing" and be wrong.
-    const sounding = chordmode.soundingDegree();
+    // A SET, because two hands can name two degrees at once and lighting only
+    // the first of them would say the second one is not playing.
+    const sounding = new Set(chordmode.soundingDegrees());
+    const lead = chordmode.soundingDegree();
     const audible = chordmode.chordLevel() > 0.001;
     for (let i = 0; i < DEGREES; i++) {
       const d = document.getElementById(`cdot-${i}`);
       if (!d) continue;
-      d.classList.toggle('on',  i === sounding && audible);
-      d.classList.toggle('sel', i === sounding && !audible);
+      const named = sounding.has(i) || i === lead;
+      d.classList.toggle('on',  named && audible);
+      d.classList.toggle('sel', named && !audible);
     }
     const rel = document.getElementById('cdot-release');
     if (rel) rel.classList.toggle('on', chordmode.releaseHeld());
