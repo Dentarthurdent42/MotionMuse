@@ -26,6 +26,11 @@ export const engine = (() => {
   // budget back when only one hand could name a chord. Two hands naming two
   // sevenths is eight notes, and a bank that silently dropped the last four
   // would make the second hand sound broken rather than quiet.
+  //
+  // It is not free: every voice is a real oscillator held open for the life of
+  // the page, and under Shepard each is a stack of SHEP_PARTIALS — so this is
+  // 56 oscillators rather than 28. Steady-state cost, not per-note: the nodes
+  // are built once and only their frequencies and gains move.
   const CHORD_VOICES = 8;
   let chordOscs = [], chordVGains = [], chordGain = null, chordOn = false;
   // Shepard mode, per voice group. Separate flags because they are separate
