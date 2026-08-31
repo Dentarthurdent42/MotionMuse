@@ -175,6 +175,34 @@ export const maskFor = (kind, len) =>
 // one folded into the palm ~0.00–0.20, and the loose half-curl of a peace
 // sign's ring finger ~0.40. Openness by extended-finger count:
 // 0.38 0.50 0.70 0.80 0.87 0.92. Spread is always thumb↔pinky distance / 2.5.
+// Which channels of a sideless kind a template cares about. The hand's
+// `care()` names what to IGNORE, because a handshape cares about almost
+// everything; a body pose is the opposite, so this names what to KEEP.
+const only = (kind, keep) => KINDS[kind].features.map(f => (keep.includes(f) ? 1 : 0));
+const ARM_HEIGHT = only('body',
+  ['arm_raise_L', 'arm_raise_R', 'shoulder_elev_L', 'shoulder_elev_R']);
+
+// The five heights an arm can take, as `arm_raise` reads them (elevation/180).
+const DOWN = 0.00, LOW = 0.25, OUT = 0.50, HIGH = 0.75, UP = 1.00;
+// [elbow_L, elbow_R, arm_raise_L, arm_raise_R, shoulder_elev_L,
+//  shoulder_elev_R, shoulder_azim_L, shoulder_azim_R, torso_tilt]
+// Straight arms (elbow 1.00), out to each side (azimuth 0.5 = 0°), standing
+// upright (tilt 0.5) — all masked out of the metric, and written down anyway
+// so the vector describes the whole pose rather than only the part it tests.
+const semaphore = (L, R) => [1.00, 1.00, L, R, L, R, 0.50, 0.50, 0.50];
+const SEMAPHORE = [
+  ['sem_a', 'A', 'Right Low',  DOWN, LOW],
+  ['sem_b', 'B', 'Right Out',  DOWN, OUT],
+  ['sem_c', 'C', 'Right High', DOWN, HIGH],
+  ['sem_d', 'D', 'Right Up',   DOWN, UP],
+  ['sem_e', 'E', 'Left High',  HIGH, DOWN],
+  ['sem_f', 'F', 'Left Out',   OUT,  DOWN],
+  ['sem_g', 'G', 'Left Low',   LOW,  DOWN],
+].map(([id, sem, name, L, R]) =>
+  ({ id, name, sem, kind: 'body', m: ARM_HEIGHT, f: semaphore(L, R) }));
+SEMAPHORE.push({ id: 'sem_rest', name: 'Semaphore Rest', kind: 'body',
+                 m: ARM_HEIGHT, f: semaphore(DOWN, DOWN) });
+
 const BUILTINS = [
   // id        name              ASL   f = [thumb,index,middle,ring,pinky, open,spread, thumbOut, cIdx,cMid,cRing,cPinky]
   //
@@ -235,12 +263,68 @@ const BUILTINS = [
   // it gains a template like any other, and then works with the classifier off.
   { id: 'thumbsdown', name: 'Thumbs Down', canned: 'Thumb_Down' },
   { id: 'iloveyou',   name: 'I Love You',  asl: 'ILY', canned: 'ILoveYou' },
+
+  // ── Flag semaphore, first circle ──────────────────────────────────────
+  //
+  // The hands can already count to ten; the arms can too, and from across a
+  // room. Semaphore's first circle is seven positions of one straight arm
+  // sweeping a clock face while the other hangs at rest — and because the
+  // letters A–J double as the digits 1–0, A…G ARE 1…7. Seven arm positions
+  // for the seven degrees of a key, in a notation that already means those
+  // numbers.
+  //
+  // The circle, in the signaller's OWN frame, sweeping from their lower right
+  // over the top to their lower left — which is the order the letters run in:
+  //
+  //   A · 1   right arm low   (45° below horizontal)
+  //   B · 2   right arm out   (horizontal)
+  //   C · 3   right arm high  (45° above horizontal)
+  //   D · 4   right arm up    (vertical)
+  //   E · 5   left arm high
+  //   F · 6   left arm out
+  //   G · 7   left arm low
+  //
+  // "In the first circle, the letters A to C are made with the right arm, and
+  // E to G with the left, and D with either as convenient" — D is the right
+  // arm here, which makes A–D one unbroken lift of the same arm.
+  //
+  // The mirror is the trap, and it is worth being explicit about: published
+  // semaphore charts are drawn in RECEIVE mode, as the reader sees them, so
+  // the arm drawn on the left of a chart is the signaller's right. Everything
+  // here is the signaller's own body, because that is what the pose model
+  // measures — `arm_raise_R` is the arm on the person's own right.
+  //
+  // Elevation is the whole of it: `arm_raise` is the angle from the torso's
+  // downward axis over 180, so the five semaphore heights land on exact
+  // quarters — 0.00 down, 0.25 low, 0.50 out, 0.75 high, 1.00 up. The mask
+  // keeps only the two elevation channels per arm (`shoulder_elev` is the
+  // same measurement in degrees, so it doubles the vote rather than adding a
+  // second demand). Elbow, azimuth and torso tilt are left OUT, not because
+  // they are noise but because caring about them would make each letter
+  // demand a posture rather than a position: a slightly bent elbow, a step
+  // toward the camera, or standing at an angle would each cost you the note.
+  //
+  // Not flagged `est`. That flag is for a template someone GUESSED at — the
+  // geometric hand models, which describe a shape nobody measured. These are
+  // not guesses: the positions are the semaphore specification, and 45° of
+  // elevation is what `arm_raise` reads as 0.25 by its own definition. They
+  // are still worth fitting to your own body with ⊙ if your arms sit
+  // differently, like every other template.
+  //
+  // REST is shipped as a template rather than left as "no match", because
+  // standing normally is 0.177 from A and from G — inside the match
+  // threshold. Without a template for it, simply standing there would sound
+  // a chord. It is also a real semaphore position: the interval signal.
+  ...SEMAPHORE,
 ].map(g => ({ ...g, builtin: true, hand: 'any', est: !!g.est }));
 
 // Display name, gloss first: "ASL 1 · Point". The gloss leads because it is
 // what the list is ordered by — a name you are scanning for should be the
 // thing your eye lands on, in the column the sort put it in.
-export const gestureLabel = g => g.asl ? `ASL ${g.asl} · ${g.name}` : g.name;
+export const gestureLabel = g =>
+  g.asl ? `ASL ${g.asl} · ${g.name}`
+: g.sem ? `Semaphore ${g.sem} · ${g.name}`
+: g.name;
 
 // Display order.
 //
@@ -257,10 +341,15 @@ export const gestureLabel = g => g.asl ? `ASL ${g.asl} · ${g.name}` : g.name;
 // sit after the numbers — one sequence, 0-10 then ILY, L, S, with each half
 // ordered the way that half is actually read.
 //
-// Handshapes with no gloss are not ASL and are not reordered: Rock Horns and
-// Thumbs Down follow, in the order they are declared, and recorded shapes are
-// the user's own and stay in the order they made them (they are appended by
-// the caller, after this).
+// The semaphore poses have a gloss of their own — a letter, in a different
+// notation — so they are their own block rather than being sorted in among
+// the ASL glosses or dropped in with the unglossed. Alphabetical is also the
+// order the circle is signed in, so A…G reads as the sweep it is.
+//
+// Shapes with no gloss at all are not reordered: Rock Horns and Thumbs Down
+// follow, in the order they are declared, and recorded shapes are the user's
+// own and stay in the order they made them (they are appended by the caller,
+// after this).
 const byGloss = (a, b) => {
   const na = Number(a.asl), nb = Number(b.asl);
   const aNum = Number.isFinite(na), bNum = Number.isFinite(nb);
@@ -268,8 +357,12 @@ const byGloss = (a, b) => {
   if (aNum !== bNum) return aNum ? -1 : 1;
   return a.asl < b.asl ? -1 : a.asl > b.asl ? 1 : 0;
 };
-export const orderByGloss = list =>
-  [...list.filter(g => g.asl).sort(byGloss), ...list.filter(g => !g.asl)];
+const bySem = (a, b) => (a.sem < b.sem ? -1 : a.sem > b.sem ? 1 : 0);
+export const orderByGloss = list => [
+  ...list.filter(g => g.asl).sort(byGloss),
+  ...list.filter(g => !g.asl && g.sem).sort(bySem),
+  ...list.filter(g => !g.asl && !g.sem),
+];
 
 // ── MediaPipe canned gestures ─────────────────────────────────────────────
 //

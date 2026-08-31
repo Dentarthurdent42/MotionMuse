@@ -168,6 +168,41 @@ test('the release shape stops every source', () => {
   assert.deepEqual(degrees(), [], 'a fist is a full stop');
 });
 
+// The request this all came from: "support multiple gesture sources so the
+// user can play with both hands". A source is not only a hand — a semaphore
+// arm position is one too, and the two stack, so you can hold a degree with
+// your arms and add another with a hand.
+test('a semaphore pose names a chord alongside a handshape', () => {
+  reset();
+  // Semaphore B is the right arm horizontal, left arm down. Put it on IV.
+  for (const k of ['elbow_L', 'elbow_R', 'shoulder_elev_L', 'shoulder_elev_R'])
+    bus.register(k, { min: 0, max: 180 });
+  for (const k of ['arm_raise_L', 'arm_raise_R']) bus.register(k, { min: 0, max: 1 });
+  for (const k of ['shoulder_azim_L', 'shoulder_azim_R']) bus.register(k, { min: -180, max: 180 });
+  bus.register('torso_tilt', { min: -1, max: 1 });
+  const arms = (L, R) => {
+    bus.update('elbow_L', 180); bus.update('elbow_R', 180);
+    bus.update('arm_raise_L', L / 180); bus.update('arm_raise_R', R / 180);
+    bus.update('shoulder_elev_L', L); bus.update('shoulder_elev_R', R);
+    bus.update('shoulder_azim_L', 0); bus.update('shoulder_azim_R', 0);
+    bus.update('torso_tilt', 0);
+  };
+  gesture.setPresence('body', true);
+  chordmode.setDegreeGesture(3, 'sem_b');          // IV
+  arms(0, 90);                                     // right arm out = B
+  settle(10);
+  assert.deepEqual(degrees(), [3], 'the arms alone name a degree');
+
+  feed('L', tmpl('point'));                        // …and a hand joins it
+  settle();
+  assert.deepEqual(degrees(), [0, 3], 'hand and arms sound together');
+
+  arms(0, 0);                                      // arms back to rest
+  settle(10);
+  assert.deepEqual(degrees(), [0], 'and dropping the arms leaves the hand');
+  gesture.setPresence('body', false);
+});
+
 // ── The envelope ─────────────────────────────────────────────────────────
 //
 // The bank has ONE shared envelope, so "attack" is all-or-nothing: an arrival

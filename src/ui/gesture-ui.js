@@ -73,7 +73,8 @@ export function gestureModeSection() {
     // is sorted by, so it belongs in the column the eye runs down. Only
     // `custom` earns a tag of its own — "built-in" on nine of eleven rows is
     // noise that squeezes out the name.
-    const short = g.asl ? `${g.asl} · ${g.name}` : g.name;
+    const short = g.asl ? `${g.asl} · ${g.name}`
+                : g.sem ? `${g.sem} · ${g.name}` : g.name;
     const kind = kindOf(g);
     const tag = g.est
       ? `<span class="gesture-tag est" title="Estimated template — calibrate it on your own hand">est</span>`
@@ -97,7 +98,7 @@ export function gestureModeSection() {
     // to players. They stay VISIBLE inside DEV, badged, precisely so the wrong
     // ones can be identified and the rig fixed against them; hiding them would
     // make that impossible.
-    const pic = g.builtin && g.f
+    const pic = g.builtin && g.f && kind === 'hand'
       ? `<span class="gesture-pic-wrap uc-feature">
            <img class="gesture-pic" src="icons/handshapes/${g.id}.png" alt=""
                 width="34" height="34" loading="lazy">

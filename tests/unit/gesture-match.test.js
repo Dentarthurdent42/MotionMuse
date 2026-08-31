@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 
 import {
   gesture, gestureLabel, matchGesture, templateDistance, templateSeparation,
+  kindOf, specOf,
   FEATURES, WEIGHTS, NEUTRAL, padTemplate, maskFromLength,
   MATCH_THRESHOLD, SEPARATION_FLOOR,
 } from '../../src/gesture.js';
@@ -108,17 +109,23 @@ test('no two shipped templates sit closer than the separation floor', () => {
     'threshold has drifted far past the separation floor');
 });
 
+// Full length for ITS OWN kind: a hand template is 12 finger channels and a
+// body template is 9 joint ones, and a template padded against the wrong
+// channel list is a pose read in the wrong language.
 test('every template is full length and in range', () => {
   for (const g of withTemplates()) {
-    assert.equal(g.f.length, FEATURES.length, `${g.id} wrong length`);
+    const spec = specOf(g);
+    assert.equal(g.f.length, spec.features.length, `${g.id} wrong length`);
     for (const [i, v] of g.f.entries())
-      assert.ok(Number.isFinite(v) && v >= 0 && v <= 1, `${g.id}.${FEATURES[i]} = ${v}`);
+      assert.ok(Number.isFinite(v) && v >= 0 && v <= 1, `${g.id}.${spec.features[i]} = ${v}`);
   }
 });
 
 test('each template is its own nearest neighbour', () => {
   const T = withTemplates();
-  for (const g of T) assert.equal(matchGesture(g.f, T).id, g.id);
+  // Asked in its own kind, which is the only way it is ever asked live: a
+  // vector read for one kind is not a question the others can answer.
+  for (const g of T) assert.equal(matchGesture(g.f, T, MATCH_THRESHOLD, null, kindOf(g)).id, g.id);
 });
 
 test('ASL numbers ship with both a name and a numeral', () => {

@@ -361,6 +361,17 @@ other: it folds away with its caret and can be dragged to another column. It
 lives *outside* the panel that `renderAudioPanel` rebuilds, because that rebuild
 would recreate its canvas and drop the click-to-mute handler with it.
 
+It **normalizes its own amplitude**. Drawn at true scale it was an almost flat
+line with a few squiggles in it, because a quiet signal really is quiet — and a
+scope that only reads when you are loud is a scope that is useless exactly
+while you are shaping a sound. So it follows the frame peak with a fast attack
+and a slow release (`followPeak` in `src/ui/viz.js`) and scales the trace to
+fill the box (`scopeScale`, capped at ×50). The cap matters less than the
+**floor**: below `SCOPE_FLOOR` the gain is zero and the line is flat, because
+the alternative is amplifying dither into a waveform and drawing a signal that
+is not there. Silence has to look like silence
+(`tests/unit/scope-gain.test.js`).
+
 ## Sections: containers, scrolling and resizing
 
 Every section — camera view, signals, models, patchbay, gesture mode,
@@ -1111,10 +1122,62 @@ Two things this had to get right, both pinned in
   read. Without that, a recorded neutral expression sits permanently matched
   against a model that is switched off.
 
-A gesture with no `kind` is a hand gesture: every built-in, and every setup
-ever saved. Recording that never receives a frame — the face tracker is off,
-say — gives up after five seconds and names the tracker you need, rather than
-counting down forever.
+A gesture with no `kind` is a hand gesture: every built-in that does not say
+otherwise, and every setup ever saved. Recording that never receives a frame —
+the face tracker is off, say — gives up after five seconds and names the
+tracker you need, rather than counting down forever.
+
+### Semaphore: the arms can count too
+
+The hands can count to ten; the arms can too, and from across a room. Eight
+**body** gestures ship: flag semaphore's **first circle**, `A`–`G` plus
+**Rest**. Because semaphore's letters `A`–`J` double as the digits `1`–`0`,
+`A`…`G` **are** `1`…`7` — seven arm positions for the seven degrees of a key,
+in a notation that already means those numbers. They are sources like any
+other, so with Gesture Mode's polyphony you can hold a degree with your arms
+and add another with a hand.
+
+The circle, in **your own** frame, sweeping from your lower right over the top
+to your lower left — which is the order the letters run in:
+
+| | position | | position |
+| --- | --- | --- | --- |
+| **A · 1** | right arm low (45° below horizontal) | **E · 5** | left arm high |
+| **B · 2** | right arm out (horizontal) | **F · 6** | left arm out |
+| **C · 3** | right arm high (45° above horizontal) | **G · 7** | left arm low |
+| **D · 4** | right arm up (vertical) | **Rest** | both arms down |
+
+*"In the first circle, the letters A to C are made with the right arm, and E to
+G with the left, and D with either as convenient"* — D is the right arm here,
+which makes A–D one unbroken lift of the same arm.
+
+**The mirror is the trap.** Published semaphore charts are drawn in *receive*
+mode, as the reader sees them, so the arm drawn on the left of a chart is the
+signaller's right. A template built by copying one straight across would put
+every letter on the wrong arm — and the set would still be self-consistent and
+still pass a separation test, which is why `tests/unit/semaphore.test.js`
+asserts the handedness directly rather than only the spacing.
+
+Elevation is the whole of the metric. `arm_raise` is the angle from the torso's
+own downward axis over 180, so the five semaphore heights land on exact
+quarters — `0.00` down, `0.25` low, `0.50` out, `0.75` high, `1.00` up. The
+mask keeps **only** the two elevation channels per arm; elbow angle, azimuth
+and torso tilt are left out, not because they are noise but because caring
+about them would make each letter demand a *posture* rather than a *position*:
+a slightly bent elbow, a step toward the camera, or standing at an angle would
+each cost you the note. Every letter survives ±10° of aim plus frame noise in
+at least 95% of frames.
+
+**Rest is a template, not the absence of one.** Standing normally sits 0.177
+from both A and G — inside the 0.20 match threshold — so without a pose of its
+own, simply standing there would name a degree and sound a chord nobody asked
+for. It is also a real semaphore position: the interval signal.
+
+They are not flagged `est`. That flag is for a template someone *guessed* at —
+the geometric hand models, which describe a shape nobody measured. These are
+not guesses: the positions are the specification and 45° of elevation is what
+`arm_raise` reads as 0.25 by its own definition. Fit them to your own body with
+**⊙** anyway if your arms sit differently.
 
 ### Renaming
 
@@ -1482,6 +1545,39 @@ its intervals), so one envelope is what a player means by "the chord's attack".
 Retriggering mid-release starts from the dying value rather than snapping to
 zero, so fast chord changes don't click.
 
+### Every source at once
+
+**Everything naming a degree sounds, together.** Both hands, and a body pose
+alongside them — the bank plays the **union** of what they all ask for, with
+notes two chords share voiced once rather than twice. The mode was monophonic
+until now: one held id, so a second hand naming a chord did nothing at all,
+and "play a C and an E together" was unreachable in the mode whose whole
+subject is chords. It is also what makes the play-along *multiple notes* level
+playable here.
+
+The bank holds **eight** voices for it (it held four, which was one triad and
+a voice spare — the whole budget back when only one hand could name). Two
+sevenths is eight notes, and a bank that silently dropped the last four would
+make the second hand sound broken rather than quiet.
+
+One envelope for the lot means arrivals and departures are not symmetrical,
+and both readings are deliberate: a hand **joining** attacks (the notes
+already ringing are struck again with it) because under a percussive setting a
+silently added note is an inaudible one, while a hand **leaving** only
+re-points the voices — letting go of one hand must never restrike the other's
+chord, which would be a note you did not play at a moment you did not choose.
+The arpeggio restarts at the root for a fresh attack or a shape swapped for
+another, and carries on in time when a hand merely joins or leaves a run
+already walking.
+
+**RELEASE** stops everything, not one source: a per-hand release would leave
+the other hand's chord with nothing able to end it.
+
+The **expressed** modes below stay one shape at a time, and not by omission —
+one hand names while the other plays, so there is only one hand free to name
+with. Two-handed play lives in the handshape and metronome modes, where
+neither hand is spoken for.
+
 ### What sounds the chord
 
 **PLAY WITH** picks what actually plays a chord once a handshape has named it:
@@ -1500,7 +1596,8 @@ zero, so fast chord changes don't click.
   Metronome section; needs it switched on.
 
 **NAMED BY** is which hand a handshape is read from: **EITHER**, **LEFT** or
-**RIGHT**.
+**RIGHT**. It still applies with several sources sounding: naming one hand
+frees the other, and polyphony does not quietly take that back.
 
 It exists because the other hand is usually busy. Reported from playing: *"I'm
 trying to use my left hand openness to adjust filter, but it keeps getting read
@@ -2179,14 +2276,21 @@ chart for **every way of playing**, not just the oscillator patch:
   the piano keys, and you *hit* a note by steering osc 1's quantised pitch
   onto the target as it crosses the line — using whatever gesture drives
   `osc1_freq` (a Left-Wrist-Y mapping is added automatically if none exists).
-  Starting one turns pitch quantise on in the song's key and restores your
-  tuning afterwards.
+  The song is **transposed into the key the instrument is set to**, and the
+  quantiser is pointed at that key, so a round never moves the instrument out
+  from under you; your tuning is restored afterwards. Under a **Shepard**
+  lead the guide is a Shepard stack too and matching is by **pitch class** —
+  the lead's octave is deliberately discarded (`src/shepard.js`), so grading
+  an exact octave would grade a number the instrument refuses to express.
 - **Degree charts** (the generated entries): the piano strip becomes **lanes,
   one per degree of the key**, labeled with their numerals, and you hit a bar
   by *sounding that degree* as it lands — a handshape in Gesture Mode, or
   pointing the ring at that section in Radial Mode. Starting one switches the
-  right mode on if it is off, and says so. Octave-agnostic scoring does not
-  apply: a lane is exact.
+  right mode on if it is off, and says so. Pitch-class scoring does not
+  apply: a lane is exact. The chart is generated in — and a stored chart
+  transposed into — **your** key, which is not a nicety here: "IV" in the
+  chart's key is a different chord from "IV" in the key your handshapes are
+  assigned in, so a chart in its own key made the lanes lie.
 
 A quiet **guide** melody can be toggled; hits and misses get audio feedback.
 
@@ -2225,9 +2329,16 @@ mid-song discards the run.
   Scarborough Fair. Chart format:
   `{ bpm, beatsPerBar, root, scale, notes: [{ b, m, d }] }` — beat, MIDI note,
   duration in beats; degree-chart notes carry `deg` beside the guide-midi `m`.
-- **Difficulties:** *easy* (downbeats & long notes only, ±250 ms window,
-  slow fall, octave-agnostic matching), *medium* (on-the-beat notes, ±180 ms),
-  *hard* (every note, ±120 ms, fast fall).
+- **Difficulty is polyphony, not note-dropping** — *single note* and
+  *multiple notes*. It used to be a note FILTER, and `easy` dropped everything
+  that was not a downbeat or a long note: half the tune, on the setting a
+  beginner picks. Both levels now play the **whole song**, and both share one
+  timing window (±200 ms), because how long you have to hit a note is a
+  property of the game rather than of how many notes it is asking for — the
+  old `easy` bought its wider window by also deleting music. *Multiple notes*
+  voices each melody note into a chord from the key and wants **all** of it
+  held, which is what the second hand in Gesture Mode is for. Transposition
+  and voicing live in `src/chart.js` (`tests/unit/chart.test.js`).
 - The game renders in the panel and — best experience — on the fullscreen
   overlay. Game logic: `src/playalong.js`; renderer: `src/ui/playalong-ui.js`.
 
@@ -2432,6 +2543,8 @@ src/
   preset.js         Save/load of mappings + settings (file + localStorage)
   soundkit.js       Instrument timbre presets (synthesized)
   songs.js          Bundled play-along note charts
+  chart.js          Chart transforms: degrees ↔ MIDI, transpose into a key,
+                    voice a chart for a difficulty level
   playalong.js      Play-along game logic (scheduler, judging, difficulties)
   chords.js         Chord construction + diatonic degrees (I–vii in any mode),
                     and single notes with an accidental
