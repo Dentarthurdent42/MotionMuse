@@ -19,9 +19,14 @@ export const engine = (() => {
   // make noise now, and the state is one keypress to change.
   let muted = true;
 
-  // Chord voice bank (gesture mode): 4 oscillators with per-voice gains into a
+  // Chord voice bank (gesture mode): oscillators with per-voice gains into a
   // shared gain, feeding the same filter/reverb chain as the main oscillators.
-  const CHORD_VOICES = 4;
+  //
+  // Eight, not four. Four was one triad with a voice spare, which was the whole
+  // budget back when only one hand could name a chord. Two hands naming two
+  // sevenths is eight notes, and a bank that silently dropped the last four
+  // would make the second hand sound broken rather than quiet.
+  const CHORD_VOICES = 8;
   let chordOscs = [], chordVGains = [], chordGain = null, chordOn = false;
   // Shepard mode, per voice group. Separate flags because they are separate
   // instruments: an endless-rising lead over static chords is a usable sound,
@@ -761,9 +766,9 @@ export const engine = (() => {
   // Round-robin across the voices rather than reusing one: a note's release
   // tail then rings under the next note's attack. With a single voice the gate
   // would have to shut before the next could open, which is the difference
-  // between an arpeggio and a stutter. Four voices at a gate capped at three
-  // steps (ARP_MAX_GATE) means a voice always gets a full step of silence
-  // before it is asked to play again.
+  // between an arpeggio and a stutter. A gate capped at three steps
+  // (ARP_MAX_GATE) against CHORD_VOICES voices means a voice always gets
+  // several steps of silence before it is asked to play again.
   //
   // Peak is below unity. setChordVoices gives a triad three voices at 1/3 each,
   // summing to 1; a lone arp note at 1 would be no louder in peak but audibly
@@ -975,6 +980,9 @@ export const engine = (() => {
     registerParams, unregisterParams,
     defineWave, playTone, now, click,
     playChord, releaseChord, chordActive, setChordVoices, setChordLevel, chordLevel,
+    // How many notes the chord bank can hold at once. Exposed so callers
+    // asking "does this fit?" measure the bank rather than restating its size.
+    chordVoiceCount: () => CHORD_VOICES,
     attackChord, arpNote, silenceChordVoices, releaseChordVoices,
     setChordEnv, getChordEnv, CHORD_ENV_RANGE, CHORD_PEAK,
     setLeadEnv, getLeadEnv, LEAD_ENV_RANGE,
