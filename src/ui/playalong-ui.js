@@ -94,14 +94,19 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
   const hitY = H - keysH;
   // Two vocabularies, one highway: pitch charts land on the piano, degree
   // charts land on lanes. Everything below speaks through centerOf/barW.
-  let centerOf, barW;
+  // Plural, because a note can ask for more than one thing at once: MULTI
+  // wants a note AND the third above it, and a chart note drawn as one bar
+  // while it demands two would be the highway lying about the game.
+  let centersOf, barW;
   if (view.laneCount) {
     const L = drawLanes(ctx, W, hitY, keysH, view);
-    centerOf = n => L.center(Math.max(0, Math.min(view.laneCount - 1, n.deg ?? 0)));
+    const clamp = d => Math.max(0, Math.min(view.laneCount - 1, d));
+    centersOf = n => (n.degs ?? [n.deg ?? 0]).map(d => L.center(clamp(d)));
     barW = Math.max(6, L.w * 0.55);
   } else {
     const L = drawKeys(ctx, W, hitY, keysH, view.root, view.scale, view.playerMidi);
-    centerOf = n => L.keyCenter(Math.max(KBD_LO, Math.min(KBD_HI, n.m)));
+    const clamp = m => Math.max(KBD_LO, Math.min(KBD_HI, m));
+    centersOf = n => (n.notes ?? [n.m]).map(m => L.keyCenter(clamp(m)));
     barW = Math.max(4, L.ww * 0.7);
   }
   const fallMs = view.cfg.fallSec * 1000;
@@ -112,7 +117,6 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
     if (dt > fallMs || dt < -1200) continue;
     const y = hitY * (1 - dt / fallMs);                     // note head
     const len = Math.max(6, (n.durMs / fallMs) * hitY);     // bar length
-    const x = centerOf(n);
     const w = barW;
 
     if (n.status === 'hit') {
@@ -120,14 +124,16 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
       if (age > 350) continue;                              // quick flash, tier-colored
       ctx.globalAlpha = Math.max(0, 1 - age / 350);
       ctx.fillStyle = n.tier === 'perfect' ? '#f0a500' : OSC_COLS[0];
-      ctx.fillRect(x - w / 2, hitY - 10, w, 10);
+      for (const x of centersOf(n)) ctx.fillRect(x - w / 2, hitY - 10, w, 10);
       ctx.globalAlpha = 1;
       continue;
     }
     ctx.fillStyle = n.status === 'miss' ? 'rgba(255,100,114,0.55)' : 'rgba(0,229,204,0.85)';
-    ctx.fillRect(x - w / 2, Math.min(y, hitY) - len, w, len);
     ctx.strokeStyle = 'rgba(8,10,15,0.7)'; ctx.lineWidth = 1;
-    ctx.strokeRect(x - w / 2, Math.min(y, hitY) - len, w, len);
+    for (const x of centersOf(n)) {
+      ctx.fillRect(x - w / 2, Math.min(y, hitY) - len, w, len);
+      ctx.strokeRect(x - w / 2, Math.min(y, hitY) - len, w, len);
+    }
   }
 
   // Hit line.

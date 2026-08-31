@@ -138,19 +138,50 @@ test('NO level drops a note — the bug that started this', () => {
   }
 });
 
-test('single asks for one note, multi asks for a chord', () => {
+test('single asks for one note, multi asks for as many as the level declares', () => {
   const song = SONGS.find(s => s.id === 'ode-to-joy');
-  const one = voiceChart(song, 'single', C_MAJ);
+  for (const lvl of LEVELS) {
+    const out = voiceChart(song, lvl.id, C_MAJ);
+    assert.ok(out.notes.every(n => n.notes.length === lvl.voices),
+      `${lvl.id} should ask for ${lvl.voices}`);
+    assert.ok(out.notes.every(n => n.degs.length === lvl.voices),
+      `${lvl.id} should light ${lvl.voices} lane(s)`);
+    // The melody note is still in there, EXACTLY — multi harmonises the tune,
+    // it does not replace it or nudge it onto a nearby scale tone.
+    out.notes.forEach((n, i) => assert.ok(n.notes.includes(song.notes[i].m),
+      `bar ${n.b}: the tune's own note ${song.notes[i].m} is missing from ${n.notes}`));
+  }
+});
+
+// The two vocabularies have to agree: what the guide sounds and what the lanes
+// ask for are the same music, or the game would be teaching one thing and
+// scoring another.
+test('the degree targets are the pitch targets, in the other vocabulary', () => {
+  const song = SONGS.find(s => s.id === 'ode-to-joy');
   const many = voiceChart(song, 'multi', C_MAJ);
-  assert.ok(one.notes.every(n => n.notes.length === 1));
-  assert.ok(many.notes.every(n => n.notes.length >= 3));
-  // The melody note is still in there — multi harmonises the tune, it does
-  // not replace it.
-  many.notes.forEach((n, i) => {
-    const pcs = n.notes.map(m => ((m % 12) + 12) % 12);
-    assert.ok(pcs.includes(((song.notes[i].m % 12) + 12) % 12),
-      `bar ${n.b}: the tune's own note should be in its chord`);
-  });
+  for (const n of many.notes) {
+    const fromPitch = n.notes.map(m => readDegree(m, 'C', 'major (ionian)').degree);
+    assert.deepEqual(n.degs, fromPitch, `bar ${n.b}`);
+  }
+});
+
+// A generated degree chart speaks lanes, not pitches. MULTI there is a second
+// LANE to hold — which is the thing gesture mode could not do at all before,
+// and the reason the level exists.
+test('a degree chart gets a second lane, and a guide that sings it', () => {
+  const song = {
+    id: 'g', name: 'g', bpm: 100, beatsPerBar: 4, root: 'C', scale: 'major (ionian)',
+    notes: [{ b: 0, deg: 0, m: 60, d: 4 }, { b: 4, deg: 4, m: 67, d: 4 }],
+  };
+  const one = voiceChart(song, 'single', C_MAJ);
+  assert.deepEqual(one.notes.map(n => n.degs), [[0], [4]]);
+  const many = voiceChart(song, 'multi', C_MAJ);
+  // The third above each degree — every other degree, wrapping inside the key.
+  assert.deepEqual(many.notes.map(n => n.degs), [[0, 2], [4, 6]]);
+  // …and the guide sounds both, so the ear and the lanes agree.
+  assert.equal(many.notes[0].notes.length, 2);
+  assert.deepEqual(many.notes[0].notes.map(m => readDegree(m, 'C', 'major (ionian)').degree),
+    [0, 2]);
 });
 
 test("multi builds the chord under the note being sung, not in a fixed octave", () => {
