@@ -26,6 +26,8 @@ const notes = [];
 engine.now = () => now;
 engine.arpNote = ({ freq, when }) => notes.push({ freq, when });
 engine.silenceChordVoices = () => { silenced++; };
+let released = 0;
+engine.releaseChordVoices = () => { released++; };
 Object.defineProperty(engine, 'started', { get: () => true, configurable: true });
 
 const A = [220, 277, 330];      // the chord being left
@@ -36,7 +38,7 @@ const queuedAfter = t => notes.filter(n => n.when > t);
 const reset = () => {
   arpvoice.load({ enabled: true, pattern: 'up', octaves: 1, sync: 0 });
   arpvoice.stop();
-  notes.length = 0; silenced = 0; now = 0;
+  notes.length = 0; silenced = 0; released = 0; now = 0;
 };
 
 test('a chord change re-plans the queued steps instead of doubling them', () => {
@@ -98,4 +100,49 @@ test('restart with nothing in flight stays quiet', () => {
   reset();
   arpvoice.restart();
   assert.equal(silenced, 0, 'no notes queued, no reason to touch the voices');
+});
+
+
+// ── Letting go of a chord is not the same as swapping one ──
+//
+// Reported from playing: "when releasing a chord that's being sustained, it
+// should continue sustaining, rather than immediately silencing it." Every
+// release path called stop(), which cuts the voices in 30 ms — right when
+// another chord is taking them over, wrong when nothing is. With a sustain
+// tail on every note, the cut was throwing away most of the note.
+test('releasing lets the ringing note fall instead of cutting it', () => {
+  reset();
+  arpvoice.run(A, 1);
+  assert.ok(notes.length > 0, 'the run started');
+  arpvoice.release();
+  assert.equal(released, 1, 'the voices are released…');
+  assert.equal(silenced, 0, '…not silenced');
+});
+
+test('but it still drops what has not sounded yet', () => {
+  reset();
+  arpvoice.run(A, 1);
+  const before = notes.length;
+  arpvoice.release();
+  now += 1;
+  arpvoice.run(A, 1);      // the chord is gone; nothing should resume from it
+  assert.ok(notes.length > before, 'a later run schedules afresh');
+  // The clock was dropped, so the first note of the new run starts a pattern
+  // rather than continuing the old one mid-phrase.
+  assert.equal(notes[before].when >= 1, true, 'and starts from now, not the old queue');
+});
+
+test('a chord SWAP still cuts — the new chord owns those voices', () => {
+  reset();
+  arpvoice.run(A, 1);
+  arpvoice.stop();
+  assert.equal(silenced, 1, 'stop() is still the hard stop');
+  assert.equal(released, 0);
+});
+
+test('releasing an arp that never ran does nothing either way', () => {
+  reset();
+  arpvoice.release();
+  assert.equal(released, 0, 'no voices to release');
+  assert.equal(silenced, 0);
 });
