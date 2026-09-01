@@ -1,5 +1,5 @@
 import { makeQuantizer } from './scale.js';
-import { ARP_MAX_GATE } from './arp.js';
+import { ARP_MAX_GATE, ARP_MAX_SUSTAIN, noteSpans } from './arp.js';
 import { isString } from './is.js';
 import { makeDynamics, EDGES, GATE_AT_DEFAULT } from './dynamics.js';
 
@@ -19,9 +19,19 @@ export const engine = (() => {
   // make noise now, and the state is one keypress to change.
   let muted = true;
 
-  // Chord voice bank (gesture mode): 4 oscillators with per-voice gains into a
+  // Chord voice bank (gesture mode): oscillators with per-voice gains into a
   // shared gain, feeding the same filter/reverb chain as the main oscillators.
-  const CHORD_VOICES = 4;
+  //
+  // Eight, not four. Four was one triad with a voice spare, which was the whole
+  // budget back when only one hand could name a chord. Two hands naming two
+  // sevenths is eight notes, and a bank that silently dropped the last four
+  // would make the second hand sound broken rather than quiet.
+  //
+  // It is not free: every voice is a real oscillator held open for the life of
+  // the page, and under Shepard each is a stack of SHEP_PARTIALS — so this is
+  // 56 oscillators rather than 28. Steady-state cost, not per-note: the nodes
+  // are built once and only their frequencies and gains move.
+  const CHORD_VOICES = 8;
   let chordOscs = [], chordVGains = [], chordGain = null, chordOn = false;
   // Shepard mode, per voice group. Separate flags because they are separate
   // instruments: an endless-rising lead over static chords is a usable sound,
@@ -150,7 +160,15 @@ export const engine = (() => {
     arp_rate:    { label: 'Arp Rate',     min: 0.5,  max: 24,    val: 4,    unit: '/s', snaps: [2, 4, 8] },
     // Gate is in steps: 1 is wall-to-wall, above 1 each note rings under the
     // ones that follow (capped so a tail is done before its voice recycles).
-    arp_gate:    { label: 'Arp Gate',     min: 0.05, max: ARP_MAX_GATE, val: 0.55, snaps: [0.5, 1] },
+    // Default 0.9 rather than the old 0.55: a note that stopped just past
+    // halfway through its own step made every setting of every other control
+    // sound clipped, which is what "the arpeggiator is too staccato" was.
+    arp_gate:    { label: 'Arp Gate',     min: 0.05, max: ARP_MAX_GATE, val: 0.9,  snaps: [0.5, 1] },
+    // …and how long it rings out AFTER the gate closes, also in steps. The
+    // gate alone could never give an arp note a tail: the engine cut it dead
+    // with a fade of at most 90 ms, so the run was flat-topped blocks however
+    // long each block was. See noteEnvelope in arp.js.
+    arp_sustain: { label: 'Arp Sustain',  min: 0,    max: ARP_MAX_SUSTAIN, val: 0.6, snaps: [0.5, 1] },
     lfo_rate:    { label: 'LFO Rate',      min: 0.05, max: 20,    val: 1,    unit: 'Hz' },
     lfo_depth:   { label: 'LFO Depth',     min: 0,    max: 1,     val: 0,     snaps: [0.5] },
     reverb_mix:  { label: 'Reverb Mix',    min: 0,    max: 1,     val: 0.12,  snaps: [0.25, 0.5] },
@@ -591,6 +609,12 @@ export const engine = (() => {
     return { params, tuning: { ...tuning }, volStep: { ...volStep },
              oscCount, oscTypes: getOscTypes(),
              filterType, chordFilterType,
+             // Shepard is a different SOUND, not a different setting: the
+             // voices are rebuilt as octave stacks. It was missing here, so a
+             // saved file, a session restore and a shared link all came back
+             // with it off — the one part of the patch a snapshot could not
+             // describe.
+             shepard: { lead: shepLead, chord: shepChord },
              chordEnv: { ...chordEnv } };
   }
   function restore(s) {
@@ -602,6 +626,9 @@ export const engine = (() => {
     if (s.filterType) setFilterType(s.filterType);
     if (s.chordFilterType) setChordFilterType(s.chordFilterType);
     if (s.chordEnv) setChordEnv(s.chordEnv);
+    // Before the params: setShepard rebuilds the affected bank, and a rebuild
+    // after them would hand the new voices their defaults instead.
+    if (s.shepard) setShepard(s.shepard);
     if (s.tuning) setTuning(s.tuning);
     if (s.volStep) setVolStep(s.volStep);   // before params, so volume quantises on the way in
     if (s.params) for (const k in s.params) if (PARAMS[k]) set(k, s.params[k]);
@@ -744,9 +771,9 @@ export const engine = (() => {
   // Round-robin across the voices rather than reusing one: a note's release
   // tail then rings under the next note's attack. With a single voice the gate
   // would have to shut before the next could open, which is the difference
-  // between an arpeggio and a stutter. Four voices at a gate capped at three
-  // steps (ARP_MAX_GATE) means a voice always gets a full step of silence
-  // before it is asked to play again.
+  // between an arpeggio and a stutter. A gate capped at three steps
+  // (ARP_MAX_GATE) against CHORD_VOICES voices means a voice always gets
+  // several steps of silence before it is asked to play again.
   //
   // Peak is below unity. setChordVoices gives a triad three voices at 1/3 each,
   // summing to 1; a lone arp note at 1 would be no louder in peak but audibly
@@ -754,7 +781,9 @@ export const engine = (() => {
   // lands the arp about level with the block chord it replaces.
   const ARP_VOICE_GAIN = 0.7;
   let arpVoice = 0;
-  function arpNote({ freq, when = 0, dur = 0.12, gain = 1 } = {}) {
+  // `dur` is how long the note is HELD; `tail` is how long it rings out after
+  // that, and the note ends at when + dur + tail.
+  function arpNote({ freq, when = 0, dur = 0.12, gain = 1, tail = 0 } = {}) {
     if (!started || !(freq > 0)) return;
     const t = Math.max(ctx.currentTime, when);
     const g = chordVGains[arpVoice].gain;
@@ -765,13 +794,41 @@ export const engine = (() => {
     // silent at that instant, so a ramp from the previous note's frequency
     // would be a swoop nobody asked for.
     v.setFreq(freq, t - 0.004, 0);
-    const atk = 0.006;
-    const rel = Math.min(0.09, dur * 0.5);
+    // The shape lives in arp.js so the keyboard overlay can draw exactly the
+    // envelope this schedules, rather than its own guess at it.
+    const { atk, hold, rel } = noteSpans(dur, tail);
+    const holdUntil = t + hold;
     g.cancelScheduledValues(t - 0.004);
     g.setValueAtTime(0, t);
     g.linearRampToValueAtTime(peak, t + atk);
-    g.setValueAtTime(peak, t + Math.max(atk, dur - rel));
-    g.linearRampToValueAtTime(0, t + dur);
+    g.setValueAtTime(peak, holdUntil);
+    g.linearRampToValueAtTime(0, holdUntil + rel);
+  }
+
+  // Let go of the voices the way a chord is let go of: cancel what has not
+  // sounded yet, and fade what IS sounding over the chord's own release.
+  //
+  // The difference from silenceChordVoices() is who is next. That one is for a
+  // chord handing these voices to another owner, where anything still ringing
+  // would sound UNDER the new chord — so it cuts, in 30 ms. Releasing is the
+  // opposite case: nothing is replacing the sound, and cutting it there throws
+  // away the tail the player asked for. With a sustain on every arp note that
+  // is most of the note.
+  //
+  // Cancelling first and reading the value BEFORE cancelling is what makes one
+  // pass cover both: a voice mid-note is at its peak and falls from there, and
+  // a voice holding only a note that has not started yet is at zero, so its
+  // ramp is silence and the queued note never arrives.
+  function releaseChordVoices(seconds) {
+    if (!started) return;
+    const t = ctx.currentTime;
+    const fall = Math.max(CHORD_ENV_MIN, Number(seconds) || chordEnv.release);
+    for (const n of chordVGains) {
+      const held = n.gain.value;
+      n.gain.cancelScheduledValues(t);
+      n.gain.setValueAtTime(held, t);
+      n.gain.linearRampToValueAtTime(0, t + fall);
+    }
   }
 
   // Drop whatever the voices are holding without touching the shared gain —
@@ -928,7 +985,10 @@ export const engine = (() => {
     registerParams, unregisterParams,
     defineWave, playTone, now, click,
     playChord, releaseChord, chordActive, setChordVoices, setChordLevel, chordLevel,
-    attackChord, arpNote, silenceChordVoices,
+    // How many notes the chord bank can hold at once. Exposed so callers
+    // asking "does this fit?" measure the bank rather than restating its size.
+    chordVoiceCount: () => CHORD_VOICES,
+    attackChord, arpNote, silenceChordVoices, releaseChordVoices,
     setChordEnv, getChordEnv, CHORD_ENV_RANGE, CHORD_PEAK,
     setLeadEnv, getLeadEnv, LEAD_ENV_RANGE,
     setShepard, getShepard,

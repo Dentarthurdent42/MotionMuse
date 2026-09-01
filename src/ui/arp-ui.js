@@ -10,7 +10,7 @@
 import { engine }    from '../engine.js';
 import { metronome } from '../metronome.js';
 import { arpvoice, ARP_SYNCS } from '../arpvoice.js';
-import { ARP_PATTERNS, ARP_MAX_OCTAVES } from '../arp.js';
+import { ARP_PATTERNS, ARP_MAX_OCTAVES, noteEnvelope } from '../arp.js';
 
 const PATTERN_LABEL = {
   up: 'UP', down: 'DOWN', updown: 'UP · DOWN', downup: 'DOWN · UP', random: 'RANDOM',
@@ -20,6 +20,7 @@ const SYNC_LABEL = s => (s === 0 ? 'FREE' : `${s}/BEAT`);
 export function arpRowHTML(p) {
   const a = arpvoice.state();
   const arpRate = engine.PARAMS.arp_rate, arpGate = engine.PARAMS.arp_gate;
+  const arpSus = engine.PARAMS.arp_sustain;
   const synced = a.sync > 0 && metronome.on;
   return `
     <div class="chord-arp">
@@ -43,6 +44,9 @@ export function arpRowHTML(p) {
       </label>
       <label class="ctrl-lbl" title="How long each note rings, in steps: below 1 is staccato, 1 runs notes wall-to-wall, above 1 lets each note ring under the ones that follow. Also a patchbay output.">GATE
         <input type="range" id="${p}-arp-gate" min="${arpGate.min}" max="${arpGate.max}" step="0.01" value="${arpGate.val}">
+      </label>
+      <label class="ctrl-lbl" title="How long each note rings ON after its gate closes, in steps — the tail. A gate alone cannot give a note one: without sustain the engine cuts every note dead at its gate, which is what makes an arpeggio sound clipped at any speed. Also a patchbay output.">SUS
+        <input type="range" id="${p}-arp-sus" min="${arpSus.min}" max="${arpSus.max}" step="0.01" value="${arpSus.val}">
       </label>
       <label class="ctrl-lbl" title="Lock the run to the metronome: steps per beat, taking effect while the metronome is ON. FREE uses the RATE slider.">SYNC
         <select id="${p}-arp-sync" aria-label="Sync the arpeggio to the metronome">
@@ -73,6 +77,8 @@ export function wireArpRow(p, rerender) {
     engine.set('arp_rate', +e.target.value));
   document.getElementById(`${p}-arp-gate`)?.addEventListener('input', e =>
     engine.set('arp_gate', +e.target.value));
+  document.getElementById(`${p}-arp-sus`)?.addEventListener('input', e =>
+    engine.set('arp_sustain', +e.target.value));
 }
 
 // Per-frame readout. Rate is a patchbay output, so it can be moving without
@@ -89,13 +95,20 @@ export function updateArpRow(p, poolSize) {
   // notes are going out at.
   const rate = arpvoice.stepsPerSecond();
   const gate = engine.PARAMS.arp_gate.val;
+  const sus = engine.PARAMS.arp_sustain.val;
   const step = arpvoice.sounding();
   const where = poolSize ? ` · ${step >= 0 ? step + 1 : '–'}/${poolSize}` : '';
   // Percent while the note lives inside its step; multiples once it rings
   // past it, because "gate 250%" reads as an error and "×2.5" as a length.
   const gateTxt = gate <= 1 ? `${Math.round(gate * 100)}%` : `×${gate.toFixed(1)}`;
   const sync = synced ? ` · ♩ ${SYNC_LABEL(a.sync)}` : '';
-  const txt = `${rate.toFixed(1)}/s · ≈${Math.round(rate * 30)} BPM · gate ${gateTxt}${sync}${where}`;
+  // The tail is reported as the note's REAL ring, not the slider's wish: the
+  // gate and the sustain share one budget (see noteEnvelope), so a long gate
+  // silently shortens the tail and a readout that echoed the slider would be
+  // saying something the notes are not doing.
+  const { tail } = noteEnvelope(1, gate, sus);
+  const susTxt = tail > 0 ? ` · sus ${Math.round(tail * 100)}%` : '';
+  const txt = `${rate.toFixed(1)}/s · ≈${Math.round(rate * 30)} BPM · gate ${gateTxt}${susTxt}${sync}${where}`;
   if (arpRead.textContent !== txt) arpRead.textContent = txt;
   // A slider left behind by a cable driving the same parameter is worse than
   // no slider: it says the rate is one thing while you hear another.
@@ -103,4 +116,6 @@ export function updateArpRow(p, poolSize) {
   if (rs && document.activeElement !== rs && +rs.value !== engine.PARAMS.arp_rate.val) rs.value = engine.PARAMS.arp_rate.val;
   const gs = document.getElementById(`${p}-arp-gate`);
   if (gs && document.activeElement !== gs && +gs.value !== gate) gs.value = gate;
+  const ss = document.getElementById(`${p}-arp-sus`);
+  if (ss && document.activeElement !== ss && +ss.value !== sus) ss.value = sus;
 }

@@ -15,16 +15,16 @@ import { SCALES } from '../../src/scale.js';
 const KEY = { root: 'D', mode: 'major (ionian)', octave: 4 };
 
 test('the same seed makes the same chart; different seeds differ', () => {
-  const a = generateSong('pitch', { key: KEY, diffId: 'medium', seed: 42 });
-  const b = generateSong('pitch', { key: KEY, diffId: 'medium', seed: 42 });
-  const c = generateSong('pitch', { key: KEY, diffId: 'medium', seed: 43 });
+  const a = generateSong('pitch', { key: KEY, seed: 42 });
+  const b = generateSong('pitch', { key: KEY, seed: 42 });
+  const c = generateSong('pitch', { key: KEY, seed: 43 });
   assert.deepEqual(a.notes, b.notes, 'seeded means reproducible');
   assert.notDeepEqual(a.notes, c.notes, 'and a new seed is a new tune');
 });
 
 test('melodies stay in the key and cadence onto the tonic', () => {
   for (const seed of [1, 7, 99, 1234]) {
-    const s = generateSong('pitch', { key: KEY, diffId: 'hard', seed });
+    const s = generateSong('pitch', { key: KEY, seed });
     const pcs = new Set(SCALES[KEY.mode].map(d => (2 + d) % 12));   // D root = pc 2
     for (const n of s.notes) {
       assert.ok(pcs.has(((n.m % 12) + 12) % 12), `note ${n.m} is in D major (seed ${seed})`);
@@ -39,7 +39,7 @@ test('melodies stay in the key and cadence onto the tonic', () => {
 
 test('degree charts walk without gaps and end dominant → tonic', () => {
   for (const seed of [3, 17, 400]) {
-    const s = generateSong('gesture', { key: KEY, diffId: 'medium', seed });
+    const s = generateSong('gesture', { key: KEY, seed });
     assert.equal(s.laneCount, 7);
     assert.equal(s.laneLabels.length, 7);
     for (let i = 0; i < s.notes.length; i++) {
@@ -59,17 +59,37 @@ test('degree charts walk without gaps and end dominant → tonic', () => {
 
 test('a pentatonic key gets five lanes, and every degree fits them', () => {
   const s = generateSong('radial', {
-    key: { root: 'A', mode: 'minor pentatonic', octave: 4 }, diffId: 'easy', seed: 5,
+    key: { root: 'A', mode: 'minor pentatonic', octave: 4 }, seed: 5,
   });
   assert.equal(s.laneCount, 5);
   for (const n of s.notes) assert.ok(n.deg >= 0 && n.deg < 5);
 });
 
-test('difficulty buys density', () => {
-  const easy = generateSong('gesture', { key: KEY, diffId: 'easy', seed: 11 });
-  const hard = generateSong('gesture', { key: KEY, diffId: 'hard', seed: 11 });
-  assert.ok(hard.notes.length > easy.notes.length,
-    `hard (${hard.notes.length}) outnumbers easy (${easy.notes.length})`);
+// This replaced 'difficulty buys density', which kept passing while proving
+// nothing: it called the generator with 'easy' and 'hard', and the shipped
+// levels are 'single' and 'multi' (chart.js). Neither reached the table it was
+// testing — every real round fell through to one branch. Density belongs to
+// the SEED now, so that is what is measured.
+test('density is the seed\'s, and it actually varies', () => {
+  const lens = new Set(), tempos = new Set();
+  for (let seed = 1; seed <= 24; seed++) {
+    const s = generateSong('gesture', { key: KEY, seed });
+    lens.add(s.notes.length);
+    tempos.add(s.bpm);
+  }
+  assert.ok(lens.size > 3, `only ${lens.size} distinct lengths over 24 seeds`);
+  assert.ok(tempos.size > 3, `only ${tempos.size} distinct tempos over 24 seeds`);
+});
+
+test('a difficulty handed to the generator changes nothing', () => {
+  // It takes no such argument any more — the level is applied to a finished
+  // chart by voiceChart(). Passing one must not quietly re-key anything.
+  const plain = generateSong('pitch', { key: KEY, seed: 7 });
+  for (const d of ['single', 'multi', 'easy', 'hard', undefined]) {
+    const s = generateSong('pitch', { key: KEY, seed: 7, diffId: d });
+    assert.deepEqual(s.notes, plain.notes, `diffId ${d} moved the chart`);
+    assert.equal(s.bpm, plain.bpm);
+  }
 });
 
 test('the picker entries and their ids agree', () => {
