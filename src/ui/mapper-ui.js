@@ -173,6 +173,8 @@ export function renderMapper() {
   // still stored under those kinds is dropped.
   for (const n of WS.allNodes()) if (n.kind === 'sig' || n.kind === 'par') WS.removeNode(n.id);
   if (selectedId != null && !mapper.mappings.some(m => m.id === selectedId)) closeEditor();
+  syncFoldedPorts();
+  paintSockets();
   WS.syncWorkspace();
   cacheLevelRefs();
   if (wiring) document.querySelector(`#ws .port[data-side="${wiring.side}"][data-key="${CSS.escape(wiring.key)}"]`)?.classList.add('armed');
@@ -250,6 +252,7 @@ function socketAt(x, y, wantSide) {
   if (direct && direct.dataset.side === wantSide) return direct;
   let best = null, bestD = DROP_TOL;
   document.querySelectorAll(`#ws .port[data-side="${wantSide}"]`).forEach(s => {
+    if (!shown(s)) return;
     const r = s.getBoundingClientRect();
     if (!r.width) return;
     const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
@@ -347,14 +350,21 @@ function initSocketGestures(root) {
 // node's edge instead: the input side or the output side, at the socket's
 // clamped height, or at the header when the socket is not drawn at all.
 const scrolls = el => { const o = getComputedStyle(el).overflowY; return o === 'auto' || o === 'scroll'; };
+// Drawn, as opposed to merely present: a socket inside a folded tracker
+// group keeps a stale box (the group's content is skipped, not removed), so
+// its rectangle is not the test.
+const shown = el => (el.checkVisibility ? el.checkVisibility() : el.getClientRects().length > 0);
+const socketSel = (side, key) => `.port[data-side="${side}"][data-key="${CSS.escape(key)}"]`;
 function anchor(nodeId, side, key) {
   const owner = WS.ownerOf(nodeId);
   const el = WS.nodeEl(owner);
   if (!el || !WS.isNodeShown(owner)) return null;
   const nr = el.getBoundingClientRect();
-  const edgeX = side === 'in' ? nr.left + 9 : nr.right - 9;
-  const sock = el.querySelector(`.port[data-side="${side}"][data-key="${CSS.escape(key)}"]`);
-  if (sock && sock.getClientRects().length) {
+  const edgeX = side === 'in' ? nr.left : nr.right;   // the sockets sit on the border
+  // A key can have two sockets on one node — its row's, and a folded
+  // group's summary copy — of which at most one is drawn.
+  const sock = [...el.querySelectorAll(socketSel(side, key))].find(shown);
+  if (sock) {
     const r = sock.getBoundingClientRect();
     let cx = r.left + r.width / 2, cy = r.top + r.height / 2, clipped = false;
     for (let sc = sock.parentElement; sc && sc !== el.parentElement; sc = sc.parentElement) {
@@ -575,6 +585,45 @@ if (globalThis.document !== undefined) document.addEventListener('keydown', e =>
   if (k in FP_KEYMAP) { e.preventDefault(); pickMidi(12 * (fpOct + 1) + FP_KEYMAP[k]); }
 });
 
+// ── The sockets' own state ───────────────────────────────────────────────
+
+// A wired socket takes its cable's colour (a dot in the ring). The panels'
+// sockets only: a function node's and a group's come coloured from their
+// own renderers.
+function paintSockets() {
+  const wiredIn = new Map(mapper.mappings.filter(m => m.signal).map(m => [m.audioParam, m.signal]));
+  const wiredOut = new Set(wiredIn.values());
+  document.querySelectorAll('#ws .port').forEach(p => {
+    if (p.closest('.node-fn, .node-group')) return;
+    const key = p.dataset.key;
+    const sig = p.dataset.side === 'out' ? (wiredOut.has(key) ? key : null) : (wiredIn.get(key) ?? null);
+    p.classList.toggle('wired', !!sig);
+    if (sig) p.style.setProperty('--wire', sigColor(sig)); else p.style.removeProperty('--wire');
+  });
+}
+
+// A signal group folded shut (its tracker is off, or the user shut it) hides
+// its rows — but not its cables. Its summary carries a copy of every WIRED
+// socket in it, one under another on the node's border, so the cable still
+// ends on a ring; open the group and the copies go, the rows take over.
+function syncFoldedPorts() {
+  const wired = new Set(mapper.mappings.filter(m => m.signal).map(m => m.signal));
+  document.querySelectorAll('#ws .sig-sec').forEach(d => {
+    const strip = d.querySelector(':scope > summary > .sig-sum-ports');
+    if (!strip) return;
+    const keys = d.open ? []
+      : [...d.querySelectorAll('.sig-sec-body .port-out')].map(p => p.dataset.key).filter(k => wired.has(k));
+    const want = keys.join('\n');
+    if (strip.dataset.keys === want) return;
+    strip.dataset.keys = want;
+    strip.innerHTML = keys.map(k => `
+      <span class="sig-sum-port"><span class="sig-sum-lbl">${sigLabel(k)}</span><button type="button"
+        class="port port-out wired" data-node="${strip.dataset.owner}" data-side="out" data-key="${k}"
+        style="--wire:${sigColor(k)}" aria-label="Output ${sigLabel(k)} — wired; open the group for the rest"
+        title="Output: ${k} — open the group for the rest of its signals"></button></span>`).join('');
+  });
+}
+
 // ── Level bars (function nodes) and cable pulse ──────────────────────────
 
 function cacheLevelRefs() {
@@ -624,6 +673,15 @@ export function initMapperUI() {
   WS.setPatchSource({ sockets, links, socketLabel, socketColor, remove: removeNode, entries: menuEntries });
   WS.onCablesDirty(drawWires);
   const root = WS.viewportEl();
+  // A signal group opening or closing swaps which of a key's sockets is
+  // drawn: refill the summaries, then let the cables find the new ends.
+  // (toggle does not bubble; the capture phase sees it.)
+  document.addEventListener('toggle', e => {
+    if (!e.target.classList?.contains('sig-sec')) return;
+    syncFoldedPorts();
+    paintSockets();
+    WS.relayout();
+  }, true);
   if (!root) return;
   initSocketGestures(root);
   editorEl = document.createElement('div');

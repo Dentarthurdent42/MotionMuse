@@ -47,14 +47,14 @@ export const LS_KEY = 'motionmuse-workspace';
 // lists want less. Anything unlisted takes the default.
 const DEFAULT_W = {
   camera: 440, mic: 440, eeg: 440, emg: 440, models: 440,
-  patch: 300, shader: 440, output: 340,
+  'shader-visual-output': 270, output: 340,
 };
 const PANEL_W = 340;
 // Panels whose content is an open-ended list start with a height, so the
 // list scrolls inside the node instead of running down the canvas.
 const DEFAULT_H = { 'gesture-mode': 300 };
 const MIN_W = 180, MIN_H = 72;
-const COL_X = [0, 480, 830];      // where the three default columns start
+const COL_X = [0, 480, 770];      // where the three default columns start
 const GAP = 12;
 // A group's members stack in columns no taller than this, wrapping to the
 // right: the audio engine is thirteen nodes, and one column of them is a
@@ -460,25 +460,20 @@ function placeDefaults() {
       }
     }
   }
-  // 3. Socket nodes flow inside the patch: signals down the left, parameters
-  //    down the right, functions between them.
+  // 3. Function nodes flow down the middle column.
   for (const n of unplaced) if (!n.placed) placeFlow(n);
   save();
 }
 
-// Where a new signal / parameter / function node goes: in the patch frame
-// if there is one, in a column for its kind, under the last of its kind.
+// Where a new function node goes: the middle column, under whatever is
+// already there at the same level.
 function placeFlow(n) {
-  const patchPanel = state.nodes.get('panel:patch');
-  const base = patchPanel?.placed ? { x: patchPanel.x, y: patchPanel.y + shellH('panel:patch') + GAP }
-                                  : { x: COL_X[M.PATCH_COLUMN], y: 0 };
-  const dx = n.kind === 'sig' ? 0 : n.kind === 'par' ? 370 : 190;
-  const x = base.x + dx;
-  let y = base.y;
+  const x = COL_X[M.PATCH_COLUMN];
+  let y = 0;
   for (const m of state.nodes.values()) {
-    if (m === n || m.kind !== n.kind || !m.placed || m.pinned || m.parent !== n.parent) continue;
+    if (m === n || !m.placed || m.pinned || m.parent !== n.parent) continue;
     const r = measure(m.id);
-    if (r) y = Math.max(y, r.y + r.h + GAP);
+    if (r && Math.abs(r.x - x) < 60) y = Math.max(y, r.y + r.h + GAP);
   }
   n.x = M.snap(x); n.y = M.snap(y); n.placed = true; n.auto = true;
 }
@@ -521,15 +516,13 @@ function restack() {
   if (moved) { dirty(); save(); }
 }
 
-// Get-or-create a socket node from the patchbay. New ones join the patch
-// group and take the next slot in their column.
+// Get-or-create a function node from the patchbay. A new one takes the next
+// slot in the middle column, or the spot it was asked for.
 export function ensureNode(id, init = {}) {
   const had = state.nodes.has(id);
   const n = M.ensure(state, id, init);
-  if (!had) {
-    const pg = state.nodes.get('group:patch');
-    if (pg && !pg.collapsed && init.parent === undefined) n.parent = pg.id;
-    if (Number.isFinite(init.x) && Number.isFinite(init.y)) { n.x = init.x; n.y = init.y; n.placed = true; n.auto = false; }
+  if (!had && Number.isFinite(init.x) && Number.isFinite(init.y)) {
+    n.x = init.x; n.y = init.y; n.placed = true; n.auto = false;
   }
   return n;
 }
@@ -1213,7 +1206,6 @@ export function resetLayout() {
   const fresh = [...state.nodes.values()];
   for (const g of M.DEFAULT_GROUPS) M.ensure(state, g.id, { title: g.title });
   ensureDefaultGroups(fresh);
-  for (const n of fresh) if (n.kind !== 'panel') { const pg = state.nodes.get('group:patch'); if (pg) n.parent = pg.id; }
   placeDefaults();
   syncWorkspace();
   save();

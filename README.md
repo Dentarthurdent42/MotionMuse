@@ -400,10 +400,12 @@ TouchDesigner rather than the way a settings page does:
   of it and nothing else. Double-click a
   group's title to rename it; drop a node inside a frame to add it, drag it
   out to remove it; nest groups in groups. This is how primitive nodes compose
-  into larger ones, and the three containers the app ships with — **INPUTS**,
-  **PATCH** and **AUDIO ENGINE** — are simply groups (PATCH holds the
-  PATCH TOOLS node — PRESET, SAVE, LOAD — and the function nodes, the
-  patchbay's interior). Ungroup them if you like; they are not special.
+  into larger ones, and the two containers the app ships with — **INPUTS**
+  and **AUDIO ENGINE** — are simply groups. Ungroup them if you like; they
+  are not special. Function nodes land in the column between them, where the
+  cables they compute on run; there is no patch panel — the patch *is* the
+  canvas, and what acts on it as a whole (**PRESET**, and SAVE / LOAD of the
+  entire setup as a file, at the foot of that menu) lives in the header.
 - **⋮⋮ TIDY** lays the wired nodes out by what feeds what (inputs left,
   functions between, audio nodes right — a layered graph layout from
   [dagre](vendor/LICENSES.md)) and packs the unwired ones beside them; with
@@ -425,10 +427,16 @@ shows it — filter cutoff on **Filter**, Main Vol on **Output**, KEY ROOT on
 **Pitch Quantize** (`src/params.js` maps each key to its owner). Switches and
 choices are sockets too (`src/controls.js`): FILTER TYPE, KEY SCALE, TEMPO,
 GATE, ARP ON and the rest take a cable like any slider, quantised by default
-onto their options. A cable is drawn between its two sockets across the
-canvas; when one of them is out of sight (its signal group folded, its node
-folded or collapsed, its row scrolled out of the node's body) the cable ends
-at that node's edge and is drawn dashed, so a wire never points at nothing.
+onto their options. The sockets **straddle the node's border** — inputs on
+the left edge, outputs on the right, the way pins sit on a Blueprint or a
+geometry node — and the cables are drawn beneath the nodes, so every cable
+visibly starts on one ring and ends on another. A signal group folded shut
+(its tracker is off, or you closed it) keeps the sockets of its *wired*
+signals in its summary, one under another on the border, so a cable never
+ends on a closed box; open the group and the rows take over. When a socket
+really is out of sight (a node folded or collapsed, a row scrolled out of a
+node that was given a height) the cable ends at that node's edge and is
+drawn dashed, so a wire never points at nothing.
 
 The layout — every position, size, fold, pin, group and the view — persists in
 one localStorage key and travels in a saved file (not in a shared link, which
@@ -1045,8 +1053,8 @@ class hidden by CSS unless `<body class="dev">`.
 
 ## Shader — visual output
 
-The **Shader** node ships beside the **PATCH** group, not in the AUDIO ENGINE
-one: it is driven by signals and mappings, so it belongs beside the wiring that
+The **Shader** node ships in the middle column, beside the function nodes,
+not in the AUDIO ENGINE group: it is driven by signals and mappings, so it belongs beside the wiring that
 feeds it rather than among the synth's parameters. It renders a WebGL fragment shader (plasma / warp / bars)
 that reacts to the live audio level and two signals you pick (default
 `hand_R_x` / `hand_R_y`). It honors `prefers-reduced-motion` (freezes the time
@@ -2374,7 +2382,7 @@ mid-song discards the run.
 
 ## Saving & loading
 
-**SAVE** (in the mapper toolbar) downloads the entire instrument — every
+**SAVE** (at the foot of the header's PRESET menu) downloads the entire instrument — every
 mapping plus all audio parameters, waveform/filter choices, the pitch-quantise
 tuning, the volume-step configuration, and everything gesture-side (custom
 recordings, hidden built-ins, calibrated templates, the chord key and its degree
@@ -2756,15 +2764,19 @@ is honest about it rather than papering over it with a large tolerance.
 
 ## UI/UX tests
 
-The test suite takes Playwright screenshots across four viewports and evaluates them with Claude Vision:
+**Disabled until further notice.** This suite takes Playwright screenshots
+across four viewports and has Claude Vision grade them — an API call per
+viewport, judged rather than asserted — so it is switched off in CI and
+`npm run test:ui` exits at once. The deterministic guards (contrast, tutorial,
+service worker, audio launch, layout) are what gate a change. To run it anyway:
 
 ```bash
 npm install
-ANTHROPIC_API_KEY=sk-ant-… npm run test:ui
+MOTIONMUSE_UI_TESTS=1 ANTHROPIC_API_KEY=sk-ant-… npm run test:ui
 # open test-results/ui-ux-report.html
 ```
 
-Without `ANTHROPIC_API_KEY` the screenshots are still saved but LLM evaluation is skipped (CI exits 0).
+Without `ANTHROPIC_API_KEY` the screenshots are still saved but LLM evaluation is skipped.
 
 ## Inference HUD (dev mode)
 

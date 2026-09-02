@@ -111,22 +111,22 @@ export const TOUR_STEPS = [
 
   // ── Tone Mode ──
   {
-    id: 'patch-nodes', section: 'patch', modes: ['osc'], target: '.panel-map', title: 'Tone Mode',
+    id: 'patch-nodes', section: 'camera', modes: ['osc'], target: '#cam-signals', title: 'Tone Mode',
     body: 'Signals drive the synth continuously, and the wiring is on the ' +
-          'canvas: every <b>signal</b> is a node with an output socket ●, ' +
-          'every <b>parameter</b> a node with an input socket, and a cable ' +
-          'between them is the connection. Drag ● to ● to connect. One ' +
-          'signal can drive several parameters.',
+          'canvas: every <b>signal</b> is an output socket ● on the node that ' +
+          'measures it, every <b>parameter</b> an input socket ● on the node ' +
+          'that owns it, and a cable between them is the connection. Drag ● ' +
+          'to ● to connect. One signal can drive several parameters.',
   },
   {
-    id: 'cable-editor-node', section: 'patch', modes: ['osc'], target: '.panel-map', title: 'Edit a cable',
-    body: 'Click a cable, or select the parameter node it runs into: the node ' +
-          'opens its range, curve, steps and invert. Oscillator-frequency ' +
+    id: 'cable-editor-node', modes: ['osc'], target: '#add-node-btn', title: 'Edit a cable',
+    body: 'Click a cable, or right-click the input it runs into: its editor ' +
+          'opens with range, curve, steps and invert. Oscillator-frequency ' +
           'cables add a piano keyboard for picking note ranges. A <b>ƒ</b> ' +
           'function node (from <b>+ NODE</b>) computes between cables.',
   },
   {
-    id: 'preset', section: 'patch', modes: ['osc'], target: '#preset-btn', title: 'Presets',
+    id: 'preset', modes: ['osc'], target: '#preset-btn', title: 'Presets',
     body: '<b>PRESET</b> loads a complete patch: right hand height plays ' +
           'pitch, pinch controls volume. <b>Your setups</b> sit above the ' +
           'built-in ones — anything you named in SHARE, or opened from a ' +
@@ -179,9 +179,10 @@ export const TOUR_STEPS = [
           '<b>off</b> (a nod is also just a nod); the buttons work either way.',
   },
   {
-    id: 'save-load', section: 'patch', target: '#save-btn', title: 'Save and load',
-    body: '<b>SAVE</b> downloads the whole setup as one file; <b>LOAD</b> ' +
-          'restores it. The session also auto-saves locally.',
+    id: 'save-load', target: '#preset-btn', title: 'Save and load',
+    body: 'At the foot of the PRESET menu, <b>SAVE</b> downloads the whole ' +
+          'setup as one file and <b>LOAD</b> restores it. The session also ' +
+          'auto-saves locally.',
   },
   {
     id: 'audio', target: '#audio-btn', title: 'Sound',

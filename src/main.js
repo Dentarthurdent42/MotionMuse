@@ -399,6 +399,8 @@ startAudio();
 // PRESET opens a menu of starting patches; each reports what it still needs
 // switched on (camera / face / gaze) rather than loading silently.
 initPresetMenu({
+  onSave: saveSetup,
+  onLoad: loadSetup,
   onApply: async (preset, missing) => {
     // A built-in patch is not one of your named setups: whatever was playing
     // has been replaced, so the name on the camera view goes with it — and so
@@ -508,14 +510,15 @@ function refreshFromState() {
   if (engine.started) renderAudioPanel();
 }
 
-document.getElementById('save-btn').addEventListener('click', () => {
+// SAVE and LOAD sit at the foot of the PRESET menu (initPresetMenu above
+// calls these). Declarations, so the menu can be set up before this point.
+function saveSetup() {
   preset.downloadFile();
   preset.saveLocal();
   toast('Settings saved');
-});
-
+}
 const loadFile = document.getElementById('load-file');
-document.getElementById('load-btn').addEventListener('click', () => loadFile.click());
+function loadSetup() { loadFile.click(); }
 loadFile.addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;

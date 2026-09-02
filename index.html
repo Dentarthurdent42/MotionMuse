@@ -34,7 +34,15 @@
     <div class="hsep"></div>
     <div class="hbtns">
       <button class="btn" id="add-node-btn" aria-haspopup="menu"
-              title="Add a node — a signal, a parameter, a function, or a closed panel. Also: right-click or double-click the canvas">+ NODE</button>
+              title="Add a node — a function node, or a closed panel. Also: right-click or double-click the canvas">+ NODE</button>
+      <!-- The patch as a whole: starting patches, your saved setups, and the
+           SAVE / LOAD of the entire instrument as a file. The wiring itself
+           is on the canvas, socket to socket. -->
+      <div class="hdr-menu" id="preset-wrap">
+        <button class="btn" id="preset-btn"
+                title="Starting patches and your saved setups — and SAVE / LOAD of the whole setup as a file">PRESET</button>
+        <input type="file" id="load-file" accept="application/json,.json" hidden>
+      </div>
       <button class="btn" id="fit-btn"
               title="Fit everything in view (Home). With nodes selected, fit those (F)">⌂ FIT</button>
       <button class="btn" id="tidy-btn"
@@ -197,23 +205,6 @@
         <div class="audio-section-label">EMG Input <span class="uc-badge">under construction</span></div>
         <div class="quant-notes">Electromyography — not yet implemented. Muscle activation as
           continuous signals, mappable in the patchbay exactly like the camera's.</div>
-      </div>
-
-      <!-- The patch: what acts on the whole wiring. The cables themselves are
-           on the canvas — every signal, parameter and function node is a node
-           beside this one — so this holds the starting patches and the
-           save/load of the whole setup. -->
-      <div class="panel panel-map" data-sec="patch">
-        <div class="ph">PATCH TOOLS</div>
-        <div class="mapper-toolbar">
-          <button class="btn" id="preset-btn">PRESET</button>
-          <button class="btn" id="save-btn" title="Download all mappings, audio settings and tuning as a file">SAVE</button>
-          <button class="btn" id="load-btn" title="Load mappings and settings from a saved file">LOAD</button>
-          <input type="file" id="load-file" accept="application/json,.json" hidden>
-        </div>
-        <div class="mapper-hint">Every signal is an output ● on the node that measures it; every parameter is an
-          input ● on the node that owns it. Drag ● to ● to wire, click a cable to shape it. <b>+ NODE</b> adds a
-          function node that computes between cables; select nodes and <b>Ctrl+G</b> to fold them into one.</div>
       </div>
 
       <!-- Shader controls: driven by signals and mappings, so it sits beside

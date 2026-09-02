@@ -48,7 +48,7 @@ export function savedWhen(iso, now = Date.now()) {
 // `onApplyConfig` restores a whole saved snapshot rather than a patch, so it is
 // a different callback from `onApply`: the caller has to refresh the panels and
 // decide whether the UI keys it carries mean a reload, exactly as LOAD does.
-export function initPresetMenu({ onApply, onApplyConfig, state }) {
+export function initPresetMenu({ onApply, onApplyConfig, onSave, onLoad, state }) {
   const btn = document.getElementById('preset-btn');
   if (!btn) return;
 
@@ -90,7 +90,18 @@ export function initPresetMenu({ onApply, onApplyConfig, state }) {
           <span class="preset-hint">${p.hint}</span>
           ${missing.length ? `<span class="preset-needs">needs ${missing.join(' + ')}</span>` : ''}
         </button>`;
-      }).join('');
+      }).join('') +
+      // The whole instrument to and from a file, at the foot of the same menu:
+      // it is the patch as a whole either way.
+      `<div class="preset-title">FILE</div>
+       <div class="preset-file">
+         <button class="btn" id="save-btn" role="menuitem"
+                 title="Download all mappings, audio settings and tuning as a file">SAVE</button>
+         <button class="btn" id="load-btn" role="menuitem"
+                 title="Load mappings and settings from a saved file">LOAD</button>
+       </div>`;
+    pop.querySelector('#save-btn').addEventListener('click', () => { setOpen(false); onSave?.(); });
+    pop.querySelector('#load-btn').addEventListener('click', () => { setOpen(false); onLoad?.(); });
     pop.querySelectorAll('[data-preset]').forEach(el =>
       el.addEventListener('click', () => {
         const preset = mapper.applyPreset(el.dataset.preset);

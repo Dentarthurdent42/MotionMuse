@@ -5,7 +5,9 @@
 // the microphone's four on the Microphone node, the beat clock's on the
 // Metronome — grouped by tracker, each row a socket, a live value and a bar.
 // Drag a row's ● to a parameter's ● anywhere on the canvas to wire it. A row
-// still copies its bus key when clicked.
+// still copies its bus key when clicked. A group folded shut keeps the
+// sockets of its wired signals in its summary (the patchbay fills that strip),
+// so a cable never ends on a closed box.
 //
 // One channel line: its name, its number, and a bar. The bar column is a
 // fixed width for every channel of every signal, so two bars under one
@@ -86,6 +88,7 @@ export function buildSigPanel() {
         <summary class="sig-group">
           <span class="sig-group-name">${g}</span>
           <span class="sig-group-meta">${bases.length}${live ? '' : ' · off'}</span>
+          <span class="sig-sum-ports" data-owner="${owner}"></span>
         </summary>
         <div class="sig-sec-body">`;
       bases.forEach(({ k, s }) => {

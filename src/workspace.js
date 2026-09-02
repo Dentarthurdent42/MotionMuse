@@ -41,9 +41,6 @@ export const keyOf  = id => String(id).slice(String(id).indexOf(':') + 1);
 export const DEFAULT_GROUPS = [
   { id: 'group:inputs', title: 'INPUTS', col: 0, order: 0,
     members: ['panel:camera', 'panel:mic', 'panel:eeg', 'panel:emg', 'panel:models'] },
-  // The patch: the PATCH TOOLS panel plus every function node — so the
-  // computing part of the wiring can be collapsed into one node.
-  { id: 'group:patch', title: 'PATCH', col: 1, order: 0, members: ['panel:patch'] },
   { id: 'group:audio', title: 'AUDIO ENGINE', col: 2, order: 0,
     members: ['panel:output', 'panel:oscillators', 'panel:filter', 'panel:gesture-mode',
               'panel:chord-filter', 'panel:radial-mode', 'panel:metronome', 'panel:sound-kit',
@@ -51,11 +48,11 @@ export const DEFAULT_GROUPS = [
 ];
 export const DEFAULT_COLUMNS = {
   'group:inputs':  { col: 0, order: 0 },
-  'group:patch':   { col: 1, order: 0 },
-  'panel:shader':  { col: 1, order: 1 },
+  'panel:shader-visual-output': { col: 1, order: 1 },
   'group:audio':   { col: 2, order: 0 },
 };
-// Sockets nodes (sig / par / fn) are placed in the patch column, in flow order.
+// Function nodes are placed in the middle column — between the inputs and
+// the audio engine, where the cables they compute on run — in flow order.
 export const PATCH_COLUMN = 1;
 
 export const GRID = 8;

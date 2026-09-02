@@ -6,6 +6,15 @@ import { fileURLToPath } from 'url';
 import { dirname, join, extname } from 'path';
 import { generateReport } from './report.js';
 
+// DISABLED until further notice: this suite grades screenshots with Claude
+// Vision — an API call per viewport, judged rather than asserted. The
+// deterministic guards (contrast, tutorial, service worker, audio launch,
+// layout) are what gate a change. Set MOTIONMUSE_UI_TESTS=1 to run it.
+if (process.env.MOTIONMUSE_UI_TESTS !== '1') {
+  console.log('tests/ui-ux is disabled — set MOTIONMUSE_UI_TESTS=1 to run the Claude Vision pass.');
+  process.exit(0);
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '../..');
 const OUT = join(ROOT, 'test-results');
