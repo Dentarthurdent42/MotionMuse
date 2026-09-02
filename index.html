@@ -84,7 +84,10 @@
            INPUTS group: which pose model runs is a property of this source,
            and a node can sit next to what it belongs to. -->
       <div class="audio-section panel-cam" data-sec="camera">
-        <div class="audio-section-label cam-label">Camera Input</div>
+        <div class="audio-section-label cam-label">Camera Input
+          <span class="head-sock"><button type="button" class="port port-in" data-side="in" data-key="camera_on"
+                  aria-label="Input Camera — connect a signal here"
+                  title="Input: camera_on — drag a signal's ● here to start and stop the camera with it"></button></span></div>
         <div id="video-wrap">
           <video id="video" autoplay playsinline muted></video>
           <canvas id="overlay"></canvas>
@@ -219,7 +222,10 @@
            recreates the canvas or drops the click-to-mute handler; the level
            rows are rendered into #output-params by audio-ui.js. -->
       <div class="audio-section" data-sec="output">
-        <div class="audio-section-label">Output</div>
+        <div class="audio-section-label">Output
+          <span class="head-sock"><button type="button" class="port port-in" data-side="in" data-key="mute"
+                  aria-label="Input Mute — connect a signal here"
+                  title="Input: mute — drag a signal's ● here to mute and unmute with it"></button></span></div>
         <div class="viz-wrap" id="viz-wrap" title="Tap to mute / unmute">
           <canvas id="viz-canvas"></canvas>
           <div id="viz-muted" hidden>🔇 MUTED · PRESS <b id="mute-key-hint">SPACE</b></div>

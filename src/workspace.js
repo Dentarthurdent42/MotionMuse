@@ -43,7 +43,7 @@ export const DEFAULT_GROUPS = [
     members: ['panel:camera', 'panel:mic', 'panel:eeg', 'panel:emg', 'panel:models'] },
   { id: 'group:audio', title: 'AUDIO ENGINE', col: 2, order: 0,
     members: ['panel:output', 'panel:oscillators', 'panel:filter', 'panel:gesture-mode',
-              'panel:chord-filter', 'panel:radial-mode', 'panel:metronome', 'panel:sound-kit',
+              'panel:chord-voice', 'panel:chord-filter', 'panel:radial-mode', 'panel:metronome', 'panel:sound-kit',
               'panel:play-along', 'panel:looper', 'panel:pitch-quantize', 'panel:volume-quantize'] },
 ];
 export const DEFAULT_COLUMNS = {

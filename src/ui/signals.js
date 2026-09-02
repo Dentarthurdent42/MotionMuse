@@ -50,6 +50,18 @@ const groupLive = (g, owner) => {
   return true;
 };
 
+// The switch that runs each tracker group, as an input socket on the group's
+// summary — on the node's left edge, so wiring a pulse into HAND L switches
+// the left-hand tracker. Depth and gesture ride on pose and the hands.
+const GROUP_SWITCH = {
+  'hand l': 'track_hands_l', 'hand r': 'track_hands_r', pose: 'track_pose',
+  face: 'track_face', gaze: 'track_gaze',
+};
+const switchPort = key => `
+  <span class="sig-sum-in"><button type="button" class="port port-in" data-side="in" data-key="${key}"
+          aria-label="Input ${key} — connect a signal to switch this tracker"
+          title="Input: ${key} — a cable here switches the tracker on and off"></button></span>`;
+
 // Groups the user has opened or closed by hand. Their choice outranks the
 // automatic behaviour from then on.
 const manual = new Set();
@@ -86,6 +98,7 @@ export function buildSigPanel() {
       const bases = sigs.filter(({ s }) => !s.of);
       html += `<details class="sig-sec" data-group="${g}"${live ? ' open' : ''}>
         <summary class="sig-group">
+          ${owner === 'panel:camera' && GROUP_SWITCH[g] ? switchPort(GROUP_SWITCH[g]) : ''}
           <span class="sig-group-name">${g}</span>
           <span class="sig-group-meta">${bases.length}${live ? '' : ' · off'}</span>
           <span class="sig-sum-ports" data-owner="${owner}"></span>

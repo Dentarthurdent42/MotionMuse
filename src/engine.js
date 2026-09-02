@@ -614,8 +614,12 @@ export const engine = (() => {
 
   // ── Full audio-engine state for save/load ────────────────────────────
   function snapshot() {
+    // The audio parameters only. A control (src/controls.js) is a view of
+    // state the snapshot already carries — the tuning, the ladder, the
+    // envelopes, the waveforms, the modes' own saved state — and repeating
+    // sixty of them here made a shared link's QR code too dense to scan.
     const params = {};
-    for (const k in PARAMS) params[k] = PARAMS[k].val;
+    for (const k in PARAMS) if (!PARAMS[k].control) params[k] = PARAMS[k].val;
     return { params, tuning: { ...tuning }, volStep: { ...volStep },
              oscCount, oscTypes: getOscTypes(),
              filterType, chordFilterType,
@@ -625,7 +629,7 @@ export const engine = (() => {
              // with it off — the one part of the patch a snapshot could not
              // describe.
              shepard: { lead: shepLead, chord: shepChord },
-             chordEnv: { ...chordEnv } };
+             chordEnv: { ...chordEnv }, leadEnv: { ...leadEnv, enabled: leadEnvOn } };
   }
   function restore(s) {
     if (!s) return;
@@ -636,6 +640,7 @@ export const engine = (() => {
     if (s.filterType) setFilterType(s.filterType);
     if (s.chordFilterType) setChordFilterType(s.chordFilterType);
     if (s.chordEnv) setChordEnv(s.chordEnv);
+    if (s.leadEnv) setLeadEnv(s.leadEnv);
     // Before the params: setShepard rebuilds the affected bank, and a rebuild
     // after them would hand the new voices their defaults instead.
     if (s.shepard) setShepard(s.shepard);

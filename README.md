@@ -425,10 +425,14 @@ microphone's signals sit on **Microphone**, the metronome's pulses and ramps
 on **Metronome**, and every parameter is a socket ● beside the control that
 shows it — filter cutoff on **Filter**, Main Vol on **Output**, KEY ROOT on
 **Pitch Quantize** (`src/params.js` maps each key to its owner). Switches and
-choices are sockets too (`src/controls.js`): FILTER TYPE, KEY SCALE, TEMPO,
-the number of OSCILLATORS, a mode's or the microphone's ON/OFF,
-GATE, ARP ON and the rest take a cable like any slider, quantised by default
-onto their options. The sockets **straddle the node's border** — inputs on
+choices are sockets too (`src/controls.js`) — every one, on every node: a
+mode's, the microphone's and the camera's ON/OFF, each tracker's (on its
+group's summary in the camera node), the output's MUTE, the number of
+OSCILLATORS and each one's waveform, the kit, the key and the tuning, the
+metronome's TIME and click, the loop pedal's transport (a pulse presses the
+pedal, UNDO, STOP or CLEAR) and its gesture, the quantiser's ladder, both
+envelopes, the arpeggiator. A cable into a choice is quantised by default
+onto its options. The sockets **straddle the node's border** — inputs on
 the left edge, outputs on the right, the way pins sit on a Blueprint or a
 geometry node — and the cables are drawn beneath the nodes, so every cable
 visibly starts on one ring and ends on another. A signal group folded shut
@@ -1078,8 +1082,9 @@ labels, and icon **plus** text — never icon-only). Toggle controls expose
 ## Gesture mode
 
 **Gesture Mode** (formerly *Chord Mode*) is one section holding both halves of
-playing by gesture: the instrument on top — key, voicing, expression, the
-degree assignments, the arpeggiator and envelope — and the **GESTURE
+playing by gesture: the instrument on top — voicing, expression, the degree
+assignments (the key, the envelope and the arpeggiator both modes share sit
+on the **CHORD VOICE** node beside it) — and the **GESTURE
 CONFIGURATIONS** library folded underneath, where a gesture is calibrated,
 recorded, renamed and removed. They were two sections once, and each grew
 read-only echoes of the other to stay legible (chips on the shape rows
@@ -1565,7 +1570,8 @@ tone and read the intervals back. Harmonic minor therefore comes out
 
 Holding an assigned gesture sustains its chord; releasing it lets the chord go
 (hold-to-sound), shaped by a proper **ADSR** — attack, decay, sustain level and
-release, set in the Gesture Mode section. The envelope sits on the shared chord
+release, set on the **CHORD VOICE** node both play modes sound through (see
+Radial mode below). The envelope sits on the shared chord
 gain rather than per voice: the whole chord is one note here (the voices are
 its intervals), so one envelope is what a player means by "the chord's attack".
 Retriggering mid-release starts from the dying value rather than snapping to
@@ -1925,35 +1931,35 @@ and it keeps a minimum depth component, so an edge-on ring stays a readable
 ellipse instead of collapsing to a line — applied to the maths and the
 picture together, so what you see is what is measured.
 
-Three things are deliberately **shared with Gesture Mode** rather than owned
-here:
+**What both modes sound through lives on one node, CHORD VOICE**, between
+them and the Chord Filter: the **key** (root, mode, octave, and FOLLOW to
+Pitch Quantize — nobody plays two scales at once), the **7ths** (one button
+per degree, labelled with the numeral it now sounds, `V` → `V7` — a 7th
+belongs to the chord rather than to whatever is playing it), the chord
+**envelope**, the **arpeggiator** and the chord bank's **SHEPARD** switch.
+Each mode used to carry its own copy of every one of these rows, rendering
+from the same state, so a change in one panel silently moved the other and a
+row hidden with a switched-off mode was a setting nothing on screen could
+reach. Now there is one row for each, every one an input socket, and the
+modes hold only what is theirs: what names a chord, what points at one, what
+sounds it.
 
-- **The key.** The KEY row edits the *same* root/mode/octave (with the same
-  FOLLOW to Pitch Quantize) that gesture mode plays in — nobody plays two
-  scales at once, so there is one scale to pick, reachable from either panel,
-  and the two rows can never disagree because they render from one state.
-- **The voicing.** **PLAY** offers the same choice: **SINGLE NOTES** (the
-  default here — pointing reads as melody) or **CHORDS**, the degree's whole
-  chord with its 7ths as set in the gesture panel.
+Two things the modes still share by construction rather than by a node:
+
+- **The voicing.** **PLAY** offers the same choice in both: **SINGLE NOTES**
+  (the default here — pointing reads as melody) or **CHORDS**, the degree's
+  whole chord with its 7ths.
 - **The accidentals.** In note voicing the hand *not* wearing the menu bends
   the note with the same two shapes (**Thumbs Up** = ♯, **Thumbs Down** = ♭ by
   default — one setting, gesture mode's). A thumb turning over under a held
   note re-attacks it at the new pitch, at the held strength.
-- **The 7ths.** In chord voicing a **7THS** row appears, one button per
-  section, labelled with the numeral that degree currently sounds — so the
-  label says what the toggle did (`V` → `V7`). It writes the same table
-  gesture mode's per-chord **7th** buttons do, because a 7th belongs to the
-  chord rather than to whatever is playing it. It has to live here as well as
-  there: gesture mode's rows are hidden whenever it is switched off, and
-  enabling radial mode switches it off, so without this row the ring's
-  chords honoured a 7ths table nothing on screen could reach.
 
 **Shepard tones are the default voice** for this mode: enabling the menu
-switches the chord bank's SHEPARD on (see Gesture Mode), because a menu that
-wraps around a joint pairs naturally with a timbre that wraps around the
-octave — runs around the ring climb without ever leaving their register.
-Toggling SHEPARD from the radial panel overrules the default for good; the
-auto-on never fights a choice you have made.
+switches the chord bank's SHEPARD on, because a menu that wraps around a
+joint pairs naturally with a timbre that wraps around the octave — runs
+around the ring climb without ever leaving their register. Toggling SHEPARD
+on the Chord Voice node overrules the default for good; the auto-on never
+fights a choice you have made.
 
 Only **one** of Radial Mode and Gesture Mode is on at a time — both voice
 through the same chord bank, and two writers on one bank is a race, not
@@ -1963,10 +1969,8 @@ and setting a mode up before switching to it is half the point of having two —
 hiding the place a chord's 7th or the key is set the moment you switch away
 made every shared setting unreachable from where you were standing.
 
-The section also carries the **chord ADSR** — the same four sliders gesture
-mode has, writing the same envelope, since both modes voice through the same
-bank. It shapes entry-speed notes; in the signal-volume modes there is no
-envelope to run — you are the envelope.
+The **chord ADSR** on the Chord Voice node shapes entry-speed notes; in the
+signal-volume modes there is no envelope to run — you are the envelope.
 
 The ring is drawn on the **camera overlay**, under the skeletons, in the
 overlay's own mirrored space, with note-name labels (numerals in chord

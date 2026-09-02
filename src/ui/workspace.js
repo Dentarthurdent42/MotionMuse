@@ -494,8 +494,12 @@ function restack() {
   levels.push(null);
   let moved = false;
   for (const parent of levels) {
+    // Every placed node in the column takes part: the auto-placed ones are
+    // moved, a node placed by hand stays where it was put — and the stack
+    // flows AROUND it rather than through it, or the nodes below a
+    // hand-placed one would close up over it.
     const kids = [...state.nodes.values()].filter(n =>
-      n.parent === parent && n.auto && n.placed && !n.pinned
+      n.parent === parent && n.placed && !n.pinned
       && M.isShown(state, n.id) && isVisible(els.get(n.id)));
     const cols = [];
     for (const n of kids.sort((a, b) => a.x - b.x)) {
@@ -507,7 +511,11 @@ function restack() {
       col.items.sort((a, b) => a.y - b.y);
       let y = col.items[0].y;
       for (const n of col.items) {
-        if (Math.abs(n.y - y) > 0.5) { n.y = y; moved = true; const el = els.get(n.id); if (el) applyNode(n, el); }
+        if (n.auto) {
+          if (Math.abs(n.y - y) > 0.5) { n.y = y; moved = true; const el = els.get(n.id); if (el) applyNode(n, el); }
+        } else {
+          y = Math.max(y, n.y);
+        }
         y += (measure(n.id)?.h ?? 0) + GAP;
       }
     }

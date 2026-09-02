@@ -9,7 +9,7 @@ import { mapper, trackersFor }              from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
 import { buildSigPanel, updateSigPanel, syncSigGroups } from './ui/signals.js';
 import { renderMapper, updateMapperBars, initMapperUI } from './ui/mapper-ui.js';
-import { registerControls, syncControls, onControlChange } from './controls.js';
+import { registerControls, syncControls, onControlChange, defineControls } from './controls.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
 import { initFullscreen, updateFsOverlay, fullscreen } from './ui/fullscreen.js';
@@ -135,7 +135,7 @@ function stopCamera() {
 }
 document.getElementById('cv-stop').addEventListener('click', stopCamera);
 
-document.getElementById('cv-btn').addEventListener('click', async () => {
+async function startCamera() {
   const btn = document.getElementById('cv-btn');
   if (cvSource.running) return;          // the picture hides this button anyway
   btn.disabled = true;
@@ -163,7 +163,8 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
     btn.disabled = false;
     console.error(err);
   }
-});
+}
+document.getElementById('cv-btn').addEventListener('click', startCamera);
 
 // ── Face / gaze tracking toggles (opt-in, camera must be running) ────────
 const faceToggle = (btnId, key, setter, label) => {
@@ -261,6 +262,50 @@ const syncers = [
 ];
 function syncAllTracking() { syncers.forEach(fn => fn()); syncSigGroups(); }
 syncAllTracking();
+
+// The camera and its trackers as inputs (their state is here). A tracker
+// switch follows its cable; face and gaze need a running camera, so a cable
+// into them while it is off is honoured when it starts. The camera itself
+// remembers what the cable last asked, since a refused start never catches
+// up with it.
+const trackCtl = (label, get, set) => ({
+  label, min: 0, max: 1, toggle: true,
+  read: () => (get() ? 1 : 0),
+  apply: v => { const on = Math.round(v) >= 1; if (on === !!get()) return; set(on); },
+});
+defineControls({
+  camera_on: {
+    label: 'Camera', min: 0, max: 1, toggle: true,
+    read: () => (cvSource.running ? 1 : 0),
+    apply: (() => {
+      let last = null;
+      return v => {
+        const on = Math.round(v) >= 1;
+        if (on === last) return;
+        last = on;
+        if (on && !cvSource.running) startCamera();
+        else if (!on && cvSource.running) stopCamera();
+      };
+    })(),
+  },
+  track_hands_l: trackCtl('Left Hand',  () => cvSource.handsL, on => { cvSource.setTracking({ handsL: on }); syncAllTracking(); }),
+  track_hands_r: trackCtl('Right Hand', () => cvSource.handsR, on => { cvSource.setTracking({ handsR: on }); syncAllTracking(); }),
+  track_pose:    trackCtl('Pose',       () => cvSource.poseOn, on => { cvSource.setTracking({ pose: on }); syncAllTracking(); }),
+  track_face:    trackCtl('Face', () => faceSource.faceOn, on => {
+    rememberFaceIntent(on, faceSource.gazeOn);
+    if (cvSource.running) faceSource.setFace(on).then(syncAllTracking).catch(() => {});
+  }),
+  track_gaze:    trackCtl('Gaze', () => faceSource.gazeOn, on => {
+    rememberFaceIntent(faceSource.faceOn, on);
+    if (cvSource.running) faceSource.setGaze(on).then(syncAllTracking).catch(() => {});
+  }),
+});
+// The mute switch on the Output node, as a cable moves it.
+onControlChange(key => { if (key === 'mute') syncMuteUI(); });
+// Whatever a click or a change did to the instrument, the parameters that
+// mirror its switches and choices read it back — one listener, every panel.
+document.addEventListener('click',  () => syncControls(), true);
+document.addEventListener('change', () => syncControls(), true);
 
 // ── Developer mode ───────────────────────────────────────────────────────
 // The toggle itself lives in the settings popover (ui/settings.js), which is

@@ -24,10 +24,9 @@ export function arpRowHTML(p) {
   const arpRate = engine.PARAMS.arp_rate, arpGate = engine.PARAMS.arp_gate;
   const arpSus = engine.PARAMS.arp_sustain;
   const synced = a.sync > 0 && metronome.on;
-  // The arpeggiator is one instrument shared by both play modes; its input
-  // sockets live on the Gesture Mode node (see src/params.js), so only that
-  // instance of the row carries them.
-  const sock = key => (p === 'ck' ? inPort(key) : '');
+  // The arpeggiator is one instrument shared by both play modes; its row —
+  // and its input sockets — live on the CHORD VOICE node (src/ui/voice-ui.js).
+  const sock = key => (p === 'cv' ? inPort(key) : '');
   return `
     <div class="chord-arp">
       <span class="chord-key-lbl">${sock('arp_on')}ARP</span>
