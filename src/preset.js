@@ -40,12 +40,9 @@ const LEGACY_TAGS = ['biosignal-sound'];
 // the store means a module that is not loaded yet cannot cost us a key.
 const UI_KEYS = {
   theme:       'motionmuse-theme',
-  sections:    'motionmuse-sections',
-  secOrder:    'motionmuse-sec-order',
-  secFolded:   'motionmuse-sec-folded',
-  secHome:     'motionmuse-sec-home',
-  panelWidths: 'motionmuse-panel-widths',
-  camHeight:   'motionmuse-cam-height',
+  // The workspace: where every node sits, its size, its group, whether it is
+  // folded, pinned or closed, and the view. One key, because it is one thing.
+  workspace:   'motionmuse-workspace',
   tracking:    'motionmuse-tracking',
   face:        'motionmuse-face',
   models:      'motionmuse-posemodel',

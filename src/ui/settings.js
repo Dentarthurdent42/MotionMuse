@@ -14,7 +14,7 @@ import { devmode }                   from '../devmode.js';
 import { buildInfo, buildLabel }        from '../build.js';
 import { keyLabel, getBinding, setBinding, captureNextKey } from './hotkeys.js';
 import { uicontrol } from '../uicontrol.js';
-import { resetLayout }               from './sections.js';
+import { resetLayout }               from './workspace.js';
 
 let pop = null;
 
@@ -64,7 +64,7 @@ function build() {
          patches and presets with it. -->
     <label class="set-row">LAYOUT
       <button class="wave-btn" id="layout-reset-btn" type="button"
-              title="Put every section back where the app puts it, forgetting any you have moved, resized or collapsed. Gestures, patches and presets are untouched.">RESET</button>
+              title="Put every node back where the app puts it, forgetting any you have moved, resized, grouped, pinned or closed. Gestures, patches and presets are untouched.">RESET</button>
     </label>
     <!-- Which build is on screen. Here rather than only in the console because
          the question it answers — "am I looking at a cached copy?" — comes up

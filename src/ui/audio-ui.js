@@ -1,12 +1,12 @@
 import { engine }                    from '../engine.js';
 import { mapper }                    from '../mapper.js';
-import { renderMapper, PARAM_CATS }  from './mapper-ui.js';
+import { renderMapper, PARAM_CATS, wireDragOut } from './mapper-ui.js';
 import { SCALES, TUNINGS, NOTE_NAMES } from '../scale.js';
 import { makeKbdView, midiOf, OSC_COLS } from './keyboard.js';
 import { isDesktop } from './viewport.js';
 import { STEP_OPTS, FLOOR_OPTS, EDGE_KEYS, GATE_AT_OPTS, GATE_AT_DEFAULT,
          makeDynamics } from '../dynamics.js';
-import { enhanceSections } from './sections.js';
+import { adoptSections } from './workspace.js';
 import { KITS, KIT_PARAM_KEYS, applyKit, currentKit, markCustom } from '../soundkit.js';
 import { playalong } from '../playalong.js';
 import { toast }     from './status.js';
@@ -70,9 +70,12 @@ export function renderAudioPanel() {
 
   const tickBg = p => tickCss(p) ? ` style="background-image:${tickCss(p)}"` : '';
 
+  // Each row carries a socket: drag it onto the canvas to make a parameter
+  // node there, drop it on a signal's socket to wire it, or click it.
   const rangeRow = (key, p) => `
     <div class="ctrl-row">
-      <span class="ctrl-lbl">${p.label}</span>
+      <span class="ctrl-lbl"><button type="button" class="port-src port-src-in" data-param="${key}"
+        title="Drag onto the canvas to add ${p.label} as a node — or click" aria-label="Add ${p.label} as a node"></button>${p.label}</span>
       <input type="range" class="apr" data-key="${key}"
         min="${p.min}" max="${p.max}" value="${p.val}"
         step="${((p.max - p.min) / 300).toPrecision(3)}"${tickBg(p)}>
@@ -278,10 +281,12 @@ export function renderAudioPanel() {
       })()}
     </div>`;
 
-  // Re-wrap: innerHTML above discarded the section containers, grips and
-  // stored heights. Runs before the wiring below, so every handler attaches to
-  // nodes that are already in their final place.
-  enhanceSections(panel);
+  // Onto the canvas: innerHTML above rebuilt the sections in the staging
+  // area, and each becomes (again) the node it was, at the position it had.
+  // Runs before the wiring below, so every handler attaches to nodes that are
+  // already in their final place.
+  adoptSections(panel);
+  wireDragOut(document);
 
   const activateWave = (group, type) =>
     group.querySelectorAll('.wave-btn').forEach(b =>

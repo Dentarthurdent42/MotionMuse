@@ -33,11 +33,11 @@ const SCROLL_RATE = 1.4;              // scroll travels faster than the hand
 
 // Surfaces that own their own pointer handling, innermost match first.
 const POINTER_SURFACE =
-  '.ng-node, .sec-grip, #split-l, #split-r, #cam-handle, canvas';
+  '.port, .port-src, .node-grip, .node-head, canvas';
 // What the hover ring highlights as "you are aiming at something".
 const INTERACTIVE =
-  'button, a, [role="button"], select, input, label, canvas, .ng-node, ' +
-  '.sec-grip, .ph, .audio-section-label';
+  'button, a, [role="button"], select, input, label, canvas, .port, ' +
+  '.node-grip, .node-head';
 
 const px = (nx, ny) =>
   cursorMap(nx, ny, uicontrol.margin, window.innerWidth, window.innerHeight);
@@ -105,8 +105,8 @@ function resolveGrip(el, x, y) {
   // Real clickables win even inside a pointer surface (the × on a patchbay
   // pill is a button; the socket is too, but the socket IS wiring's pointer
   // target, so it stays on the pointer path).
-  if (!el.closest?.('.ng-socket')
-      && el.closest?.('button:not(.ng-socket), select, a, [role="button"], .wave-btn, input[type="checkbox"]')) {
+  if (!el.closest?.('.port, .port-src')
+      && el.closest?.('button:not(.port):not(.port-src), select, a, [role="button"], .wave-btn, input[type="checkbox"]')) {
     return { kind: 'tap', el, x0: x, y0: y };
   }
   // A stage card is grabbed by its title bar; its contents stay ordinary
@@ -127,9 +127,9 @@ function resolveGrip(el, x, y) {
   }
   const surf = el.closest?.(POINTER_SURFACE);
   if (surf) return { kind: 'pointer', el: surf, target: el, x0: x, y0: y };
-  // A grabbable header drags its whole section; give it the pointer path.
-  const head = el.closest?.('.sec[data-reorder] > .ph, .sec[data-reorder] > .audio-section-label');
-  if (head && !el.closest('button, select, input, textarea, .wave-btn, .sec-grip')) {
+  // A node header drags its node; give it the pointer path.
+  const head = el.closest?.('.node-head');
+  if (head && !el.closest('button, select, input, textarea, .wave-btn, .node-grip')) {
     return { kind: 'pointer', el: head, target: el, x0: x, y0: y };
   }
   const scroller = scrollableFrom(el);
