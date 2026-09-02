@@ -17,11 +17,13 @@ import { graph }  from './graph.js';
 
 // [category, keys, owning node id]
 export const PARAM_CATS = () => [
-  ['Oscillators', Array.from({ length: engine.getOscCount() }, (_, i) =>
-    [`osc${i + 1}_freq`, `osc${i + 1}_detune`, `osc${i + 1}_volume`]).flat(), 'panel:oscillators'],
+  ['Oscillators', ['osc_count', ...Array.from({ length: engine.getOscCount() }, (_, i) =>
+    [`osc${i + 1}_freq`, `osc${i + 1}_detune`, `osc${i + 1}_volume`]).flat()], 'panel:oscillators'],
   ['Filter',       ['filter_type', 'filter_freq', 'filter_q', 'osc_volume', 'lfo_rate', 'lfo_depth'], 'panel:filter'],
   ['Chord Filter', ['chord_filter_type', 'chord_filter_freq', 'chord_filter_q', 'chord_volume'], 'panel:chord-filter'],
-  ['Gesture Mode', ['arp_on', 'arp_pattern', 'arp_rate', 'arp_gate', 'arp_sustain'], 'panel:gesture-mode'],
+  ['Gesture Mode', ['chord_on', 'arp_on', 'arp_pattern', 'arp_rate', 'arp_gate', 'arp_sustain'], 'panel:gesture-mode'],
+  ['Radial Mode',  ['radial_on'], 'panel:radial-mode'],
+  ['Microphone',   ['mic_on'], 'panel:mic'],
   ['Pitch Quantize',  ['quant_on', 'key_root', 'key_scale'], 'panel:pitch-quantize'],
   ['Volume Quantize', ['vq_on', 'vq_gate'], 'panel:volume-quantize'],
   ['Metronome',    ['metro_on', 'metro_bpm'], 'panel:metronome'],

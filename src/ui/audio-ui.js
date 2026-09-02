@@ -1,6 +1,6 @@
 import { engine }                    from '../engine.js';
 import { mapper }                    from '../mapper.js';
-import { renderMapper, inPort } from './mapper-ui.js';
+import { inPort } from './mapper-ui.js';
 import { buildSigPanel } from './signals.js';
 import { syncControls, onControlChange, FILTER_TYPES } from '../controls.js';
 import { SCALES, TUNINGS, NOTE_NAMES } from '../scale.js';
@@ -227,6 +227,7 @@ export function renderAudioPanel() {
     </div>
     <div class="audio-section" data-sec="oscillators">
       <div class="audio-section-label">Oscillators
+        <span class="head-sock">${inPort('osc_count')}</span>
         <div class="num-step" style="margin-left:auto;">
           <button class="wave-btn" id="osc-minus" type="button" aria-label="Remove an oscillator"
                   title="Remove the last oscillator"${nOsc <= 0 ? ' disabled' : ''}>−</button>
@@ -364,21 +365,15 @@ export function renderAudioPanel() {
     });
   });
 
-  // Bank size. Shrinking orphans any cable wired to a slot that no longer
-  // exists — engine.set() ignores an unknown key, so it would go quiet rather
-  // than break, but the patchbay would keep drawing a node for a parameter that
-  // is gone. Prune those cables instead of leaving them to confuse.
+  // Bank size. Shrinking leaves any cable wired to a slot that no longer
+  // exists in the patch, undrawn — engine.set() ignores an unknown key, so it
+  // goes quiet — and it is drawn again the moment the slot is back, which is
+  // what a cable-driven bank size (the OSCILLATORS socket) relies on.
   const setCount = n => {
     const before = engine.getOscCount();
     const after = engine.setOscCount(n);
     if (after === before) return;
-    if (after < before) {
-      mapper.mappings
-        .filter(m => !engine.PARAMS[m.audioParam])
-        .map(m => m.id)
-        .forEach(id => mapper.remove(id));
-      renderMapper();     // the pruned cables' nodes have to leave the canvas too
-    }
+    syncControls();
     syncKitToCustom();
     renderAudioPanel();
   };
@@ -547,6 +542,8 @@ export function renderAudioPanel() {
     // The arpeggiator's row re-renders with its state (its sliders appear
     // with it).
     arp_on: () => renderAudioPanel(), arp_pattern: () => renderAudioPanel(),
+    // A mode switching on or off changes what its node shows.
+    chord_on: () => renderAudioPanel(), radial_on: () => renderAudioPanel(),
   };
 
   if (t.enabled) redrawKbd();
