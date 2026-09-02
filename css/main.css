@@ -671,7 +671,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .set-row > select, .set-row > button { margin-left: auto; flex: 0 1 auto; min-width: 0; }
 
 /* ── Preset menu ─────────────────────────────────────────── */
-.mapper-toolbar { position: relative; }   /* containing block for #preset-pop */
+.hdr-menu { position: relative; display: flex; }   /* containing block for #preset-pop */
 #preset-pop {
   position: absolute;
   top: calc(100% + 4px); left: 0;
@@ -913,11 +913,12 @@ body.no-scroll { overflow: hidden; }
 .sig-group:first-child { border-top: none; margin-top: 0; }
 
 .sig-row {
+  --row-px: 10px;
   display: grid;
   grid-template-columns: 1fr 42px 90px;
   gap: 5px;
   align-items: center;
-  padding: 3px 10px;
+  padding: 3px var(--row-px);
   cursor: pointer;
   border-radius: 2px;
   transition: background 0.1s;
@@ -997,12 +998,12 @@ body.no-scroll { overflow: hidden; }
 .node-fn .node-ports { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
 .ports-in, .ports-out { display: flex; flex-direction: column; gap: 3px; }
 .port-row { display: flex; align-items: center; gap: 5px; height: 18px; }
-.node-fn .ports-in .port-row { margin-left: 4px; }
-.node-fn .ports-out .port-row { margin-right: 4px; justify-content: flex-end; }
+.node-fn .ports-in .port-row { margin-left: calc(-1px - var(--sock) / 2); }
+.node-fn .ports-out .port-row { margin-right: calc(-1px - var(--sock) / 2); justify-content: flex-end; }
 .port-lbl { font-size: 9px; color: var(--dim); }
 .port {
   position: relative;
-  width: 13px; height: 13px; border-radius: 50%;
+  width: var(--sock); height: var(--sock); border-radius: 50%;
   border: 2px solid var(--wire, var(--dim)); background: var(--panel);
   padding: 0; cursor: crosshair;
   touch-action: none;   /* let us drag cables without the canvas panning */
@@ -1017,13 +1018,29 @@ body.no-scroll { overflow: hidden; }
 .port:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 /* Input sockets beside their controls: a slider's label, a header pill, a
    select, a choice row. Inline, a little air before the words. */
-.ctrl-lbl > .port, .chord-key-lbl > .port, .head-sock > .port, .sel-sock > .port { margin-right: 5px; }
+.ctrl-lbl > .port, .chord-key-lbl > .port, .head-sock > .port { margin-right: 5px; }
 .head-sock { display: inline-flex; align-items: center; flex: 0 0 auto; }
-.audio-section-label > .head-sock { margin-left: auto; }
-.audio-section-label > .head-sock + .wave-btn[style*="margin-left:auto"] { margin-left: 4px !important; }
-.sel-sock { display: flex; align-items: center; gap: 0; min-width: 0; }
-.sel-sock > select { flex: 1 1 auto; min-width: 0; }
-.chord-arp > .port { flex: 0 0 auto; }
+/* Sockets STRADDLE the node's border — inputs on the left edge, outputs on
+   the right — the way pins sit on a Blueprint or geometry node. The cables
+   are drawn beneath the nodes, so a socket buried in a node's padding would
+   swallow the last stretch of every cable; on the border, the cable visibly
+   ends on the ring. The numbers are the distance from the border to where
+   the socket would otherwise sit: body padding 10 + the border + half the
+   ring. A node given a height clips its body, so there the ring sits just
+   inside the border instead. */
+:root { --sock: 13px; }
+/* From a row's start to the node's border: the body's side padding and the
+   1px border; the ring is then pulled back by half its width to sit ON the
+   border. --body-pad-x is set with the padding itself (.node-body rules). */
+.ctrl-lbl > .port-in, .chord-key-lbl > .port-in,
+.wave-btns > .head-sock { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); }
+.node.sized .ctrl-lbl > .port-in, .node.sized .chord-key-lbl > .port-in,
+.node.sized .wave-btns > .head-sock { margin-left: calc(-1 * var(--body-pad-x, 10px)); }
+/* A switch that lives in a node's header takes the header's left edge. */
+.node-head > .head-sock { position: absolute; left: calc(-1 * var(--sock) / 2); top: 50%; transform: translateY(-50%); margin: 0; }
+.node-head > .head-sock > .port { margin-right: 0; }
+/* A wired socket carries a dot in its cable's colour. */
+.port.wired::before { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--wire, var(--dim)); }
 .ctrl-row-choice { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
 .ctrl-row-choice > .ctrl-lbl { flex: 0 0 auto; }
 .ctrl-row-choice > .wave-btns { flex: 1 1 auto; }
@@ -1031,7 +1048,21 @@ body.no-scroll { overflow: hidden; }
 .sig-list { margin-top: 6px; }
 .sig-row:not(.sig-row-multi) { grid-template-columns: 1fr 44px 84px 16px; }
 .sig-chans { grid-template-columns: 1fr 44px 84px 16px; }
-.sig-row > .port, .sig-chans > .port { justify-self: end; }
+/* The output socket of every row rides out to the node's right border,
+   across the row's own padding, the group box's border and margin, and the
+   body's padding — each a variable set beside the padding it measures, so
+   the breakpoints that change a padding change the ride with it. */
+.sig-row > .port, .sig-chans > .port, .sig-sum-ports {
+  --sock-out: calc(var(--row-px, 10px) + 1px + var(--sec-mx, 6px) + var(--body-pad-x, 0px) + 1px + var(--sock) / 2);
+}
+.sig-row > .port, .sig-chans > .port { justify-self: end; margin-right: calc(-1 * var(--sock-out)); }
+/* A folded group still shows the sockets of its WIRED signals, in its
+   summary, one under another on the border, so a cable never ends on a
+   closed box and the rest of the group is one click away. */
+.sig-sum-ports { display: flex; flex-direction: column; gap: 4px; margin: -2px calc(-1 * var(--sock-out)) -2px 0; }
+.sig-sum-ports:empty { display: none; }
+.sig-sum-port { display: flex; align-items: center; justify-content: flex-end; gap: 5px; height: 15px; }
+.sig-sum-lbl { font-size: 8px; letter-spacing: 1px; color: var(--dim); white-space: nowrap; text-transform: uppercase; }
 /* A cable that ends at a node's edge because its socket is scrolled or
    folded away is drawn dashed at the end: it is real, its socket is not on
    screen. */
@@ -1137,16 +1168,9 @@ option { background: var(--panel); }
   transition: color 0.15s, border-color 0.15s;
 }
 
-.mapper-toolbar {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-  align-items: center;
-}
-.mapper-hint { font-size: 9px; color: var(--dim); letter-spacing: 0.5px; padding: 8px 10px; line-height: 1.5; }
-.mapper-hint b { color: var(--text); font-weight: 500; }
+/* SAVE / LOAD at the foot of the PRESET menu. */
+.preset-file { display: flex; gap: 6px; padding: 4px 2px 2px; }
+.preset-file .btn { flex: 1 1 auto; }
 
 /* ── The add / context menu ── */
 .ws-menu {
@@ -1724,10 +1748,13 @@ option { background: var(--panel); }
 .chord-expr-cal,
 .chord-arp-cal {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* One input per row, so each socket has the left edge to itself. */
+  grid-template-columns: 1fr;
   gap: 4px 8px;
   margin-bottom: 6px;
 }
+.chord-arp-pat > select { grid-column: 2 / -1; }
+.chord-arp > .arp-oct { grid-column: 3 / -1; }
 .chord-expr-cal .ctrl-lbl,
 .chord-arp-cal .ctrl-lbl {
   display: flex; align-items: center; gap: 5px;
@@ -2031,13 +2058,14 @@ input[type="range"]::-webkit-slider-thumb {
 /* A section carries its own padding and rule; as a node the shell is the
    container and the body takes the padding. */
 .node.audio-section, .node.panel { padding: 0; border-bottom: 1px solid var(--border); }
-.node-panel > .node-body { padding: 8px 10px; position: relative; }
-.node-panel.panel > .node-body, .node-panel.panel-cam > .node-body { padding: 0; }
+.node-panel > .node-body { --body-pad-x: 10px; padding: 8px var(--body-pad-x); position: relative; }
+.node-panel.panel > .node-body, .node-panel.panel-cam > .node-body { --body-pad-x: 0px; padding: 0; }
 .node .pb { flex: none; overflow: visible; }
 .node.sized .pb { overflow: visible; }
 
 /* The header: the drag handle, and one strip of controls on every node. */
 .node > .node-head {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2163,16 +2191,18 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
 .group-ports { display: flex; justify-content: space-between; gap: 14px; padding: 4px 0 6px; }
 .group-ports .ports-in, .group-ports .ports-out { display: flex; flex-direction: column; gap: 3px; }
 .group-ports .port-row { display: flex; align-items: center; gap: 5px; height: 18px; font-size: 9px; color: var(--dim); }
-.group-ports .ports-in .port-row { margin-left: -9px; }
-.group-ports .ports-out .port-row { margin-right: -9px; justify-content: flex-end; }
+.group-ports .ports-in .port-row { margin-left: calc(-1px - var(--sock) / 2); }
+.group-ports .ports-out .port-row { margin-right: calc(-1px - var(--sock) / 2); justify-content: flex-end; }
 
 .sig-sec {
   border: 1px solid var(--border);
   border-radius: 3px;
   background: var(--panel);
   box-shadow: var(--shadow);
-  margin: 5px 6px;
-  overflow: hidden;
+  --sec-mx: 6px;
+  margin: 5px var(--sec-mx);
+  /* Not clipped: the sockets ride out past this box to the node's border. */
+  overflow: visible;
 }
 .sig-sec > summary {
   cursor: pointer;
@@ -2182,6 +2212,7 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   gap: 8px;
   padding: 5px 10px;
   background: var(--faint);
+  border-radius: 2px 2px 0 0;
   border-bottom: 1px solid transparent;
 }
 .sig-sec[open] > summary { border-bottom-color: var(--border); }
@@ -2221,6 +2252,7 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
     gap: 8px; width: 100%; flex-wrap: wrap; row-gap: 6px;
   }
   .hbtns .btn { flex: 1 1 auto; min-width: 44px; }
+  .hbtns .hdr-menu { flex: 1 1 auto; }
   .logo   { font-size: 11px; flex-shrink: 0; }
   .hsep   { display: none; }
   #status-lbl { display: none; }
@@ -2232,7 +2264,7 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   .ws-menu { min-width: 200px; max-width: calc(100vw - 16px); }
 
   /* Touch-friendly targets (≥44 px) */
-  .sig-row  { padding: 8px 10px; }
+  .sig-row  { --row-px: 10px; padding: 8px var(--row-px); }
   .wave-btn { padding: 8px 0; }
   .ctrl-row { padding: 5px 0; }
   .node > .node-head { min-height: 32px; }
@@ -2244,7 +2276,7 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
 
   /* Sockets: fat-finger friendly — a bigger dot with an even more generous
      invisible tap halo. */
-  .port { width: 22px; height: 22px; }
+  :root { --sock: 22px; }
   .port::after { inset: -17px; }
 
   /* Piano picker: draw the keyboard wider than the screen (≈21px white keys
@@ -2307,7 +2339,7 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
 
   /* Signal list */
   .sig-group { font-size: 10px; padding: 10px 14px 4px; }
-  .sig-row:not(.sig-row-multi) { grid-template-columns: 1fr 52px 100px 18px; gap: 7px; padding: 5px 14px; }
+  .sig-row:not(.sig-row-multi) { --row-px: 14px; grid-template-columns: 1fr 52px 100px 18px; gap: 7px; padding: 5px var(--row-px); }
   .sig-row-multi { grid-template-columns: 1fr; gap: 3px; }
   .sig-chans { grid-template-columns: 1fr 52px 100px 18px; gap: 4px 7px; padding-left: 12px; }
   .sig-chan-name { font-size: 10px; }
@@ -2316,7 +2348,7 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
 
   /* The patch on the canvas */
   .node-fn { font-size: 12px; }
-  .port { width: 18px; height: 18px; }
+  :root { --sock: 18px; }
   .ng-editor { padding: 11px 14px; font-size: 11px; }
   .ng-editor .ng-edit-label { font-size: 12px; }
   .ng-editor input { width: 74px; }
@@ -2332,8 +2364,6 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   select, input[type="number"] { padding: 5px 6px; font-size: 11px; }
   .rm-btn { font-size: 15px; padding: 2px 6px; }
 
-  .mapper-toolbar { padding: 11px 14px; gap: 8px; }
-  .mapper-hint { font-size: 11px; }
 
   /* Audio panel */
   #viz-canvas { height: 96px; }   /* paired with viz.js drawViz() */

@@ -311,12 +311,28 @@ for (const width of WIDTHS) {
       counts: [...document.querySelectorAll('.sig-sec')].map(d =>
         [d.dataset.group, +d.querySelector('.sig-group-meta').textContent.trim().split(' ')[0],
          d.querySelectorAll('.sig-row').length, d.querySelectorAll('.sig-val').length]),
-      pans: (() => { const p = document.getElementById('cam-signals');
-                     return p.scrollWidth > p.clientWidth + 1; })(),
+      // The readings stay inside the list; only the sockets ride out past
+      // its edge, to the node's border.
+      pans: (() => { const p = document.getElementById('cam-signals').getBoundingClientRect();
+                     return [...document.querySelectorAll('#cam-signals .sig-bar, #cam-signals .sig-val')]
+                       .some(e => e.getBoundingClientRect().right > p.right + 1); })(),
       // Every channel IS an output socket on the camera node, so any signal
       // can be wired from the list to a parameter anywhere on the canvas.
-      srcs: document.querySelectorAll('#cam-signals .port-out').length,
+      srcs: document.querySelectorAll('#cam-signals .sig-sec-body .port-out').length,
       vals: document.querySelectorAll('#cam-signals .sig-val').length,
+      // Sockets straddle the node's border: an output's ring is centred on
+      // the camera node's right edge, an input's on its node's left edge.
+      onEdge: (() => {
+        const cam = document.querySelector('[data-node="panel:camera"]').getBoundingClientRect();
+        const outs = [...document.querySelectorAll('#cam-signals .sig-sec-body .port-out')].filter(p => p.checkVisibility());
+        const offOut = outs.filter(p => { const r = p.getBoundingClientRect(); return Math.abs(r.left + r.width / 2 - cam.right) > 2; });
+        const ins = [...document.querySelectorAll('#ws .node-panel:not(.sized) .ctrl-row .port-in')].filter(p => p.checkVisibility());
+        const offIn = ins.filter(p => {
+          const n = p.closest('.node').getBoundingClientRect(), r = p.getBoundingClientRect();
+          return Math.abs(r.left + r.width / 2 - n.left) > 2;
+        });
+        return { outs: outs.length, offOut: offOut.length, ins: ins.length, offIn: offIn.map(p => p.dataset.key) };
+      })(),
     };
   });
 
@@ -349,8 +365,14 @@ for (const width of WIDTHS) {
       missing: ranges.filter(r => !r.hasAttribute('data-num-paired'))
         .map(r => r.id || r.className || 'anonymous'),
       typed,
+      // The fields stay inside their nodes (the sockets on the border do not
+      // count: they are meant to straddle it).
       overflow: [...document.querySelectorAll('.node-panel > .node-body')]
-        .filter(e => e.scrollWidth > e.clientWidth + 1).length,
+        .filter(e => {
+          const r = e.getBoundingClientRect();
+          return [...e.querySelectorAll('input, select, .ctrl-val, .sig-val')]
+            .some(f => f.getClientRects().length && f.getBoundingClientRect().right > r.right + 1);
+        }).length,
       // Every parameter — slider, switch or choice — carries an input socket
       // on the node that owns it, so a signal can be wired to it in place.
       unsocketed: Object.keys(engine.PARAMS).filter(k => paramOwner(k)
@@ -434,7 +456,8 @@ const gestures = await (async () => {
   await page.evaluate(() => { document.querySelector('.sig-sec[data-group="depth"]').open = true; });
   await page.waitForTimeout(250);
   const socket = (side, key) => page.evaluate(([side, key]) => {
-    const r = document.querySelector(`.port[data-side="${side}"][data-key="${key}"]`).getBoundingClientRect();
+    const r = [...document.querySelectorAll(`.port[data-side="${side}"][data-key="${key}"]`)]
+      .find(p => p.checkVisibility()).getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }, [side, key]);
   const from = await socket('out', 'hand_L_z'), to = await socket('in', 'volume');
@@ -456,6 +479,27 @@ const gestures = await (async () => {
   });
   await page.keyboard.press('Escape');          // the editor, out of the way
   await page.waitForTimeout(80);
+  // Fold the group again: the wired socket moves to the summary, the cable
+  // ends on it, and the cable to volume still ends on volume's ring.
+  await page.evaluate(() => { document.querySelector('.sig-sec[data-group="depth"]').open = false; });
+  await page.waitForTimeout(300);
+  const folded = await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    const { mapper } = await import('/src/mapper.js');
+    const d = document.querySelector('.sig-sec[data-group="depth"]');
+    const strip = [...d.querySelectorAll('summary .port-out')].map(p => p.dataset.key);
+    const m = mapper.mappings.find(x => x.audioParam === 'volume');
+    const path = document.querySelector(`.ng-wire[data-mid="${m.id}"]`);
+    const nums = path.getAttribute('d').match(/-?[\d.]+/g).map(Number);
+    const a = WS.toScreen(nums[0], nums[1]), b = WS.toScreen(nums[6], nums[7]);
+    const centre = el => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+    const out = centre(d.querySelector('summary .port-out[data-key="hand_L_z"]'));
+    const inn = centre(document.querySelector('.port-in[data-key="volume"]'));
+    const near = (p, q) => Math.hypot(p.x - q.x, p.y - q.y) < 2;
+    return { strip, startsOnRing: near(a, out), endsOnRing: near(b, inn), dashed: path.classList.contains('ng-wire-edge') };
+  });
+  await page.evaluate(() => { document.querySelector('.sig-sec[data-group="depth"]').open = true; });
+  await page.waitForTimeout(300);
 
   // 4. Tap a socket, then tap another: the same connection, for touch.
   const tapFrom = await socket('out', 'hand_R_z'), tapTo = await socket('in', 'lfo_depth');
@@ -505,13 +549,19 @@ const gestures = await (async () => {
       ports: ports(el),
       cablesBefore, cablesAfter: document.querySelectorAll('.ng-wire').length,
     };
-    // A group inside the PATCH group collapsed with it: nested frames.
-    WS.setCollapsed('group:patch', true);
+    // Nested frames: fold the new group into an outer one and collapse THAT —
+    // the inner group goes with it, and the outer shows the same two sockets.
+    WS.selectNodes([g.id]);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', ctrlKey: true, bubbles: true }));
     await new Promise(r => setTimeout(r, 100));
-    out.nested = { patchPorts: ports(document.querySelector('[data-node="group:patch"]')),
+    const outer = WS.getNode(g.id).parent;
+    WS.setCollapsed(outer, true);
+    await new Promise(r => setTimeout(r, 100));
+    out.nested = { outerPorts: ports(document.querySelector(`[data-node="${outer}"]`)),
                    cables: document.querySelectorAll('.ng-wire').length,
                    innerShown: el.getClientRects().length > 0 };
-    WS.setCollapsed('group:patch', false);
+    WS.setCollapsed(outer, false);
+    WS.ungroupNode(outer);
     WS.ungroupNode(g.id);
     await new Promise(r => setTimeout(r, 100));
     out.after = { gone: !WS.getNode(g.id), parent: WS.getNode(mix).parent,
@@ -703,7 +753,7 @@ const gestures = await (async () => {
   });
 
   await ctx.close();
-  return { drag, left, rejoined, wired, armed, tapped, grouped, pinned, menu, filtered, added, deleted,
+  return { drag, left, rejoined, wired, folded, armed, tapped, grouped, pinned, menu, filtered, added, deleted,
            closed, tidy, zoomed, fs, grown, saved, errs };
 })();
 
@@ -719,7 +769,6 @@ const persist = await (async () => {
       'panel:gesture-mode': { x: 1400, y: 900, parent: null, w: 340 },
       'panel:sound-kit':    { x: 40, y: 700, parent: 'group:inputs' },
       'group:inputs':       { title: 'INPUTS' },
-      'group:patch':        { title: 'PATCH' },
       'group:audio':        { title: 'AUDIO ENGINE' },
       'panel:mic':          { x: 40, y: 640, parent: 'group:inputs', folded: true },
     } })));
@@ -1366,14 +1415,21 @@ const patchDelete = await (async () => {
     return { cables: mapper.mappings.length, wires: document.querySelectorAll('.ng-wire').length,
              editor: !document.getElementById('ng-editor-pop').hidden };
   });
-  const socket = (side, key) => page.evaluate(([side, key]) => {
-    const el = document.querySelector(`.port[data-side="${side}"][data-key="${key}"]`);
-    if (!el) return null;
-    const d = el.closest('details');
-    if (d) d.open = true;
-    const r = el.getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-  }, [side, key]);
+  const socket = async (side, key) => {
+    // The signal's row is inside a tracker group folded while no camera
+    // runs; open it, then take the socket that is drawn.
+    await page.evaluate(([side, key]) => {
+      const d = document.querySelector(`.sig-sec-body .port[data-side="${side}"][data-key="${key}"]`)?.closest('details');
+      if (d && !d.open) d.open = true;
+    }, [side, key]);
+    await page.waitForTimeout(250);
+    return page.evaluate(([side, key]) => {
+      const el = [...document.querySelectorAll(`.port[data-side="${side}"][data-key="${key}"]`)].find(p => p.checkVisibility());
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }, [side, key]);
+  };
 
   const pair = await page.evaluate(async () => {
     const { mapper } = await import('/src/mapper.js');
@@ -1779,8 +1835,8 @@ for (const { width, off, on, nodes: n, sigPanel, nums, errs } of results) {
   check(n.unplaced.length === 0, `${w}: every node has been placed`, n.unplaced.join(' '));
   check(n.overlaps.length === 0, `${w}: no two nodes sit on top of each other`, n.overlaps.join(' '));
   check(n.outsideFrame.length === 0, `${w}: every member sits inside its group's frame`, n.outsideFrame.join(' '));
-  check(n.groups.join(',') === 'group:audio,group:inputs,group:patch',
-    `${w}: the shipped groups exist — INPUTS, PATCH, AUDIO ENGINE`, n.groups.join(','));
+  check(n.groups.join(',') === 'group:audio,group:inputs',
+    `${w}: the shipped groups exist — INPUTS, AUDIO ENGINE`, n.groups.join(','));
   check(n.view.k >= 0.15 && n.view.k <= 1, `${w}: the first view is fitted to the layout`, `k=${n.view.k.toFixed(2)}`);
   if (width < 769) {
     // A phone opens on the camera at a usable size, not on a smear of the
@@ -1842,6 +1898,10 @@ for (const { width, off, on, nodes: n, sigPanel, nums, errs } of results) {
   check(!sp.pans, `${w}: the signals panel does not pan sideways`);
   check(sp.srcs === sp.vals && sp.srcs > 0,
     `${w}: every channel of the camera's list is an output socket`, `${sp.srcs} sockets for ${sp.vals} channels`);
+  check(sp.onEdge.outs > 0 && sp.onEdge.offOut === 0,
+    `${w}: every output socket is centred on the camera node's right border`, `${sp.onEdge.offOut} of ${sp.onEdge.outs} off the edge`);
+  check(sp.onEdge.ins > 0 && sp.onEdge.offIn.length === 0,
+    `${w}: every slider's input socket is centred on its node's left border`, sp.onEdge.offIn.join(' '));
 
   check(nums.ranges > 0, `${w}: there are sliders to check`, String(nums.ranges));
   check(nums.paired === nums.ranges, `${w}: every slider takes a typed value`, nums.missing.join(' '));
@@ -1883,12 +1943,14 @@ console.log('\nWorkspace gestures\n');
   check(g.wired.editor, 'and opens the cable editor');
   check(g.wired.onVolume === 1 && g.wired.cables === 7, 'one cable per input — the old one is replaced',
     `${g.wired.onVolume} on volume, ${g.wired.cables} cables`);
+  check(g.folded.strip.includes('hand_L_z') && g.folded.startsOnRing && g.folded.endsOnRing && !g.folded.dashed,
+    'folding the group keeps the wired output in its summary, and the cable ends ring to ring', JSON.stringify(g.folded));
   check(g.armed, 'tapping a socket arms it');
   check(g.tapped.signal === 'hand_R_z' && g.tapped.armedLeft === 0,
     'and tapping the other end completes the connection', `${g.tapped.signal}, ${g.tapped.armedLeft} left armed`);
 
   check(g.grouped.made, 'Ctrl+G groups the selection');
-  check(g.grouped.parent === 'group:patch', 'inside the frame the selection was in', String(g.grouped.parent));
+  check(g.grouped.parent === null, 'at the level the selection was on — the top', String(g.grouped.parent));
   check(g.grouped.members.join(',') === g.grouped.wantMembers.join(','), 'with exactly those members', g.grouped.members.join(','));
   check(g.grouped.hidden, 'collapsing it hides the members');
   check(g.grouped.ports.join(',') === g.grouped.want.join(','),
@@ -1896,15 +1958,12 @@ console.log('\nWorkspace gestures\n');
   check(g.grouped.cablesBefore === 9 && g.grouped.cablesAfter === 8,
     'the cable between the members goes with them; every other one still draws, to the group',
     `${g.grouped.cablesBefore} → ${g.grouped.cablesAfter}`);
-  // The seven preset cables run camera → audio and never touch PATCH, so
-  // they still draw; of the three through the Mix, the internal one is
-  // hidden and the two that cross PATCH's frame end on the sockets it shows.
-  check(g.grouped.nested.cables === 8 && g.grouped.nested.patchPorts.join() === g.grouped.want.join()
+  check(g.grouped.nested.cables === 8 && g.grouped.nested.outerPorts.join() === g.grouped.want.join()
      && !g.grouped.nested.innerShown,
-    'collapsing the PATCH group hides the group inside it and shows only the crossing sockets',
+    'a group inside a collapsed group goes with it, and the outer one shows the same crossing sockets',
     JSON.stringify(g.grouped.nested));
-  check(g.grouped.after.gone && g.grouped.after.parent === 'group:patch' && g.grouped.after.cables === 9,
-    'ungrouping frees the members into the enclosing frame with their cables', JSON.stringify(g.grouped.after));
+  check(g.grouped.after.gone && g.grouped.after.parent === null && g.grouped.after.cables === 9,
+    'ungrouping frees the members back to the top level with their cables', JSON.stringify(g.grouped.after));
 
   check(g.pinned.dock === 'ws-dock' && g.pinned.stayed, 'a pinned node holds its screen position while the view pans');
   check(g.pinned.back === 'ws-nodes' && g.pinned.pressed === 'false', 'and unpinning puts it back on the canvas');
@@ -1923,7 +1982,7 @@ console.log('\nWorkspace gestures\n');
   check(g.closed.shown && g.closed.near && g.closed.parent === null,
     'and comes back where the menu was opened', JSON.stringify(g.closed));
 
-  check(g.tidy.count >= 3 && g.tidy.overlaps === 0, 'TIDY leaves nothing overlapping', `${g.tidy.count} nodes, ${g.tidy.overlaps} overlaps`);
+  check(g.tidy.count >= 2 && g.tidy.overlaps === 0, 'TIDY leaves nothing overlapping', `${g.tidy.count} nodes, ${g.tidy.overlaps} overlaps`);
   check(g.tidy.inView, 'and fits the result in view');
 
   check(g.zoomed.after > g.zoomed.before, 'the wheel zooms over empty canvas', `${g.zoomed.before.toFixed(2)} → ${g.zoomed.after.toFixed(2)}`);
@@ -1941,7 +2000,7 @@ console.log('\nWorkspace gestures\n');
     'while a node placed by hand stays where it was put',
     `volume-quantize held at ${g.grown.hand.held} (now ${g.grown.hand.y})`);
 
-  check(g.saved.present && g.saved.nodes > 20 && g.saved.hasCamera && g.saved.hasView,
+  check(g.saved.present && g.saved.nodes >= 20 && g.saved.hasCamera && g.saved.hasView,
     'the layout persists as one key with every node and the view', JSON.stringify(g.saved));
 }
 
@@ -1970,7 +2029,7 @@ console.log('\nLayout reset\n');
   check(reset.after.mic === 'group:inputs', 'reset: RESET puts the microphone back in INPUTS', String(reset.after.mic));
   check(!reset.after.metroHidden && !reset.after.camFolded && !reset.after.camPinned,
     'reset: and reopens, unfolds and unpins');
-  check(reset.after.groups === 'group:audio,group:inputs,group:patch', 'reset: the shipped groups are back', reset.after.groups);
+  check(reset.after.groups === 'group:audio,group:inputs', 'reset: the shipped groups are back', reset.after.groups);
   check(reset.reloaded.mic === 'group:inputs' && !reset.reloaded.metroHidden && !reset.reloaded.camPinned,
     'reset: and it survives a reload', JSON.stringify(reset.reloaded));
 }

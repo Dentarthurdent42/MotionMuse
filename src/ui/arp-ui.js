@@ -33,14 +33,18 @@ export function arpRowHTML(p) {
       <span class="chord-key-lbl">${sock('arp_on')}ARP</span>
       <button class="wave-btn${a.enabled ? ' on' : ''}" id="${p}-arp" aria-pressed="${a.enabled}"
               title="Play the held chord one note at a time instead of as a block. Same chord, same input, same expression — the notes just take turns. One arpeggiator serves both play modes.">${a.enabled ? 'ON' : 'OFF'}</button>
-      ${sock('arp_pattern')}<select id="${p}-arp-pattern" aria-label="Arpeggio pattern" ${a.enabled ? '' : 'disabled'}
-              title="The order the chord's notes are played in. UP · DOWN turns at the ends without playing them twice.">
-        ${ARP_PATTERNS.map(k => `<option value="${k}"${k === a.pattern ? ' selected' : ''}>${PATTERN_LABEL[k]}</option>`).join('')}
-      </select>
-      <select id="${p}-arp-oct" aria-label="Arpeggio octave range" ${a.enabled ? '' : 'disabled'}
+      <select id="${p}-arp-oct" class="arp-oct" aria-label="Arpeggio octave range" ${a.enabled ? '' : 'disabled'}
               title="How many octaves the run covers. More octaves means more notes before the pattern repeats.">
         ${Array.from({ length: ARP_MAX_OCTAVES }, (_, i) => i + 1).map(o =>
           `<option value="${o}"${o === a.octaves ? ' selected' : ''}>${o} OCT</option>`).join('')}
+      </select>
+    </div>
+    <!-- Its own row, so the pattern's socket has the node's edge to itself. -->
+    <div class="chord-arp chord-arp-pat">
+      <span class="chord-key-lbl">${sock('arp_pattern')}PATTERN</span>
+      <select id="${p}-arp-pattern" aria-label="Arpeggio pattern" ${a.enabled ? '' : 'disabled'}
+              title="The order the chord's notes are played in. UP · DOWN turns at the ends without playing them twice.">
+        ${ARP_PATTERNS.map(k => `<option value="${k}"${k === a.pattern ? ' selected' : ''}>${PATTERN_LABEL[k]}</option>`).join('')}
       </select>
     </div>
     ${a.enabled ? `

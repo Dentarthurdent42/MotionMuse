@@ -170,11 +170,13 @@ export function renderAudioPanel() {
         <button type="button" class="wave-btn${t.enabled ? ' on' : ''}" id="quant-toggle"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${t.enabled ? 'ON' : 'OFF'}</button>
       </div>
-      <div class="scale-grid">
-        <label class="sel-sock">${inPort('key_root')}<select id="scale-root"   title="Root note">${opts(NOTE_NAMES, t.root)}</select></label>
-        <label class="sel-sock">${inPort('key_scale')}<select id="scale-name"   title="Scale">${opts(Object.keys(SCALES), t.scale)}</select></label>
-        <select id="scale-tuning" title="Tuning system">${opts(Object.keys(TUNINGS), t.system)}</select>
-      </div>
+      <!-- One input per row, each with its socket on the node's edge. -->
+      <div class="met-row"><span class="chord-key-lbl">${inPort('key_root')}KEY</span>
+        <select id="scale-root" title="Root note" aria-label="Key root">${opts(NOTE_NAMES, t.root)}</select></div>
+      <div class="met-row"><span class="chord-key-lbl">${inPort('key_scale')}SCALE</span>
+        <select id="scale-name" title="Scale" aria-label="Scale">${opts(Object.keys(SCALES), t.scale)}</select></div>
+      <div class="met-row"><span class="chord-key-lbl">TUNING</span>
+        <select id="scale-tuning" title="Tuning system" aria-label="Tuning system">${opts(Object.keys(TUNINGS), t.system)}</select></div>
       <canvas id="quant-kbd" class="quant-kbd" style="display:${t.enabled ? 'block' : 'none'}"></canvas>
       <div id="quant-notes" class="quant-notes">${t.enabled ? '' : '—'}</div>
     </div>
