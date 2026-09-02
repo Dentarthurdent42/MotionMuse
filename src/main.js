@@ -510,6 +510,20 @@ function refreshFromState() {
   if (engine.started) renderAudioPanel();
 }
 
+// The Oscillators node follows the bank: a preset voiced for two oscillators
+// grows the bank as it loads, and its cables need the second row's sockets
+// to end on. Deferred a tick, so a restore that sets the count and then the
+// parameters is drawn once, after both.
+let oscRedraw = null;
+engine.onOscCountChange(() => {
+  if (oscRedraw) return;
+  oscRedraw = setTimeout(() => {
+    oscRedraw = null;
+    renderAudioPanel();
+    renderMapper();
+  }, 0);
+});
+
 // SAVE and LOAD sit at the foot of the PRESET menu (initPresetMenu above
 // calls these). Declarations, so the menu can be set up before this point.
 function saveSetup() {
