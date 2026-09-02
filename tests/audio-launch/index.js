@@ -71,7 +71,7 @@ const bannerShown = () => p.evaluate(() => {
 const onLoad     = await engineState();
 const onLoadBtn  = await btnState();
 const bannerOn   = await bannerShown();
-const sliders    = await p.$$eval('#audio-panel .apr', els => els.length);
+const sliders    = await p.$$eval('.apr', els => els.length);
 
 // Clicking is the gesture: it must unmute AND start the clock.
 await p.click('#audio-btn');

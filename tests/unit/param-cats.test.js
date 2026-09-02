@@ -11,7 +11,7 @@ globalThis.localStorage ??= {
 };
 
 const { engine }     = await import('../../src/engine.js');
-const { PARAM_CATS } = await import('../../src/ui/mapper-ui.js');
+const { PARAM_CATS } = await import('../../src/params.js');
 
 // PARAM_CATS is a function now: the oscillator bank is resizable, so which keys
 // exist is a runtime value. Checked at more than one bank size, since a table

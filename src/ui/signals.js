@@ -2,6 +2,7 @@ import { bus, velKeyOf } from '../bus.js';
 import { toast } from './status.js';
 import { cvSource }   from '../cv.js';
 import { faceSource } from '../face.js';
+import { wireDragOut } from './mapper-ui.js';
 
 let built = false;
 
@@ -46,8 +47,13 @@ export function buildSigPanel() {
   // measure — and bars under different measures — are read against the same
   // scale. A bar whose length meant something different per row would not be
   // a comparison, it would be decoration.
+  // Every channel carries a socket: drag it onto the canvas to make that
+  // signal a node there, drop it on a parameter's socket to wire it, or
+  // click it to add the node in the flow.
+  const src = key => `<button type="button" class="port-src" data-sig="${key}"
+      title="Drag onto the canvas to add ${key} as a node — or click" aria-label="Add ${key} as a node"></button>`;
   const channel = (key, name = '', cls = '') => `
-    ${name ? `<span class="sig-chan-name ${cls}" data-key="${key}">${name}</span>` : ''}
+    ${name ? `<span class="sig-chan-name ${cls}" data-key="${key}">${src(key)}${name}</span>` : ''}
     <span class="sig-val ${cls}" id="sv-${key}" data-key="${key}">0.00</span>
     <div class="sig-bar" data-key="${key}"><div class="sig-bar-fill ${cls}" id="sb-${key}" style="width:0%"></div></div>`;
 
@@ -78,7 +84,7 @@ export function buildSigPanel() {
              </div>
            </div>`
         : `<div class="sig-row" data-key="${k}" title="Click to copy signal key">
-             <span class="sig-name">${s.label}</span>
+             <span class="sig-name">${src(k)}${s.label}</span>
              ${channel(k)}
            </div>`;
     });
@@ -106,6 +112,8 @@ export function buildSigPanel() {
       toast(`Copied: ${key}`);
     });
   });
+
+  wireDragOut(list);
 
   refs.clear();
   bus.signals.forEach((s, k) => {

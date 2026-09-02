@@ -87,8 +87,8 @@ export async function capture({ compareTo } = {}) {
       renderMapper();
     });
 
-    // Let the fonts land, the audio panel render and the node graph lay out.
-    await page.waitForSelector('#mapper-rows .ng-node', { timeout: 10000 }).catch(() => {});
+    // Let the fonts land, the audio panel render and the canvas lay out.
+    await page.waitForSelector('#ws .node-sig', { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(1200);
 
     // The tour auto-offers on a first visit; it is not part of the product shot.

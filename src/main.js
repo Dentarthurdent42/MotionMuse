@@ -8,10 +8,9 @@ import { engine }                           from './engine.js';
 import { mapper, trackersFor }              from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
 import { buildSigPanel, updateSigPanel, syncSigGroups } from './ui/signals.js';
-import { renderMapper, updateMapperBars }   from './ui/mapper-ui.js';
+import { renderMapper, updateMapperBars, initMapperUI, pruneLoose } from './ui/mapper-ui.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
-import { initResize }                       from './ui/resize.js';
 import { initFullscreen, updateFsOverlay, fullscreen } from './ui/fullscreen.js';
 import { initCamBadge, updateCamBadge }     from './ui/cam-badge.js';
 import { playalong }                        from './playalong.js';
@@ -32,7 +31,7 @@ import { findConfig, setCurrentConfig,
          clearCurrentConfig }               from './saved.js';
 import { initTutorial, maybeOfferTour, offerTourForMode, offerTourForSharedSetup } from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
-import { enhanceSections, colorSections }   from './ui/sections.js';
+import { initWorkspace, relayout, adoptSections } from './ui/workspace.js';
 import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
 import { initTheme }                        from './ui/theme.js';
 import { initSettings }                     from './ui/settings.js';
@@ -250,10 +249,9 @@ syncAllTracking();
 // built lazily — so the button is wired there, where it exists, rather than
 // looked up here at startup where it does not.
 //
-// Dev mode reveals whole sections (MODELS, Shader).
-// Position hues are derived from measured geometry and skip hidden elements,
-// so anything revealed here has no hue until this recolours the set.
-devmode.onChange(() => colorSections());
+// Dev mode reveals whole nodes (MODELS, Shader), and the frames around them
+// are measured from what is visible — so they are re-measured here.
+devmode.onChange(() => relayout());
 
 // ── LiDAR / optical depth toggle ─────────────────────────────────────────
 const depthBtn = document.getElementById('depth-btn');
@@ -397,9 +395,10 @@ startAudio();
 initPresetMenu({
   onApply: async (preset, missing) => {
     // A built-in patch is not one of your named setups: whatever was playing
-    // has been replaced, so the name on the camera view goes with it.
+    // has been replaced, so the name on the camera view goes with it — and so
+    // do the previous patch's unwired nodes.
     clearCurrentConfig();
-    renderMapper();
+    pruneLoose();
     // Choosing a patch from the menu is the same statement the first-run picker
     // makes, so it earns the same tour — offered once per mode, and silently
     // skipped for anyone who has already seen it.
@@ -539,6 +538,20 @@ const persist = () => preset.saveLocal();
 window.addEventListener('beforeunload', persist);
 window.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
 
+// Keep the camera's overlay canvases matched to the picture as its node is
+// resized (they are otherwise sized once at camera start).
+function fitOverlays() {
+  const wrap = document.getElementById('video-wrap');
+  if (!wrap) return;
+  const fit = () => ['overlay', 'face-overlay'].forEach(id => {
+    const c = document.getElementById(id);
+    if (!c) return;
+    if (c.width !== wrap.offsetWidth)  c.width  = wrap.offsetWidth;
+    if (c.height !== wrap.offsetHeight) c.height = wrap.offsetHeight;
+  });
+  new ResizeObserver(fit).observe(wrap);
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────
 initTheme();              // before anything paints, so there is no flash of the default palette
 devmode.init();           // apply persisted dev-mode state to <body>
@@ -555,7 +568,9 @@ metronome.registerSignals();   // the beat clock is wirable like any signal
 // Every slider in the app gets a typed twin, including panels that rebuild
 // themselves and any slider added later — see ui/numeric.js.
 watchRanges();
-initResize();             // draggable panel splitters (desktop)
+initWorkspace();          // the canvas: every section becomes a node on it
+initMapperUI();           // signals, parameters and function nodes on that canvas
+fitOverlays();            // landmark canvases follow the camera node's size
 initFullscreen();         // fullscreen camera view + keyboard overlay
 initCamBadge();           // the saved setup's name, captioning the frame
 initPlayalongUI();        // registers the fullscreen game renderer
@@ -618,11 +633,10 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
 }
 renderMapper();
 // Shader controls belong with the patchbay — the shader reads signals and
-// mappings, so it sits beside the wiring rather than among synth parameters.
-// Rendered once: renderMapper() re-runs on every rewire.
+// mappings, so its node sits beside the wiring rather than among synth
+// parameters. Rendered once, then adopted onto the canvas like any section.
 const shaderHost = document.getElementById('shader-host');
-if (shaderHost) { shaderHost.innerHTML = shaderSectionHTML(); wireShaderSection(); }
-enhanceSections();        // wrap every section: own container, scroller, resize grip
+if (shaderHost) { shaderHost.innerHTML = shaderSectionHTML(); wireShaderSection(); adoptSections(shaderHost); }
 loop();
 
 // Say which build this is, once, on startup. The cheapest possible answer to
