@@ -8,7 +8,8 @@ import { engine }                           from './engine.js';
 import { mapper, trackersFor }              from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
 import { buildSigPanel, updateSigPanel, syncSigGroups } from './ui/signals.js';
-import { renderMapper, updateMapperBars, initMapperUI, pruneLoose } from './ui/mapper-ui.js';
+import { renderMapper, updateMapperBars, initMapperUI } from './ui/mapper-ui.js';
+import { registerControls }                 from './controls.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
 import { initFullscreen, updateFsOverlay, fullscreen } from './ui/fullscreen.js';
@@ -49,6 +50,11 @@ import * as preset                          from './preset.js';
 // First thing: it applies the state, persists it and reloads without the
 // fragment, so the sooner it runs the less of the old setup flashes past.
 consumeSharedLink();
+
+// Switches and choices (filter type, key, tempo…) are input sockets too.
+// Registered before the audio panel first renders and before any saved
+// state is replayed, so both find the parameters they refer to.
+registerControls();
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
 function loop() {
@@ -398,7 +404,7 @@ initPresetMenu({
     // has been replaced, so the name on the camera view goes with it — and so
     // do the previous patch's unwired nodes.
     clearCurrentConfig();
-    pruneLoose();
+    renderMapper();
     // Choosing a patch from the menu is the same statement the first-run picker
     // makes, so it earns the same tour — offered once per mode, and silently
     // skipped for anyone who has already seen it.
@@ -569,7 +575,8 @@ metronome.registerSignals();   // the beat clock is wirable like any signal
 // themselves and any slider added later — see ui/numeric.js.
 watchRanges();
 initWorkspace();          // the canvas: every section becomes a node on it
-initMapperUI();           // signals, parameters and function nodes on that canvas
+initMapperUI();           // sockets and cables on that canvas
+buildSigPanel();          // every signal is an output socket on its node, camera or not
 fitOverlays();            // landmark canvases follow the camera node's size
 initFullscreen();         // fullscreen camera view + keyboard overlay
 initCamBadge();           // the saved setup's name, captioning the frame

@@ -465,6 +465,10 @@ export const engine = (() => {
     if (tuning.enabled && isFreqKey(key)) raw = quant.quantize(raw);
     if (volStep.enabled && key === 'volume') return setVolume(raw);
     p.val = Math.max(p.min, Math.min(p.max, raw));
+    // A control (src/controls.js): a switch or a choice the engine does not
+    // own. Its hook acts on the value — before the audio-node cases, which
+    // it has none of, and whether or not the context has started.
+    if (p.apply) { p.apply(p.val); return; }
     if (!started) return;
     const t = ctx.currentTime, sm = 0.025; // 25 ms smoothing
 

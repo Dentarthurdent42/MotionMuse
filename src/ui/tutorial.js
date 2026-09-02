@@ -157,12 +157,13 @@ export const TOUR_STEPS = [
           'again to toggle back; the cursor key disarms everything.',
   },
   {
-    id: 'signals', section: 'signals', target: '#sig-list', title: 'Signals',
-    body: 'Everything the camera measures, live: wrist height, pinch, finger ' +
-          'curl, elbow angle, fingertip touches. Most read on two channels — ' +
-          '<b>displacement</b> is where you are, <b>velocity</b> is how fast ' +
-          'you are moving. A held pose and a flick are different controls. ' +
-          'Any channel can drive any sound parameter; click one to copy its key.',
+    id: 'signals', section: 'camera', target: '#cam-signals', title: 'Signals',
+    body: 'Everything the camera measures, live, as this node’s outputs: wrist ' +
+          'height, pinch, finger curl, elbow angle, fingertip touches. Most read ' +
+          'on two channels — <b>displacement</b> is where you are, <b>velocity</b> ' +
+          'is how fast you are moving. A held pose and a flick are different ' +
+          'controls. Each channel ends in a socket ●: drag it to a parameter’s ' +
+          '● anywhere on the canvas to wire it. Click a row to copy its key.',
   },
   {
     id: 'looper', section: 'looper', target: '#loop-state', needs: ['audio'], title: 'Loop pedal',
@@ -195,7 +196,7 @@ export const TOUR_STEPS = [
           'collapses the whole engine into one node.',
   },
   {
-    id: 'sec-visualizer', section: 'visualizer', target: '#viz-wrap', needs: ['audio'],
+    id: 'sec-visualizer', section: 'output', target: '#viz-wrap', needs: ['audio'],
     title: 'Oscilloscope',
     body: 'The output waveform. It keeps moving while muted. Tap it to mute ' +
           'or unmute.',
@@ -243,10 +244,11 @@ export const TOUR_STEPS = [
           'bottom step true silence; <b>PLUCK / KEY / BOW</b> set the attack.',
   },
   {
-    id: 'sec-sliders', section: 'sliders', target: '.sec[data-sec-id="sliders"]', needs: ['audio'],
-    title: 'Parameters',
-    body: 'Every audio parameter, grouped like the patchbay’s outputs. Drag ' +
-          'to set a value; a mapped parameter follows its signal.',
+    id: 'sec-inputs', section: 'output', target: '#output-params', needs: ['audio'],
+    title: 'Inputs',
+    body: 'Every slider, switch and choice carries an input socket ● beside ' +
+          'it. Drag to set a value by hand; wire a signal into the socket and ' +
+          'the control follows it — a filter type, the key, the tempo included.',
   },
   {
     // Rearranging is invisible until someone tries it, so the tour is the

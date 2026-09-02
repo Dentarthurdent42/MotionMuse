@@ -46,21 +46,32 @@ export const LS_KEY = 'motionmuse-workspace';
 // Widths a panel starts at. The camera wants room for a 4:3 picture; the
 // lists want less. Anything unlisted takes the default.
 const DEFAULT_W = {
-  signals: 300, camera: 440, mic: 440, eeg: 440, emg: 440, models: 440,
-  patch: 440, shader: 440, visualizer: 340,
+  camera: 440, mic: 440, eeg: 440, emg: 440, models: 440,
+  patch: 300, shader: 440, output: 340,
 };
 const PANEL_W = 340;
 // Panels whose content is an open-ended list start with a height, so the
 // list scrolls inside the node instead of running down the canvas.
-const DEFAULT_H = { signals: 460, sliders: 320, 'gesture-mode': 300 };
+const DEFAULT_H = { 'gesture-mode': 300 };
 const MIN_W = 180, MIN_H = 72;
-const COL_X = [0, 324, 912];      // where the three default columns start (the patch frame is ~560 wide)
+const COL_X = [0, 480, 830];      // where the three default columns start
 const GAP = 12;
 // A group's members stack in columns no taller than this, wrapping to the
 // right: the audio engine is thirteen nodes, and one column of them is a
 // strip four screens tall that FIT can only show as a smear.
 const COL_MAX_H = 980;
 const FRAME_PAD = 10, FRAME_HEAD = 26;
+
+// Every node shell is watched for size changes: content grows (a web font
+// lands, a list gains rows, a mode switches on) after a node has been placed
+// by its measured height, and nodes placed by the canvas are re-stacked so
+// they never come to overlap. See restack().
+const sizeWatcher = globalThis.ResizeObserver ? new ResizeObserver(() => scheduleRestack()) : null;
+let restackTimer = null;
+function scheduleRestack() {
+  clearTimeout(restackTimer);
+  restackTimer = setTimeout(restack, 60);
+}
 
 const state = M.createState(parseSaved());
 // Whether this is a first visit (nothing stored): only then do the shipped
@@ -341,6 +352,7 @@ export function adoptSections(root = document) {
     shellFromSection(sec, node);
     els.set(id, sec);
     (node.pinned ? dock : nodesEl).appendChild(sec);
+    sizeWatcher?.observe(sec);
     // Sized before it is measured: placement stacks nodes by their boxes,
     // and a list that starts with a height must be measured AT that height.
     applyNode(node, sec);
@@ -387,7 +399,7 @@ function placeMembers(g, members) {
     if (shown && my > top && my + shellH(m.id) - top > COL_MAX_H) {
       mx += colW + GAP; my = top; colW = 0;       // next column in the frame
     }
-    m.x = mx; m.y = my; m.placed = true;
+    m.x = mx; m.y = my; m.placed = true; m.auto = true;
     if (shown) {
       my += shellH(m.id) + GAP;
       colW = Math.max(colW, shellW(m.id));
@@ -439,11 +451,11 @@ function placeDefaults() {
     for (const id of ids.sort((a, b) => orderOf(a) - orderOf(b))) {
       const n = state.nodes.get(id);
       if (n.kind === 'group') {
-        n.x = x; n.y = y; n.placed = true;
+        n.x = x; n.y = y; n.placed = true; n.auto = true;
         const bottom = placeMembers(n, sortMembers(id, M.children(state, id).filter(m => !m.placed)));
         y = bottom + FRAME_PAD + GAP;
       } else {
-        n.x = x; n.y = y; n.placed = true;
+        n.x = x; n.y = y; n.placed = true; n.auto = true;
         y += shellH(id) + GAP;
       }
     }
@@ -468,7 +480,45 @@ function placeFlow(n) {
     const r = measure(m.id);
     if (r) y = Math.max(y, r.y + r.h + GAP);
   }
-  n.x = M.snap(x); n.y = M.snap(y); n.placed = true;
+  n.x = M.snap(x); n.y = M.snap(y); n.placed = true; n.auto = true;
+}
+
+// Keep auto-placed nodes stacked. A node placed by the canvas sits under the
+// node above it by that node's height AT THE TIME; when content grows later
+// the two would overlap. So each column of auto nodes — inside every frame,
+// and at the top level — is re-stacked from its top node down, by current
+// heights, whenever a shell changes size. Deepest frames first, so a frame's
+// own height is settled before the level that stacks the frame.
+function restack() {
+  restackTimer = null;
+  if (!nodesEl) return;
+  const levels = [...state.nodes.values()]
+    .filter(n => n.kind === 'group' && !n.collapsed)
+    .sort((a, b) => depthOf(b.id) - depthOf(a.id))
+    .map(g => g.id);
+  levels.push(null);
+  let moved = false;
+  for (const parent of levels) {
+    const kids = [...state.nodes.values()].filter(n =>
+      n.parent === parent && n.auto && n.placed && !n.pinned
+      && M.isShown(state, n.id) && isVisible(els.get(n.id)));
+    const cols = [];
+    for (const n of kids.sort((a, b) => a.x - b.x)) {
+      let col = cols.find(c => Math.abs(c.x - n.x) < 40);
+      if (!col) cols.push(col = { x: n.x, items: [] });
+      col.items.push(n);
+    }
+    for (const col of cols) {
+      col.items.sort((a, b) => a.y - b.y);
+      let y = col.items[0].y;
+      for (const n of col.items) {
+        if (Math.abs(n.y - y) > 0.5) { n.y = y; moved = true; const el = els.get(n.id); if (el) applyNode(n, el); }
+        y += (measure(n.id)?.h ?? 0) + GAP;
+      }
+    }
+    if (moved) layoutFrames();
+  }
+  if (moved) { dirty(); save(); }
 }
 
 // Get-or-create a socket node from the patchbay. New ones join the patch
@@ -479,7 +529,7 @@ export function ensureNode(id, init = {}) {
   if (!had) {
     const pg = state.nodes.get('group:patch');
     if (pg && !pg.collapsed && init.parent === undefined) n.parent = pg.id;
-    if (Number.isFinite(init.x) && Number.isFinite(init.y)) { n.x = init.x; n.y = init.y; n.placed = true; }
+    if (Number.isFinite(init.x) && Number.isFinite(init.y)) { n.x = init.x; n.y = init.y; n.placed = true; n.auto = false; }
   }
   return n;
 }
@@ -504,6 +554,7 @@ export function syncWorkspace() {
       el = makeShell(n);
       els.set(n.id, el);
       (n.pinned ? dock : nodesEl).appendChild(el);
+      sizeWatcher?.observe(el);
       if (!n.placed) placeFlow(n);
     } else if (n.kind === 'group') {
       renderGroup(n, el);
@@ -822,6 +873,7 @@ function startDrag(e, shell) {
     for (const [, m] of moving) {
       if (m.pinned) { m.px = Math.round(m.px); m.py = Math.round(m.py); }
       else { m.x = M.snap(m.x); m.y = M.snap(m.y); }
+      m.auto = false;                 // placed by hand now: the canvas leaves it be
     }
     // Dropped into a frame it was not in — or out of the one it was in.
     if (!n.pinned) reparentByPosition(moving, homes);
@@ -899,6 +951,7 @@ function startResize(e, shell) {
     // release the height instead of pinning it.
     const body = shell.querySelector(':scope > .node-body');
     if (body && n.h && body.scrollHeight <= body.clientHeight + 1) n.h = null;
+    n.auto = false;
     syncWorkspace(); save();
   };
   grip.addEventListener('pointermove', move);
@@ -977,7 +1030,7 @@ function addEntries() {
     title: 'Panels',
     items: hidden.map(n => ({
       label: titleOf(n.id), hint: 'closed — bring it back',
-      add: (wx, wy) => { n.x = M.snap(wx); n.y = M.snap(wy); n.parent = null; setHidden(n.id, false); },
+      add: (wx, wy) => { n.x = M.snap(wx); n.y = M.snap(wy); n.parent = null; n.auto = false; setHidden(n.id, false); },
     })),
   });
   if (selected.size) sections.push({
@@ -1138,6 +1191,7 @@ export function tidy(ids = null) {
     if (n.kind === 'group' && !n.collapsed) {
       for (const d of M.descendants(state, n.id)) if (!d.pinned) { d.x += dx; d.y += dy; }
     } else { n.x = nx; n.y = ny; }
+    n.auto = false;
   }
   syncWorkspace(); save();
   fitAll(ids && ids.length > 1 ? ids : null);
@@ -1207,6 +1261,7 @@ export function initWorkspace() {
   // camera's group, at a size you can use — the rest is a pinch away.
   if (first) requestAnimationFrame(() => fitAll(window.innerWidth < 769 && state.nodes.has('group:inputs') ? ['group:inputs'] : null));
   window.addEventListener('resize', () => dirty());
+  document.fonts?.ready?.then(scheduleRestack);
 }
 
 export const cablesLayer = () => cablesSvg;
