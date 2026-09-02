@@ -696,7 +696,14 @@ const gestures = await (async () => {
       n.h = 120; n.auto = false;
       WS.syncWorkspace();
       WS.fitAll(['panel:metronome']);          // on screen, whatever the zoom above did
-      await new Promise(r => setTimeout(r, 600));
+      // The fit animates; wait for the view to come to rest rather than for a
+      // fixed time, since a loaded machine takes longer to get there.
+      for (let last = null, i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        const t = WS.viewTransform(), now = `${t.x},${t.y},${t.k}`;
+        if (now === last) break;
+        last = now;
+      }
       const body = document.querySelector('[data-node="panel:metronome"] > .node-body');
       const r = body.getBoundingClientRect();
       return { x: r.left + r.width / 2, y: r.top + r.height / 2, k: WS.viewTransform().k,

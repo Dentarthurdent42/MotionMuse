@@ -299,7 +299,7 @@ html, body {
   gap: 6px;
   padding: 2px 0;
 }
-.met-row > .chord-key-lbl { flex: 0 0 46px; }
+.met-row > .chord-key-lbl { flex: 0 0 auto; min-width: 46px; }
 .met-row > input[type="range"] { flex: 1 1 auto; min-width: 0; }
 .met-row > select { flex: 1 1 auto; min-width: 0; }
 .met-row > .ctrl-val { flex: 0 0 42px; }
@@ -1036,8 +1036,24 @@ body.no-scroll { overflow: hidden; }
 .wave-btns > .head-sock { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); }
 .node.sized .ctrl-lbl > .port-in, .node.sized .chord-key-lbl > .port-in,
 .node.sized .wave-btns > .head-sock { margin-left: calc(-1 * var(--body-pad-x, 10px)); }
-/* A switch that lives in a node's header takes the header's left edge. */
-.node-head > .head-sock { position: absolute; left: calc(-1 * var(--sock) / 2); top: 50%; transform: translateY(-50%); margin: 0; }
+/* A switch that lives in a node's header takes the header's left edge —
+   the same line the body's sockets sit on: the head starts inside the
+   node's 1px border and carries a 3px accent stripe of its own, so the
+   ring is pulled back past both (4px) and then by half its width. A node
+   given a height clips, so there the ring sits just inside, as the body's do. */
+.node-head > .head-sock { position: absolute; left: calc(-4px - var(--sock) / 2); top: 50%; transform: translateY(-50%); margin: 0; }
+.node.sized > .node-head > .head-sock { left: -3px; }
+/* A sub-heading inside a body (ENVELOPE under Volume Quantize) is a row like
+   any other: its socket rides out to the border the same way. */
+.audio-section-label:not(.node-head) > .head-sock { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); }
+.node.sized .audio-section-label:not(.node-head) > .head-sock { margin-left: calc(-1 * var(--body-pad-x, 10px)); }
+/* An oscillator row's waveform socket, beside its number. */
+.osc-row-n > .port-in { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); margin-right: 5px; }
+/* A tracker group's switch, on its summary, out on the node's edge: across
+   the summary's padding, the group box's border and margin, the body's. */
+.sig-sec > summary { position: relative; }
+.sig-sec > summary > .sig-sum-in { position: absolute; top: 50%; transform: translateY(-50%); display: inline-flex;
+  left: calc(-1 * (1px + var(--sec-mx, 6px) + var(--body-pad-x, 0px) + 1px + var(--sock) / 2)); }
 .node-head > .head-sock > .port { margin-right: 0; }
 /* A wired socket carries a dot in its cable's colour. */
 .port.wired::before { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--wire, var(--dim)); }
@@ -2205,12 +2221,13 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   overflow: visible;
 }
 .sig-sec > summary {
+  --sum-px: 10px;
   cursor: pointer;
   list-style: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
+  padding: 5px var(--sum-px);
   background: var(--faint);
   border-radius: 2px 2px 0 0;
   border-bottom: 1px solid transparent;

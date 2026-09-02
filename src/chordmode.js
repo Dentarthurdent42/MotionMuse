@@ -840,6 +840,7 @@ export const chordmode = (() => {
     // the question this setting exists to answer.
     namedNow: () => namedWithSide(),
 
+    namingHand: () => namingHand,
     setNamingHand(v) {
       namingHand = (v === 'L' || v === 'R') ? v : 'any';
       return namingHand;

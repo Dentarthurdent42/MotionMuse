@@ -2,7 +2,7 @@ import { engine }                    from '../engine.js';
 import { mapper }                    from '../mapper.js';
 import { inPort } from './mapper-ui.js';
 import { buildSigPanel } from './signals.js';
-import { syncControls, onControlChange, FILTER_TYPES } from '../controls.js';
+import { syncControls, onControlChange, defineControls, FILTER_TYPES } from '../controls.js';
 import { SCALES, TUNINGS, NOTE_NAMES } from '../scale.js';
 import { makeKbdView, midiOf, OSC_COLS } from './keyboard.js';
 import { isDesktop } from './viewport.js';
@@ -18,6 +18,8 @@ import { GEN_SONGS } from '../songgen.js';
 import { songFromMidi } from '../midifile.js';
 import { gestureModeSection, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
 import { radialMenuSection, wireRadialSection, updateRadialPanel } from './radial-ui.js';
+import { chordVoiceSection, wireChordVoiceSection, updateChordVoicePanel } from './voice-ui.js';
+import { rows, tickCss } from './rows.js';
 import { metronomeSection, wireMetronomeSection, updateMetronomePanel } from './metronome-ui.js';
 import { looperSectionHTML, wireLooperSection } from './looper-ui.js';
 
@@ -57,31 +59,9 @@ const kbdOpts = () => {
   return { root: t.root, scale: t.scale, markers: oscMidis() };
 };
 
-// Tick marks at the snap values, drawn on the track as background gradients
-// (native <datalist> ticks are suppressed by our -webkit-appearance:none).
-// Module scope because the volume ladder changes at runtime, so handlers have
-// to repaint an existing slider's notches without a full re-render.
-const tickCss = p => !p.snaps?.length ? '' : p.snaps.map(s => {
-  const f = ((s - p.min) / (p.max - p.min) * 100).toFixed(2);
-  return `linear-gradient(90deg,transparent calc(${f}% - 1.5px),var(--dim) calc(${f}% - 1.5px),var(--dim) calc(${f}% + 1.5px),transparent calc(${f}% + 1.5px))`;
-}).join(',');
-
 export function renderAudioPanel() {
   const panel = document.getElementById('audio-panel');
   const nOsc = engine.getOscCount();
-
-  const tickBg = p => tickCss(p) ? ` style="background-image:${tickCss(p)}"` : '';
-
-  // Each row carries the parameter's INPUT socket: a cable from any signal's
-  // output ● lands here.
-  const rangeRow = (key, p) => `
-    <div class="ctrl-row">
-      <span class="ctrl-lbl">${inPort(key)}${p.label}</span>
-      <input type="range" class="apr" data-key="${key}"
-        min="${p.min}" max="${p.max}" value="${p.val}"
-        step="${((p.max - p.min) / 300).toPrecision(3)}"${tickBg(p)}>
-      <span class="ctrl-val" id="av-${key}">${p.val.toFixed(p.unit === 'Hz' ? 0 : 2)}</span>
-    </div>`;
 
   const waveBtn = (type, label, osc) =>
     `<button type="button" class="wave-btn" data-type="${type}" data-osc="${osc}">${label}</button>`;
@@ -111,8 +91,6 @@ export function renderAudioPanel() {
   // filter's cutoff and Q with its type, the master levels on the Output
   // node. There is no separate parameter list — a parameter is where the
   // thing it controls is, and that is where its socket is.
-  const P = engine.PARAMS;
-  const rows = keys => keys.filter(k => P[k]).map(k => rangeRow(k, P[k])).join('');
   const typeBtns = (id, key, current) => `
     <div class="ctrl-row ctrl-row-choice">
       <span class="ctrl-lbl">${inPort(key)}TYPE</span>
@@ -128,13 +106,14 @@ export function renderAudioPanel() {
   panel.innerHTML = `
     ${gestureModeSection()}
     ${radialMenuSection()}
+    ${chordVoiceSection()}
     ${metronomeSection()}
     <div class="audio-section">
-      <div class="audio-section-label">Sound Kit</div>
+      <div class="audio-section-label">Sound Kit <span class="head-sock">${inPort('kit')}</span></div>
       <select id="kit-select" title="Instrument timbre preset (synthesized)">${kitOpts}</select>
     </div>
     <div class="audio-section">
-      <div class="audio-section-label">Play Along</div>
+      <div class="audio-section-label">Play Along <span class="head-sock">${inPort('playalong_play')}</span></div>
       <div class="scale-grid" style="grid-template-columns:1.6fr 1fr;">
         <select id="song-select" title="Song — bundled charts, your imported MIDI files, and generated charts that are different every start"${gameActive ? ' disabled' : ''}>
           ${(() => {
@@ -152,12 +131,15 @@ export function renderAudioPanel() {
       </div>
       <div class="wave-btns" style="margin-top:4px;">
         <button type="button" class="wave-btn${gameActive ? ' on' : ''}" id="game-btn">${gameActive ? 'STOP' : 'PLAY'}</button>
-        <button type="button" class="wave-btn${playalong.guide ? ' on' : ''}" id="guide-btn" title="Play a quiet guide melody">GUIDE</button>
         <button type="button" class="wave-btn" id="song-import-btn"
                 title="Import a MIDI file (.mid) as a play-along chart — the busiest track becomes the melody. Stays on this machine.">IMPORT</button>
         <button type="button" class="wave-btn" id="song-delete-btn"${isUserSong(playalong.lastSong) ? '' : ' disabled'}
                 title="Remove the selected imported song">✕ SONG</button>
         <input type="file" id="song-import-file" accept=".mid,.midi,audio/midi" style="display:none" aria-hidden="true">
+      </div>
+      <div class="met-row">
+        <span class="chord-key-lbl">${inPort('playalong_guide')}GUIDE</span>
+        <button type="button" class="wave-btn${playalong.guide ? ' on' : ''}" id="guide-btn" title="Play a quiet guide melody">${playalong.guide ? 'ON' : 'OFF'}</button>
       </div>
       <canvas id="game-canvas" class="game-canvas" style="display:${gv.state !== 'idle' ? 'block' : 'none'}"></canvas>
       <div id="game-score" class="quant-notes">${gv.state === 'idle' ? bestLine() : '—'}</div>
@@ -175,7 +157,7 @@ export function renderAudioPanel() {
         <select id="scale-root" title="Root note" aria-label="Key root">${opts(NOTE_NAMES, t.root)}</select></div>
       <div class="met-row"><span class="chord-key-lbl">${inPort('key_scale')}SCALE</span>
         <select id="scale-name" title="Scale" aria-label="Scale">${opts(Object.keys(SCALES), t.scale)}</select></div>
-      <div class="met-row"><span class="chord-key-lbl">TUNING</span>
+      <div class="met-row"><span class="chord-key-lbl">${inPort('tuning_system')}TUNING</span>
         <select id="scale-tuning" title="Tuning system" aria-label="Tuning system">${opts(Object.keys(TUNINGS), t.system)}</select></div>
       <canvas id="quant-kbd" class="quant-kbd" style="display:${t.enabled ? 'block' : 'none'}"></canvas>
       <div id="quant-notes" class="quant-notes">${t.enabled ? '' : '—'}</div>
@@ -187,43 +169,34 @@ export function renderAudioPanel() {
         <button type="button" class="wave-btn${vq.enabled ? ' on' : ''}" id="vq-toggle"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${vq.enabled ? 'ON' : 'OFF'}</button>
       </div>
-      <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr;">
-        <select id="vq-steps" title="Loudness levels, silence included">${vqStepOpts}</select>
-        <select id="vq-floor" title="Bottom of the ladder — the silence anchor when GATE is on">${vqFloorOpts}</select>
-        <select id="vq-edge"  title="Attack / release speed at a level change">${vqEdgeOpts}</select>
-      </div>
-      <div class="wave-btns" style="margin-top:4px;">
-        <span class="head-sock">${inPort('vq_gate')}</span>
+      <!-- One input per row, on the node's edge. -->
+      <div class="met-row"><span class="chord-key-lbl">${inPort('vq_steps')}STEPS</span>
+        <select id="vq-steps" title="Loudness levels, silence included">${vqStepOpts}</select></div>
+      <div class="met-row"><span class="chord-key-lbl">${inPort('vq_floor')}FLOOR</span>
+        <select id="vq-floor" title="Bottom of the ladder — the silence anchor when GATE is on">${vqFloorOpts}</select></div>
+      <div class="met-row"><span class="chord-key-lbl">${inPort('vq_edge')}EDGE</span>
+        <select id="vq-edge"  title="Attack / release speed at a level change">${vqEdgeOpts}</select></div>
+      <div class="met-row"><span class="chord-key-lbl">${inPort('vq_gate')}GATE</span>
         <button type="button" class="wave-btn${vq.gate ? ' on' : ''}" id="vq-gate"
-             title="Make the bottom level true silence, so notes can be separated and re-attacked">GATE</button>
+             title="Make the bottom level true silence, so notes can be separated and re-attacked">${vq.gate ? 'ON' : 'OFF'}</button></div>
+      <div class="met-row"><span class="chord-key-lbl">${inPort('vq_gate_at')}GATE AT</span>
         <select id="vq-gate-at" style="flex:1 1 auto;min-width:0;"
                 ${vq.gate ? '' : 'disabled'}
-                title="Where the gate switches off, as a share of full volume. The ladder's own midpoint (·auto) is not always where you want the switch: with 2 steps it lands at 18%, so an on/off control flips very early. Raise it to move the switch later in the gesture.">${gateAtOpts(vq)}</select>
-      </div>
+                title="Where the gate switches off, as a share of full volume. The ladder's own midpoint (·auto) is not always where you want the switch: with 2 steps it lands at 18%, so an on/off control flips very early. Raise it to move the switch later in the gesture.">${gateAtOpts(vq)}</select></div>
       <div id="vq-level" class="quant-notes">${vq.enabled ? '' : '—'}</div>
       <!-- ADSR lives here rather than in its own section because this is where
            its trigger is: crossing up out of silence is the note-on and
            dropping to the bottom rung is the note-off. It REPLACES the edge
            preset above when on, which is why the select dims. -->
       <div class="audio-section-label" style="margin-top:8px;">
+        <span class="head-sock">${inPort('lead_env_on')}</span>
         Envelope
         <button type="button" class="wave-btn${le.enabled ? ' on' : ''}" id="lead-env-toggle"
              aria-pressed="${le.enabled}"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;"
              title="Use a full ADSR instead of the fixed attack/release of the edge preset. Triggered by the volume gate: out of silence is a note-on, back to silence a note-off.">${le.enabled ? 'ADSR' : 'EDGE'}</button>
       </div>
-      <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;"
-           ${le.enabled ? '' : 'aria-hidden="true"'}>
-        ${['attack', 'decay', 'sustain', 'release'].map(k => `
-          <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
-            ${k.slice(0, 3).toUpperCase()}
-            <input type="range" class="lead-env" data-env="${k}"
-              min="${engine.LEAD_ENV_RANGE[k][0]}" max="${engine.LEAD_ENV_RANGE[k][1]}"
-              step="0.005" value="${le[k]}" ${le.enabled ? '' : 'disabled'}>
-            <span class="ctrl-val" id="le-env-${k}">${k === 'sustain'
-              ? Math.round(le[k] * 100) + '%' : le[k].toFixed(2) + 's'}</span>
-          </label>`).join('')}
-      </div>
+      ${rows(['lead_attack', 'lead_decay', 'lead_sustain', 'lead_release'])}
     </div>
     <div class="audio-section" data-sec="oscillators">
       <div class="audio-section-label">Oscillators
@@ -240,7 +213,7 @@ export function renderAudioPanel() {
       </div>
       ${Array.from({ length: nOsc }, (_, i) => `
         <div class="osc-row">
-          <span class="osc-row-n" style="color:${OSC_COLS[i % OSC_COLS.length]}">${i + 1}</span>
+          <span class="osc-row-n" style="color:${OSC_COLS[i % OSC_COLS.length]}">${inPort(`osc${i + 1}_type`)}${i + 1}</span>
           <div class="wave-btns" data-osc="${i}">
             ${waveBtn('sine','SIN',i)}${waveBtn('triangle','TRI',i)}
             ${waveBtn('sawtooth','SAW',i)}${waveBtn('square','SQR',i)}
@@ -248,6 +221,7 @@ export function renderAudioPanel() {
         </div>
         ${rows([`osc${i + 1}_freq`, `osc${i + 1}_detune`, `osc${i + 1}_volume`])}`).join('')}
       <div class="wave-btns" style="margin-top:4px;">
+        <span class="head-sock">${inPort('shepard_lead')}</span>
         <button type="button" class="wave-btn${shep.lead ? ' on' : ''}" id="shep-lead"
              aria-pressed="${shep.lead}"
              title="Shepard tones: each oscillator becomes a stack of octaves under a fixed loudness curve, so pitch rises or falls endlessly without ever leaving its register.">SHEPARD</button>
@@ -304,6 +278,7 @@ export function renderAudioPanel() {
   document.getElementById('guide-btn').addEventListener('click', e => {
     playalong.setGuide(!playalong.guide);
     e.target.classList.toggle('on', playalong.guide);
+    e.target.textContent = playalong.guide ? 'ON' : 'OFF';
   });
   // Show the saved best for the selected song+difficulty while idle, and
   // wake the delete button only over a song the player actually imported.
@@ -390,14 +365,6 @@ export function renderAudioPanel() {
   document.getElementById('lead-env-toggle')?.addEventListener('click', () => {
     engine.setLeadEnv({ enabled: !engine.getLeadEnv().enabled });
     renderAudioPanel();          // the sliders enable/disable with it
-  });
-  document.querySelectorAll('.lead-env').forEach(el => {
-    el.addEventListener('input', e => {
-      const k = e.target.dataset.env;
-      const v = engine.setLeadEnv({ [k]: +e.target.value })[k];
-      setReadout(document.getElementById(`le-env-${k}`),
-                 k === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`);
-    });
   });
 
   document.getElementById('osc-minus').addEventListener('click', () => setCount(engine.getOscCount() - 1));
@@ -550,6 +517,8 @@ export function renderAudioPanel() {
 
   wireGestureSections(renderAudioPanel);
   wireRadialSection(renderAudioPanel);
+  wireChordVoiceSection(renderAudioPanel);
+  syncControls();
   wireMetronomeSection(renderAudioPanel);
   wireLooperSection();
 
@@ -570,7 +539,28 @@ export function renderAudioPanel() {
 // Followers for the controls, replaced on every render; the subscription is
 // made once.
 let controlFollowers = {};
-onControlChange(key => controlFollowers[key]?.());
+// A control with no follower of its own re-renders the panel — next tick, once
+// for a burst — so a choice a cable moved is drawn as the instrument now is.
+let panelRedraw = null;
+const scheduleRedraw = () => {
+  if (panelRedraw) return;
+  panelRedraw = setTimeout(() => { panelRedraw = null; renderAudioPanel(); }, 0);
+};
+onControlChange(key => (controlFollowers[key] ?? scheduleRedraw)());
+
+// PLAY needs the song and difficulty the panel shows, so it is defined here.
+defineControls({
+  playalong_play: {
+    label: 'Play', min: 0, max: 1, trigger: true, read: () => 0,
+    apply: (() => {
+      let high = false;
+      return v => {
+        const now = v >= 0.5; if (!now || high) { high = now; return; } high = now;
+        document.getElementById('game-btn')?.click();
+      };
+    })(),
+  },
+});
 
 export function updateAudioSliders() {
   mapper.mappings.forEach(m => {
@@ -608,5 +598,6 @@ export function updateAudioSliders() {
 
   updateGesturePanel();
   updateRadialPanel();
+  updateChordVoicePanel();
   updateMetronomePanel();
 }

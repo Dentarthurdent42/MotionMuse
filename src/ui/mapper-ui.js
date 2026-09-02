@@ -62,10 +62,7 @@ export const sigColor = key => key ? `oklch(0.78 0.14 ${sigHue(key)})` : 'oklch(
 
 // An input socket, for the panels' own markup: put this beside the control
 // it feeds. Its node is found by the parameter's owner (src/params.js).
-export const inPort = (key, label = paramLabel(key)) => `
-  <button type="button" class="port port-in" data-side="in" data-key="${key}"
-          aria-label="Input ${label} — connect a signal here"
-          title="Input: ${key} — drag a signal's ● here, or drag from here to one"></button>`;
+export { inPort } from './ports.js';
 
 const isFreqParam = k => /^osc\d+_freq$/.test(k);
 const clampFreq = f => Math.round(Math.max(40, Math.min(2000, f)) * 10) / 10;

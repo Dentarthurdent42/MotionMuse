@@ -41,9 +41,12 @@ export function metronomeSection() {
         <span class="ctrl-val" id="metro-bpm-val">${c.bpm}</span>
       </div>
       <div class="met-row">
-        <span class="chord-key-lbl">TIME</span>
+        <span class="chord-key-lbl">${inPort('metro_sig')}TIME</span>
         <select id="metro-sig" aria-label="Time signature"
                 title="Beats per bar — the camera strip, the SAMPLE row and the downbeat accent all follow it">${sigOpts}</select>
+      </div>
+      <div class="met-row">
+        <span class="chord-key-lbl">${inPort('metro_mute')}CLICK</span>
         <button type="button" class="wave-btn met-mute${c.muted ? ' on' : ''}" id="metro-mute" aria-pressed="${c.muted}"
                 title="Silence the click. The clock keeps counting: the camera strip still pulses and the beat-sampled modes still sample.">MUTE</button>
       </div>
