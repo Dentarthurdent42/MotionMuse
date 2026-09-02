@@ -427,13 +427,23 @@ const gestures = await (async () => {
                  wantX: 60 / k, wantY: 30 / k, parent: micAfter.parent };
 
   // 2. Drag it well clear of the INPUTS frame (below it, where no frame is):
-  //    it leaves the group.
+  //    it leaves the group. The frame's height depends on the fonts the
+  //    machine has, so first pan until there is room below it on screen —
+  //    a drop off the bottom of the page is no drop at all.
+  const frame0 = await page.evaluate(() =>
+    document.querySelector('[data-node="group:inputs"]').getBoundingClientRect().toJSON());
+  await page.evaluate(async dy => {
+    const WS = await import('/src/ui/workspace.js');
+    const t = WS.viewTransform();
+    WS.setView({ x: t.x, y: t.y - dy, k: t.k }, false);
+  }, Math.max(0, frame0.bottom - 640));
+  await page.waitForTimeout(150);
   const frame = await page.evaluate(() =>
     document.querySelector('[data-node="group:inputs"]').getBoundingClientRect().toJSON());
   hr = await headRect('panel:mic');
   await page.mouse.move(hr.x + 40, hr.y + hr.h / 2);
   await page.mouse.down();
-  await page.mouse.move(hr.x + 40, frame.bottom + 140, { steps: 6 });
+  await page.mouse.move(hr.x + 40, frame.bottom + 120, { steps: 6 });
   await page.mouse.up();
   await page.waitForTimeout(150);
   const left = { parent: (await node('panel:mic')).parent };
