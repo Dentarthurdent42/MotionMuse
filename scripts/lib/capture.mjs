@@ -88,7 +88,7 @@ export async function capture({ compareTo } = {}) {
     });
 
     // Let the fonts land, the audio panel render and the canvas lay out.
-    await page.waitForSelector('#ws .node-sig', { timeout: 10000 }).catch(() => {});
+    await page.waitForSelector('#ws .ng-wire', { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(1200);
 
     // The tour auto-offers on a first visit; it is not part of the product shot.

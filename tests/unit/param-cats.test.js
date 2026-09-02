@@ -12,6 +12,10 @@ globalThis.localStorage ??= {
 
 const { engine }     = await import('../../src/engine.js');
 const { PARAM_CATS } = await import('../../src/params.js');
+// The switches and choices (filter type, key, tempo…) register as parameters
+// at startup, exactly as main.js does it, so the picker can reach them too.
+const { registerControls } = await import('../../src/controls.js');
+registerControls();
 
 // PARAM_CATS is a function now: the oscillator bank is resizable, so which keys
 // exist is a runtime value. Checked at more than one bank size, since a table

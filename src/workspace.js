@@ -39,22 +39,20 @@ export const keyOf  = id => String(id).slice(String(id).indexOf(':') + 1);
 //
 // A group's children keep the group's column; the group is what has an order.
 export const DEFAULT_GROUPS = [
-  { id: 'group:inputs', title: 'INPUTS', col: 1, order: 0,
+  { id: 'group:inputs', title: 'INPUTS', col: 0, order: 0,
     members: ['panel:camera', 'panel:mic', 'panel:eeg', 'panel:emg', 'panel:models'] },
-  // The patch: the PATCH panel plus every signal, parameter and function
-  // node — so the whole wiring can be collapsed into one node.
-  { id: 'group:patch', title: 'PATCH', col: 1, order: 1, members: ['panel:patch'] },
+  // The patch: the PATCH TOOLS panel plus every function node — so the
+  // computing part of the wiring can be collapsed into one node.
+  { id: 'group:patch', title: 'PATCH', col: 1, order: 0, members: ['panel:patch'] },
   { id: 'group:audio', title: 'AUDIO ENGINE', col: 2, order: 0,
-    members: ['panel:visualizer', 'panel:gesture-mode', 'panel:radial-mode',
-              'panel:metronome', 'panel:sound-kit', 'panel:play-along', 'panel:looper',
-              'panel:pitch-quantize', 'panel:volume-quantize', 'panel:oscillators',
-              'panel:filter-type', 'panel:chord-filter-type', 'panel:sliders'] },
+    members: ['panel:output', 'panel:oscillators', 'panel:filter', 'panel:gesture-mode',
+              'panel:chord-filter', 'panel:radial-mode', 'panel:metronome', 'panel:sound-kit',
+              'panel:play-along', 'panel:looper', 'panel:pitch-quantize', 'panel:volume-quantize'] },
 ];
 export const DEFAULT_COLUMNS = {
-  'panel:signals': { col: 0, order: 0 },
-  'group:inputs':  { col: 1, order: 0 },
-  'group:patch':   { col: 1, order: 1 },
-  'panel:shader':  { col: 1, order: 2 },
+  'group:inputs':  { col: 0, order: 0 },
+  'group:patch':   { col: 1, order: 0 },
+  'panel:shader':  { col: 1, order: 1 },
   'group:audio':   { col: 2, order: 0 },
 };
 // Sockets nodes (sig / par / fn) are placed in the patch column, in flow order.
@@ -86,6 +84,10 @@ function normalize(id, raw) {
     // Placed: the canvas has given it a position. A node arriving from
     // storage was; one created by ensure() waits for placeDefaults / placeFlow.
     placed: r.placed === true,
+    // Auto: still where the canvas put it, never moved or resized by hand.
+    // Such nodes are kept stacked as their content changes size; a node the
+    // user has placed stays exactly where they left it.
+    auto: r.auto === true,
   };
   if (kind === 'group') {
     n.title = isString(r.title) ? r.title : 'GROUP';
@@ -132,6 +134,7 @@ export function serialize(state) {
     if (n.hidden) out.hidden = true;
     if (n.parent) out.parent = n.parent;
     if (n.pinned) { out.pinned = true; out.px = n.px; out.py = n.py; }
+    if (n.auto) out.auto = true;
     if (n.kind === 'group') { out.title = n.title; if (n.collapsed) out.collapsed = true; }
     nodes[n.id] = out;
   }
@@ -251,10 +254,12 @@ export function setParent(state, id, gid) {
 // `links`:   every cable — { from: { node, key }, to: { node, key } }, from an
 //            out socket to an in socket.
 //
-// A collapsed group exposes each member socket that faces OUTWARD: one whose
-// cable reaches a node outside the group, or one with no cable at all (so a
-// closed box can still be wired into). A cable that starts and ends inside
-// the group is the group's own business and stays hidden with it.
+// A collapsed group exposes each member socket whose cable CROSSES its
+// boundary — reaches a node outside the group. A cable that starts and ends
+// inside the group is the group's own business and stays hidden with it, and
+// an unwired socket is not shown at all: a camera has sixty of them, and a
+// collapsed box lists what it is connected to, not everything it could be.
+// Expand the group to wire something new into it.
 export function exposedPorts(state, gid, sockets, links) {
   const owned = s => visualOwner(state, s.node) === gid;
   const partnerOf = s => {
@@ -268,8 +273,7 @@ export function exposedPorts(state, gid, sockets, links) {
   const ins = [], outs = [];
   for (const s of sockets) {
     if (!owned(s)) continue;
-    const partners = partnerOf(s);
-    const outward = !partners.length || partners.some(p => visualOwner(state, p) !== gid);
+    const outward = partnerOf(s).some(p => visualOwner(state, p) !== gid);
     if (!outward) continue;
     (s.side === 'in' ? ins : outs).push(s);
   }

@@ -976,15 +976,17 @@ body.no-scroll { overflow: hidden; }
 .sig-bar-fill.vel { background: linear-gradient(90deg, var(--bar-vel-lo), var(--led-purple)); }
 
 /* ── The patch on the canvas ─────────────────────────────
-   Signal, parameter and function nodes are compact nodes with SOCKETS on
-   their edges; cables are paths in the world-space SVG under the nodes. */
-.node-sig, .node-par, .node-fn {
+   Sockets sit on the nodes themselves: every signal row is an OUTPUT socket
+   on its source node, every slider or switch an INPUT socket on the node
+   that owns it. A function node is a compact node with sockets on its
+   edges. Cables are paths in the world-space SVG under the nodes. */
+.node-fn {
   min-width: 150px;
   max-width: 230px;
   font-size: 10px;
   background: var(--faint);
 }
-.node-sig > .node-head, .node-par > .node-head, .node-fn > .node-head {
+.node-fn > .node-head {
   border-left-color: var(--wire, var(--dim));
   background-image: none;
   text-transform: none;
@@ -992,57 +994,53 @@ body.no-scroll { overflow: hidden; }
   color: var(--text);
   padding: 5px 24px 5px 8px;
 }
-.node-sig > .node-head { padding-right: 14px; }
-.node-par > .node-head { padding-left: 14px; }
-.node-par.wired { border-color: var(--wire); }
-/* The one socket of a signal or parameter node sits on the header's edge. */
-.node-sig .node-ports, .node-par .node-ports { position: absolute; top: 6px; z-index: 2; }
-.node-sig .node-ports { right: -8px; }
-.node-par .node-ports { left: -8px; }
 .node-fn .node-ports { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
 .ports-in, .ports-out { display: flex; flex-direction: column; gap: 3px; }
 .port-row { display: flex; align-items: center; gap: 5px; height: 18px; }
-.node-fn .ports-in .port-row { margin-left: -8px; }
-.node-fn .ports-out .port-row { margin-right: -8px; justify-content: flex-end; }
+.node-fn .ports-in .port-row { margin-left: 4px; }
+.node-fn .ports-out .port-row { margin-right: 4px; justify-content: flex-end; }
 .port-lbl { font-size: 9px; color: var(--dim); }
 .port {
   position: relative;
-  width: 15px; height: 15px; border-radius: 50%;
+  width: 13px; height: 13px; border-radius: 50%;
   border: 2px solid var(--wire, var(--dim)); background: var(--panel);
   padding: 0; cursor: crosshair;
   touch-action: none;   /* let us drag cables without the canvas panning */
   flex: 0 0 auto;
+  vertical-align: middle;
 }
 /* Invisible oversized tap halo — the dot stays small, the target doesn't. */
-.port::after { content: ''; position: absolute; inset: -13px; border-radius: 50%; }
+.port::after { content: ''; position: absolute; inset: -11px; border-radius: 50%; }
 .port.armed { box-shadow: 0 0 0 3px var(--cyan); background: var(--cyan); }
 /* Where an in-progress drag would land. */
 .port.drop-target { box-shadow: 0 0 0 5px var(--cyan-dim); background: var(--cyan); }
 .port:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-/* The drag-out socket on a signal row or a parameter slider: pull it onto
-   the canvas to make a node there, drop it on a socket to wire it, or click. */
-.port-src {
-  display: inline-block; vertical-align: middle;
-  width: 10px; height: 10px; border-radius: 50%;
-  margin-right: 5px; padding: 0;
-  border: 1.5px solid var(--dim); background: transparent;
-  cursor: grab; touch-action: none; flex: 0 0 auto;
-}
-.port-src:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-.ctrl-lbl > .port-src { margin-right: 4px; }
-.ws-ghost {
-  position: fixed; left: 0; top: 0; z-index: 1000;
-  pointer-events: none;
-  padding: 4px 9px;
-  background: var(--faint); color: var(--text);
-  border: 1px solid var(--wire, var(--dim)); border-left-width: 3px; border-radius: 4px;
-  font-size: 10px; box-shadow: var(--shadow-lg);
-}
-/* Live level, as a bar along the node's bottom edge. Absolutely positioned
-   and scaled rather than sized, so it never participates in layout; the
-   transform keeps it on the compositor — this is written once per node per
-   frame. A faint track always shows underneath, so quiet is not broken. */
-.node-sig::after, .node-par::after, .node-fn::after {
+/* Input sockets beside their controls: a slider's label, a header pill, a
+   select, a choice row. Inline, a little air before the words. */
+.ctrl-lbl > .port, .chord-key-lbl > .port, .head-sock > .port, .sel-sock > .port { margin-right: 5px; }
+.head-sock { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.audio-section-label > .head-sock { margin-left: auto; }
+.audio-section-label > .head-sock + .wave-btn[style*="margin-left:auto"] { margin-left: 4px !important; }
+.sel-sock { display: flex; align-items: center; gap: 0; min-width: 0; }
+.sel-sock > select { flex: 1 1 auto; min-width: 0; }
+.chord-arp > .port { flex: 0 0 auto; }
+.ctrl-row-choice { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.ctrl-row-choice > .ctrl-lbl { flex: 0 0 auto; }
+.ctrl-row-choice > .wave-btns { flex: 1 1 auto; }
+/* Output rows: the socket takes the last column. */
+.sig-list { margin-top: 6px; }
+.sig-row:not(.sig-row-multi) { grid-template-columns: 1fr 44px 84px 16px; }
+.sig-chans { grid-template-columns: 1fr 44px 84px 16px; }
+.sig-row > .port, .sig-chans > .port { justify-self: end; }
+/* A cable that ends at a node's edge because its socket is scrolled or
+   folded away is drawn dashed at the end: it is real, its socket is not on
+   screen. */
+.ng-wire-edge { stroke-dasharray: 6 3; }
+/* Live level on a function node, as a bar along its bottom edge. Absolutely
+   positioned and scaled rather than sized, so it never participates in
+   layout; the transform keeps it on the compositor. A faint track always
+   shows underneath, so quiet is not broken. */
+.node-fn::after {
   content: ''; position: absolute; left: 5px; right: 5px; bottom: 2px;
   height: 2px; background: var(--border2); opacity: 0.4;
   border-radius: 1px; pointer-events: none;
@@ -1054,10 +1052,7 @@ body.no-scroll { overflow: hidden; }
   border-radius: 1px;
   opacity: 0.9; pointer-events: none; z-index: 1;
 }
-.node-par:not(.wired) .ng-level { background: var(--dim); opacity: 0.5; }
-.node-sig, .node-par, .node-fn { padding-bottom: 5px; }
-.par-range { padding: 3px 8px 2px 14px; font-size: 9px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.node-par.open { max-width: 330px; min-width: 290px; }
+.node-fn { padding-bottom: 5px; }
 .fn-body { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 6px; }
 .fn-opt { display: flex; align-items: center; gap: 6px; font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
 .fn-opt select, .fn-opt input[type="number"] { font-size: 10px; padding: 1px 4px; flex: 1 1 auto; width: auto; text-transform: none; letter-spacing: 0; }
@@ -1070,15 +1065,28 @@ body.no-scroll { overflow: hidden; }
 .ng-wire { transition: opacity 0.1s; pointer-events: stroke; cursor: pointer; }
 #ng-preview { pointer-events: none; }
 
-/* The cable editor, inside the selected parameter node. */
+/* The cable editor: a floating panel beside the input its cable runs into,
+   on the screen layer — a dialog, not a node — following the socket as the
+   canvas pans and zooms. */
+.ng-editor-pop {
+  position: absolute; z-index: 45;
+  pointer-events: auto;
+  width: 300px; max-width: calc(100% - 12px);
+  background: var(--panel);
+  border: 1px solid var(--cyan);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+}
+.ng-editor-pop[hidden] { display: none; }
 .ng-editor {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
   padding: 8px 10px;
-  border-top: 1px dashed var(--border2);
   font-size: 9px; color: var(--dim);
   min-width: 0;
 }
-.ng-editor .ng-edit-label { color: var(--text); font-size: 10px; width: 100%; }
+.ng-editor .ng-edit-label { color: var(--text); font-size: 10px; width: 100%; display: flex; align-items: center; gap: 6px; }
+.ng-editor .ng-edit-now { color: var(--amber); font-size: 9px; }
+.ng-editor .ng-close { margin-left: auto; }
 .ng-editor label { display: inline-flex; align-items: center; gap: 4px; }
 .ng-editor input { width: 62px; }
 .ng-editor select { width: 88px; }
@@ -2238,9 +2246,6 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
      invisible tap halo. */
   .port { width: 22px; height: 22px; }
   .port::after { inset: -17px; }
-  .node-sig .node-ports { right: -11px; }
-  .node-par .node-ports { left: -11px; }
-  .port-src { width: 14px; height: 14px; }
 
   /* Piano picker: draw the keyboard wider than the screen (≈21px white keys
      instead of ≈10px) and let the wrapper scroll, so individual notes are
@@ -2302,18 +2307,16 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
 
   /* Signal list */
   .sig-group { font-size: 10px; padding: 10px 14px 4px; }
-  .sig-row { grid-template-columns: 1fr 52px 110px; gap: 7px; padding: 5px 14px; }
+  .sig-row:not(.sig-row-multi) { grid-template-columns: 1fr 52px 100px 18px; gap: 7px; padding: 5px 14px; }
   .sig-row-multi { grid-template-columns: 1fr; gap: 3px; }
-  .sig-chans { grid-template-columns: 1fr 52px 110px; gap: 4px 7px; padding-left: 12px; }
+  .sig-chans { grid-template-columns: 1fr 52px 100px 18px; gap: 4px 7px; padding-left: 12px; }
   .sig-chan-name { font-size: 10px; }
   .sig-name, .sig-val { font-size: 12px; }
   .sig-bar { height: 4px; }
 
   /* The patch on the canvas */
-  .node-sig, .node-par, .node-fn { font-size: 12px; }
+  .node-fn { font-size: 12px; }
   .port { width: 18px; height: 18px; }
-  .node-sig .node-ports { right: -9px; }
-  .node-par .node-ports { left: -9px; }
   .ng-editor { padding: 11px 14px; font-size: 11px; }
   .ng-editor .ng-edit-label { font-size: 12px; }
   .ng-editor input { width: 74px; }
@@ -2567,7 +2570,6 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   .sig-row:hover { background: var(--faint); }
   .node-close:hover, .node-pin:hover { background: var(--faint); color: var(--text); }
   .port:hover { background: var(--wire, var(--cyan)); }
-  .port-src:hover { border-color: var(--cyan); background: var(--cyan-dim); }
   .ws-menu-item:hover { background: var(--faint); color: var(--cyan); }
   .ws-menu-item.danger:hover { color: var(--red); }
   .node-group > .node-head:hover { border-color: var(--cyan); }

@@ -72,17 +72,6 @@
          stays in this box for longer than one frame. -->
     <div id="ws-staging" hidden>
 
-      <!-- Signals -->
-      <div class="panel panel-sig" data-sec="signals">
-        <div class="ph">
-          SIGNALS
-          <span class="ph-hint" title="Drag a signal's ● onto the canvas to make it a node; click a row to copy its key">● drag out</span>
-        </div>
-        <div class="pb" id="sig-list">
-          <div class="pb-empty">Start camera to see signals</div>
-        </div>
-      </div>
-
       <!-- Camera Input. MODELS (dev) is its own node beside it in the
            INPUTS group: which pose model runs is a property of this source,
            and a node can sit next to what it belongs to. -->
@@ -162,6 +151,11 @@
             <button class="depth-toggle" id="gaze-btn" disabled
                     title="Track pupil orientation as gaze_x / gaze_y signals — start the camera first">◉ GAZE</button>
         </div>
+        <!-- What the camera measures, as this node's OUTPUT sockets: one
+             row per signal, grouped by tracker, a live value and a bar on
+             each. Drag a row's ● to a parameter's ● anywhere on the canvas.
+             Filled by src/ui/signals.js; a group whose tracker is off folds. -->
+        <div class="sig-list" id="cam-signals" title="Outputs — drag a ● to a parameter's socket to wire it; click a row to copy its key"></div>
       </div><!-- /Camera Input -->
 
       <!-- Dev-only pose model comparison: its own node in the INPUTS group. -->
@@ -190,7 +184,8 @@
                   title="Use the microphone as a signal source. Analysed in the browser and never recorded or uploaded.">OFF</button>
         </div>
         <div class="mic-meter" title="Input level"><div class="mic-meter-fill" id="mic-meter-fill"></div></div>
-        <div class="quant-notes" id="mic-note">Level, pitch, clarity and brightness become signals you can wire like any other.</div>
+        <div class="quant-notes" id="mic-note">Level, pitch, clarity and brightness are this node's outputs — wire them like any other.</div>
+        <div class="sig-list" id="mic-signals"></div>
       </div>
 
       <div class="audio-section uc-feature" data-sec="eeg">
@@ -216,24 +211,26 @@
           <button class="btn" id="load-btn" title="Load mappings and settings from a saved file">LOAD</button>
           <input type="file" id="load-file" accept="application/json,.json" hidden>
         </div>
-        <div class="mapper-hint">Drag ● from a signal to ● on a parameter to wire it. Signals and parameters come from
-          the SIGNALS list, the PARAMETERS node, or <b>+ NODE</b>; a function node computes between cables.
-          Select nodes and <b>Ctrl+G</b> to fold them into one.</div>
+        <div class="mapper-hint">Every signal is an output ● on the node that measures it; every parameter is an
+          input ● on the node that owns it. Drag ● to ● to wire, click a cable to shape it. <b>+ NODE</b> adds a
+          function node that computes between cables; select nodes and <b>Ctrl+G</b> to fold them into one.</div>
       </div>
 
       <!-- Shader controls: driven by signals and mappings, so it sits beside
            the wiring. Filled by main.js once at startup. -->
       <div id="shader-host"></div>
 
-      <!-- The oscilloscope: its own node, outside #audio-panel so the panel
-           rebuilding its innerHTML never recreates the canvas or drops the
-           click-to-mute handler. -->
-      <div class="audio-section" data-sec="visualizer">
-        <div class="audio-section-label">Oscilloscope</div>
+      <!-- The output: the oscilloscope and the master levels. Its own node,
+           outside #audio-panel so the panel rebuilding its innerHTML never
+           recreates the canvas or drops the click-to-mute handler; the level
+           rows are rendered into #output-params by audio-ui.js. -->
+      <div class="audio-section" data-sec="output">
+        <div class="audio-section-label">Output</div>
         <div class="viz-wrap" id="viz-wrap" title="Tap to mute / unmute">
           <canvas id="viz-canvas"></canvas>
           <div id="viz-muted" hidden>🔇 MUTED · PRESS <b id="mute-key-hint">SPACE</b></div>
         </div>
+        <div id="output-params"></div>
       </div>
 
       <!-- The synth's sections, rendered by src/ui/audio-ui.js on every

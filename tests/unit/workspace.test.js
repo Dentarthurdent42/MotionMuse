@@ -100,8 +100,8 @@ test('a collapsed group exposes only outward-facing sockets', () => {
     { from: { node: 'fn:1',  key: 'fn_1' }, to: { node: 'par:c', key: 'c' } },      // leaves
   ];
   const { ins, outs } = exposedPorts(s, g.id, sockets, links);
-  assert.deepEqual(ins.map(p => p.key).sort(), ['b', 'fn_1_b'],
-    'b is unconnected (so wirable), fn_1_b is fed from outside; fn_1_a is internal');
+  assert.deepEqual(ins.map(p => p.key).sort(), ['fn_1_b'],
+    'fn_1_b is fed from outside; fn_1_a is internal and b is unwired');
   assert.deepEqual(outs.map(p => p.key), ['fn_1'],
     'a only feeds a member, so it is hidden with the group');
 });
