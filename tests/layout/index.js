@@ -835,6 +835,9 @@ const reset = await (async () => {
   const errs = [];
   page.on('pageerror', e => errs.push(e.message));
   await page.goto(URL_, { waitUntil: 'load' });
+  // Seed once the app has finished its own start-up saves, so the stale
+  // layout is what the reload finds and not what a late save overwrote.
+  await page.waitForTimeout(800);
   await page.evaluate(() => {
     localStorage.setItem('motionmuse-workspace', JSON.stringify({ v: 1, nodes: {
       'panel:mic':     { x: 2000, y: 2000, parent: null },
@@ -1750,7 +1753,38 @@ const ngBars = await (async () => {
       settle('hand_L_open', mat(f));
       levels.push({ f, lvl: lvl(), norm: +bus.norm('hand_L_open').toFixed(3) });
     }
-    return { socketsMoved, tracks, straight, flipped, levels,
+
+    // A cable into the bank's own socket sizes the bank; one into a mode's
+    // switch turns the mode on and off. Both redraw their node on the next
+    // tick, so each settle waits one.
+    const { engine } = await import('/src/engine.js');
+    const { chordmode } = await import('/src/chordmode.js');
+    const tick = () => new Promise(r => setTimeout(r, 80));
+    const wiresNow = () => document.querySelectorAll('.ng-wire').length;
+    const before = wiresNow();
+    const cnt = mapper.add('osc_count', 'hand_R_y', 0, 3, 'linear', 4, false);
+    const csig = bus.signals.get('hand_R_y');
+    const cat = f => csig.min + (csig.max - csig.min) * f;
+    settle('hand_R_y', cat(1)); await tick();
+    const grown = { count: engine.getOscCount(), rows: document.querySelectorAll('.osc-row').length,
+                    sock3: !!document.querySelector('.port-in[data-key="osc3_freq"]') };
+    settle('hand_R_y', cat(0)); await tick();
+    const emptied = { count: engine.getOscCount(), rows: document.querySelectorAll('.osc-row').length,
+                      kept: mapper.mappings.filter(m => !engine.PARAMS[m.audioParam]).length,
+                      drawn: wiresNow(), before: before + 1 };
+    settle('hand_R_y', cat(1)); await tick();
+    const back = { count: engine.getOscCount(), drawn: wiresNow() };
+    mapper.remove(cnt);
+    const sw = mapper.add('chord_on', 'hand_L_y', 0, 1, 'linear', 2, false);
+    const ssig = bus.signals.get('hand_L_y');
+    const sat = f => ssig.min + (ssig.max - ssig.min) * f;
+    settle('hand_L_y', sat(1)); await tick();
+    const on = { enabled: chordmode.enabled, pill: document.getElementById('chord-toggle')?.textContent.trim() };
+    settle('hand_L_y', sat(0)); await tick();
+    const off = { enabled: chordmode.enabled, pill: document.getElementById('chord-toggle')?.textContent.trim() };
+    mapper.remove(sw);
+
+    return { socketsMoved, tracks, straight, flipped, levels, grown, emptied, back, on, off,
              hasLevel: !!levelEl, positioned: levelEl ? getComputedStyle(levelEl).position : null };
   });
 
@@ -2329,6 +2363,14 @@ console.log('\nLive values on the cables and the function nodes\n');
   check(!m.socketsMoved, 'and driving a value from empty to full moves no socket, so no cable moves');
   check(m.hasLevel && m.positioned === 'absolute', 'a function node carries a level bar, out of flow so it cannot resize the node', String(m.positioned));
   check(m.levels.every(l => near(l.lvl, l.norm, 0.05)), 'reading what the node puts out', JSON.stringify(m.levels));
+  check(m.grown.count === 3 && m.grown.rows === 3 && m.grown.sock3,
+    'a cable into the OSCILLATORS socket grows the bank — rows and sockets with it', JSON.stringify(m.grown));
+  check(m.emptied.count === 0 && m.emptied.rows === 0 && m.emptied.kept === 3 && m.emptied.drawn === m.emptied.before - 3,
+    'and shrinks it: cables to the slots that went are kept in the patch but not drawn', JSON.stringify(m.emptied));
+  check(m.back.count === 3 && m.back.drawn === m.emptied.before,
+    'and they are drawn again when the slots come back', JSON.stringify(m.back));
+  check(m.on.enabled && m.on.pill === 'ON' && !m.off.enabled && m.off.pill === 'OFF',
+    'a cable into GESTURE MODE\u2019s switch turns it on and off, and its pill follows', JSON.stringify({ on: m.on, off: m.off }));
 }
 
 console.log('\nKeyboard overlay while the arpeggiator runs\n');

@@ -30,6 +30,8 @@ import { engine }     from '../engine.js';
 import { radial }     from '../radial.js';
 import { toast }      from './status.js';
 import { buildSigPanel } from './signals.js';
+import { inPort } from './mapper-ui.js';
+import { syncControls } from '../controls.js';
 
 const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`;
 
@@ -362,6 +364,7 @@ export function gestureModeSection() {
     <div class="audio-section" data-sec="gesture-mode">
       <div class="audio-section-label">
         Gesture Mode
+        <span class="head-sock">${inPort('chord_on')}</span>
         <button class="wave-btn${on ? ' on' : ''}" id="chord-toggle" aria-pressed="${on}"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</button>
       </div>
@@ -590,6 +593,7 @@ export function wireGestureSections(rerender) {
     // rule from its own side.
     if (on) radial.setEnabled(false);
     chordmode.setEnabled(on);
+    syncControls();
     rerender();
   });
 

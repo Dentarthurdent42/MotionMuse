@@ -9,7 +9,7 @@ import { mapper, trackersFor }              from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
 import { buildSigPanel, updateSigPanel, syncSigGroups } from './ui/signals.js';
 import { renderMapper, updateMapperBars, initMapperUI } from './ui/mapper-ui.js';
-import { registerControls }                 from './controls.js';
+import { registerControls, syncControls, onControlChange } from './controls.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
 import { initFullscreen, updateFsOverlay, fullscreen } from './ui/fullscreen.js';
@@ -188,6 +188,17 @@ const faceToggle = (btnId, key, setter, label) => {
 };
 // ── Microphone ───────────────────────────────────────────────────────────
 const micBtn = document.getElementById('mic-btn');
+// A cable into the microphone's switch (src/controls.js) reports here once
+// the mic has actually started or stopped; the button and the signal list
+// follow the real state.
+onControlChange(key => {
+  if (key !== 'mic_on' || !micBtn) return;
+  const on = micSource.active;
+  micBtn.textContent = on ? 'ON' : 'OFF';
+  micBtn.classList.toggle('on', on);
+  micBtn.setAttribute('aria-pressed', String(on));
+  buildSigPanel();
+});
 if (micBtn) {
   if (!micSource.supported) {
     micBtn.disabled = true;
@@ -200,6 +211,7 @@ if (micBtn) {
       micBtn.textContent = on ? 'ON' : 'OFF';
       micBtn.classList.toggle('on', on);
       micBtn.setAttribute('aria-pressed', String(on));
+      syncControls();
       // Signals only exist once the mic has been started, so the panel has to
       // be rebuilt to list them — same as the camera does when it starts.
       buildSigPanel();

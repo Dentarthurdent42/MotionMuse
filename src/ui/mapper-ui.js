@@ -104,7 +104,10 @@ function sockets() {
 }
 const sigNodeOf   = key => signalOwner(key, bus.signals.get(key));
 const paramNodeOf = key => paramOwner(key);
-const links = () => mapper.mappings.filter(m => m.signal).map(m => ({
+// A cable to a parameter the engine does not have right now — an oscillator
+// slot the bank has shrunk past — is kept in the patch (the slot may come
+// back) but not drawn: a wire to nothing is worse than no wire.
+const links = () => mapper.mappings.filter(m => m.signal && engine.PARAMS[m.audioParam]).map(m => ({
   id: m.id,
   from: { node: sigNodeOf(m.signal), key: m.signal },
   to:   { node: paramNodeOf(m.audioParam), key: m.audioParam },
@@ -221,7 +224,7 @@ function connect(sigKey, paramKey) {
     : (defaultRange(paramKey) ?? [p.min, p.max]);
   // A choice or a switch is stepped by nature: the cable arrives quantised
   // to its options, so a hand's travel lands on a filter type, not between.
-  const steps = prev?.steps ?? (p.control && (p.options || p.toggle) ? Math.round(p.max - p.min) + 1 : 0);
+  const steps = prev?.steps ?? (p.control && (p.options || p.toggle || p.integer) ? Math.round(p.max - p.min) + 1 : 0);
   const id = mapper.add(paramKey, sigKey, lo, hi, prev?.curve ?? 'linear', steps, prev?.invert ?? false);
   selectedId = id;
   fpArm = 'min';
