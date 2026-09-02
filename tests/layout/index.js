@@ -1136,9 +1136,15 @@ const firstrun = await (async () => {
     const { mapper } = await import('/src/mapper.js');
     const nodeOf = (side, key) =>
       document.querySelector(`.port-${side}[data-key="${key}"]`)?.closest('[data-node]')?.dataset.node ?? null;
+    await new Promise(r => setTimeout(r, 100));   // the bank grew; the node redraws on the next tick
     return { cables: mapper.mappings.length,
              wires: document.querySelectorAll('.ng-wire').length,
-             ends: mapper.mappings.map(m => `${nodeOf('out', m.signal)} → ${nodeOf('in', m.audioParam)}`) };
+             ends: mapper.mappings.map(m => `${nodeOf('out', m.signal)} → ${nodeOf('in', m.audioParam)}`),
+             // The patch is voiced for two oscillators: the second's row and
+             // sockets appear with it, and no cable is left dashed at an edge.
+             oscRows: document.querySelectorAll('.osc-row').length,
+             osc2Socket: !!document.querySelector('.port-in[data-key="osc2_freq"]'),
+             dashed: document.querySelectorAll('.ng-wire-edge').length };
   });
   await ctx2.close(); await ctx3.close();
   return { shown, blank, again, chords, hands, errs };
@@ -2082,6 +2088,9 @@ console.log('\nFirst run\n');
   check(hands.ends.every(e => e.startsWith('panel:camera → panel:')),
     'each from an output socket on the camera node to an input socket on the node that owns the parameter',
     hands.ends.join(' | '));
+  check(hands.oscRows === 2 && hands.osc2Socket && hands.dashed === 0,
+    'the second oscillator the patch is voiced for appears with its sockets, so no cable ends dashed at an edge',
+    `${hands.oscRows} rows, osc2 socket ${hands.osc2Socket}, ${hands.dashed} dashed`);
   check(errs.length === 0, 'no page errors on the first-run path', errs.join(' | '));
 }
 

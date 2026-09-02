@@ -444,6 +444,11 @@ export const engine = (() => {
   // so it is a complete instrument on its own, and leaving a lead oscillator
   // running under it is a drone nobody asked for. `|| 1` on the parse would
   // quietly turn 0 into 1, hence the explicit finite check.
+  // Whoever draws the bank listens here: a preset or a loaded file can grow
+  // it from anywhere, and the Oscillators node has to show the new rows —
+  // and their sockets — or the cables to them end on nothing.
+  const oscCountCbs = [];
+  const onOscCountChange = cb => { oscCountCbs.push(cb); };
   function setOscCount(n) {
     const v = Math.round(Number(n));
     const next = Number.isFinite(v) ? Math.max(0, Math.min(MAX_OSCS, v)) : oscCount;
@@ -455,6 +460,7 @@ export const engine = (() => {
       if (next > prev) for (let i = prev; i < next; i++) addOsc(i);
       else dropOscs(next);
     }
+    oscCountCbs.forEach(cb => cb(next, prev));
     return oscCount;
   }
   const getOscCount = () => oscCount;
@@ -981,7 +987,7 @@ export const engine = (() => {
     start, set, stop,
     setTuning, getTuning, noteFor,
     setVolStep, getVolStep, volLevel,
-    setOscCount, getOscCount, MAX_OSCS,
+    setOscCount, getOscCount, onOscCountChange, MAX_OSCS,
     setOscType, getOscType, getOscTypes,
     setFilterType, getFilterType,
     setChordFilterType, getChordFilterType,
