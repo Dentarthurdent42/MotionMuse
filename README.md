@@ -384,6 +384,21 @@ nodes make one scrolling column instead — see below):
 - **Pan** by dragging empty canvas (or the middle button from anywhere);
   **zoom** with the wheel or a pinch; **⌂ FIT** (or `Home`) shows everything,
   `F` fits the selection. A wheel over a list that scrolls scrolls the list.
+- **Gesture Mode's handshapes are cables too** (`src/chordcables.js`): each
+  degree row, RELEASE, ♯ and ♭ is an input socket on the node, and the shape
+  that plays it is the cable from that shape's signal on the camera — so the
+  chords starter opens with ten cables you can see, follow and re-plug.
+  Choosing a shape in a row strings the cable; stringing the cable sets the
+  row; wire anything else in (a metronome pulse, a function node) and the
+  cable holds the degree while it reads high, the row reading WIRED. A patch
+  that replaces the cables takes the shapes with it; switching the mode on
+  with nothing assigned brings the default shapes back.
+- **⌕ FIND** (or `/`, `Ctrl+K`) searches every node by name and, once you
+  type, every socket by its label with the node it is on (the **+ NODE**
+  search lists the same under *Go to*, so typing "gesture" there reaches the
+  node rather than "nothing matches"); picking one brings
+  a closed panel back, opens a collapsed group, unfolds the node, opens a
+  closed tracker group for its socket, fits (or scrolls) to it and flashes it.
 - **Move** a node by its header. **Resize** it by the grip in its corner —
   the camera keeps its 4:3, so its grip sets a width. The **caret** folds a
   node to its header; **⌖** pins it to the screen, where it stays put while
@@ -507,9 +522,15 @@ arrangement never scramble each other; ⚙ → LAYOUT overrides the choice for a
 narrow window that wants the canvas or a wide one that wants the stack, and
 a window that crosses the breakpoint in `auto` switches in place. The
 header is a **bar at the bottom** of a phone's screen, where a thumb reaches
-it without a stretch, and its menus open upward from it. The CSS fullscreen
-lifts the picture out of the column to fill the screen and puts it back on
-exit.
+it without a stretch, and its menus open upward from it. **The picture stays
+with you**: it is lifted out of the camera node into the strip that rides
+the top of the column (`src/ui/cam-sticky.js`), sits over its place in the
+node while that is on screen, and shrinks to a thumbnail in the top-right
+corner as you scroll past — so the tracking is always in view while you
+reach a slider three screens down; a tap on the thumbnail scrolls back up.
+TIDY, which arranges a canvas, is not shown in the column.
+The CSS fullscreen lifts the same picture out to fill the screen and puts it
+back where it found it on exit.
 
 ## Every slider also takes a typed number
 

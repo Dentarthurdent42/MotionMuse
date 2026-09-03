@@ -21,6 +21,7 @@
 import { gesture, gestureLabel, KINDS, kindOf } from '../gesture.js';
 import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS,
          VOICINGS, accidentalSign } from '../chordmode.js';
+import { DEGREE_KEYS, RELEASE_KEY, ACC_KEYS, isCableId } from '../chordcables.js';
 import { diatonicChord } from '../chords.js';
 import { rows } from './rows.js';
 import { cvSource }   from '../cv.js';
@@ -135,7 +136,10 @@ export function gestureModeSection() {
   // can do both jobs without the two ever being asked at once. `· est` rides
   // along with the name: whether a shape is calibrated is exactly what you
   // want to know at the moment you wire it to something.
-  const gestureOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
+  // A slot held by a cable that is not a handshape's shows what holds it;
+  // the picker is the cable's, not the other way round.
+  const gestureOptions = sel => isCableId(sel) ? `<option value="" selected>WIRED</option>`
+    : `<option value=""${!sel ? ' selected' : ''}>—</option>`
     + gestures.map(g =>
         `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
         + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
@@ -183,26 +187,26 @@ export function gestureModeSection() {
       <span class="acc-read" id="ck-acc-read"
             title="What your other hand is saying about the note right now.">${isNote ? '♮' : '—'}</span>
     </div>
-    ${!isNote ? '' : `
-    <div class="chord-expr-cal chord-acc">
+    
+    <div class="chord-expr-cal chord-acc${isNote ? '' : ' dimmed'}" title="${isNote ? '' : 'Accidentals apply to SINGLE NOTES — a chord has none'}">
       <label class="ctrl-lbl" title="${accBusy
         ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
-        : 'Hold this on your other hand to raise the note a semitone'}">♯ SHARP
-        <select id="ck-acc-sharp" ${accBusy ? 'disabled' : ''}
+        : 'Hold this on your other hand to raise the note a semitone'}">${inPort(ACC_KEYS.sharp)}♯ SHARP
+        <select id="ck-acc-sharp" ${accBusy || !isNote || isCableId(accG.sharp) ? 'disabled' : ''}
                 aria-label="Gesture that sharpens the note">${gestureOptions(accG.sharp)}</select>
         ${calBtn(accG.sharp, accBusy)}
       </label>
       <label class="ctrl-lbl" title="${accBusy
         ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
-        : 'Hold this on your other hand to lower the note a semitone'}">♭ FLAT
-        <select id="ck-acc-flat" ${accBusy ? 'disabled' : ''}
+        : 'Hold this on your other hand to lower the note a semitone'}">${inPort(ACC_KEYS.flat)}♭ FLAT
+        <select id="ck-acc-flat" ${accBusy || !isNote || isCableId(accG.flat) ? 'disabled' : ''}
                 aria-label="Gesture that flattens the note">${gestureOptions(accG.flat)}</select>
         ${calBtn(accG.flat, accBusy)}
       </label>
       <div class="quant-notes" style="grid-column:1 / -1;margin:0;">${accBusy
         ? 'The other hand is playing the volume, so every note sounds natural.'
         : 'Neither shape held is natural. The hand that is not naming the note is the one that bends it.'}</div>
-    </div>`}`;
+    </div>`;
 
   // Every control renders whether the mode is ON or not — switching to
   // radial mode must not hide the place a chord's 7th or the key is set, and
@@ -218,6 +222,21 @@ export function gestureModeSection() {
   // it off whatever it was doing before.
 
   const chordRow = i => {
+    // A degree the key does not have (vi, vii over a pentatonic) is still a
+    // row — dimmed — so its socket stays on the node: a cable into it is
+    // kept, dormant, and plays the moment the mode has the degree.
+    const dormant = i >= chordmode.degreeCount();
+    if (dormant) {
+      const gid = chordmode.gestureFor(i);
+      return `
+    <div class="chord-assign dimmed" data-degree="${i}" title="Not a degree of this mode — the row wakes with a mode that has it">
+      ${inPort(DEGREE_KEYS[i])}<span class="gesture-dot" id="cdot-${i}"></span>
+      <span class="chord-degree">${['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'][i]} · —</span>
+      <select class="ch-shape" data-degree="${i}" disabled aria-label="Gesture for a degree this mode does not have">${gestureOptions(gid)}</select>
+      ${calBtn(gid, true)}
+      <span class="ch-sev-gap"></span>
+    </div>`;
+    }
     const c = diatonicChord(eff.root, eff.octave, eff.mode, i, sevenths[i]);
     const gid = chordmode.gestureFor(i);
     // In note voicing the row shows the pitch that will sound, octave and all
@@ -228,11 +247,12 @@ export function gestureModeSection() {
     const n = isNote ? chordmode.noteAt(i) : null;
     return `
     <div class="chord-assign" data-degree="${i}">
-      <span class="gesture-dot" id="cdot-${i}"></span>
+      ${inPort(DEGREE_KEYS[i])}<span class="gesture-dot" id="cdot-${i}"></span>
       <span class="chord-degree" title="${n ? `${n.numeral} · ${n.name}` : `${c.numeral} · ${c.rootName} ${c.quality}`}"
         >${n ? `${n.numeral} · ${n.name}` : `${c.numeral} · ${c.rootName}`}</span>
-      <select class="ch-shape" data-degree="${i}"
+      <select class="ch-shape" data-degree="${i}" ${isCableId(gid) ? 'disabled' : ''}
               aria-label="Gesture that plays ${c.numeral}"
+              title="${isCableId(gid) ? 'Held by the cable on its socket — unplug it to choose a shape' : 'The handshape that plays this degree — a cable from its signal'}"
         >${gestureOptions(gid)}</select>
       ${calBtn(gid)}
       <button class="wave-btn ch-sev${sevenths[i] ? ' on' : ''}" data-degree="${i}"
@@ -310,14 +330,14 @@ export function gestureModeSection() {
   // back the moment the mode is — so the rows that disappear here are not
   // deletions.
   const assignRows =
-    Array.from({ length: chordmode.degreeCount() }, (_, i) => chordRow(i)).join('') + `
+    Array.from({ length: DEGREES }, (_, i) => chordRow(i)).join('') + `
     <div class="chord-assign${ex.mode === 'gesture' ? '' : ' dimmed'}" data-degree="release">
-      <span class="gesture-dot" id="cdot-release"></span>
+      ${inPort(RELEASE_KEY)}<span class="gesture-dot" id="cdot-release"></span>
       <span class="chord-degree" title="${ex.mode === 'gesture'
         ? 'Holding this shape lets a held chord go'
         : 'Only used when a handshape holds the chord — here the signal above does the releasing'}"
         >RELEASE</span>
-      <select class="ch-shape" data-degree="release" ${ex.mode === 'gesture' ? '' : 'disabled'}
+      <select class="ch-shape" data-degree="release" ${ex.mode === 'gesture' && !isCableId(relId) ? '' : 'disabled'}
               aria-label="Gesture that releases a held chord"
         >${gestureOptions(relId)}</select>
       ${calBtn(relId)}

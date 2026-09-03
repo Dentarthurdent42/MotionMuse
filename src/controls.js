@@ -23,6 +23,7 @@ import { arpvoice }  from './arpvoice.js';
 import { ARP_PATTERNS } from './arp.js';
 import { SCALES, NOTE_NAMES } from './scale.js';
 import { chordmode, VOICINGS, EXPRESSION_MODES, EXPRESSION_CONTROLS } from './chordmode.js';
+import { DEGREE_KEYS, RELEASE_KEY, ACC_KEYS, CABLE_ID } from './chordcables.js';
 import { radial, VOLUME_MODES, FINGERS } from './radial.js';
 import { micSource } from './mic.js';
 import { looper }    from './looper.js';
@@ -66,6 +67,12 @@ const onIndexOnce = (fn) => {
 const onRise = (fn) => {
   let high = false;
   return v => { const now = v >= 0.5; if (now && !high) fn(); high = now; };
+};
+// A gate: held while the cable reads high — a degree, the release, an
+// accidental, held by whatever is wired in (src/chordcables.js).
+const onHold = (fn) => {
+  let high = false;
+  return v => { const now = v >= 0.5; if (now !== high) { high = now; fn(now); } };
 };
 // A choice's index, or 0 for a value the options do not name (a kit edited
 // into "custom", a waveform a kit gave an oscillator).
@@ -375,6 +382,21 @@ export const CONTROLS = {
     apply: onIndex(() => Math.max(0, ARP_PATTERNS.indexOf(arpvoice.state().pattern)), i => { arpvoice.set({ pattern: ARP_PATTERNS[i] ?? ARP_PATTERNS[0] }); notify('arp_pattern'); }),
   },
 };
+
+// Gesture mode's degrees, release and accidentals: each an input a cable
+// holds (src/chordcables.js). A handshape's cable is the assignment, read by
+// chord mode's own detection; any other cable holds the slot while high.
+const DEGREE_NAMES = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+DEGREE_KEYS.forEach((key, i) => {
+  CONTROLS[key] = { label: `Degree ${DEGREE_NAMES[i] ?? i + 1}`, min: 0, max: 1, trigger: true, read: () => 0,
+                    apply: onHold(on => chordmode.setCableHeld(CABLE_ID(i), on)) };
+});
+CONTROLS[RELEASE_KEY] = { label: 'Release Shape', min: 0, max: 1, trigger: true, read: () => 0,
+                          apply: onHold(on => chordmode.setCableHeld(CABLE_ID('release'), on)) };
+CONTROLS[ACC_KEYS.sharp] = { label: 'Sharp', min: 0, max: 1, trigger: true, read: () => 0,
+                             apply: onHold(on => chordmode.setCableHeld(CABLE_ID('sharp'), on)) };
+CONTROLS[ACC_KEYS.flat]  = { label: 'Flat', min: 0, max: 1, trigger: true, read: () => 0,
+                             apply: onHold(on => chordmode.setCableHeld(CABLE_ID('flat'), on)) };
 
 export const CONTROL_KEYS = Object.keys(CONTROLS);
 export const isControl = key => key in CONTROLS;
