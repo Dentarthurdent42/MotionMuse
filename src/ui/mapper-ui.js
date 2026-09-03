@@ -52,10 +52,18 @@ const humanizeKey = k => String(k)
 export const sigLabel = k => bus.signals.get(k)?.label ?? humanizeKey(k);
 const paramLabel = k => engine.PARAMS[k]?.label ?? humanizeKey(k);
 
-// Stable, legible cable/socket colour per signal (OKLab hue from a hash).
+// A legible cable/socket colour per signal: hues walk the wheel by the
+// golden angle — each signal, in the order the bus registers them, sits
+// 360°/φ (≈137.5°) round from the one before, so the neighbours in any
+// list are never alike and no run of them ever cycles back onto itself.
+// The order is the boot order, so a signal's colour is the same every
+// visit; a signal the bus does not know falls back to a hash of its name.
+const GOLDEN_ANGLE = 360 / ((1 + Math.sqrt(5)) / 2);
 function sigHue(key) {
+  const i = [...bus.signals.keys()].indexOf(key);
+  if (i >= 0) return +((i * GOLDEN_ANGLE) % 360).toFixed(2);
   let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 360;
+  for (let c = 0; c < key.length; c++) h = (h * 31 + key.charCodeAt(c)) % 360;
   return h;
 }
 export const sigColor = key => key ? `oklch(0.78 0.14 ${sigHue(key)})` : 'oklch(0.6 0 0)';
