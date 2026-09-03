@@ -796,8 +796,10 @@ function applyModeChrome() {
     world.style.height = '';
     initZoom();
   }
-  // TIDY arranges a canvas; a column is already arranged.
+  // TIDY arranges a canvas, and FIT fits one; a column is already arranged
+  // and a pinch is its map.
   document.getElementById('tidy-btn')?.toggleAttribute('hidden', col);
+  document.getElementById('fit-btn')?.toggleAttribute('hidden', col);
   const hint = ws.querySelector('.ws-hint');
   if (hint) {
     hint.dataset.canvas ??= hint.textContent;

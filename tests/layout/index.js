@@ -333,7 +333,20 @@ for (const width of WIDTHS) {
         });
         return { outs: outs.length, offOut: offOut.length, ins: ins.length, offIn: offIn.map(p => p.dataset.key) };
       })(),
+
     };
+  });
+
+  // Neighbouring sockets in a list are never alike: hues walk the wheel by
+  // the golden angle, so two in a row are at least a third of it apart.
+  const hues = await page.evaluate(async () => {
+    const { sigColor } = await import('/src/ui/mapper-ui.js');
+    const hue = k => parseFloat(/oklch\([^)]*?\s([\d.]+)\)/.exec(sigColor(k))?.[1] ?? 'NaN');
+    const keys = [...document.querySelectorAll('#cam-signals .sig-sec-body .port-out')].map(p => p.dataset.key);
+    const hs = keys.map(hue);
+    const gaps = [];
+    for (let i = 1; i < hs.length; i++) { const d = Math.abs(hs[i] - hs[i - 1]) % 360; gaps.push(Math.min(d, 360 - d)); }
+    return { n: keys.length, min: gaps.length ? Math.round(Math.min(...gaps)) : null, nan: hs.filter(Number.isNaN).length };
   });
 
   // Every slider takes a typed value (ui/numeric.js).
@@ -380,7 +393,7 @@ for (const width of WIDTHS) {
     };
   });
 
-  results.push({ width, off, on, nodes, sigPanel, nums, errs });
+  results.push({ width, off, on, nodes, sigPanel, nums, hues, errs });
   await page.close();
 }
 
@@ -916,6 +929,7 @@ const column = await (async () => {
       camW: Math.round(document.querySelector('[data-node="panel:camera"]').getBoundingClientRect().width),
       scrollTop: ws.scrollTop,
       dockFirst: ws.firstElementChild.id,
+      fitHidden: document.getElementById('fit-btn').hidden, tidyHidden: document.getElementById('tidy-btn').hidden,
     };
   });
   const fresh = await probe();
@@ -938,7 +952,8 @@ const column = await (async () => {
 
   // ⌂ is the map: the whole stack scaled to the screen; a tap on it scrolls
   // to the node under the finger.
-  await page.click('#fit-btn');
+  // The map, as a pinch in would open it (⌂ is not shown in the column).
+  await page.evaluate(async () => (await import('/src/ui/workspace.js')).enterOverview());
   await page.waitForTimeout(150);
   const map = await page.evaluate(async () => {
     const WS = await import('/src/ui/workspace.js');
@@ -1602,8 +1617,13 @@ const camctl = await (async () => {
                  right: Math.round((frame.right - r.right) / k), bottom: Math.round((frame.bottom - r.bottom) / k) },
       };
     };
+    const actionsEl = document.querySelector('.cam-actions');
+    const header = document.getElementById('header').getBoundingClientRect();
     return {
       ctrlH: tok('--cam-ctrl-h'), inset: tok('--cam-inset'), radius: tok('--cam-radius'),
+      actionsInHeader: actionsEl.parentElement.id === 'header',
+      actionsOnPicture: wrap.contains(actionsEl),
+      actionsInBar: [...actionsEl.children].every(c => { const r = c.getBoundingClientRect(); return r.top >= header.top - 0.5 && r.bottom <= header.bottom + 0.5; }),
       actions: bar('.cam-actions'), toggles: bar('.cam-toggles'),
       nameH: (() => {
         const n = document.getElementById('cam-name');
@@ -2177,7 +2197,7 @@ const check = (ok, label, detail = '') => {
 
 console.log('\nHeader and workspace — every breakpoint, camera off and on\n');
 
-for (const { width, off, on, nodes: n, sigPanel, nums, errs } of results) {
+for (const { width, off, on, nodes: n, sigPanel, nums, hues, errs } of results) {
   const w = `${width}px`;
   check(errs.length === 0, `${w}: no page errors`, errs.join(' | '));
 
@@ -2259,6 +2279,8 @@ for (const { width, off, on, nodes: n, sigPanel, nums, errs } of results) {
     `${w}: every channel of the camera's list is an output socket`, `${sp.srcs} sockets for ${sp.vals} channels`);
   check(sp.onEdge.outs > 0 && sp.onEdge.offOut === 0,
     `${w}: every output socket is centred on the camera node's right border`, `${sp.onEdge.offOut} of ${sp.onEdge.outs} off the edge`);
+  check(hues.n > 5 && hues.nan === 0 && hues.min >= 60,
+    `${w}: neighbouring sockets are never alike in colour`, `${hues.n} sockets, closest pair ${hues.min}° apart`);
   check(sp.onEdge.ins > 0 && sp.onEdge.offIn.length === 0,
     `${w}: every slider's input socket is centred on its node's left border`, sp.onEdge.offIn.join(' '));
 
@@ -2410,6 +2432,7 @@ console.log('\nThe column (a phone)\n');
   check(fresh.order[0] === 'group:inputs' && fresh.order.includes('group:audio'),
     'column: the inputs come first, the engine after', fresh.order.join(','));
   check(fresh.dockFirst === 'ws-dock', 'column: the dock rides the top of the viewport', fresh.dockFirst);
+  check(fresh.fitHidden && fresh.tidyHidden, 'column: FIT and TIDY, which arrange a canvas, are not shown', `fit=${fresh.fitHidden} tidy=${fresh.tidyHidden}`);
   check(wires.length === 2 && wires.every(w => !w.curve && w.inside && w.corners >= 2),
     'column: cables run the gutters — orthogonal, and on the screen', JSON.stringify(wires));
   check(wires.length === 2 && wires[0].lane !== wires[1].lane,
@@ -2627,27 +2650,34 @@ console.log('\nSaved setups\n');
 console.log('\nCamera-view controls\n');
 {
   check(camctl.errs.length === 0, 'no page errors', camctl.errs.join(' | '));
+  check(camctl.small.actionsInHeader && camctl.small.actionsInBar && !camctl.small.actionsOnPicture,
+    'windowed: the sound, SHARE, source and ♥ sit in the header bar', JSON.stringify({ header: camctl.small.actionsInHeader, inBar: camctl.small.actionsInBar }));
+  check(camctl.small.actions.segs.length === 4, 'windowed: all four of them', String(camctl.small.actions.segs.length));
+  check(camctl.full.actionsOnPicture && !camctl.full.actionsInHeader,
+    'fullscreen: the strip rides the picture, where there is no bar', String(camctl.full.actionsOnPicture));
   for (const [view, m] of [['windowed', camctl.small], ['fullscreen', camctl.full]]) {
-    const segs = [...m.actions.segs, ...m.toggles.segs];
-    check(segs.length >= 6, `${view}: both strips have their controls`, `${segs.length} segments`);
+    // Windowed, only the picture's own strip is on the picture.
+    const segs = view === 'fullscreen' ? [...m.actions.segs, ...m.toggles.segs] : m.toggles.segs;
+    check(segs.length >= (view === 'fullscreen' ? 6 : 2), `${view}: the strips on the picture have their controls`, `${segs.length} segments`);
     const heights = [...new Set(segs.map(s => s.h))];
     check(heights.length === 1 && heights[0] === m.ctrlH, `${view}: every control is exactly one height`,
       `${heights.join('/')} against --cam-ctrl-h ${m.ctrlH}`);
     check(m.nameH === m.ctrlH, `${view}: the name caption shares it, so the top edge is one line`, `${m.nameH} vs ${m.ctrlH}`);
     const icons = segs.filter(s => !s.labelled);
-    check(icons.length >= 3 && icons.every(s => s.w === m.ctrlH), `${view}: a control with no label is a square`,
+    check(icons.every(s => s.w === m.ctrlH) && (view !== 'fullscreen' || icons.length >= 3), `${view}: a control with no label is a square`,
       icons.map(s => `${s.id} ${s.w}x${s.h}`).join(' '));
     check(segs.filter(s => s.labelled).every(s => s.w > m.ctrlH), `${view}: a labelled one grows sideways only`);
     const stacked = [...new Set(m.toggles.segs.map(s => s.w))];
     check(stacked.length === 1, `${view}: the stacked strip has one width`, stacked.join('/'));
     check(segs.every(s => s.border === 0), `${view}: segments carry no border of their own`,
       segs.filter(s => s.border !== 0).map(s => s.id).join(' '));
-    check(m.actions.gap === 1 && m.toggles.gap === 1, `${view}: dividers are hairlines`, `${m.actions.gap} / ${m.toggles.gap}`);
-    check(m.actions.radius === m.radius && m.toggles.radius === m.radius, `${view}: one corner radius`,
+    const onPic = view === 'fullscreen';
+    check((!onPic || m.actions.gap === 1) && m.toggles.gap === 1, `${view}: dividers are hairlines`, `${m.actions.gap} / ${m.toggles.gap}`);
+    check((!onPic || m.actions.radius === m.radius) && m.toggles.radius === m.radius, `${view}: one corner radius`,
       `${m.actions.radius} / ${m.toggles.radius} vs ${m.radius}`);
-    check(m.actions.inset.left === m.inset && m.actions.inset.bottom === m.inset
+    check((!onPic || (m.actions.inset.left === m.inset && m.actions.inset.bottom === m.inset))
        && m.toggles.inset.right === m.inset && m.toggles.inset.top === m.inset,
-      `${view}: both strips sit at the shared inset`, `${JSON.stringify(m.actions.inset)} ${JSON.stringify(m.toggles.inset)}`);
+      `${view}: the strips on the picture sit at the shared inset`, `${JSON.stringify(m.actions.inset)} ${JSON.stringify(m.toggles.inset)}`);
     check(m.emptyBadge === 0, `${view}: an unnamed setup leaves no empty badge on the picture`);
   }
   check(camctl.full.ctrlH > camctl.small.ctrlH && camctl.full.inset > camctl.small.inset,

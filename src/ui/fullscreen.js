@@ -37,8 +37,18 @@ export const fullscreen = {
   onChange(cb) { changeCbs.push(cb); },
 };
 
+// The actions strip (mute, SHARE, source, ♥) lives in the header, which
+// fullscreen hides — so it rides the picture while fullscreen is on.
+function placeActions(active) {
+  const bar = document.querySelector('.cam-actions');
+  if (!bar) return;
+  const home = active ? wrap : document.getElementById('header');
+  if (bar.parentElement !== home) home.appendChild(bar);
+}
+
 function syncState(active) {
   wrap.classList.toggle('fs-active', active);
+  placeActions(active);
   fsBtn.textContent = active ? '✕ EXIT' : '⛶ FULL';
   fsBtn.classList.toggle('on', active);
   // The overlay is sized as a share of the frame, and the frame just changed

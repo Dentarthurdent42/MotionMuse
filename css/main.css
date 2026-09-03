@@ -430,6 +430,23 @@ html, body {
   bottom: calc(var(--cam-inset) + var(--fs-kbd-h, 0px));
   left: var(--cam-inset);
 }
+/* In the header the strip is a row of the bar's own buttons — the same
+   segments, dressed as .btn — until fullscreen takes it onto the picture. */
+#header > .cam-actions {
+  position: static;
+  background: none; padding: 0; gap: 8px; overflow: visible; border-radius: 0;
+}
+#header > .cam-actions .depth-toggle {
+  height: auto; min-width: 0;
+  padding: 4px 11px;
+  background: var(--faint);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+#header > .cam-actions .cam-ico-only { width: auto; padding: 4px 9px; }
+#header > .cam-actions .depth-toggle svg { width: 11px; height: 11px; }
 /* Muted is a state, not a disabled control — amber, as it was in the header. */
 #audio-btn.muted { color: var(--amber); border-color: var(--amber); background: #f0a50022; }
 
@@ -663,10 +680,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
    after the button moved, which put it a panel away from the ♥ that opened
    it, and nowhere at all in fullscreen. */
 #donate-pop {
-  position: absolute;
-  left: var(--cam-inset);
-  bottom: calc(var(--cam-inset) + var(--fs-kbd-h, 0px) + var(--cam-ctrl-h) + 6px);
-  z-index: 60;
+  position: fixed;          /* placed beside the ♥ by ui/donate.js */
+  z-index: 1100;            /* above the fullscreen picture too */
   min-width: 170px;
   background: var(--panel);
   border: 1px solid var(--border2);
@@ -2347,7 +2362,10 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   /* One row of buttons: the wide ones share the width, the two glyphs keep
      a thumb's width — so nothing wraps onto a row of its own. */
   .hbtns > .btn, .hbtns > .hdr-menu { flex: 1 1 auto; min-width: 0; }   /* outranks .btn's flex-shrink: 0 */
-  #header [hidden] { display: none; }        /* TIDY, which the column has no use for */
+  #header [hidden] { display: none; }        /* FIT and TIDY, which the column has no use for */
+  /* The picture's strip: a row of its own under the buttons. */
+  #header > .cam-actions { width: 100%; justify-content: center; gap: 6px; }
+  #header > .cam-actions .depth-toggle { flex: 1 1 auto; min-height: 36px; }
   .hbtns .btn { padding-left: 4px; padding-right: 4px; }
   .hbtns .hdr-menu > .btn { flex: 1 1 auto; min-width: 0; }
   .hbtns > #settings-btn, .hbtns > #tour-btn { flex: 0 0 40px; }
