@@ -43,6 +43,10 @@ const UI_KEYS = {
   // The workspace: where every node sits, its size, its group, whether it is
   // folded, pinned or closed, and the view. One key, because it is one thing.
   workspace:   'motionmuse-workspace',
+  // The column layout (phones) is its own store, and which of the two the
+  // screen gets is a setting.
+  workspaceColumn: 'motionmuse-workspace-column',
+  layoutMode:  'motionmuse-layout-mode',
   tracking:    'motionmuse-tracking',
   face:        'motionmuse-face',
   models:      'motionmuse-posemodel',

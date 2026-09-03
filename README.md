@@ -378,7 +378,8 @@ The interface is **one canvas**, and everything on it is a node — the camera,
 the microphone, the metronome, each block of the audio engine, every function
 node, and the groups that hold them; the signals and parameters are the sockets
 on those nodes. It works the way a node editor does in Blender, Unreal or
-TouchDesigner rather than the way a settings page does:
+TouchDesigner rather than the way a settings page does (on a phone the same
+nodes make one scrolling column instead — see below):
 
 - **Pan** by dragging empty canvas (or the middle button from anywhere);
   **zoom** with the wheel or a pinch; **⌂ FIT** (or `Home`) shows everything,
@@ -484,10 +485,31 @@ sit *on the camera picture*: mute, share, the trackers, and above all
 on the whole screen. Separating the exit from the fullscreen would be a node
 you could lose on the way out.
 
-**On a phone** the same canvas opens fitted to the camera's group rather than
-to the whole world, so the picture is a usable size and the rest is a pinch
-away; the CSS fullscreen lifts the picture out of the zoomed canvas to fill
-the screen and puts it back on exit.
+**On a phone the workspace is a column, not a canvas.** A pan-and-zoom
+canvas on a screen four fingers wide is a smear: at a scale where a node is
+readable only a sliver of the world is on screen, and at a scale where the
+world is on screen nothing is readable. So below the phone breakpoint
+(768px) the same nodes stack in **one column the width of the screen**,
+scrolled by the finger — the inputs, then the picture, then the engine, each
+group a frame around its members as before. Everything else is unchanged:
+the sockets are on the node edges, cables run between them (along the
+column's gutters — out of the output socket to the right edge, along it to
+the gap above the input's node, across, down the left edge and in — since a
+cable cannot cross a node that is the whole width of the column), nodes
+fold, pin, close and group, and the add menu is a long-press away. Position
+has just lost a dimension: a node's place is its **rank** in the column, a
+drag on its header moves it up or down (the column scrolls under it near the
+edges), and the stack closes up behind it. **Pinch in** (or ⌂) shows the whole
+column as a **map**; a tap on the map — or a pinch out over a node — scrolls
+to it. TIDY restores the shipped order. The column is its own store
+(`motionmuse-workspace-column`), so a phone's order and a desktop's
+arrangement never scramble each other; ⚙ → LAYOUT overrides the choice for a
+narrow window that wants the canvas or a wide one that wants the stack, and
+a window that crosses the breakpoint in `auto` switches in place. The
+header is a **bar at the bottom** of a phone's screen, where a thumb reaches
+it without a stretch, and its menus open upward from it. The CSS fullscreen
+lifts the picture out of the column to fill the screen and puts it back on
+exit.
 
 ## Every slider also takes a typed number
 
