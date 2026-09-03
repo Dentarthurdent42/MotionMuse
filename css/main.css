@@ -515,6 +515,33 @@ body.cam-on #cv-btn { display: none; }
 }
 #ws-staging[hidden] { display: none; }
 
+/* ── Column mode (phones; see stackColumn in src/ui/workspace.js) ────
+   The same viewport, scrolled instead of transformed: the world is a block
+   as tall as the stack, the dock rides the top of the viewport as a sticky
+   zero-height strip (so pinned nodes, the box and the menus stay on the
+   screen while the column scrolls under them), and the finger pans
+   vertically — a pinch is ours, for the map. */
+.ws.ws-column {
+  overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  cursor: default;
+}
+.ws.ws-column:active { cursor: default; }
+.ws.ws-column::-webkit-scrollbar { width: 3px; }
+.ws.ws-column::-webkit-scrollbar-thumb { background: var(--border2); }
+.ws.ws-column > .ws-world { position: relative; width: 100%; height: auto; will-change: auto; }
+.ws.ws-column > .ws-dock { position: sticky; inset: auto; top: 0; left: 0; width: 100%; height: 0; overflow: visible; }
+.ws-dock > .ws-menu { pointer-events: auto; }
+.ws.ws-column .node-grip { cursor: ns-resize; }
+.ws.ws-column .node > .node-head { cursor: ns-resize; }
+/* The map: the whole stack scaled to the screen. Nothing on it is a
+   control — a tap is a destination. */
+.ws.ws-overview { cursor: zoom-in; }
+.ws.ws-overview > .ws-world { will-change: transform; }
+.ws.ws-overview .node { pointer-events: none; }
+.ws.ws-overview .ng-wire { pointer-events: none; }
+
 /* The two authored panels (SIGNALS, PATCH) use the older .ph / .pb header and
    body; as nodes they are dressed by .node like every other section. */
 .panel { min-width: 0; }
@@ -1109,6 +1136,7 @@ body.no-scroll { overflow: hidden; }
 /* Cables. `pointer-events: stroke` so a cable can be clicked without its
    bounding box swallowing the canvas around it. */
 .ws-cables { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; z-index: 5; pointer-events: none; }
+.ws-column .ng-wire { stroke-linejoin: round; }
 .ng-wire { transition: opacity 0.1s; pointer-events: stroke; cursor: pointer; }
 #ng-preview { pointer-events: none; }
 
@@ -2251,15 +2279,26 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
 
 /* ── Mobile ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  /* Header: two deliberate rows — centered title, then every button beneath
-     it. Explicit rows fit any phone width and stay tidy. */
+  /* The bar goes to the BOTTOM, where a thumb reaches without a reach:
+     the workspace takes the top of the screen and the buttons sit under
+     it, padded past the phone's own bar. Two deliberate rows — centered
+     title, then every button beneath it. Explicit rows fit any phone width
+     and stay tidy. */
+  #app { grid-template-rows: 1fr auto; }
+  #main { order: 1; }
   #header {
+    order: 2;
     flex-direction: column;
     align-items: stretch;
     padding: 6px 10px; gap: 6px;
+    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
     overflow: visible;
     flex-wrap: nowrap;
+    border-bottom: none;
+    border-top: 1px solid var(--border);
   }
+  /* Its menus open UP from it. */
+  #preset-pop { top: auto; bottom: calc(100% + 4px); }
   .htitle {
     display: flex; align-items: center; justify-content: center;
     gap: 7px; width: 100%;
@@ -2268,8 +2307,12 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
     display: flex; align-items: center; justify-content: center;
     gap: 8px; width: 100%; flex-wrap: wrap; row-gap: 6px;
   }
-  .hbtns .btn { flex: 1 1 auto; min-width: 44px; }
-  .hbtns .hdr-menu { flex: 1 1 auto; }
+  /* One row of buttons: the wide ones share the width, the two glyphs keep
+     a thumb's width — so nothing wraps onto a row of its own. */
+  .hbtns > * { flex: 1 1 auto; min-width: 0; }
+  .hbtns .btn { padding-left: 4px; padding-right: 4px; }
+  .hbtns .hdr-menu > .btn { flex: 1 1 auto; min-width: 0; }
+  .hbtns > #settings-btn, .hbtns > #tour-btn { flex: 0 0 40px; }
   .logo   { font-size: 11px; flex-shrink: 0; }
   .hsep   { display: none; }
   #status-lbl { display: none; }
@@ -2279,6 +2322,12 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
      line is the one thing that does not fit. */
   .ws-hint { display: none; }
   .ws-menu { min-width: 200px; max-width: calc(100vw - 16px); }
+
+  /* The narrowest phones: the same row, in a tighter face. */
+  @media (max-width: 360px) {
+    .hbtns .btn { font-size: 8px; letter-spacing: 0.5px; }
+    .hbtns > #settings-btn, .hbtns > #tour-btn { flex-basis: 36px; }
+  }
 
   /* Touch-friendly targets (≥44 px) */
   .sig-row  { --row-px: 10px; padding: 8px var(--row-px); }

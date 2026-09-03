@@ -271,6 +271,38 @@ const bezier = (a, b) => {
   return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
 };
 
+// A polyline with its corners rounded off: each corner becomes a quadratic
+// curve between the points R before and after it (less, where a segment is
+// too short for that).
+function rounded(pts, R = 8) {
+  let d = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, py] = pts[i - 1], [cx, cy] = pts[i], [nx, ny] = pts[i + 1];
+    const l1 = Math.hypot(cx - px, cy - py), l2 = Math.hypot(nx - cx, ny - cy);
+    const r = Math.min(R, l1 / 2, l2 / 2);
+    if (r < 0.5) { d += ` L ${cx} ${cy}`; continue; }
+    const ax = cx - (cx - px) / l1 * r, ay = cy - (cy - py) / l1 * r;
+    const bx = cx + (nx - cx) / l2 * r, by = cy + (ny - cy) / l2 * r;
+    d += ` L ${ax} ${ay} Q ${cx} ${cy} ${bx} ${by}`;
+  }
+  const [ex, ey] = pts[pts.length - 1];
+  return d + ` L ${ex} ${ey}`;
+}
+
+// In the column (a phone) a cable cannot cross the stack — every node is the
+// column's whole width — so it runs the gutters instead: out of the output
+// socket to the right edge, along it to the gap above the input's node,
+// across the gap, down the left edge and into the socket. Orthogonal, like
+// a schematic, because that is what reads on a screen four fingers wide.
+// Each cable takes a lane of its own in the gutters, so seven cables are
+// seven lines side by side rather than one line seven colours thick.
+function columnRoute(a, b, toNode, lane) {
+  const g = WS.columnGutters(lane);
+  const r = WS.measure(toNode);
+  const cross = r ? r.y - g.above : b.y;
+  return rounded([[a.x, a.y], [g.right, a.y], [g.right, cross], [g.left, cross], [g.left, b.y], [b.x, b.y]]);
+}
+
 function drawPreview(clientX, clientY) {
   const svg = WS.cablesLayer();
   if (!svg || !wiring) return;
@@ -385,6 +417,7 @@ function drawWires() {
   const svg = WS.cablesLayer();
   if (!svg) return;
   let paths = '';
+  let lane = 0;
   for (const l of links()) {
     // A cable with both ends inside one collapsed group is folded away with it.
     const oa = WS.ownerOf(l.from.node), ob = WS.ownerOf(l.to.node);
@@ -392,7 +425,8 @@ function drawWires() {
     const a = anchor(l.from.node, 'out', l.from.key);
     const b = anchor(l.to.node, 'in', l.to.key);
     if (!a || !b) continue;
-    paths += `<path d="${bezier(a.pt, b.pt)}" fill="none" stroke="${sigColor(l.from.key)}"
+    const d = WS.isColumnMode() ? columnRoute(a.pt, b.pt, ob, lane++) : bezier(a.pt, b.pt);
+    paths += `<path d="${d}" fill="none" stroke="${sigColor(l.from.key)}"
       stroke-width="${l.id === selectedId ? 4 : 2.5}" stroke-linecap="round"
       data-mid="${l.id}" class="ng-wire${l.id === selectedId ? ' selected' : ''}${a.visible && b.visible ? '' : ' ng-wire-edge'}"
       style="opacity:0.85"/>`;
@@ -672,6 +706,7 @@ export function initMapperUI() {
   WS.registerRenderer('fn', renderFn);
   WS.setPatchSource({ sockets, links, socketLabel, socketColor, remove: removeNode, entries: menuEntries });
   WS.onCablesDirty(drawWires);
+  WS.onViewScroll(positionEditor);      // the column scrolls under the editor
   const root = WS.viewportEl();
   // A signal group opening or closing swaps which of a key's sockets is
   // drawn: refill the summaries, then let the cables find the new ends.

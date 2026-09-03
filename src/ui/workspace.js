@@ -11,7 +11,9 @@
 // What this module owns:
 //
 //   • the viewport: pan with a drag on empty canvas (or the middle button
-//     anywhere), zoom with the wheel or a pinch, FIT to see everything;
+//     anywhere), zoom with the wheel or a pinch, FIT to see everything —
+//     and on a phone none of that: the COLUMN mode below, where the world
+//     is one stack the width of the screen, scrolled by the finger;
 //   • node shells: every node has the same chrome — a header that drags it,
 //     a caret that folds it, a pin that holds it on screen, an × — and a body
 //     that is whatever the node is;
@@ -42,6 +44,11 @@ import { isRecord } from '../is.js';
 import { stepsForSection, startSectionHelp } from './tutorial.js';
 
 export const LS_KEY = 'motionmuse-workspace';
+// The column layout is its own store: a phone's order of nodes and a
+// desktop's arrangement are different things, and switching between them
+// must not scramble either.
+export const LS_KEY_COLUMN = 'motionmuse-workspace-column';
+export const LS_MODE_KEY = 'motionmuse-layout-mode';   // 'auto' | 'canvas' | 'column'
 
 // Widths a panel starts at. The camera wants room for a 4:3 picture; the
 // lists want less. Anything unlisted takes the default.
@@ -61,6 +68,31 @@ const GAP = 12;
 // strip four screens tall that FIT can only show as a smear.
 const COL_MAX_H = 980;
 const FRAME_PAD = 10, FRAME_HEAD = 26;
+// Column mode: the margin either side of the stack — room for the sockets
+// that straddle a node's edges (see --sock in the stylesheet), and beyond
+// them the gutters the cables run in, one lane each so they read apart.
+// The gap between stacked nodes is where those cables cross the column.
+const COL_MARGIN = 22, COL_GAP = 24, LANE = 3;
+const LANES = Math.floor((COL_MARGIN - 4) / LANE);
+const PHONE = '(max-width: 768px)';
+
+// ── Layout mode ──────────────────────────────────────────────────────────
+// 'auto' (the default) is column below the phone breakpoint and canvas
+// above it; a choice in ⚙ overrides that either way.
+const phoneMedia = globalThis.matchMedia ? matchMedia(PHONE) : null;
+export function layoutMode() {
+  const v = lsGet(LS_MODE_KEY);
+  return v === 'canvas' || v === 'column' ? v : 'auto';
+}
+const resolveMode = (pref = layoutMode()) => pref === 'auto' ? (phoneMedia?.matches ? 'column' : 'canvas') : pref;
+let mode = resolveMode();
+const keyFor = m => (m === 'column' ? LS_KEY_COLUMN : LS_KEY);
+export const isColumnMode = () => mode === 'column';
+export function setLayoutMode(pref) {
+  lsSet(LS_MODE_KEY, pref === 'canvas' || pref === 'column' ? pref : 'auto');
+  const next = resolveMode();
+  if (next !== mode) switchMode(next);
+}
 
 // Every node shell is watched for size changes: content grows (a web font
 // lands, a list gains rows, a mode switches on) after a node has been placed
@@ -73,10 +105,10 @@ function scheduleRestack() {
   restackTimer = setTimeout(restack, 60);
 }
 
-const state = M.createState(parseSaved());
+let state = M.createState(parseSaved());
 // Whether this is a first visit (nothing stored): only then do the shipped
 // groups get created. A store that has nodes in it is someone's layout.
-const startedEmpty = state.nodes.size === 0;
+let startedEmpty = state.nodes.size === 0;
 const els = new Map();            // node id → shell element
 const selected = new Set();
 const renderers = new Map();      // kind → (node, shell) => void, from the patchbay
@@ -87,18 +119,23 @@ let ws, world, nodesEl, dock, cablesSvg, boxEl, menuEl;
 let zoomBehavior = null;
 let view = state.view;
 let saveTimer = null;
+let overview = false;             // column mode: the whole stack, scaled to fit
+let columnH = 0;                  // column mode: the stack's height, unscaled
+const scrollCbs = [];             // "the column scrolled"
 
 function parseSaved() {
   try {
-    const v = JSON.parse(lsGet(LS_KEY) || 'null');
+    const v = JSON.parse(lsGet(keyFor(mode)) || 'null');
     return isRecord(v) ? v : null;
   } catch { return null; }
 }
 
+const writeSave = () => { saveTimer = null; lsSet(keyFor(mode), JSON.stringify(M.serialize(state))); };
 const save = () => {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => lsSet(LS_KEY, JSON.stringify(M.serialize(state))), 150);
+  saveTimer = setTimeout(writeSave, 150);
 };
+const flushSave = () => { if (saveTimer) { clearTimeout(saveTimer); writeSave(); } };
 export const serializeLayout = () => M.serialize(state);
 
 // ── Registration from the patchbay ───────────────────────────────────────
@@ -106,18 +143,27 @@ export function registerRenderer(kind, fn) { renderers.set(kind, fn); }
 export function setPatchSource(src) { patch = src; }
 export function onCablesDirty(cb) { dirtyCbs.push(cb); }
 export function onSelect(cb) { selectCbs.push(cb); }
+export function onViewScroll(cb) { scrollCbs.push(cb); }
 const dirty = () => dirtyCbs.forEach(cb => cb());
 
 // ── Coordinates ──────────────────────────────────────────────────────────
+// The canvas moves the world by a transform; the column moves it by
+// scrolling the viewport. Both are in here, so nothing else has to know.
 export const viewTransform = () => view;
 export function toWorld(cx, cy) {
   const r = ws.getBoundingClientRect();
-  return { x: (cx - r.left - view.x) / view.k, y: (cy - r.top - view.y) / view.k };
+  return { x: (cx - r.left + ws.scrollLeft - view.x) / view.k, y: (cy - r.top + ws.scrollTop - view.y) / view.k };
 }
 export function toScreen(wx, wy) {
   const r = ws.getBoundingClientRect();
-  return { x: wx * view.k + view.x + r.left, y: wy * view.k + view.y + r.top };
+  return { x: wx * view.k + view.x + r.left - ws.scrollLeft, y: wy * view.k + view.y + r.top - ws.scrollTop };
 }
+// Where a cable runs when it cannot cross the column (see mapper-ui): the
+// lane's x in each gutter, and how far above a node it crosses.
+export const columnGutters = (lane = 0) => {
+  const l = lane % LANES;
+  return { left: 3 + l * LANE, right: (ws?.clientWidth ?? 0) - 3 - l * LANE, above: 4 + l * LANE };
+};
 // The world-space rectangle a client rect covers — for sockets, whose
 // positions are only known by measuring them.
 export function rectToWorld(r) {
@@ -396,7 +442,8 @@ function placeMembers(g, members) {
   let bottom = my;
   for (const m of members) {
     const shown = isVisible(els.get(m.id));
-    if (shown && my > top && my + shellH(m.id) - top > COL_MAX_H) {
+    // (The column never wraps: one stack is the point of it.)
+    if (shown && my > top && my + shellH(m.id) - top > (mode === 'column' ? Infinity : COL_MAX_H)) {
       mx += colW + GAP; my = top; colW = 0;       // next column in the frame
     }
     m.x = mx; m.y = my; m.placed = true; m.auto = true;
@@ -487,6 +534,7 @@ function placeFlow(n) {
 function restack() {
   restackTimer = null;
   if (!nodesEl) return;
+  if (mode === 'column') { stackColumn(); return; }
   const levels = [...state.nodes.values()]
     .filter(n => n.kind === 'group' && !n.collapsed)
     .sort((a, b) => depthOf(b.id) - depthOf(a.id))
@@ -522,6 +570,232 @@ function restack() {
     if (moved) layoutFrames();
   }
   if (moved) { dirty(); save(); }
+}
+
+// ── Column mode ──────────────────────────────────────────────────────────
+//
+// On a phone the canvas is a smear: at a scale where a node is readable
+// only a sliver of the world is on screen, and at a scale where the world
+// is on screen nothing is readable. So below the phone breakpoint (or by
+// choice, in ⚙) the workspace is ONE COLUMN instead: every node as wide as
+// the screen, stacked in order, scrolled by the finger. Everything else is
+// the same — sockets, cables, groups, folding, the add menu — only position
+// has lost a dimension. A node's place is its rank in the column: a drag on
+// its header moves it up or down, and the stack closes up behind it. A
+// pinch in (or ⌂) shows the whole column as a map; a tap on the map — or a
+// pinch out — scrolls to that node.
+//
+// Called whenever anything might have changed a height: the ResizeObserver
+// on every shell, and every sync. Idempotent — a stack that is already in
+// order changes nothing and saves nothing.
+function stackColumn() {
+  if (!ws || mode !== 'column') return false;
+  const W = ws.clientWidth;
+  if (!W) return false;
+  const shown = n => n.placed && !n.pinned && M.isShown(state, n.id) && isVisible(els.get(n.id));
+  // The order first, from where the nodes are — a node placed by the canvas
+  // in a column of its own still ranks by that column, so a first visit
+  // reads inputs, then the picture, then the engine.
+  const levels = [...state.nodes.values()].filter(n => n.kind === 'group' && !n.collapsed)
+    .sort((a, b) => depthOf(b.id) - depthOf(a.id)).map(g => g.id);
+  levels.push(null);
+  const ranked = new Map(levels.map(parent => [parent,
+    [...state.nodes.values()].filter(n => n.parent === parent && shown(n))
+      .sort((a, b) => (a.y - b.y) || (a.x - b.x))]));
+  // 1. Widths: the screen's, less a margin for the sockets that straddle the
+  //    edges — and a frame's padding for every frame a node is inside.
+  let changed = false;
+  for (const n of state.nodes.values()) {
+    if (!shown(n) || (n.kind === 'group' && !n.collapsed)) continue;   // frames size from members
+    const x = COL_MARGIN + depthOf(n.id) * FRAME_PAD;
+    const w = W - 2 * x;
+    if (n.x !== x || n.w !== w) {
+      n.x = x; n.w = w; changed = true;
+      const el = els.get(n.id);
+      if (el) applyNode(n, el);
+    }
+  }
+  // 2. Ranks: deepest frames first, so a frame's height is settled before
+  //    the level that stacks the frame. A frame moves with its members.
+  for (const parent of levels) {
+    const kids = ranked.get(parent);
+    if (!kids.length) continue;
+    let y = parent ? Math.min(...kids.map(k => k.y)) : COL_MARGIN;
+    for (const n of kids) {
+      const dy = y - n.y;
+      if (Math.abs(dy) > 0.5) { shiftNode(n, dy); changed = true; }
+      y += (measure(n.id)?.h ?? 0) + COL_GAP;
+    }
+    layoutFrames();
+  }
+  // 3. The column's height is the scroll range.
+  const b = M.bounds(ranked.get(null).map(n => measure(n.id)).filter(Boolean));
+  columnH = Math.ceil((b ? b.y + b.h : 0) + COL_MARGIN);
+  if (!overview) world.style.height = `${columnH}px`;
+  if (changed) { dirty(); save(); }
+  return changed;
+}
+
+function shiftNode(n, dy) {
+  const move = m => {
+    m.y += dy;
+    const el = els.get(m.id);
+    if (el && (m.kind !== 'group' || m.collapsed)) applyNode(m, el);
+  };
+  move(n);
+  if (n.kind === 'group' && !n.collapsed) for (const d of M.descendants(state, n.id)) if (!d.pinned) move(d);
+}
+
+// TIDY in the column: the shipped order — inputs, the picture, the engine,
+// and each group's members in the order the app lists them.
+function tidyColumn() {
+  const rankTop = id => { const c = M.DEFAULT_COLUMNS[id]; return c ? c.col * 100 + c.order : 999; };
+  const top = [...state.nodes.values()].filter(n => !n.parent && !n.pinned)
+    .sort((a, b) => (rankTop(a.id) - rankTop(b.id)) || (a.y - b.y));
+  top.forEach((n, i) => { n.y = i * GAP; n.auto = true; });
+  for (const g of state.nodes.values()) {
+    if (g.kind !== 'group') continue;
+    const order = memberOrder(g.id);
+    const kids = M.children(state, g.id).filter(m => !m.pinned)
+      .sort((a, b) => ((order.indexOf(a.id) + 1 || 999) - (order.indexOf(b.id) + 1 || 999)) || (a.y - b.y));
+    kids.forEach((m, i) => { m.y = g.y + FRAME_HEAD + i * GAP; m.auto = true; });
+  }
+  syncWorkspace(); save();
+}
+
+// The stack, scaled to the screen: a map of the column. Tapping it — or
+// pinching out on it — scrolls to the node under the finger.
+export function enterOverview() {
+  if (mode !== 'column' || overview || !ws) return;
+  overview = true;
+  const W = ws.clientWidth, H = ws.clientHeight;
+  const k = Math.max(0.2, Math.min(1, (H - 16) / Math.max(1, columnH)));
+  ws.classList.add('ws-overview');
+  ws.scrollTop = 0;
+  applyView({ x: (W - W * k) / 2, y: 8, k });
+  world.style.height = `${Math.ceil(columnH * k + 16)}px`;
+}
+export function exitOverview(focus = null) {
+  if (!overview) return;
+  overview = false;
+  ws.classList.remove('ws-overview');
+  applyView({ x: 0, y: 0, k: 1 });
+  world.style.height = `${columnH}px`;
+  if (focus) scrollToNode(focus);
+}
+export const isOverview = () => overview;
+
+function scrollToNode(id, smooth = true) {
+  const r = measure(id);
+  if (!r) return;
+  ws.scrollTo({ top: Math.max(0, r.y - COL_MARGIN), behavior: smooth ? 'smooth' : 'auto' });
+}
+
+// The node (not a frame) under a point on the screen.
+function nodeAtClient(cx, cy) {
+  const p = toWorld(cx, cy);
+  return [...state.nodes.values()]
+    .filter(n => !n.pinned && !(n.kind === 'group' && !n.collapsed) && M.isShown(state, n.id) && isVisible(els.get(n.id)))
+    .sort((a, b) => depthOf(b.id) - depthOf(a.id))
+    .find(n => inRect(p.x, p.y, measure(n.id))) ?? null;
+}
+
+function overviewTap(e) {
+  const sx = e.clientX, sy = e.clientY;
+  const up = ev => {
+    ws.removeEventListener('pointerup', up);
+    ws.removeEventListener('pointercancel', up);
+    if (ev.type === 'pointercancel' || Math.hypot(ev.clientX - sx, ev.clientY - sy) > 8) return;
+    const hit = nodeAtClient(ev.clientX, ev.clientY);
+    const y = toWorld(ev.clientX, ev.clientY).y;
+    exitOverview(hit?.id);
+    if (!hit) ws.scrollTo({ top: Math.max(0, y - ws.clientHeight / 2), behavior: 'smooth' });
+  };
+  ws.addEventListener('pointerup', up);
+  ws.addEventListener('pointercancel', up);
+}
+
+// A pinch on the column: in for the map, out for the node under the fingers.
+function initPinch() {
+  let d0 = null;
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  ws.addEventListener('touchstart', e => { d0 = e.touches.length === 2 ? dist(e.touches) : null; }, { passive: true });
+  ws.addEventListener('touchmove', e => {
+    if (mode !== 'column' || d0 == null || e.touches.length !== 2) return;
+    const d = dist(e.touches);
+    if (!overview && d < d0 - 60) { d0 = null; enterOverview(); }
+    else if (overview && d > d0 + 60) {
+      d0 = null;
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      exitOverview(nodeAtClient(cx, cy)?.id);
+    }
+  }, { passive: true });
+  ws.addEventListener('touchend', () => { d0 = null; }, { passive: true });
+}
+
+// Switching modes — a choice in ⚙, or a window crossing the breakpoint in
+// auto. The current layout is written to its store, the other mode's is
+// read from its own, and every node on the page is re-placed under it:
+// the panels keep their shells, the other mode's frames go, a node the
+// other store has never seen is placed as on a first visit.
+function switchMode(next) {
+  if (next === mode || !ws) return;
+  exitOverview();
+  flushSave();
+  mode = next;
+  state = M.createState(parseSaved());
+  startedEmpty = state.nodes.size === 0;
+  if (mode === 'column') state.view = { x: 0, y: 0, k: 1 };
+  view = state.view;
+  selected.clear();
+  const fresh = [];
+  for (const [id, el] of els) {
+    const kind = M.kindOf(id);
+    if (kind === 'group') continue;
+    const key = M.keyOf(id);
+    const had = state.nodes.has(id);
+    const n = M.ensure(state, id, kind === 'panel' ? { w: DEFAULT_W[key] ?? PANEL_W, h: DEFAULT_H[key] ?? null } : {});
+    if (!had) fresh.push(n);
+    el.classList.remove('selected');
+  }
+  ensureDefaultGroups(fresh.filter(n => n.kind === 'panel'));
+  applyModeChrome();
+  placeDefaults();
+  syncWorkspace();
+  save();
+  if (mode === 'canvas' && startedEmpty) requestAnimationFrame(() => fitAll());
+}
+
+// What each mode does to the viewport element: the canvas has the zoom
+// behaviour and a dock that fills the viewport; the column scrolls, and its
+// dock — the pinned nodes, the box, the menus — rides the top of it.
+function applyModeChrome() {
+  const col = mode === 'column';
+  ws.classList.toggle('ws-column', col);
+  if (col) {
+    if (zoomBehavior) {
+      // Its listeners, and any FIT still animating: a transition outlives
+      // the listeners it was started under and would go on moving the world.
+      select(ws).interrupt().on('.zoom', null);
+      zoomBehavior.on('zoom', null).on('end', null);
+      zoomBehavior = null;
+    }
+    ws.insertBefore(dock, world);
+    dock.append(boxEl, menuEl);
+    applyView({ x: 0, y: 0, k: 1 });
+  } else {
+    ws.append(dock, boxEl, menuEl);
+    world.style.height = '';
+    initZoom();
+  }
+  const hint = ws.querySelector('.ws-hint');
+  if (hint) {
+    hint.dataset.canvas ??= hint.textContent;
+    hint.textContent = col
+      ? 'scroll the column · drag a header to move a node up or down · socket ● → ● to wire · ⌂ for the map · right-click for more'
+      : hint.dataset.canvas;
+  }
 }
 
 // Get-or-create a function node from the patchbay. A new one takes the next
@@ -568,6 +842,7 @@ export function syncWorkspace() {
   }
   // Shells for nodes the model no longer has.
   for (const [id, el] of els) if (!state.nodes.has(id)) { el.remove(); els.delete(id); }
+  if (mode === 'column') stackColumn();
   layoutFrames();
   dirty();
 }
@@ -773,6 +1048,7 @@ function initZoom() {
 }
 
 export function setView(t, animate = true) {
+  if (!zoomBehavior) return;
   const tr = zoomIdentity.translate(t.x, t.y).scale(t.k);
   if (animate) select(ws).transition().duration(320).call(zoomBehavior.transform, tr);
   else select(ws).call(zoomBehavior.transform, tr);
@@ -786,6 +1062,13 @@ export function fitAll(ids = null) {
   const rects = list.map(n => measure(n.id)).filter(Boolean);
   const b = M.bounds(rects);
   if (!b) return;
+  if (mode === 'column') {
+    // "Fit" in a column is "scroll to": the nodes asked for at the top of
+    // the screen, or the top of the stack.
+    exitOverview();
+    ws.scrollTo({ top: ids ? Math.max(0, b.y - COL_MARGIN) : 0, behavior: 'smooth' });
+    return;
+  }
   const r = ws.getBoundingClientRect();
   setView(M.fitTransform(b, r.width, r.height, { pad: 28, maxK: 1 }));
 }
@@ -797,6 +1080,7 @@ const isControl = t => !!t.closest('button, select, input, textarea, a, .wave-bt
 function initPointer() {
   ws.addEventListener('pointerdown', e => {
     if (e.target.closest('.ws-menu')) return;
+    if (overview) { closeMenu(); overviewTap(e); return; }      // the map: a tap picks a node
     if (e.target.closest('.port')) return;                      // the patchbay's
     const grip = e.target.closest('.node-grip');
     if (grip) { startResize(e, grip.closest('.node')); return; }
@@ -844,15 +1128,17 @@ function startDrag(e, shell) {
   for (const m of moving.values()) if (m.parent && !moving.has(m.parent)) {
     if (!homes.has(m.parent)) homes.set(m.parent, measure(m.parent));
   }
-  const sx = e.clientX, sy = e.clientY;
+  const sx = e.clientX, sy = e.clientY, scroll0 = ws.scrollTop;
+  const column = mode === 'column' && !n.pinned;
   let dragging = false;
+  let last = e;
   const head = shell.querySelector(':scope > .node-head') ?? shell;
   try { head.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
-  const move = ev => {
-    if (ev.pointerId !== e.pointerId) return;
-    const dxs = ev.clientX - sx, dys = ev.clientY - sy;
-    if (!dragging && Math.hypot(dxs, dys) < 4) return;
-    if (!dragging) { dragging = true; document.body.classList.add('ws-dragging'); shell.classList.add('dragging'); }
+  const place = () => {
+    // In the column a node only moves up and down, and the world under the
+    // finger moves too when the column scrolls under it.
+    const dxs = column ? 0 : last.clientX - sx;
+    const dys = last.clientY - sy + (column ? ws.scrollTop - scroll0 : 0);
     for (const [mid, m] of moving) {
       const s0 = start.get(mid);
       if (m.pinned) { m.px = s0.x + dxs; m.py = s0.y + dys; }
@@ -863,6 +1149,27 @@ function startDrag(e, shell) {
     layoutFrames();
     dirty();
   };
+  // Near the top or bottom of the screen, the column scrolls under the
+  // held node, so a node can travel further than one screen in a drag.
+  const autoscroll = () => {
+    if (!dragging || !column) return;
+    const r = ws.getBoundingClientRect();
+    const edge = Math.min(80, r.height / 5);
+    const dy = last.clientY < r.top + edge ? -(r.top + edge - last.clientY) / 6
+             : last.clientY > r.bottom - edge ? (last.clientY - (r.bottom - edge)) / 6 : 0;
+    if (dy) { ws.scrollTop += dy; place(); }
+    requestAnimationFrame(autoscroll);
+  };
+  const move = ev => {
+    if (ev.pointerId !== e.pointerId) return;
+    last = ev;
+    if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+    if (!dragging) {
+      dragging = true; document.body.classList.add('ws-dragging'); shell.classList.add('dragging');
+      requestAnimationFrame(autoscroll);
+    }
+    place();
+  };
   const up = ev => {
     if (ev.pointerId !== e.pointerId) return;
     head.removeEventListener('pointermove', move);
@@ -871,6 +1178,7 @@ function startDrag(e, shell) {
     document.body.classList.remove('ws-dragging');
     shell.classList.remove('dragging');
     if (!dragging) return;
+    dragging = false;
     for (const [, m] of moving) {
       if (m.pinned) { m.px = Math.round(m.px); m.py = Math.round(m.py); }
       else { m.x = M.snap(m.x); m.y = M.snap(m.y); }
@@ -939,7 +1247,8 @@ function startResize(e, shell) {
   document.body.classList.add('ws-resizing');
   const move = ev => {
     const k = n.pinned ? 1 : view.k;
-    n.w = Math.max(MIN_W, Math.round(w0 + (ev.clientX - sx) / k));
+    // In the column every node is the column's width; the grip sets a height.
+    if (mode !== 'column' || n.pinned) n.w = Math.max(MIN_W, Math.round(w0 + (ev.clientX - sx) / k));
     if (!keepRatio) n.h = Math.max(MIN_H, Math.round(h0 + (ev.clientY - sy) / k));
     applyNode(n, shell); layoutFrames(); dirty();
   };
@@ -1135,6 +1444,7 @@ function renderMenu() {
 // one, else to everything at the top level; a frame moves as one box and
 // its members keep their places inside it.
 export function tidy(ids = null) {
+  if (mode === 'column') { tidyColumn(); return; }
   const scope = ids ?? (selected.size > 1 ? [...selected]
     : [...state.nodes.values()].filter(n => !n.parent).map(n => n.id));
   const nodes = scope.map(id => state.nodes.get(id))
@@ -1202,7 +1512,7 @@ export function tidy(ids = null) {
 // Back to the layout the app ships with, in place: every panel back in its
 // column and its group, nothing folded, pinned or closed.
 export function resetLayout() {
-  lsDel(LS_KEY);
+  lsDel(keyFor(mode));
   for (const n of Array.from(state.nodes.values())) {       // groups are deleted as we go
     if (n.kind === 'group') { state.nodes.delete(n.id); els.get(n.id)?.remove(); els.delete(n.id); continue; }
     n.placed = false; n.parent = null; n.folded = false; n.hidden = false; n.pinned = false;
@@ -1231,10 +1541,20 @@ export function initWorkspace() {
   boxEl = document.getElementById('ws-box');
   menuEl = document.getElementById('ws-menu');
   if (!ws) return;
+  if (mode === 'column') state.view = { x: 0, y: 0, k: 1 };
   view = state.view;
-  initZoom();
+  applyModeChrome();
   initPointer();
+  initPinch();
   initKeys();
+  ws.addEventListener('scroll', () => scrollCbs.forEach(cb => cb()), { passive: true });
+  // Auto mode follows the breakpoint: a window narrowed to a phone's width
+  // becomes a column, and widens back to a canvas.
+  phoneMedia?.addEventListener?.('change', () => {
+    if (layoutMode() !== 'auto') return;
+    const next = resolveMode();
+    if (next !== mode) switchMode(next);
+  });
   document.addEventListener('pointerdown', e => {
     if (menuEl && !menuEl.hidden && !menuEl.contains(e.target)) closeMenu();
   }, true);
@@ -1242,9 +1562,14 @@ export function initWorkspace() {
   document.getElementById('add-node-btn')?.addEventListener('click', e => {
     const r = e.currentTarget.getBoundingClientRect();
     const w = ws.getBoundingClientRect();
-    openAddMenu(Math.min(r.left, w.right - 260), w.top + 12);
+    // At the workspace's edge nearest the button: its top, or — with the bar
+    // at the bottom of a phone — its bottom, so the menu opens by the thumb.
+    openAddMenu(Math.min(r.left, w.right - 260), r.top >= w.bottom ? w.bottom - 12 : w.top + 12);
   });
-  document.getElementById('fit-btn')?.addEventListener('click', () => fitAll(selected.size ? [...selected] : null));
+  document.getElementById('fit-btn')?.addEventListener('click', () => {
+    if (mode === 'column') { if (overview) exitOverview(); else enterOverview(); return; }
+    fitAll(selected.size ? [...selected] : null);
+  });
   document.getElementById('tidy-btn')?.addEventListener('click', () => tidy());
   // Frames are measured from their members, and members change size when
   // their content does — a list grows, a section unfolds, dev mode reveals
@@ -1257,10 +1582,10 @@ export function initWorkspace() {
   adoptSections(document);
   for (const n of state.nodes.values()) if (n.kind === 'panel' && !n.placed) placeDefaults();
   syncWorkspace();
-  // A first look: everything, on a screen that can show it; on a phone the
-  // camera's group, at a size you can use — the rest is a pinch away.
-  if (first) requestAnimationFrame(() => fitAll(window.innerWidth < 769 && state.nodes.has('group:inputs') ? ['group:inputs'] : null));
-  window.addEventListener('resize', () => dirty());
+  // A first look: everything, on a screen that can show it. The column
+  // needs no fitting — it starts at its top.
+  if (first && mode === 'canvas') requestAnimationFrame(() => fitAll());
+  window.addEventListener('resize', () => { dirty(); if (mode === 'column') scheduleRestack(); });
   document.fonts?.ready?.then(scheduleRestack);
 }
 

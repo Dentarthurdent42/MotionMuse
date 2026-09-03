@@ -87,7 +87,7 @@ for (const width of WIDTHS) {
     };
     return {
       header: hb.toJSON(),
-      mainTop: main.top,
+      mainTop: main.top, mainBottom: main.bottom,
       escapees: btns
         .map(el => ({ id: el.id, r: el.getBoundingClientRect() }))
         .filter(({ r }) => r.bottom > hb.bottom + 0.5 || r.top < hb.top - 0.5
@@ -845,8 +845,9 @@ const reset = await (async () => {
   // Seed once the app has finished its own start-up saves, so the stale
   // layout is what the reload finds and not what a late save overwrote.
   await page.waitForTimeout(800);
+  // A phone's width: the store is the column's.
   await page.evaluate(() => {
-    localStorage.setItem('motionmuse-workspace', JSON.stringify({ v: 1, nodes: {
+    localStorage.setItem('motionmuse-workspace-column', JSON.stringify({ v: 1, nodes: {
       'panel:mic':     { x: 2000, y: 2000, parent: null },
       'panel:metronome': { x: 0, y: 0, hidden: true },
       'panel:camera':  { x: 100, y: 100, parent: null, folded: true, pinned: true, px: 10, py: 10 },
@@ -864,7 +865,7 @@ const reset = await (async () => {
       camFolded: !!n('panel:camera')?.folded,
       camPinned: !!n('panel:camera')?.pinned,
       groups: WS.allNodes().filter(x => x.kind === 'group').map(x => x.id).sort().join(','),
-      key: localStorage.getItem('motionmuse-workspace') !== null,
+      key: localStorage.getItem('motionmuse-workspace-column') !== null,
     };
   });
 
@@ -882,6 +883,135 @@ const reset = await (async () => {
   const reloaded = await state();
   await page.close();
   return { stale, after, reloaded, errs };
+})();
+
+// ── The column: a phone's workspace is one scrolling stack ───────────────
+const column = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+
+  const probe = () => page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    const ws = document.getElementById('ws');
+    const shown = [...document.querySelectorAll('#ws .node')].filter(e => e.getClientRects().length);
+    const wide = shown.filter(e => !(e.classList.contains('node-group') && !e.classList.contains('collapsed')))
+      .map(e => ({ id: e.dataset.node, r: e.getBoundingClientRect() }));
+    const top = WS.allNodes().filter(n => !n.parent && !n.pinned && !n.hidden && WS.measure(n.id)?.h)
+      .sort((a, b) => a.y - b.y).map(n => n.id);
+    return {
+      column: WS.isColumnMode(),
+      cls: ws.className,
+      k: WS.viewTransform().k,
+      scrollable: ws.scrollHeight > ws.clientHeight + 1,
+      sideways: ws.scrollWidth > ws.clientWidth + 2,
+      order: top,
+      // Every node spans the column: as wide as the screen less the margins,
+      // and inside it.
+      narrow: wide.filter(({ r }) => r.width < innerWidth * 0.75 || r.left < 0 || r.right > innerWidth + 0.5)
+        .map(({ id, r }) => `${id} ${Math.round(r.left)}..${Math.round(r.right)}`),
+      camW: Math.round(document.querySelector('[data-node="panel:camera"]').getBoundingClientRect().width),
+      scrollTop: ws.scrollTop,
+      dockFirst: ws.firstElementChild.id,
+    };
+  });
+  const fresh = await probe();
+
+  // Cables run the gutters: orthogonal, never a bezier, never off the screen.
+  const wires = await page.evaluate(async () => {
+    const { mapper } = await import('/src/mapper.js');
+    mapper.add('volume', 'hand_L_y', 0, 1, 'linear', 0, false);
+    mapper.add('filter_freq', 'hand_R_y', 0, 1, 'linear', 0, false);
+    await new Promise(r => setTimeout(r, 300));
+    const W = document.getElementById('ws').clientWidth;
+    return [...document.querySelectorAll('.ng-wire')].map(w => {
+      const d = w.getAttribute('d');
+      const xs = d.match(/-?\d+(\.\d+)?/g).map(Number).filter((_, i) => i % 2 === 0);
+      // The lane: where the cable runs down the right gutter.
+      const lane = Math.max(...xs);
+      return { curve: /C/.test(d), inside: Math.min(...xs) >= 0 && lane <= W, corners: (d.match(/Q/g) ?? []).length, lane };
+    });
+  });
+
+  // ⌂ is the map: the whole stack scaled to the screen; a tap on it scrolls
+  // to the node under the finger.
+  await page.click('#fit-btn');
+  await page.waitForTimeout(150);
+  const map = await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    const ws = document.getElementById('ws');
+    const m = WS.measure('panel:metronome');
+    const s = WS.toScreen(m.x + m.w / 2, m.y + 8);
+    return { cls: ws.className, k: WS.viewTransform().k, overview: WS.isOverview(),
+             tap: { x: Math.round(s.x), y: Math.round(s.y) }, onScreen: s.y > ws.getBoundingClientRect().top && s.y < innerHeight };
+  });
+  await page.mouse.click(map.tap.x, map.tap.y);
+  await page.waitForTimeout(800);
+  const tapped = await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    const ws = document.getElementById('ws');
+    const m = WS.measure('panel:metronome');
+    const r = document.querySelector('[data-node="panel:metronome"]').getBoundingClientRect();
+    return { overview: WS.isOverview(), k: WS.viewTransform().k, scrollTop: ws.scrollTop, metroY: m.y,
+             headTop: Math.round(r.top - ws.getBoundingClientRect().top) };
+  });
+
+  // A drag on a header moves the node up or down the column — the microphone
+  // above the camera — and nowhere else.
+  await page.evaluate(() => document.getElementById('ws').scrollTo({ top: 0, behavior: 'auto' }));
+  await page.waitForTimeout(150);
+  const heads = await page.evaluate(() => {
+    const r = document.querySelector('[data-node="panel:mic"] > .node-head').getBoundingClientRect();
+    const c = document.querySelector('[data-node="panel:camera"]').getBoundingClientRect();
+    return { x: r.left + 60, y: r.top + r.height / 2, camTop: c.top };
+  });
+  await page.mouse.move(heads.x, heads.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) {
+    await page.mouse.move(heads.x + i * 4, heads.y - (heads.y - heads.camTop + 24) * i / 12);
+    await page.waitForTimeout(20);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const dragged = await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    const members = WS.allNodes().filter(n => n.parent === 'group:inputs' && WS.measure(n.id)?.h)
+      .sort((a, b) => a.y - b.y).map(n => n.id);
+    return { members, micX: WS.measure('panel:mic').x, camX: WS.measure('panel:camera').x,
+             micParent: WS.getNode('panel:mic').parent };
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const reloaded = await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    return WS.allNodes().filter(n => n.parent === 'group:inputs' && WS.measure(n.id)?.h)
+      .sort((a, b) => a.y - b.y).map(n => n.id);
+  });
+
+  // ⚙ LAYOUT: the canvas on a phone, by choice, and back — in place, and
+  // each mode's arrangement kept in its own store.
+  await page.evaluate(async () => (await import('/src/ui/workspace.js')).setLayoutMode('canvas'));
+  await page.waitForTimeout(500);
+  const canvas = await probe();
+  const canvasCam = await page.evaluate(async () => (await import('/src/ui/workspace.js')).getNode('panel:camera').w);
+  await page.evaluate(async () => (await import('/src/ui/workspace.js')).setLayoutMode('auto'));
+  await page.waitForTimeout(500);
+  const back = await probe();
+  const backMembers = await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    return WS.allNodes().filter(n => n.parent === 'group:inputs' && WS.measure(n.id)?.h)
+      .sort((a, b) => a.y - b.y).map(n => n.id);
+  });
+  const stores = await page.evaluate(() => ({
+    column: !!localStorage.getItem('motionmuse-workspace-column'),
+    canvas: !!localStorage.getItem('motionmuse-workspace'),
+    mode: localStorage.getItem('motionmuse-layout-mode'),
+  }));
+  await ctx.close();
+  return { fresh, wires, map, tapped, dragged, reloaded, canvas, canvasCam, back, backMembers, stores, errs };
 })();
 
 // The inference HUD is dev-only, and each of its rows belongs to a model that
@@ -1971,9 +2101,14 @@ for (const { width, off, on, nodes: n, sigPanel, nums, errs } of results) {
   check(!off.hOverflow && !on.hOverflow, `${w}: no horizontal overflow`);
   check(off.face !== null && off.gaze !== null, `${w}: FACE/GAZE present with the camera off`);
   check(on.face !== null && on.gaze !== null,   `${w}: FACE/GAZE present with the camera on`);
-  check(Math.abs(on.mainTop - on.header.bottom) < 1.5,
-    `${w}: the canvas starts where the header ends`,
-    `header.bottom ${Math.round(on.header.bottom)} vs main.top ${Math.round(on.mainTop)}`);
+  // The header is above the canvas, or — on a phone, where a thumb reaches
+  // the bottom of the screen — below it; either way edge to edge.
+  check(Math.abs(on.mainTop - on.header.bottom) < 1.5 || Math.abs(on.mainBottom - on.header.top) < 1.5,
+    `${w}: the canvas meets the header edge to edge`,
+    `header ${Math.round(on.header.top)}..${Math.round(on.header.bottom)} vs main ${Math.round(on.mainTop)}..${Math.round(on.mainBottom)}`);
+  check(width < 769 ? on.header.top > on.mainTop : on.header.bottom <= on.mainTop,
+    `${w}: the header is ${width < 769 ? 'a bar at the bottom, by the thumb' : 'at the top'}`,
+    `header.top ${Math.round(on.header.top)} main.top ${Math.round(on.mainTop)}`);
   check(Math.abs(on.header.height - off.header.height) < 0.5,
     `${w}: the header holds its height when the camera starts`,
     `${Math.round(off.header.height)} → ${Math.round(on.header.height)}`);
@@ -2089,6 +2224,40 @@ console.log('\nLayout reset\n');
   check(reset.after.groups === 'group:audio,group:inputs', 'reset: the shipped groups are back', reset.after.groups);
   check(reset.reloaded.mic === 'group:inputs' && !reset.reloaded.metroHidden && !reset.reloaded.camPinned,
     'reset: and it survives a reload', JSON.stringify(reset.reloaded));
+}
+
+console.log('\nThe column (a phone)\n');
+{
+  const { fresh, wires, map, tapped, dragged, reloaded, canvas, canvasCam, back, backMembers, stores, errs } = column;
+  check(errs.length === 0, 'column: no page errors', errs.join(' | '));
+  check(fresh.column && fresh.cls.includes('ws-column') && fresh.k === 1,
+    'column: below the phone breakpoint the workspace is one column, unscaled', `${fresh.cls} k=${fresh.k}`);
+  check(fresh.scrollable && !fresh.sideways, 'column: the column scrolls down and only down',
+    `scrollable=${fresh.scrollable} sideways=${fresh.sideways}`);
+  check(fresh.narrow.length === 0, 'column: every node spans the screen, inside it', fresh.narrow.join(' '));
+  check(fresh.order[0] === 'group:inputs' && fresh.order.includes('group:audio'),
+    'column: the inputs come first, the engine after', fresh.order.join(','));
+  check(fresh.dockFirst === 'ws-dock', 'column: the dock rides the top of the viewport', fresh.dockFirst);
+  check(wires.length === 2 && wires.every(w => !w.curve && w.inside && w.corners >= 2),
+    'column: cables run the gutters — orthogonal, and on the screen', JSON.stringify(wires));
+  check(wires.length === 2 && wires[0].lane !== wires[1].lane,
+    'column: each cable in a lane of its own, so they read apart', JSON.stringify(wires.map(w => w.lane)));
+  check(map.overview && map.cls.includes('ws-overview') && map.k < 1,
+    'column: ⌂ shows the whole stack as a map', `${map.cls} k=${map.k}`);
+  check(map.onScreen, 'column: the metronome is on the map', JSON.stringify(map.tap));
+  check(!tapped.overview && tapped.k === 1 && Math.abs(tapped.scrollTop - (tapped.metroY - 14)) < 24,
+    'column: a tap on the map scrolls to that node', JSON.stringify(tapped));
+  check(dragged.members[0] === 'panel:mic' && dragged.members[1] === 'panel:camera',
+    'column: dragging a header up moves the node up the column', dragged.members.join(','));
+  check(dragged.micX === dragged.camX && dragged.micParent === 'group:inputs',
+    'column: and nowhere sideways — it keeps its column and its group', JSON.stringify(dragged));
+  check(reloaded[0] === 'panel:mic', 'column: the order survives a reload', reloaded.join(','));
+  check(!canvas.column && !canvas.cls.includes('ws-column') && canvas.dockFirst === 'ws-world' && canvasCam === 440,
+    'column: ⚙ LAYOUT → canvas gives the pan-and-zoom canvas, its own layout', `${canvas.cls} camW=${canvasCam}`);
+  check(back.column && back.narrow.length === 0 && backMembers[0] === 'panel:mic',
+    'column: and back to auto is the column as it was', `${back.cls} ${backMembers.join(',')} narrow=${back.narrow.join(' ')}`);
+  check(stores.column && stores.canvas && stores.mode === 'auto',
+    'column: each mode keeps its own store', JSON.stringify(stores));
 }
 
 console.log('\nInference HUD\n');
