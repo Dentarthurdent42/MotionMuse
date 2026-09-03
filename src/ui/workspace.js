@@ -681,7 +681,10 @@ export function exitOverview(focus = null) {
   ws.classList.remove('ws-overview');
   applyView({ x: 0, y: 0, k: 1 });
   world.style.height = `${columnH}px`;
-  if (focus) scrollToNode(focus);
+  stackColumn();                       // fresh heights before the jump
+  // A jump, not a glide: the map was the overview, and the node tapped is
+  // where you meant to be.
+  if (focus) scrollToNode(focus, false);
 }
 export const isOverview = () => overview;
 
