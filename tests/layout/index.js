@@ -326,7 +326,7 @@ for (const width of WIDTHS) {
         const cam = document.querySelector('[data-node="panel:camera"]').getBoundingClientRect();
         const outs = [...document.querySelectorAll('#cam-signals .sig-sec-body .port-out')].filter(p => p.checkVisibility());
         const offOut = outs.filter(p => { const r = p.getBoundingClientRect(); return Math.abs(r.left + r.width / 2 - cam.right) > 2; });
-        const ins = [...document.querySelectorAll('#ws .node-panel:not(.sized) .ctrl-row .port-in')].filter(p => p.checkVisibility());
+        const ins = [...document.querySelectorAll('#ws .node-panel .ctrl-row .port-in, #ws .node-panel .chord-assign .port-in')].filter(p => p.checkVisibility());
         const offIn = ins.filter(p => {
           const n = p.closest('.node').getBoundingClientRect(), r = p.getBoundingClientRect();
           return Math.abs(r.left + r.width / 2 - n.left) > 2;
@@ -996,12 +996,40 @@ const column = await (async () => {
       .sort((a, b) => a.y - b.y).map(n => n.id);
   });
 
+  // The picture rides the top of the column: over its placeholder at the
+  // top, a thumbnail in the corner once that has scrolled away, back in
+  // its node on the canvas.
+  const sticky = await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    const ws = document.getElementById('ws');
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const wrap = document.getElementById('video-wrap'), hold = document.getElementById('cam-hold'), strip = document.getElementById('cam-sticky');
+    const box = el => { const r = el.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; };
+    const same = (a, b) => Math.abs(a.l - b.l) <= 1 && Math.abs(a.t - b.t) <= 1 && Math.abs(a.w - b.w) <= 1;
+    WS.fitAll(['panel:camera']);
+    await sleep(500);
+    const top = { lifted: wrap.parentElement === strip, overHold: same(box(wrap), box(hold)), mini: strip.classList.contains('cam-mini') };
+    ws.scrollTo({ top: ws.scrollTop + 1200, behavior: 'auto' });
+    await sleep(150);
+    const wsr = ws.getBoundingClientRect();
+    const far = { mini: strip.classList.contains('cam-mini'), box: box(wrap), shown: !strip.hidden,
+                  ratio: box(wrap).w / box(wrap).h, right: Math.round(wsr.right), top: Math.round(wsr.top) };
+    strip.click();
+    await sleep(700);
+    const tapped = { scrollTop: ws.scrollTop, camY: WS.measure('panel:camera').y, mini: strip.classList.contains('cam-mini') };
+    return { top, far, tapped };
+  });
+
   // ⚙ LAYOUT: the canvas on a phone, by choice, and back — in place, and
   // each mode's arrangement kept in its own store.
   await page.evaluate(async () => (await import('/src/ui/workspace.js')).setLayoutMode('canvas'));
   await page.waitForTimeout(500);
   const canvas = await probe();
   const canvasCam = await page.evaluate(async () => (await import('/src/ui/workspace.js')).getNode('panel:camera').w);
+  const canvasPic = await page.evaluate(() => ({
+    inNode: !!document.getElementById('video-wrap').closest('[data-node="panel:camera"]'),
+    holdHidden: document.getElementById('cam-hold').hidden,
+  }));
   await page.evaluate(async () => (await import('/src/ui/workspace.js')).setLayoutMode('auto'));
   await page.waitForTimeout(500);
   const back = await probe();
@@ -1016,7 +1044,146 @@ const column = await (async () => {
     mode: localStorage.getItem('motionmuse-layout-mode'),
   }));
   await ctx.close();
-  return { fresh, wires, map, tapped, dragged, reloaded, canvas, canvasCam, back, backMembers, stores, errs };
+  return { fresh, wires, map, tapped, dragged, reloaded, sticky, canvas, canvasCam, canvasPic, back, backMembers, stores, errs };
+})();
+
+// ── FIND: every node and socket by name, revealed ────────────────────────
+const find = {};
+for (const [key, vp] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
+  const ctx = await b.newContext({ viewport: vp });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  await page.click('#search-btn');
+  await page.waitForTimeout(150);
+  const open = await page.evaluate(() => {
+    const m = document.getElementById('ws-menu');
+    return { open: !m.hidden, focused: document.activeElement === m.querySelector('.ws-menu-search'),
+             secs: [...m.querySelectorAll('.ws-menu-sec')].map(e => e.textContent),
+             items: m.querySelectorAll('.ws-menu-item').length };
+  });
+  await page.keyboard.type('cutoff');
+  await page.waitForTimeout(120);
+  const typed = await page.evaluate(() => {
+    const m = document.getElementById('ws-menu');
+    return { secs: [...m.querySelectorAll('.ws-menu-sec')].map(e => e.textContent),
+             first: m.querySelector('.ws-menu-item')?.textContent.trim().replace(/\s+/g, ' ') };
+  });
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(900);
+  const found = await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    const port = document.querySelector('.port[data-key="filter_freq"][data-side="in"]');
+    const r = port.getBoundingClientRect();
+    const ws = document.getElementById('ws').getBoundingClientRect();
+    return { menuClosed: document.getElementById('ws-menu').hidden, selected: WS.selectedIds().join(','),
+             portFlashed: port.classList.contains('found'),
+             nodeFlashed: document.querySelector('[data-node="panel:filter"]').classList.contains('found'),
+             onScreen: r.top >= ws.top && r.bottom <= ws.bottom && r.left >= 0 && r.right <= innerWidth };
+  });
+  // A closed panel, and a socket inside a closed tracker group, are both
+  // reachable: FIND brings the panel back and opens the group.
+  await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    WS.setHidden('panel:metronome', true);
+    document.querySelector('.port[data-key="hand_L_y"]')?.closest('details')?.removeAttribute('open');
+  });
+  await page.keyboard.press('/');
+  await page.waitForTimeout(150);
+  const slash = await page.evaluate(() => {
+    const m = document.getElementById('ws-menu');
+    return { open: !m.hidden, hint: [...m.querySelectorAll('.ws-menu-item')].find(e => /metronome/i.test(e.textContent))?.querySelector('.ws-menu-hint')?.textContent };
+  });
+  await page.keyboard.type('metronome');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(700);
+  const back = await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    return { hidden: !!WS.getNode('panel:metronome').hidden, selected: WS.selectedIds().join(',') };
+  });
+  await page.keyboard.press('Control+k');
+  await page.waitForTimeout(150);
+  await page.keyboard.type('left wrist y');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(900);
+  const socket = await page.evaluate(() => {
+    const port = [...document.querySelectorAll('.port[data-key="hand_L_y"][data-side="out"]')].find(p => p.checkVisibility());
+    const r = port?.getBoundingClientRect();
+    const ws = document.getElementById('ws').getBoundingClientRect();
+    return { drawn: !!port, inRow: !!port?.closest('.sig-row'), groupOpen: !!port?.closest('details')?.open,
+             flashed: !!port?.classList.contains('found'),
+             onScreen: !!r && r.top >= ws.top && r.bottom <= ws.bottom };
+  });
+  find[key] = { open, typed, found, slash, back, socket, errs };
+  await ctx.close();
+}
+
+// ── Gesture mode's shapes are cables ─────────────────────────────────────
+const chordCables = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
+  await ctx.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  await page.click('.start-item[data-start="chords"]');
+  await page.waitForTimeout(900);
+  const state = () => page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    const { mapper } = await import('/src/mapper.js');
+    const { chordmode } = await import('/src/chordmode.js');
+    const ends = [...document.querySelectorAll('.ng-wire')].map(w => {
+      const id = +w.dataset.mid;
+      const m = mapper.mappings.find(x => x.id === id);
+      return `${m?.signal}→${m?.audioParam}`;
+    });
+    const owner = key => WS.ownerOf(WS.allNodes().find(n => n.id === key)?.id ?? key);
+    const sockets = [...document.querySelectorAll('[data-node="panel:gesture-mode"] .chord-assign .port[data-side="in"]')]
+      .map(p => p.dataset.key);
+    return {
+      cables: mapper.mappings.filter(m => /^chord_(trig|acc)_/.test(m.audioParam)).length,
+      wires: ends.filter(e => /chord_(trig|acc)_/.test(e)).length,
+      allFromCamera: ends.filter(e => /chord_(trig|acc)_/.test(e)).every(e => e.startsWith('gesture_')),
+      camOwner: owner('panel:camera'),
+      sockets,
+      rows: [...document.querySelectorAll('.chord-assign')].map(r => `${r.dataset.degree}:${r.querySelector('.ch-shape')?.value ?? ''}`),
+      deg0: chordmode.gestureFor(0), deg1: chordmode.gestureFor(1), deg4: chordmode.gestureFor(4),
+      on: chordmode.enabled,
+    };
+  });
+  const fresh = await state();
+  // The picker strings the cable: point (I) and palm (V) swap.
+  await page.selectOption('.ch-shape[data-degree="0"]', 'palm');
+  await page.waitForTimeout(400);
+  const picked = await state();
+  // A cable from something else holds the degree; the row says so.
+  const wired = await page.evaluate(async () => {
+    const { mapper } = await import('/src/mapper.js');
+    const { chordmode } = await import('/src/chordmode.js');
+    const m = mapper.mappings.find(x => x.audioParam === 'chord_trig_1');
+    mapper.remove(m.id);
+    mapper.add('chord_trig_1', 'metro_beat', 0, 1, 'linear', 0, false);
+    (await import('/src/ui/audio-ui.js')).renderAudioPanel();
+    await new Promise(r => setTimeout(r, 300));
+    const sel = document.querySelector('.ch-shape[data-degree="1"]');
+    return { deg1: chordmode.gestureFor(1), disabled: sel.disabled, text: sel.options[sel.selectedIndex]?.textContent };
+  });
+  // Unplugged, the degree is free and the row is a picker again.
+  const unplugged = await page.evaluate(async () => {
+    const { mapper } = await import('/src/mapper.js');
+    const { chordmode } = await import('/src/chordmode.js');
+    const m = mapper.mappings.find(x => x.audioParam === 'chord_trig_1');
+    mapper.remove(m.id);
+    (await import('/src/ui/audio-ui.js')).renderAudioPanel();
+    await new Promise(r => setTimeout(r, 300));
+    const sel = document.querySelector('.ch-shape[data-degree="1"]');
+    return { deg1: chordmode.gestureFor(1), disabled: sel.disabled, value: sel.value };
+  });
+  await ctx.close();
+  return { fresh, picked, wired, unplugged, errs };
 })();
 
 // The inference HUD is dev-only, and each of its rows belongs to a model that
@@ -2233,7 +2400,7 @@ console.log('\nLayout reset\n');
 
 console.log('\nThe column (a phone)\n');
 {
-  const { fresh, wires, map, tapped, dragged, reloaded, canvas, canvasCam, back, backMembers, stores, errs } = column;
+  const { fresh, wires, map, tapped, dragged, reloaded, sticky, canvas, canvasCam, canvasPic, back, backMembers, stores, errs } = column;
   check(errs.length === 0, 'column: no page errors', errs.join(' | '));
   check(fresh.column && fresh.cls.includes('ws-column') && fresh.k === 1,
     'column: below the phone breakpoint the workspace is one column, unscaled', `${fresh.cls} k=${fresh.k}`);
@@ -2257,12 +2424,54 @@ console.log('\nThe column (a phone)\n');
   check(dragged.micX === dragged.camX && dragged.micParent === 'group:inputs',
     'column: and nowhere sideways — it keeps its column and its group', JSON.stringify(dragged));
   check(reloaded[0] === 'panel:mic', 'column: the order survives a reload', reloaded.join(','));
+  check(sticky.top.lifted && sticky.top.overHold && !sticky.top.mini,
+    'column: the picture is lifted into the dock, over its place in the node', JSON.stringify(sticky.top));
+  check(sticky.far.shown && sticky.far.mini && sticky.far.box.w < 0.5 * 390 && sticky.far.box.w > 0.3 * 390
+        && Math.abs(sticky.far.ratio - 4 / 3) < 0.05 && sticky.far.box.t >= sticky.far.top && sticky.far.box.l + sticky.far.box.w <= sticky.far.right,
+    'column: scrolled away, it is a 4:3 thumbnail in the top-right corner', JSON.stringify(sticky.far));
+  check(!sticky.tapped.mini && sticky.tapped.scrollTop <= sticky.tapped.camY,
+    'column: a tap on the thumbnail scrolls back to the camera', JSON.stringify(sticky.tapped));
+  check(canvasPic.inNode && canvasPic.holdHidden, 'column: on the canvas the picture is back in its node', JSON.stringify(canvasPic));
   check(!canvas.column && !canvas.cls.includes('ws-column') && canvas.dockFirst === 'ws-world' && canvasCam === 440,
     'column: ⚙ LAYOUT → canvas gives the pan-and-zoom canvas, its own layout', `${canvas.cls} camW=${canvasCam}`);
   check(back.column && back.narrow.length === 0 && backMembers[0] === 'panel:mic',
     'column: and back to auto is the column as it was', `${back.cls} ${backMembers.join(',')} narrow=${back.narrow.join(' ')}`);
   check(stores.column && stores.canvas && stores.mode === 'auto',
     'column: each mode keeps its own store', JSON.stringify(stores));
+}
+
+console.log('\nGesture mode\'s shapes are cables\n');
+{
+  const { fresh, picked, wired, unplugged, errs } = chordCables;
+  check(errs.length === 0, 'chord cables: no page errors', errs.join(' | '));
+  check(fresh.on && fresh.cables === 10 && fresh.wires === 10,
+    'chord cables: the chords starter opens with ten cables, every one drawn', JSON.stringify({ on: fresh.on, cables: fresh.cables, wires: fresh.wires }));
+  check(fresh.allFromCamera, 'chord cables: each from a handshape\'s signal', fresh.deg0);
+  check(fresh.sockets.length === 8 && fresh.sockets.includes('chord_trig_6') && fresh.sockets.includes('chord_trig_release'),
+    'chord cables: every degree row and RELEASE carries its input socket', fresh.sockets.join(','));
+  check(fresh.rows[0] === '0:point' && fresh.rows[4] === '4:palm', 'chord cables: the rows show the shapes', fresh.rows.join(' '));
+  check(picked.deg0 === 'palm' && picked.deg4 === 'point' && picked.cables === 10 && picked.rows[0] === '0:palm' && picked.rows[4] === '4:point',
+    'chord cables: choosing a shape re-strings the cables — a swap moves two', JSON.stringify({ deg0: picked.deg0, deg4: picked.deg4, cables: picked.cables }));
+  check(wired.deg1 === 'cable:1' && wired.disabled && wired.text === 'WIRED',
+    'chord cables: any other signal holds the degree, and the row says WIRED', JSON.stringify(wired));
+  check(unplugged.deg1 === null && !unplugged.disabled && unplugged.value === '',
+    'chord cables: unplugged, the degree is free and the row is a picker again', JSON.stringify(unplugged));
+}
+
+console.log('\nFIND\n');
+for (const [key, f] of Object.entries(find)) {
+  check(f.errs.length === 0, `${key}: no page errors`, f.errs.join(' | '));
+  check(f.open.open && f.open.focused && f.open.secs.join() === 'Nodes' && f.open.items >= 20,
+    `${key}: ⌕ FIND opens a list of every node, search focused`, JSON.stringify(f.open));
+  check(f.typed.secs.includes('Sockets') && /Filter Cutoff/.test(f.typed.first ?? ''),
+    `${key}: typing finds sockets by label, the closest first`, JSON.stringify(f.typed));
+  check(f.found.menuClosed && f.found.selected === 'panel:filter' && f.found.onScreen,
+    `${key}: Enter reveals the node — selected and on screen`, JSON.stringify(f.found));
+  check(f.found.portFlashed && f.found.nodeFlashed, `${key}: and flashes the socket and its node`, JSON.stringify(f.found));
+  check(f.slash.open && /bring it back/.test(f.slash.hint ?? ''), `${key}: / opens it, and a closed panel is offered`, JSON.stringify(f.slash));
+  check(!f.back.hidden && f.back.selected === 'panel:metronome', `${key}: picking the closed panel brings it back`, JSON.stringify(f.back));
+  check(f.socket.drawn && f.socket.inRow && f.socket.groupOpen && f.socket.flashed && f.socket.onScreen,
+    `${key}: Ctrl+K finds a socket inside a closed tracker group and opens it`, JSON.stringify(f.socket));
 }
 
 console.log('\nInference HUD\n');

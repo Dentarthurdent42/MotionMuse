@@ -541,6 +541,25 @@ body.cam-on #cv-btn { display: none; }
 .ws.ws-overview > .ws-world { will-change: transform; }
 .ws.ws-overview .node { pointer-events: none; }
 .ws.ws-overview .ng-wire { pointer-events: none; }
+/* The picture, lifted into the dock in column mode (src/ui/cam-sticky.js):
+   over its placeholder at the top of the column, a thumbnail in the corner
+   once that has scrolled away. */
+#cam-hold { width: 100%; aspect-ratio: 4/3; background: var(--glass); }
+#cam-hold[hidden], #cam-sticky[hidden] { display: none; }
+#cam-sticky {
+  position: absolute; left: 0; top: 0; z-index: 45;
+  pointer-events: auto;
+  will-change: transform, width;
+}
+#cam-sticky > #video-wrap { width: 100%; }
+#cam-sticky.cam-mini {
+  border-radius: 6px; overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border2);
+  cursor: pointer;
+}
+#cam-sticky.cam-mini .cam-bar, #cam-sticky.cam-mini .cam-toggles,
+#cam-sticky.cam-mini .cam-name, #cam-sticky.cam-mini #latency-bar { display: none; }
 
 /* The two authored panels (SIGNALS, PATCH) use the older .ph / .pb header and
    body; as nodes they are dressed by .node like every other section. */
@@ -1061,21 +1080,19 @@ body.no-scroll { overflow: hidden; }
    border. --body-pad-x is set with the padding itself (.node-body rules). */
 .ctrl-lbl > .port-in, .chord-key-lbl > .port-in,
 .wave-btns > .head-sock { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); }
-.node.sized .ctrl-lbl > .port-in, .node.sized .chord-key-lbl > .port-in,
-.node.sized .wave-btns > .head-sock { margin-left: calc(-1 * var(--body-pad-x, 10px)); }
 /* A switch that lives in a node's header takes the header's left edge —
    the same line the body's sockets sit on: the head starts inside the
    node's 1px border and carries a 3px accent stripe of its own, so the
    ring is pulled back past both (4px) and then by half its width. A node
    given a height clips, so there the ring sits just inside, as the body's do. */
 .node-head > .head-sock { position: absolute; left: calc(-4px - var(--sock) / 2); top: 50%; transform: translateY(-50%); margin: 0; }
-.node.sized > .node-head > .head-sock { left: -3px; }
 /* A sub-heading inside a body (ENVELOPE under Volume Quantize) is a row like
    any other: its socket rides out to the border the same way. */
 .audio-section-label:not(.node-head) > .head-sock { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); }
-.node.sized .audio-section-label:not(.node-head) > .head-sock { margin-left: calc(-1 * var(--body-pad-x, 10px)); }
 /* An oscillator row's waveform socket, beside its number. */
 .osc-row-n > .port-in { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); margin-right: 5px; }
+/* Gesture mode's rows: the degree's socket first, on the node's edge. */
+.chord-assign > .port-in { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); margin-right: 0; }
 /* A tracker group's switch, on its summary, out on the node's edge: across
    the summary's padding, the group box's border and margin, the body's. */
 .sig-sec > summary { position: relative; }
@@ -1251,6 +1268,14 @@ option { background: var(--panel); }
 .ws-menu-lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-menu-hint { color: var(--dim); font-size: 8px; flex: 0 0 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-menu-empty { padding: 10px; color: var(--dim); font-size: 9px; text-align: center; }
+/* FIND landed on something: a ring that fades on the node, a bigger one on
+   the socket, and a wash on its row — the eye is led to it, then left alone. */
+@keyframes ws-found { 0%, 40% { box-shadow: 0 0 0 3px var(--cyan), var(--shadow-lg); } 100% { box-shadow: 0 0 0 0 transparent, var(--shadow); } }
+@keyframes ws-found-port { 0%, 50% { box-shadow: 0 0 0 5px var(--cyan); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes ws-found-row { 0%, 50% { background-color: var(--cyan-dim); } 100% { background-color: transparent; } }
+.node.found { animation: ws-found 1.6s ease-out; }
+.port.found { animation: ws-found-port 1.6s ease-out; }
+.found:not(.node):not(.port) { animation: ws-found-row 1.6s ease-out; }
 
 
 /* ── Audio panel ─────────────────────────────────────────── */
@@ -1675,8 +1700,8 @@ option { background: var(--panel); }
 #record-kind { width: auto; flex: 0 0 auto; font-size: 9px; padding: 2px 4px; }
 .chord-assign {
   display: grid;
-  /* dot · chord name · gesture · calibrate · 7th */
-  grid-template-columns: auto 0.8fr 1.35fr auto 0.5fr;
+  /* socket · dot · chord name · gesture · calibrate · 7th */
+  grid-template-columns: auto auto 0.8fr 1.35fr auto 0.5fr;
   gap: 4px; align-items: center;
   margin-top: 4px;
 }
@@ -2093,12 +2118,24 @@ input[type="range"]::-webkit-slider-thumb {
 .node.selected { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan), var(--shadow-lg); }
 .node.dragging { opacity: 0.88; box-shadow: var(--shadow-lg); }
 .node-hidden { display: none !important; }
-/* A node given a height scrolls its body inside it. Panels only: the compact
-   nodes carry sockets straddling their edges, which a clip would take. */
-.node.sized { overflow: hidden; }
-.node.sized > .node-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
-.node.sized > .node-body::-webkit-scrollbar { width: 3px; }
-.node.sized > .node-body::-webkit-scrollbar-thumb { background: var(--border2); }
+/* A node given a height scrolls its body inside it — and its sockets still
+   straddle the node's border, exactly as on a node that is not sized. A
+   scrolling box clips at its own edge, so the body is made WIDER than the
+   node by half a socket each side (negative margins, padding to match): a
+   socket at the border is then inside the box that scrolls it, and the
+   node itself clips nothing. The body's scrollbar would sit outside the
+   border, so it is not drawn; the body scrolls by wheel and finger. */
+.node.sized { overflow: visible; }
+.node.sized > .node-body {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  --sock-edge: calc(var(--sock) / 2 + 1px);
+  margin-left: calc(-1 * var(--sock-edge)); margin-right: calc(-1 * var(--sock-edge));
+  padding-left: calc(var(--body-pad-x, 10px) + var(--sock-edge));
+  padding-right: calc(var(--body-pad-x, 10px) + var(--sock-edge));
+  scrollbar-width: none;
+}
+.node.sized > .node-body::-webkit-scrollbar { width: 0; height: 0; }
 /* A section carries its own padding and rule; as a node the shell is the
    container and the body takes the padding. */
 .node.audio-section, .node.panel { padding: 0; border-bottom: 1px solid var(--border); }
@@ -2305,11 +2342,12 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   }
   .hbtns {
     display: flex; align-items: center; justify-content: center;
-    gap: 8px; width: 100%; flex-wrap: wrap; row-gap: 6px;
+    gap: 6px; width: 100%; flex-wrap: nowrap;
   }
   /* One row of buttons: the wide ones share the width, the two glyphs keep
      a thumb's width — so nothing wraps onto a row of its own. */
-  .hbtns > * { flex: 1 1 auto; min-width: 0; }
+  .hbtns > .btn, .hbtns > .hdr-menu { flex: 1 1 auto; min-width: 0; }   /* outranks .btn's flex-shrink: 0 */
+  #header [hidden] { display: none; }        /* TIDY, which the column has no use for */
   .hbtns .btn { padding-left: 4px; padding-right: 4px; }
   .hbtns .hdr-menu > .btn { flex: 1 1 auto; min-width: 0; }
   .hbtns > #settings-btn, .hbtns > #tour-btn { flex: 0 0 40px; }

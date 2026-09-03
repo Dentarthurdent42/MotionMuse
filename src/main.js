@@ -36,6 +36,8 @@ import { initWorkspace, relayout, adoptSections } from './ui/workspace.js';
 import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
 import { initTheme }                        from './ui/theme.js';
 import { initSettings }                     from './ui/settings.js';
+import { initCamSticky }                    from './ui/cam-sticky.js';
+import { initChordCables }                  from './chordcables.js';
 import { initShare, consumeSharedLink, announceSharedLink, isConsumingShare } from './ui/share.js';
 import { shouldOfferStart, openStartPicker } from './ui/firstrun.js';
 import { uicontrol }                        from './uicontrol.js';
@@ -648,11 +650,13 @@ metronome.registerSignals();   // the beat clock is wirable like any signal
 // Every slider in the app gets a typed twin, including panels that rebuild
 // themselves and any slider added later — see ui/numeric.js.
 watchRanges();
+initChordCables();        // gesture mode's shapes are cables into its degrees
 initWorkspace();          // the canvas: every section becomes a node on it
 initMapperUI();           // sockets and cables on that canvas
 buildSigPanel();          // every signal is an output socket on its node, camera or not
 fitOverlays();            // landmark canvases follow the camera node's size
 initFullscreen();         // fullscreen camera view + keyboard overlay
+initCamSticky();          // in the column, the picture rides the top of the screen
 initCamBadge();           // the saved setup's name, captioning the frame
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header

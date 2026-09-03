@@ -15,6 +15,7 @@ import { arpvoice } from './arpvoice.js';
 import { currentKit, setCurrentLabel } from './soundkit.js';
 import { gesture } from './gesture.js';
 import { chordmode } from './chordmode.js';
+import { impliedCable } from './chordcables.js';
 import { radial } from './radial.js';
 import { metronome } from './metronome.js';
 import { shader } from './shader.js';
@@ -90,7 +91,10 @@ export function snapshot() {
     app: TAG, v: 2,
     kit: currentKit(),
     graph: graph.serialize(),
-    mappings: mapper.serialize(),
+    // A shape's cable into gesture mode is implied by the assignment saved
+    // under `chord` (src/chordcables.js) — kept out, so a link's code stays
+    // scannable; a cable from any other signal is the assignment and stays.
+    mappings: mapper.serialize().filter(m => !impliedCable(m)),
     arp: arpvoice.serialize(),
     audio: engine.snapshot(),
     gestures: gesture.serialize(),   // custom gestures + hidden built-ins

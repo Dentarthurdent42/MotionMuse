@@ -24,8 +24,9 @@
 //   • groups: a frame around any set of nodes, dragged as one, collapsed
 //     into a single node whose sockets are the members' outward-facing
 //     ones. INPUTS and AUDIO ENGINE ship as groups; the patch is one too;
-//   • the add menu (right-click, double-click, or + NODE), TIDY (a layered
-//     layout from dagre), and persistence of all of it.
+//   • the add menu (right-click, double-click, or + NODE), FIND (every node
+//     and socket by name), TIDY (a layered layout from dagre), and
+//     persistence of all of it.
 //
 // What it does not own: sockets and cables. Those are the patchbay's
 // (ui/mapper-ui.js), which registers itself here as the "patch source" and
@@ -122,6 +123,7 @@ let saveTimer = null;
 let overview = false;             // column mode: the whole stack, scaled to fit
 let columnH = 0;                  // column mode: the stack's height, unscaled
 const scrollCbs = [];             // "the column scrolled"
+const modeCbs = [];               // "the layout mode changed"
 
 function parseSaved() {
   try {
@@ -144,6 +146,7 @@ export function setPatchSource(src) { patch = src; }
 export function onCablesDirty(cb) { dirtyCbs.push(cb); }
 export function onSelect(cb) { selectCbs.push(cb); }
 export function onViewScroll(cb) { scrollCbs.push(cb); }
+export function onModeChange(cb) { modeCbs.push(cb); }
 const dirty = () => dirtyCbs.forEach(cb => cb());
 
 // ── Coordinates ──────────────────────────────────────────────────────────
@@ -767,6 +770,7 @@ function switchMode(next) {
   placeDefaults();
   syncWorkspace();
   save();
+  modeCbs.forEach(cb => cb(mode));
   if (mode === 'canvas' && startedEmpty) requestAnimationFrame(() => fitAll());
 }
 
@@ -792,6 +796,8 @@ function applyModeChrome() {
     world.style.height = '';
     initZoom();
   }
+  // TIDY arranges a canvas; a column is already arranged.
+  document.getElementById('tidy-btn')?.toggleAttribute('hidden', col);
   const hint = ws.querySelector('.ws-hint');
   if (hint) {
     hint.dataset.canvas ??= hint.textContent;
@@ -1311,6 +1317,11 @@ function initKeys() {
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
     if (e.key === 'Escape') { if (menuEl && !menuEl.hidden) closeMenu(); else clearSelection(); return; }
     if (e.metaKey || e.ctrlKey) {
+      if (e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        const btn = document.getElementById('search-btn');
+        if (btn) menuAtButton(btn, openSearch);
+      }
       if (e.key.toLowerCase() === 'g') {
         e.preventDefault();
         if (e.shiftKey) { for (const id of Array.from(selected)) if (M.kindOf(id) === 'group') ungroupNode(id); }
@@ -1321,13 +1332,19 @@ function initKeys() {
     if (e.altKey) return;
     if (e.key === 'Delete' || e.key === 'Backspace') { if (selected.size) { e.preventDefault(); deleteSelected(); } return; }
     if (e.key === 'Home') { e.preventDefault(); fitAll(); return; }
+    if (e.key === '/' && !e.repeat) {
+      e.preventDefault();
+      const btn = document.getElementById('search-btn');
+      if (btn) menuAtButton(btn, openSearch);
+      return;
+    }
     if (e.key.toLowerCase() === 'f' && !e.repeat) { e.preventDefault(); fitAll(selected.size ? [...selected] : null); }
   });
 }
 
 // ── Menus ────────────────────────────────────────────────────────────────
 
-let menuState = null;   // { kind: 'add'|'node', x, y, wx, wy, query, node }
+let menuState = null;   // { kind: 'add'|'node'|'search', x, y, wx, wy, query, node }
 
 function closeMenu() {
   if (!menuEl) return;
@@ -1353,6 +1370,106 @@ function addEntries() {
   });
   if (patch) sections.push(...patch.entries());
   return sections;
+}
+
+// ── FIND ─────────────────────────────────────────────────────────────────
+// Every node by name, and — once there is something typed — every socket by
+// its label, with the node it is on. Picking one REVEALS it: a closed panel
+// comes back, a collapsed group opens, a folded node unfolds, a closed
+// tracker group opens for its socket, the view fits (or the column scrolls)
+// to it, and it flashes so the eye lands on it.
+function searchEntries(q) {
+  const sections = [{
+    title: 'Nodes',
+    items: [...state.nodes.values()].map(n => ({
+      label: titleOf(n.id),
+      hint: n.hidden ? 'closed — bring it back'
+          : n.kind === 'group' ? (n.collapsed ? 'group · collapsed' : 'group')
+          : n.parent ? `in ${titleOf(n.parent)}` : n.kind === 'fn' ? 'function node' : '',
+      add: () => revealNode(n.id),
+    })),
+  }];
+  if (patch && q) sections.push({
+    title: 'Sockets',
+    items: patch.sockets().filter(s => state.nodes.has(s.node)).map(s => ({
+      label: patch.socketLabel(s),
+      hint: `${s.side === 'in' ? 'input of' : 'output of'} ${titleOf(s.node)}`,
+      add: () => revealSocket(s),
+    })),
+  });
+  return sections;
+}
+
+export function openSearch(cx, cy) {
+  closeMenu();
+  menuState = { kind: 'search', x: cx, y: cy, query: '' };
+  renderMenu();
+}
+
+// The menu beside a header button: at the workspace's edge nearest it — its
+// top, or, with the bar at the bottom of a phone, its bottom.
+function menuAtButton(btn, open) {
+  const r = btn.getBoundingClientRect();
+  const w = ws.getBoundingClientRect();
+  open(Math.min(r.left, w.right - 260), r.top >= w.bottom ? w.bottom - 12 : w.top + 12);
+}
+
+function flash(el) {
+  if (!el) return;
+  el.classList.remove('found');
+  void el.offsetWidth;                 // restart the animation
+  el.classList.add('found');
+  setTimeout(() => el.classList.remove('found'), 1700);
+}
+
+export function revealNode(id) {
+  const n = state.nodes.get(id);
+  if (!n) return;
+  for (const a of M.ancestors(state, id)) {
+    if (a.hidden) a.hidden = false;
+    if (a.collapsed) setCollapsed(a.id, false);
+  }
+  n.hidden = false;
+  n.folded = false;
+  syncWorkspace(); save();
+  selectNodes([id]);
+  fitAll([id]);
+  flash(els.get(id));
+}
+
+// Scroll a socket into view WITHIN its node — the lists that scroll inside a
+// sized body — without touching the viewport, which the view owns.
+function scrollWithin(node, target) {
+  for (let sc = target.parentElement; sc && sc !== node.parentElement; sc = sc.parentElement) {
+    const o = getComputedStyle(sc).overflowY;
+    if (o !== 'auto' && o !== 'scroll') continue;
+    const b = sc.getBoundingClientRect(), r = target.getBoundingClientRect();
+    sc.scrollTop += (r.top + r.height / 2) - (b.top + b.height / 2);
+  }
+}
+
+export function revealSocket(s) {
+  revealNode(s.node);
+  const el = els.get(s.node);
+  if (!el) return;
+  const ports = [...el.querySelectorAll(`.port[data-side="${s.side}"][data-key="${CSS.escape(s.key)}"]`)];
+  // Inside a closed tracker group: open it, so the socket's own row shows.
+  for (const p of ports) {
+    for (let d = p.closest('details'); d && el.contains(d); d = d.parentElement?.closest('details')) d.open = true;
+  }
+  const port = ports.find(p => (p.checkVisibility ? p.checkVisibility() : p.getClientRects().length > 0));
+  if (!port) return;
+  scrollWithin(el, port);
+  if (mode === 'column') {
+    // The node's top is on screen already; the socket may be a screen
+    // further down a long list — centre it.
+    const r = port.getBoundingClientRect();
+    const wy = toWorld(0, r.top + r.height / 2).y;
+    ws.scrollTo({ top: Math.max(0, wy - ws.clientHeight / 2), behavior: 'smooth' });
+  }
+  flash(port);
+  flash(port.closest('.ctrl-row, .met-row, .sig-row, .port-row, .chord-voicing, .wave-btns, summary'));
+  dirty();
 }
 
 export function titleOf(id) {
@@ -1399,17 +1516,28 @@ function nodeMenuItems(n) {
 
 function renderMenu() {
   if (!menuState) return;
-  const sections = menuState.kind === 'add' ? addEntries() : nodeMenuItems(menuState.node);
   const q = (menuState.query ?? '').trim().toLowerCase();
+  // The add menu's search also finds what is already on the canvas: typing
+  // "gesture" into + NODE reaches GESTURE MODE rather than "nothing matches".
+  const sections = menuState.kind === 'add' ? [...addEntries(), ...(q ? searchEntries(q).map(s => ({ ...s, title: `Go to · ${s.title}` })) : [])]
+                 : menuState.kind === 'search' ? searchEntries(q)
+                 : nodeMenuItems(menuState.node);
+  // A match on the label first, then on the rest — "filter" lists FILTER
+  // before the sockets that are merely on it.
+  const rank = (s, it) => it.label.toLowerCase().includes(q) ? 0 : `${s.title} ${it.hint ?? ''}`.toLowerCase().includes(q) ? 1 : 2;
   const filtered = sections.map(s => ({
     ...s,
-    items: s.items.filter(it => !q || `${s.title} ${it.label} ${it.hint ?? ''}`.toLowerCase().includes(q)),
+    items: s.items.map(it => [rank(s, it), it]).filter(([r]) => !q || r < 2)
+      .sort((a, b) => a[0] - b[0]).map(([, it]) => it)
+      .slice(0, menuState.kind === 'search' ? 40 : Infinity),
   })).filter(s => s.items.length);
   const run = it => { const { wx = 0, wy = 0 } = menuState ?? {}; closeMenu(); it.add(wx, wy); };
   render(html`
     <div class="ws-menu-inner" role="menu">
-      ${menuState.kind === 'add' ? html`
-        <input class="ws-menu-search" type="text" placeholder="Search nodes…" aria-label="Search nodes"
+      ${menuState.kind !== 'node' ? html`
+        <input class="ws-menu-search" type="text"
+               placeholder=${menuState.kind === 'search' ? 'Find a node or a socket…' : 'Search nodes…'}
+               aria-label=${menuState.kind === 'search' ? 'Find a node or a socket' : 'Search nodes'}
                .value=${menuState.query}
                @input=${e => { menuState.query = e.target.value; renderMenu(); }}
                @keydown=${e => {
@@ -1562,13 +1690,8 @@ export function initWorkspace() {
     if (menuEl && !menuEl.hidden && !menuEl.contains(e.target)) closeMenu();
   }, true);
   // Header buttons.
-  document.getElementById('add-node-btn')?.addEventListener('click', e => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const w = ws.getBoundingClientRect();
-    // At the workspace's edge nearest the button: its top, or — with the bar
-    // at the bottom of a phone — its bottom, so the menu opens by the thumb.
-    openAddMenu(Math.min(r.left, w.right - 260), r.top >= w.bottom ? w.bottom - 12 : w.top + 12);
-  });
+  document.getElementById('add-node-btn')?.addEventListener('click', e => menuAtButton(e.currentTarget, openAddMenu));
+  document.getElementById('search-btn')?.addEventListener('click', e => menuAtButton(e.currentTarget, openSearch));
   document.getElementById('fit-btn')?.addEventListener('click', () => {
     if (mode === 'column') { if (overview) exitOverview(); else enterOverview(); return; }
     fitAll(selected.size ? [...selected] : null);
