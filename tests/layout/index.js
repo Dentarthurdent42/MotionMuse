@@ -949,7 +949,12 @@ const column = await (async () => {
              tap: { x: Math.round(s.x), y: Math.round(s.y) }, onScreen: s.y > ws.getBoundingClientRect().top && s.y < innerHeight };
   });
   await page.mouse.click(map.tap.x, map.tap.y);
-  await page.waitForTimeout(800);
+  // Until the column has come to rest — the runner's fonts settle late.
+  await page.evaluate(async () => {
+    const ws = document.getElementById('ws');
+    let last = -1;
+    for (let i = 0; i < 40 && ws.scrollTop !== last; i++) { last = ws.scrollTop; await new Promise(r => setTimeout(r, 50)); }
+  });
   const tapped = await page.evaluate(async () => {
     const WS = await import('/src/ui/workspace.js');
     const ws = document.getElementById('ws');
@@ -2245,8 +2250,8 @@ console.log('\nThe column (a phone)\n');
   check(map.overview && map.cls.includes('ws-overview') && map.k < 1,
     'column: ⌂ shows the whole stack as a map', `${map.cls} k=${map.k}`);
   check(map.onScreen, 'column: the metronome is on the map', JSON.stringify(map.tap));
-  check(!tapped.overview && tapped.k === 1 && Math.abs(tapped.scrollTop - (tapped.metroY - 14)) < 24,
-    'column: a tap on the map scrolls to that node', JSON.stringify(tapped));
+  check(!tapped.overview && tapped.k === 1 && tapped.headTop >= 0 && tapped.headTop <= 40,
+    'column: a tap on the map scrolls to that node — its header at the top of the screen', JSON.stringify(tapped));
   check(dragged.members[0] === 'panel:mic' && dragged.members[1] === 'panel:camera',
     'column: dragging a header up moves the node up the column', dragged.members.join(','));
   check(dragged.micX === dragged.camX && dragged.micParent === 'group:inputs',
