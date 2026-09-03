@@ -96,7 +96,7 @@ export function buildSigPanel() {
     groups.forEach((sigs, g) => {
       const live = groupLive(g, owner);
       const bases = sigs.filter(({ s }) => !s.of);
-      html += `<details class="sig-sec" data-group="${g}"${live ? ' open' : ''}>
+      html += `<details class="sig-sec" data-group="${g}" data-owner="${owner}"${live ? ' open' : ''}>
         <summary class="sig-group">
           ${owner === 'panel:camera' && GROUP_SWITCH[g] ? switchPort(GROUP_SWITCH[g]) : ''}
           <span class="sig-group-name">${g}</span>
@@ -166,7 +166,7 @@ export function updateSigPanel() {
 export function syncSigGroups() {
   document.querySelectorAll('.sig-sec').forEach(d => {
     const g = d.dataset.group;
-    const owner = d.closest('[data-node]')?.dataset.node ?? 'panel:camera';
+    const owner = d.dataset.owner ?? 'panel:camera';
     const live = groupLive(g, owner);
     const meta = d.querySelector('.sig-group-meta');
     if (meta) meta.textContent = meta.textContent.replace(/ · off$/, '') + (live ? '' : ' · off');
