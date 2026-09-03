@@ -598,7 +598,7 @@ export function startSectionHelp(sectionId) {
 // missing or hidden are skipped at runtime anyway, so a setup with no face
 // tracking never reaches the face step without this having to know about it.
 export const stepsForSharedSetup = () => stepsForMode(currentMode()).filter(t =>
-  t.id !== 'welcome' && !(t.section === 'patch' && !mapper.mappings.length));
+  t.id !== 'welcome' && !(t.id === 'patch-nodes' && !mapper.mappings.length));
 
 // Offered only on the FIRST open of a given link (share.js fingerprints them)
 // and only when it has something to say: someone who has already seen these
