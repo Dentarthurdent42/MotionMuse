@@ -37,8 +37,18 @@ export const fullscreen = {
   onChange(cb) { changeCbs.push(cb); },
 };
 
+// The actions strip (mute, SHARE, source, ♥) lives in the header, which
+// fullscreen hides — so it rides the picture while fullscreen is on.
+function placeActions(active) {
+  const bar = document.querySelector('.cam-actions');
+  if (!bar) return;
+  const home = active ? wrap : document.getElementById('header');
+  if (bar.parentElement !== home) home.appendChild(bar);
+}
+
 function syncState(active) {
   wrap.classList.toggle('fs-active', active);
+  placeActions(active);
   fsBtn.textContent = active ? '✕ EXIT' : '⛶ FULL';
   fsBtn.classList.toggle('on', active);
   // The overlay is sized as a share of the frame, and the frame just changed
@@ -68,7 +78,20 @@ function exit() {
   else fakeExit();
 }
 
+// The picture lives inside the workspace, which is a transformed element —
+// and `position: fixed` resolves against the nearest transformed ancestor,
+// so a fixed, inset: 0 frame would fill the camera NODE rather than the
+// screen. For the CSS takeover the picture is lifted out to <body> for the
+// duration; a placeholder marks its way back into the node. Native
+// fullscreen needs none of this: the browser promotes the element itself.
+let placeholder = null;
+
 function fakeEnter() {
+  if (!placeholder) {
+    placeholder = document.createComment('video-wrap');
+    wrap.replaceWith(placeholder);
+    document.body.appendChild(wrap);
+  }
   wrap.classList.add('fake-fullscreen');
   document.body.classList.add('no-scroll');
   syncState(true);
@@ -77,6 +100,7 @@ function fakeEnter() {
 function fakeExit() {
   wrap.classList.remove('fake-fullscreen');
   document.body.classList.remove('no-scroll');
+  if (placeholder) { placeholder.replaceWith(wrap); placeholder = null; }
   syncState(false);
 }
 
@@ -123,9 +147,11 @@ const fsKbd = makeKbdView('fs-kbd', {
 // Published rather than duplicated: the height is `makeKbdView`'s to decide
 // (14% of the frame, floored at 40px), and a second copy of that expression
 // in CSS would be a copy that goes stale.
+// offsetHeight, not a client rect: the picture lives on a zoomed canvas,
+// and a length written into its stylesheet is read in layout pixels.
 function publishKbdHeight() {
   const h = kbdCanvas?.classList.contains('shown')
-    ? Math.round(kbdCanvas.getBoundingClientRect().height) : 0;
+    ? Math.round(kbdCanvas.offsetHeight) : 0;
   if (h === lastKbdH) return;
   lastKbdH = h;
   wrap?.style.setProperty('--fs-kbd-h', `${h}px`);
