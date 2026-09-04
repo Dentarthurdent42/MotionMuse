@@ -244,27 +244,6 @@ html, body {
 /* The patchbay's function-node strip: one row per live node — identity, its
    own discrete options, its ×. The node's sockets are ordinary pills in the
    columns above; this strip is only where a node's insides are set. */
-.ng-nodesbar {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
-}
-.ng-fnode {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 6px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--glass);
-  font-size: 10px;
-}
-.ng-fnode-name { color: var(--amber); letter-spacing: 0.5px; flex: 0 0 auto; }
-.ng-fnode select, .ng-fnode input[type="number"] { font-size: 10px; padding: 1px 4px; flex: 0 0 auto; width: auto; }
-.ng-fnode input[type="number"] { width: 46px; }
-.ng-fnode input[type="range"] { flex: 1 1 60px; min-width: 40px; }
-.ng-fnode .ng-fnode-del { margin-left: auto; }
 
 /* A slider's typed twin (ui/numeric.js). Where it replaces a `.ctrl-val` it
    inherits that class too, so it keeps the readout's size, colour and right
@@ -320,7 +299,7 @@ html, body {
   gap: 6px;
   padding: 2px 0;
 }
-.met-row > .chord-key-lbl { flex: 0 0 46px; }
+.met-row > .chord-key-lbl { flex: 0 0 auto; min-width: 46px; }
 .met-row > input[type="range"] { flex: 1 1 auto; min-width: 0; }
 .met-row > select { flex: 1 1 auto; min-width: 0; }
 .met-row > .ctrl-val { flex: 0 0 42px; }
@@ -451,6 +430,23 @@ html, body {
   bottom: calc(var(--cam-inset) + var(--fs-kbd-h, 0px));
   left: var(--cam-inset);
 }
+/* In the header the strip is a row of the bar's own buttons — the same
+   segments, dressed as .btn — until fullscreen takes it onto the picture. */
+#header > .cam-actions {
+  position: static;
+  background: none; padding: 0; gap: 8px; overflow: visible; border-radius: 0;
+}
+#header > .cam-actions .depth-toggle {
+  height: auto; min-width: 0;
+  padding: 4px 11px;
+  background: var(--faint);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+#header > .cam-actions .cam-ico-only { width: auto; padding: 4px 9px; }
+#header > .cam-actions .depth-toggle svg { width: 11px; height: 11px; }
 /* Muted is a state, not a disabled control — amber, as it was in the header. */
 #audio-btn.muted { color: var(--amber); border-color: var(--amber); background: #f0a50022; }
 
@@ -490,39 +486,103 @@ body.cam-on #cv-btn { display: none; }
 .btn-fixed > * { grid-area: 1 / 1; }
 .btn-sizer { visibility: hidden; pointer-events: none; }
 
+/* ── The workspace ───────────────────────────────────────
+   #main holds the one canvas. The world layer is translated and scaled by
+   src/ui/workspace.js; nodes sit in it at layout size and the transform
+   does the rest. --k, --vx, --vy are the live transform, so the dot grid
+   under everything moves with the world instead of sitting still behind it. */
 #main {
-  display: grid;
-  /* side columns are drag-resizable; the splitters carry the divider lines */
-  grid-template-columns: var(--col-l, 320px) 6px 1fr 6px var(--col-r, 280px);
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   background: var(--bg);
-  overflow: hidden;
-  min-width: 0;
 }
-
-.splitter {
-  cursor: col-resize;
-  background: var(--border);
-  background-clip: content-box;   /* 1px visible line, 6px grab area */
-  padding: 0 2.5px;
+.ws {
+  position: absolute; inset: 0;
+  overflow: hidden;
   touch-action: none;
+  cursor: grab;
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, var(--faint) 1px, transparent 1.4px);
+  background-size: calc(24px * var(--k, 1)) calc(24px * var(--k, 1));
+  background-position: var(--vx, 0px) var(--vy, 0px);
 }
-body.resizing .splitter { background-color: var(--cyan); }
-body.resizing { cursor: col-resize; user-select: none; }
-
-.panel {
-  background: var(--panel);
-  box-shadow: var(--shadow);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  /* Grid/flex items default to min-width:auto, which lets an over-wide child
-     (e.g. the scrollable piano picker) stretch the whole column. */
-  min-width: 0;
+.ws:active { cursor: grabbing; }
+.ws-world {
+  position: absolute; left: 0; top: 0;
+  width: 0; height: 0;
+  transform-origin: 0 0;
+  will-change: transform;
 }
+.ws-nodes { position: absolute; left: 0; top: 0; }
+.ws-dock { position: absolute; inset: 0; pointer-events: none; z-index: 40; }
+.ws-dock > .node { pointer-events: auto; }
+.ws-box {
+  position: absolute; z-index: 60;
+  border: 1px dashed var(--cyan);
+  background: var(--cyan-dim);
+  pointer-events: none;
+}
+.ws-box[hidden] { display: none; }
+.ws-hint {
+  position: absolute; left: 10px; bottom: 7px;
+  font-size: 8px; letter-spacing: 0.5px; color: var(--dim); opacity: 0.75;
+  pointer-events: none;
+}
+#ws-staging[hidden] { display: none; }
 
+/* ── Column mode (phones; see stackColumn in src/ui/workspace.js) ────
+   The same viewport, scrolled instead of transformed: the world is a block
+   as tall as the stack, the dock rides the top of the viewport as a sticky
+   zero-height strip (so pinned nodes, the box and the menus stay on the
+   screen while the column scrolls under them), and the finger pans
+   vertically — a pinch is ours, for the map. */
+.ws.ws-column {
+  overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  cursor: default;
+}
+.ws.ws-column:active { cursor: default; }
+.ws.ws-column::-webkit-scrollbar { width: 3px; }
+.ws.ws-column::-webkit-scrollbar-thumb { background: var(--border2); }
+.ws.ws-column > .ws-world { position: relative; width: 100%; height: auto; will-change: auto; }
+.ws.ws-column > .ws-dock { position: sticky; inset: auto; top: 0; left: 0; width: 100%; height: 0; overflow: visible; }
+.ws-dock > .ws-menu { pointer-events: auto; }
+.ws.ws-column .node-grip { cursor: ns-resize; }
+.ws.ws-column .node > .node-head { cursor: ns-resize; }
+/* The map: the whole stack scaled to the screen. Nothing on it is a
+   control — a tap is a destination. */
+.ws.ws-overview { cursor: zoom-in; }
+.ws.ws-overview > .ws-world { will-change: transform; }
+.ws.ws-overview .node { pointer-events: none; }
+.ws.ws-overview .ng-wire { pointer-events: none; }
+/* The picture, lifted into the dock in column mode (src/ui/cam-sticky.js):
+   over its placeholder at the top of the column, a thumbnail in the corner
+   once that has scrolled away. */
+#cam-hold { width: 100%; aspect-ratio: 4/3; background: var(--glass); }
+#cam-hold[hidden], #cam-sticky[hidden] { display: none; }
+#cam-sticky {
+  position: absolute; left: 0; top: 0; z-index: 45;
+  pointer-events: auto;
+  will-change: transform, width;
+}
+#cam-sticky > #video-wrap { width: 100%; }
+#cam-sticky.cam-mini {
+  border-radius: 6px; overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border2);
+  cursor: pointer;
+}
+#cam-sticky.cam-mini .cam-bar, #cam-sticky.cam-mini .cam-toggles,
+#cam-sticky.cam-mini .cam-name, #cam-sticky.cam-mini #latency-bar { display: none; }
+
+/* The two authored panels (SIGNALS, PATCH) use the older .ph / .pb header and
+   body; as nodes they are dressed by .node like every other section. */
+.panel { min-width: 0; }
 .ph {
   padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
   font-size: 9px;
   letter-spacing: 2.5px;
   color: var(--dim);
@@ -532,22 +592,9 @@ body.resizing { cursor: col-resize; user-select: none; }
   gap: 8px;
   flex-shrink: 0;
 }
-
-.pb {
-  flex: 1;
-  overflow-y: auto;
-  /* Never sideways. A box that scrolls on one axis and is `visible` on the
-     other has that other axis computed to `auto` by CSS — so any element
-     poking a few pixels past the edge silently turns the whole column into a
-     horizontal scroller, and the panels drift off their own left edge. The
-     content is laid out to fit; this makes "it fits" structural rather than a
-     property every future row has to remember. Anything that genuinely needs
-     to scroll across (the tone-picker keyboard) carries its own scroller and
-     is unaffected. */
-  overflow-x: hidden;
-}
-.pb::-webkit-scrollbar { width: 3px; }
-.pb::-webkit-scrollbar-thumb { background: var(--border2); }
+.ph-hint { margin-left: auto; font-size: 8px; letter-spacing: 0.5px; color: var(--dim); text-transform: none; }
+.pb { min-width: 0; }
+.pb-empty { padding: 20px 10px; color: var(--dim); font-size: 10px; text-align: center; }
 
 /* ── Header ─────────────────────────────────────────────── */
 .logo {
@@ -633,10 +680,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
    after the button moved, which put it a panel away from the ♥ that opened
    it, and nowhere at all in fullscreen. */
 #donate-pop {
-  position: absolute;
-  left: var(--cam-inset);
-  bottom: calc(var(--cam-inset) + var(--fs-kbd-h, 0px) + var(--cam-ctrl-h) + 6px);
-  z-index: 60;
+  position: fixed;          /* placed beside the ♥ by ui/donate.js */
+  z-index: 1100;            /* above the fullscreen picture too */
   min-width: 170px;
   background: var(--panel);
   border: 1px solid var(--border2);
@@ -687,7 +732,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .set-row > select, .set-row > button { margin-left: auto; flex: 0 1 auto; min-width: 0; }
 
 /* ── Preset menu ─────────────────────────────────────────── */
-.mapper-toolbar { position: relative; }   /* containing block for #preset-pop */
+.hdr-menu { position: relative; display: flex; }   /* containing block for #preset-pop */
 #preset-pop {
   position: absolute;
   top: calc(100% + 4px); left: 0;
@@ -929,11 +974,12 @@ body.no-scroll { overflow: hidden; }
 .sig-group:first-child { border-top: none; margin-top: 0; }
 
 .sig-row {
+  --row-px: 10px;
   display: grid;
   grid-template-columns: 1fr 42px 90px;
   gap: 5px;
   align-items: center;
-  padding: 3px 10px;
+  padding: 3px var(--row-px);
   cursor: pointer;
   border-radius: 2px;
   transition: background 0.1s;
@@ -991,122 +1037,168 @@ body.no-scroll { overflow: hidden; }
 .sig-val.vel { color: var(--purple); }
 .sig-bar-fill.vel { background: linear-gradient(90deg, var(--bar-vel-lo), var(--led-purple)); }
 
-/* ── Mapper ──────────────────────────────────────────────── */
-.mapper-thead {
-  display: grid;
-  grid-template-columns: 130px 1fr 58px 58px 70px 26px;
-  gap: 4px;
-  padding: 5px 10px;
-  border-bottom: 1px solid var(--border);
-  font-size: 8px;
-  letter-spacing: 1.5px;
-  color: var(--dim);
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-
-/* min-width:0 so an over-wide child (the scrollable piano picker) can't
-   stretch the column — it has to scroll inside its own wrapper instead. */
-#mapper-rows { flex: 1; overflow-y: auto; min-width: 0; }
-#mapper-rows::-webkit-scrollbar { width: 3px; }
-#mapper-rows::-webkit-scrollbar-thumb { background: var(--border2); }
-
-/* ── Node-graph mapper (inputs → outputs, reusable wires) ── */
-#nodegraph {
-  position: relative;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 48px;
-  align-items: start;
-  padding: 10px 10px 4px;
-}
-#ng-wires { position: absolute; inset: 0; z-index: 0; overflow: visible; pointer-events: none; }
-.ng-wire { transition: opacity 0.1s; }
-.ng-col { display: flex; flex-direction: column; gap: 8px; z-index: 1; min-width: 0; }
-.ng-hint { color: var(--dim); font-size: 9px; padding: 6px 0; }
-.ng-node {
-  position: relative;
+/* ── The patch on the canvas ─────────────────────────────
+   Sockets sit on the nodes themselves: every signal row is an OUTPUT socket
+   on its source node, every slider or switch an INPUT socket on the node
+   that owns it. A function node is a compact node with sockets on its
+   edges. Cables are paths in the world-space SVG under the nodes. */
+.node-fn {
+  min-width: 150px;
+  max-width: 230px;
+  font-size: 10px;
   background: var(--faint);
-  border: 1px solid var(--border2);
-  border-radius: 5px;
-  padding: 6px 10px;
-  font-size: 10px; color: var(--text);
-  min-width: 0;
 }
-.ng-node.ng-in  { border-right: 3px solid var(--wire); }
-.ng-node.ng-out { text-align: right; border-left: 3px solid transparent; }
-.ng-node.ng-out.wired { border-left-color: var(--wire); }
-/* The whole pill starts a wire, so claim horizontal drags — but leave
-   vertical ones to the browser so the panel still scrolls on touch. */
-.ng-node { touch-action: pan-y; cursor: grab; }
-/* Live level, as a bar along the pill's bottom edge. Absolutely positioned and
-   scaled rather than sized, so it never participates in layout: the wires are
-   drawn from measured socket positions, and a node that changed height every
-   frame would drag every cable on the canvas with it.
-   `transform` also keeps the whole thing on the compositor — this is written
-   once per node per frame. */
+.node-fn > .node-head {
+  border-left-color: var(--wire, var(--dim));
+  background-image: none;
+  text-transform: none;
+  letter-spacing: 0.3px;
+  color: var(--text);
+  padding: 5px 24px 5px 8px;
+}
+.node-fn .node-ports { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
+.ports-in, .ports-out { display: flex; flex-direction: column; gap: 3px; }
+.port-row { display: flex; align-items: center; gap: 5px; height: 18px; }
+.node-fn .ports-in .port-row { margin-left: calc(-1px - var(--sock) / 2); }
+.node-fn .ports-out .port-row { margin-right: calc(-1px - var(--sock) / 2); justify-content: flex-end; }
+.port-lbl { font-size: 9px; color: var(--dim); }
+.port {
+  position: relative;
+  width: var(--sock); height: var(--sock); border-radius: 50%;
+  border: 2px solid var(--wire, var(--dim)); background: var(--panel);
+  padding: 0; cursor: crosshair;
+  touch-action: none;   /* let us drag cables without the canvas panning */
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+/* Invisible oversized tap halo — the dot stays small, the target doesn't. */
+.port::after { content: ''; position: absolute; inset: -11px; border-radius: 50%; }
+.port.armed { box-shadow: 0 0 0 3px var(--cyan); background: var(--cyan); }
+/* Where an in-progress drag would land. */
+.port.drop-target { box-shadow: 0 0 0 5px var(--cyan-dim); background: var(--cyan); }
+.port:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+/* Input sockets beside their controls: a slider's label, a header pill, a
+   select, a choice row. Inline, a little air before the words. */
+.ctrl-lbl > .port, .chord-key-lbl > .port, .head-sock > .port { margin-right: 5px; }
+.head-sock { display: inline-flex; align-items: center; flex: 0 0 auto; }
+/* Sockets STRADDLE the node's border — inputs on the left edge, outputs on
+   the right — the way pins sit on a Blueprint or geometry node. The cables
+   are drawn beneath the nodes, so a socket buried in a node's padding would
+   swallow the last stretch of every cable; on the border, the cable visibly
+   ends on the ring. The numbers are the distance from the border to where
+   the socket would otherwise sit: body padding 10 + the border + half the
+   ring. A node given a height clips its body, so there the ring sits just
+   inside the border instead. */
+:root { --sock: 13px; }
+/* From a row's start to the node's border: the body's side padding and the
+   1px border; the ring is then pulled back by half its width to sit ON the
+   border. --body-pad-x is set with the padding itself (.node-body rules). */
+.ctrl-lbl > .port-in, .chord-key-lbl > .port-in,
+.wave-btns > .head-sock { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); }
+/* A switch that lives in a node's header takes the header's left edge —
+   the same line the body's sockets sit on: the head starts inside the
+   node's 1px border and carries a 3px accent stripe of its own, so the
+   ring is pulled back past both (4px) and then by half its width. A node
+   given a height clips, so there the ring sits just inside, as the body's do. */
+.node-head > .head-sock { position: absolute; left: calc(-4px - var(--sock) / 2); top: 50%; transform: translateY(-50%); margin: 0; }
+/* A sub-heading inside a body (ENVELOPE under Volume Quantize) is a row like
+   any other: its socket rides out to the border the same way. */
+.audio-section-label:not(.node-head) > .head-sock { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); }
+/* An oscillator row's waveform socket, beside its number. */
+.osc-row-n > .port-in { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); margin-right: 5px; }
+/* Gesture mode's rows: the degree's socket first, on the node's edge. */
+.chord-assign > .port-in { margin-left: calc(-1 * (var(--body-pad-x, 10px) + 1px + var(--sock) / 2)); margin-right: 0; }
+/* A tracker group's switch, on its summary, out on the node's edge: across
+   the summary's padding, the group box's border and margin, the body's. */
+.sig-sec > summary { position: relative; }
+.sig-sec > summary > .sig-sum-in { position: absolute; top: 50%; transform: translateY(-50%); display: inline-flex;
+  left: calc(-1 * (1px + var(--sec-mx, 6px) + var(--body-pad-x, 0px) + 1px + var(--sock) / 2)); }
+.node-head > .head-sock > .port { margin-right: 0; }
+/* A wired socket carries a dot in its cable's colour. */
+.port.wired::before { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--wire, var(--dim)); }
+.ctrl-row-choice { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.ctrl-row-choice > .ctrl-lbl { flex: 0 0 auto; }
+.ctrl-row-choice > .wave-btns { flex: 1 1 auto; }
+/* Output rows: the socket takes the last column. */
+.sig-list { margin-top: 6px; }
+.sig-row:not(.sig-row-multi) { grid-template-columns: 1fr 44px 84px 16px; }
+.sig-chans { grid-template-columns: 1fr 44px 84px 16px; }
+/* The output socket of every row rides out to the node's right border,
+   across the row's own padding, the group box's border and margin, and the
+   body's padding — each a variable set beside the padding it measures, so
+   the breakpoints that change a padding change the ride with it. */
+.sig-row > .port, .sig-chans > .port, .sig-sum-ports {
+  --sock-out: calc(var(--row-px, 10px) + 1px + var(--sec-mx, 6px) + var(--body-pad-x, 0px) + 1px + var(--sock) / 2);
+}
+.sig-row > .port, .sig-chans > .port { justify-self: end; margin-right: calc(-1 * var(--sock-out)); }
+/* A folded group still shows the sockets of its WIRED signals, in its
+   summary, one under another on the border, so a cable never ends on a
+   closed box and the rest of the group is one click away. */
+.sig-sum-ports { display: flex; flex-direction: column; gap: 4px; margin: -2px calc(-1 * var(--sock-out)) -2px 0; }
+.sig-sum-ports:empty { display: none; }
+.sig-sum-port { display: flex; align-items: center; justify-content: flex-end; gap: 5px; height: 15px; }
+.sig-sum-lbl { font-size: 8px; letter-spacing: 1px; color: var(--dim); white-space: nowrap; text-transform: uppercase; }
+/* A cable that ends at a node's edge because its socket is scrolled or
+   folded away is drawn dashed at the end: it is real, its socket is not on
+   screen. */
+.ng-wire-edge { stroke-dasharray: 6 3; }
+/* Live level on a function node, as a bar along its bottom edge. Absolutely
+   positioned and scaled rather than sized, so it never participates in
+   layout; the transform keeps it on the compositor. A faint track always
+   shows underneath, so quiet is not broken. */
+.node-fn::after {
+  content: ''; position: absolute; left: 5px; right: 5px; bottom: 2px;
+  height: 2px; background: var(--border2); opacity: 0.4;
+  border-radius: 1px; pointer-events: none;
+}
 .ng-level {
   position: absolute; left: 5px; right: 5px; bottom: 2px; height: 2px;
   transform: scaleX(var(--lvl, 0)); transform-origin: left center;
   background: var(--wire, var(--dim));
   border-radius: 1px;
-  opacity: 0.9; pointer-events: none;
+  opacity: 0.9; pointer-events: none; z-index: 1;
 }
-/* An unwired output has no cable colour to borrow, and its bar is reporting
-   something other than a cable, so it stays neutral rather than picking one. */
-.ng-node.ng-out:not(.wired) .ng-level { background: var(--dim); opacity: 0.5; }
-/* A bar pinned at zero is indistinguishable from a node with no bar, which
-   reads as "broken" rather than "quiet" — so the track it fills is always
-   visible underneath it. Faint, though: at full strength on the light themes
-   the track reads as a FILLED bar, which is the same lie the other way up. */
-.ng-node::after {
-  content: ''; position: absolute; left: 5px; right: 5px; bottom: 2px;
-  height: 2px; background: var(--border2); opacity: 0.4;
-  border-radius: 1px; pointer-events: none;
+.node-fn { padding-bottom: 5px; }
+.fn-body { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 6px; }
+.fn-opt { display: flex; align-items: center; gap: 6px; font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+.fn-opt select, .fn-opt input[type="number"] { font-size: 10px; padding: 1px 4px; flex: 1 1 auto; width: auto; text-transform: none; letter-spacing: 0; }
+.fn-opt input[type="number"] { width: 46px; flex: 0 0 46px; }
+.fn-opt input[type="range"] { flex: 1 1 60px; min-width: 40px; }
+
+/* Cables. `pointer-events: stroke` so a cable can be clicked without its
+   bounding box swallowing the canvas around it. */
+.ws-cables { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; z-index: 5; pointer-events: none; }
+.ws-column .ng-wire { stroke-linejoin: round; }
+.ng-wire { transition: opacity 0.1s; pointer-events: stroke; cursor: pointer; }
+#ng-preview { pointer-events: none; }
+
+/* The cable editor: a floating panel beside the input its cable runs into,
+   on the screen layer — a dialog, not a node — following the socket as the
+   canvas pans and zooms. */
+.ng-editor-pop {
+  position: absolute; z-index: 45;
+  pointer-events: auto;
+  width: 300px; max-width: calc(100% - 12px);
+  background: var(--panel);
+  border: 1px solid var(--cyan);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
 }
-.ng-level { z-index: 1; }
-.ng-node-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Room for the × on the pill's outer edge (opposite its socket). */
-.ng-node.ng-in  .ng-node-title { padding-left: 16px; }
-.ng-node.ng-out .ng-node-title { padding-right: 16px; }
-/* Delete affordance, on the outer edge away from the socket so a fat finger
-   can't hit both. */
-.ng-node-del {
-  position: absolute; top: 50%; transform: translateY(-50%);
-  width: 18px; height: 18px; line-height: 16px; padding: 0;
-  border: none; border-radius: 3px; background: transparent;
-  color: var(--dim); font-size: 13px; cursor: pointer; z-index: 3;
-  text-align: center;
-}
-.ng-node.ng-in  .ng-node-del { left: 2px; }
-.ng-node.ng-out .ng-node-del { right: 2px; }
-.ng-node-del:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
-.ng-socket {
-  position: absolute; top: 50%; transform: translateY(-50%);
-  width: 15px; height: 15px; border-radius: 50%;
-  border: 2px solid var(--wire, var(--dim)); background: var(--panel);
-  padding: 0; cursor: crosshair; z-index: 2;
-  touch-action: none;   /* let us drag cables without the page panning */
-}
-/* Invisible oversized tap halo — the dot stays small, the target doesn't. */
-.ng-socket::after { content: ''; position: absolute; inset: -13px; border-radius: 50%; }
-.ng-node.ng-in  .ng-socket.ng-out { right: -7px; }
-.ng-node.ng-out .ng-socket.ng-in  { left: -7px; }
-.ng-socket.armed { box-shadow: 0 0 0 3px var(--cyan); background: var(--cyan); }
-/* Where an in-progress drag would land. */
-.ng-socket.drop-target { box-shadow: 0 0 0 5px var(--cyan-dim); background: var(--cyan); }
-.ng-addbar { padding: 6px 10px; display: flex; gap: 6px; }
-.ng-addbar select { flex: 1; min-width: 0; }
-#ng-editor {
+.ng-editor-pop[hidden] { display: none; }
+.ng-editor {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-  padding: 8px 10px; margin-top: 4px;
-  border-top: 1px dashed var(--border2);
+  padding: 8px 10px;
   font-size: 9px; color: var(--dim);
   min-width: 0;
 }
-#ng-editor .ng-edit-label { color: var(--text); font-size: 10px; width: 100%; }
-#ng-editor label { display: inline-flex; align-items: center; gap: 4px; }
-#ng-editor input { width: 62px; }
-#ng-editor select { width: 88px; }
-#ng-editor select.m-steps { width: 56px; }   /* narrow — the row is already crowded */
+.ng-editor .ng-edit-label { color: var(--text); font-size: 10px; width: 100%; display: flex; align-items: center; gap: 6px; }
+.ng-editor .ng-edit-now { color: var(--amber); font-size: 9px; }
+.ng-editor .ng-close { margin-left: auto; }
+.ng-editor label { display: inline-flex; align-items: center; gap: 4px; }
+.ng-editor input { width: 62px; }
+.ng-editor select { width: 88px; }
+.ng-editor select.m-steps { width: 56px; }   /* narrow — the row is already crowded */
+.ng-editor .wave-btn { flex: 0 0 auto; padding: 2px 9px; }
 
 /* Frequency-range piano picker (oscillator-frequency cables) */
 .ng-freq-picker { width: 100%; min-width: 0; }
@@ -1115,7 +1207,7 @@ body.no-scroll { overflow: hidden; }
 .ng-freq-nudge { min-width: 30px; font-size: 12px; line-height: 1; }
 .ng-freq-oct { margin-left: auto; color: var(--dim); font-size: 9px; letter-spacing: 1px; }
 .ng-freq-hint { margin-top: 3px; color: var(--dim); font-size: 8px; }
-/* The keyboard may be wider than the panel (see the mobile block) so its keys
+/* The keyboard may be wider than the node (see the mobile block) so its keys
    stay tappable; the wrapper scrolls it horizontally. */
 .ng-freq-kbd-wrap {
   overflow-x: auto; overflow-y: hidden; margin-top: 4px;
@@ -1126,30 +1218,6 @@ body.no-scroll { overflow: hidden; }
   display: block; width: 100%; height: 56px;
   border: 1px solid var(--border2); border-radius: 2px;
   cursor: pointer; touch-action: pan-x;
-}
-
-.map-row-wrap { border-bottom: 1px solid var(--border); }
-.map-row {
-  display: grid;
-  grid-template-columns: 130px 1fr 58px 58px 70px 26px;
-  gap: 4px;
-  align-items: center;
-  padding: 5px 10px;
-  transition: background 0.1s;
-}
-
-.map-bar {
-  height: 2px;
-  background: var(--faint);
-  margin: 0 10px 4px;
-  border-radius: 1px;
-  overflow: hidden;
-}
-.map-bar-fill {
-  height: 100%;
-  background: var(--purple);
-  border-radius: 1px;
-  transition: width 40ms linear;
 }
 
 select, input[type="number"] {
@@ -1176,15 +1244,54 @@ option { background: var(--panel); }
   transition: color 0.15s, border-color 0.15s;
 }
 
-.mapper-toolbar {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-  align-items: center;
+/* SAVE / LOAD at the foot of the PRESET menu. */
+.preset-file { display: flex; gap: 6px; padding: 4px 2px 2px; }
+.preset-file .btn { flex: 1 1 auto; }
+
+/* ── The add / context menu ── */
+.ws-menu {
+  position: absolute; z-index: 100;
+  min-width: 230px; max-width: 320px;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
 }
-.mapper-hint { font-size: 9px; color: var(--dim); letter-spacing: 0.5px; }
+.ws-menu[hidden] { display: none; }
+.ws-menu-search {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--faint); color: var(--text);
+  border: none; border-bottom: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+  font: inherit; font-size: 10px;
+}
+.ws-menu-search:focus { outline: none; border-bottom-color: var(--cyan); }
+.ws-menu-list { max-height: min(50vh, 420px); overflow-y: auto; padding: 4px; }
+.ws-menu-list::-webkit-scrollbar { width: 3px; }
+.ws-menu-list::-webkit-scrollbar-thumb { background: var(--border2); }
+.ws-menu-sec { font-size: 8px; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; padding: 7px 8px 2px; }
+.ws-menu-item {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  width: 100%; text-align: left;
+  padding: 5px 8px;
+  background: none; border: 0; border-radius: 3px;
+  color: var(--text); font: inherit; font-size: 10px;
+  cursor: pointer;
+}
+.ws-menu-item:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.ws-menu-lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-menu-hint { color: var(--dim); font-size: 8px; flex: 0 0 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-menu-empty { padding: 10px; color: var(--dim); font-size: 9px; text-align: center; }
+/* FIND landed on something: a ring that fades on the node, a bigger one on
+   the socket, and a wash on its row — the eye is led to it, then left alone. */
+@keyframes ws-found { 0%, 40% { box-shadow: 0 0 0 3px var(--cyan), var(--shadow-lg); } 100% { box-shadow: 0 0 0 0 transparent, var(--shadow); } }
+@keyframes ws-found-port { 0%, 50% { box-shadow: 0 0 0 5px var(--cyan); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes ws-found-row { 0%, 50% { background-color: var(--cyan-dim); } 100% { background-color: transparent; } }
+.node.found { animation: ws-found 1.6s ease-out; }
+.port.found { animation: ws-found-port 1.6s ease-out; }
+.found:not(.node):not(.port) { animation: ws-found-row 1.6s ease-out; }
+
 
 /* ── Audio panel ─────────────────────────────────────────── */
 /* Positioning context for the mute banner. `flex-shrink:0` moves up from the
@@ -1231,6 +1338,7 @@ option { background: var(--panel); }
   text-transform: uppercase;
   margin-bottom: 6px;
 }
+.node > .audio-section-label { margin-bottom: 0; }
 
 .wave-btns {
   display: flex; gap: 3px;
@@ -1607,8 +1715,8 @@ option { background: var(--panel); }
 #record-kind { width: auto; flex: 0 0 auto; font-size: 9px; padding: 2px 4px; }
 .chord-assign {
   display: grid;
-  /* dot · chord name · gesture · calibrate · 7th */
-  grid-template-columns: auto 0.8fr 1.35fr auto 0.5fr;
+  /* socket · dot · chord name · gesture · calibrate · 7th */
+  grid-template-columns: auto auto 0.8fr 1.35fr auto 0.5fr;
   gap: 4px; align-items: center;
   margin-top: 4px;
 }
@@ -1724,10 +1832,13 @@ option { background: var(--panel); }
 .chord-expr-cal,
 .chord-arp-cal {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* One input per row, so each socket has the left edge to itself. */
+  grid-template-columns: 1fr;
   gap: 4px 8px;
   margin-bottom: 6px;
 }
+.chord-arp-pat > select { grid-column: 2 / -1; }
+.chord-arp > .arp-oct { grid-column: 3 / -1; }
 .chord-expr-cal .ctrl-lbl,
 .chord-arp-cal .ctrl-lbl {
   display: flex; align-items: center; gap: 5px;
@@ -1946,7 +2057,7 @@ input[type="range"]::-webkit-slider-thumb {
    section folded, which is invisible today only because a folded body is
    display:none, and stops being invisible the moment anything renders a
    collapsed section's contents. */
-.sec.folded > * > .sec-fold::before { transform: translateX(-2px) rotate(-45deg); }
+.node.folded > * > .sec-fold::before { transform: translateX(-2px) rotate(-45deg); }
 
 /* Per-panel help, at the right end of the header. Same 18px target as the
    fold caret so the two ends of the header match. */
@@ -1992,161 +2103,213 @@ input[type="range"]::-webkit-slider-thumb {
 /* A header that already pushes something right (an ON/OFF pill) has its own
    auto margin; a second one would collapse to nothing, so the help button
    yields and simply follows it. */
-.sec > * > [style*="margin-left:auto"] ~ .sec-help { margin-left: 4px; }
 /* Folded: header only. The grip goes too — there is no height to drag. */
-.sec.folded > .sec-body { display: none; }
-.sec.folded > .sec-grip { display: none; }
-.sec.folded { padding-bottom: 0; }
-/* Headers are drag handles for reordering. `grab` only where a drag can
-   actually start — inside the header's own controls the cursor stays default,
-   which is the honest signal that pressing there will not move anything. */
-.sec[data-reorder] > .audio-section-label,
-.sec[data-reorder] > .ph { cursor: grab; }
-.sec.dragging { opacity: 0.55; box-shadow: var(--shadow-lg); }
-.sec.drop-before { box-shadow: 0 -3px 0 0 var(--cyan), var(--shadow); }
-.sec.drop-after  { box-shadow: 0 3px 0 0 var(--cyan), var(--shadow); }
-body.reordering { user-select: none; cursor: grabbing; }
-/* Sections can move between columns, so a drag has to show WHERE it can land —
-   otherwise the only discoverable move is the one within the current column,
-   and the rest of the feature may as well not exist. Every host outlines while
-   dragging; the one under the pointer fills in. */
-body.reordering [data-sec-host] {
-  outline: 1px dashed var(--border2);
-  outline-offset: -2px;
-  /* A host with nothing in it — the camera column with its dev-only sections
-     hidden, say — is zero pixels tall and so impossible to aim at. It only
-     needs to be a target while a drag is in progress. */
-  min-height: 34px;
-}
-body.reordering [data-sec-host].drop-into {
-  outline: 2px solid var(--cyan);
-  background: oklch(var(--accent-l) var(--accent-c) 200 / 0.08);
-}
+.node.folded > .node-body, .node.folded > .node-grip, .node.folded > .node-ports,
+.node.folded > .par-range, .node.folded > .ng-level { display: none; }
+.node.folded { height: auto !important; }
 
-/* ── Sections (see src/ui/sections.js) ───────────────────
-   Each section reads as its own container — border, header strip, a body that
-   can scroll on its own, and a grip along the bottom edge. */
-.sec {
-  position: relative;
+/* ── Nodes (see src/ui/workspace.js) ─────────────────────
+   Every node reads as its own container — border, header strip, a body that
+   is whatever the node is, and a grip in the corner. A panel's section
+   element IS its node; signal, parameter, function and group nodes are
+   shells rendered by the patchbay and the workspace. */
+.node {
+  position: absolute;
+  left: 0; top: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 5px;
   background: var(--panel);
-  margin: 6px;
-  /* Shadow, not just a border: a 1px line at these lightnesses reads as a
-     divider between things, whereas a shadow reads as one thing lifted off
-     another. That difference is what makes a stack of sections legible as a
-     stack of separate containers rather than a ruled list. */
+  /* Shadow, not just a border: a shadow reads as one thing lifted off
+     another, which is what makes a canvas of nodes legible as separate
+     things rather than a ruled list. */
   box-shadow: var(--shadow);
-  /* Room for the grip so it never sits on top of the last row of content. */
-  padding-bottom: 9px;
+  cursor: default;
+  /* Layout units, never scaled twice: the canvas scales the whole world. */
+  transform-origin: 0 0;
 }
-/* A section that IS a whole column shouldn't float inside itself. */
-.panel > .sec, .panel.sec { margin: 0; border-radius: 0; border: none; box-shadow: none; }
+.node.selected { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan), var(--shadow-lg); }
+.node.dragging { opacity: 0.88; box-shadow: var(--shadow-lg); }
+.node-hidden { display: none !important; }
+/* A node given a height scrolls its body inside it — and its sockets still
+   straddle the node's border, exactly as on a node that is not sized. A
+   scrolling box clips at its own edge, so the body is made WIDER than the
+   node by half a socket each side (negative margins, padding to match): a
+   socket at the border is then inside the box that scrolls it, and the
+   node itself clips nothing. The body's scrollbar would sit outside the
+   border, so it is not drawn; the body scrolls by wheel and finger. */
+.node.sized { overflow: visible; }
+.node.sized > .node-body {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  --sock-edge: calc(var(--sock) / 2 + 1px);
+  margin-left: calc(-1 * var(--sock-edge)); margin-right: calc(-1 * var(--sock-edge));
+  padding-left: calc(var(--body-pad-x, 10px) + var(--sock-edge));
+  padding-right: calc(var(--body-pad-x, 10px) + var(--sock-edge));
+  scrollbar-width: none;
+}
+.node.sized > .node-body::-webkit-scrollbar { width: 0; height: 0; }
+/* A section carries its own padding and rule; as a node the shell is the
+   container and the body takes the padding. */
+.node.audio-section, .node.panel { padding: 0; border-bottom: 1px solid var(--border); }
+.node-panel > .node-body { --body-pad-x: 10px; padding: 8px var(--body-pad-x); position: relative; }
+.node-panel.panel > .node-body, .node-panel.panel-cam > .node-body { --body-pad-x: 0px; padding: 0; }
+.node .pb { flex: none; overflow: visible; }
+.node.sized .pb { overflow: visible; }
 
-/* Position colour-coding. `--hue` is written per section by sections.js from
-   where the section actually sits — column sets the base hue, vertical order
-   shifts it — so the stripe down a header is a spatial cue you can aim at
-   without reading. It is decoration, never the only signal: no text or state
-   is carried by it, so it costs nothing to anyone who can't distinguish the
-   hues, and the AA-checked tokens still do all the real work.
-
-   Lightness and chroma come from the theme, not the hue: a stripe tuned for
-   near-black grounds vanishes on near-white. */
-.sec > .audio-section-label,
-.sec > .ph,
-.sig-sec > summary {
+/* The header: the drag handle, and one strip of controls on every node. */
+.node > .node-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 5px 8px;
+  min-height: 26px;
   background: var(--faint);
   border-bottom: 1px solid var(--border);
-  border-radius: 2px 2px 0 0;
+  border-radius: 4px 4px 0 0;
+  /* A stripe in a hue drawn from the node's identity, so the same node is
+     the same colour wherever it is dragged — you can aim at the amber one
+     without reading it. Decoration only: no state is carried by colour. */
   border-left: 3px solid oklch(var(--accent-l) var(--accent-c) var(--hue, 275));
-  /* The bar is a border, so it eats into the box: without this the label text
-     butts straight up against it and the two read as one smudged glyph. */
-  padding-left: 9px;
-}
-/* A wash of the same hue over the header, far below any contrast threshold —
-   enough to tint the strip, not enough to touch the text sitting on it. */
-.sec > .audio-section-label, .sec > .ph, .sig-sec > summary {
   background-image: linear-gradient(90deg,
     oklch(var(--accent-l) var(--accent-c) var(--hue, 275) / 0.13), transparent 70%);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  text-transform: uppercase;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
-/* Sticky nesting: a section header pins to the top of whatever scrolls it,
-   offset by the headers of the sections it sits inside (measured in
-   sections.js — see applyStick). The background is already opaque, which is
-   what lets a pinned header sit over its own content. */
-.sec.stick > .audio-section-label,
-.sec.stick > .ph {
-  position: sticky;
-  top: var(--stick, 0px);
-  /* Under the pinned camera (z 30), which is the one thing that outranks a
-     header, and above the section content a header pins over. */
-  z-index: calc(12 - var(--stick-d, 0));
+.node > .node-head.ph { padding: 6px 10px; font-size: 9px; letter-spacing: 2.5px; }
+.node.dragging > .node-head, body.ws-dragging .node-head { cursor: grabbing; }
+.node > .node-head > button, .node > .node-head > select, .node > .node-head > .wave-btn { flex-shrink: 0; }
+.node-tail { margin-left: auto; display: inline-flex; align-items: center; gap: 1px; flex: 0 0 auto; }
+/* A header that already pushes something right (an ON/OFF pill) has its own
+   auto margin; the tail simply follows it. */
+.node > .node-head > [style*="margin-left:auto"] ~ .node-tail { margin-left: 4px; }
+.node-pin, .node-close {
+  flex: 0 0 auto;
+  width: 18px; height: 18px;
+  padding: 0;
+  border: none; border-radius: 3px;
+  background: none;
+  color: var(--dim);
+  font: inherit; font-size: 12px; line-height: 1;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
 }
-
-.sec > .sec-body { min-height: 0; }
-/* A section that is a whole column fills it; one with an explicit height keeps
-   exactly that height instead of being stretched by the flex parent. */
-.panel.sec > .sec-body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; }
-.sec > .sec-body.sec-scroll { flex: 0 0 auto; }
-/* Only a section with a height set (by default or by drag) scrolls; the rest
-   stay natural, so nothing gains a scrollbar it didn't need. */
-.sec > .sec-body.sec-scroll {
-  overflow-y: auto;
-  overflow-x: hidden;              /* never sideways — see .pb */
-  overscroll-behavior: contain;
-  /* There IS more below — say so. A 3px scrollbar is not an affordance; the
-     MODELS section clipped its stats row and looked simply finished. This
-     fades the last few pixels of a scrollable body, and the mask is attached
-     to the scroll container so it stays at the bottom edge while the content
-     moves under it. It lifts once you reach the end (.at-end, set by JS). */
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent 100%);
-}
-.sec > .sec-body.sec-scroll.at-end {
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-.sec > .sec-body.sec-scroll::-webkit-scrollbar { width: 3px; }
-.sec > .sec-body.sec-scroll::-webkit-scrollbar-thumb { background: var(--border2); }
-
-.sec-grip {
+.node-pin { font-size: 13px; }
+.node-pin[aria-pressed="true"] { color: var(--cyan); }
+.node-pin:focus-visible, .node-close:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+.node-body { position: relative; min-width: 0; }
+/* The resize grip: bottom-right corner, drawn as two short diagonals. */
+.node-grip {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 9px;
-  cursor: ns-resize;
-  touch-action: none;      /* the drag is ours, not the panel scroller's */
+  right: 0; bottom: 0;
+  width: 14px; height: 14px;
+  cursor: nwse-resize;
+  touch-action: none;
+  z-index: 2;
 }
-.sec-grip::after {
+.node-grip::after {
   content: '';
   position: absolute;
-  left: 50%; top: 50%;
-  width: 28px; height: 2px;
-  transform: translate(-50%, -50%);
-  border-radius: 2px;
-  background: var(--border2);
-  transition: background 0.12s, width 0.12s;
+  right: 3px; bottom: 3px;
+  width: 7px; height: 7px;
+  border-right: 2px solid var(--border2);
+  border-bottom: 2px solid var(--border2);
+  transition: border-color 0.12s;
 }
-body.resizing-sec { cursor: ns-resize; user-select: none; }
-body.resizing-sec .sec-grip::after { background: var(--cyan); }
+body.ws-dragging { cursor: grabbing; user-select: none; }
+body.ws-resizing { cursor: nwse-resize; user-select: none; }
+body.ws-resizing .node-grip::after { border-color: var(--cyan); }
+/* A node pinned to the screen floats over the canvas. */
+.node.pinned { box-shadow: var(--shadow-lg); }
 
-/* Signal sub-containers — one per tracked body part. Same visual language as
-   .sec (border, header strip, shadow) at a smaller scale, since these nest
-   inside the signals column rather than standing alone. */
+/* ── Groups ──
+   An expanded group is a frame around its members: a dashed box that lets
+   the pointer through (its members are its neighbours on the canvas, not
+   its children) and a header that drags them all. Collapsed, it is a plain
+   node whose sockets are the members' outward-facing ones. */
+.node-group {
+  background: color-mix(in oklab, var(--panel) 45%, transparent);
+  border: 1px dashed var(--border2);
+  border-radius: 8px;
+  box-shadow: none;
+  pointer-events: none;
+  min-width: 160px;
+}
+.node-group > .node-head {
+  pointer-events: auto;
+  height: 26px;
+  background: color-mix(in oklab, var(--faint) 85%, transparent);
+  border-radius: 7px 7px 0 0;
+  color: var(--text);
+}
+.node-group.empty { min-height: 66px; }
+.node-group.selected { border-color: var(--cyan); }
+.node-group.collapsed {
+  pointer-events: auto;
+  background: var(--panel);
+  border-style: solid;
+  border-radius: 5px;
+  box-shadow: var(--shadow);
+}
+.node-group.collapsed > .node-head { border-radius: 4px 4px 0 0; background: var(--faint); }
+.group-title { flex: 1 1 auto; }
+.group-rename {
+  flex: 1 1 auto; min-width: 0;
+  font: inherit; letter-spacing: 1px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--cyan); border-radius: 2px; padding: 1px 4px;
+}
+.group-toggle {
+  flex: 0 0 auto;
+  width: 18px; height: 18px; padding: 0;
+  border: none; background: none; color: inherit; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.group-toggle::before {
+  content: '';
+  display: block; box-sizing: border-box;
+  width: 7px; height: 7px;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform .12s ease;
+}
+.node-group.collapsed .group-toggle::before { transform: translateX(-2px) rotate(-45deg); }
+.group-ports { display: flex; justify-content: space-between; gap: 14px; padding: 4px 0 6px; }
+.group-ports .ports-in, .group-ports .ports-out { display: flex; flex-direction: column; gap: 3px; }
+.group-ports .port-row { display: flex; align-items: center; gap: 5px; height: 18px; font-size: 9px; color: var(--dim); }
+.group-ports .ports-in .port-row { margin-left: calc(-1px - var(--sock) / 2); }
+.group-ports .ports-out .port-row { margin-right: calc(-1px - var(--sock) / 2); justify-content: flex-end; }
+
 .sig-sec {
   border: 1px solid var(--border);
   border-radius: 3px;
   background: var(--panel);
   box-shadow: var(--shadow);
-  margin: 5px 6px;
-  overflow: hidden;
+  --sec-mx: 6px;
+  margin: 5px var(--sec-mx);
+  /* Not clipped: the sockets ride out past this box to the node's border. */
+  overflow: visible;
 }
 .sig-sec > summary {
+  --sum-px: 10px;
   cursor: pointer;
   list-style: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
+  padding: 5px var(--sum-px);
   background: var(--faint);
+  border-radius: 2px 2px 0 0;
   border-bottom: 1px solid transparent;
 }
 .sig-sec[open] > summary { border-bottom-color: var(--border); }
@@ -2165,359 +2328,78 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
 .sig-group-meta { margin-left: auto; font-size: 8px; letter-spacing: 1px; color: var(--border2); }
 .sig-sec-body { padding: 2px 0 4px; }
 
-/* ── Columns ────────────────────────────────────────────────
-   A column is a generic drop host: it owns a grid cell and stacks whatever
-   sections are in it. It scrolls on its own in landscape, so a column that
-   collects several panels pages through them instead of growing the page.
-   `min-height: 0` is what lets it actually scroll inside the grid row rather
-   than stretching the row to fit its content. */
-.col {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: var(--bg);
-}
-/* A panel keeps its natural height in a column; only the ones that own a list
-   are allowed to take the slack, so a short column does not stretch its last
-   panel down the whole screen. */
-.col > .panel-sig,
-.col > .panel-map,
-.col > .panel-aud { flex: 1 1 auto; min-height: 0; }
-
-/* ── Inputs ──────────────────────────────────────────────
-   One section holding the four sources, each an ordinary .audio-section so
-   the camera reads as the same KIND of thing as the microphone beside it. */
-.panel-inputs { display: flex; flex-direction: column; flex: 0 0 auto; }
-#input-list { display: flex; flex-direction: column; min-height: 0; }
-
-/* ── Panel grid layouts (desktop) ───────────────────────── */
-/* The camera is an .audio-section like its three siblings, minus the padding:
-   the picture goes edge to edge, and the landmark overlay is drawn in
-   normalised coordinates across the full canvas, so an inset frame would put
-   the overlay out of register with the video under it. */
-.panel-cam {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  flex: 0 0 auto;                 /* the picture keeps its size in a column */
-}
-/* Drop host for the camera column. Scrolls on its own so a section dragged in
-   here cannot grow the panel — which in portrait is pinned to the top of the
-   screen, and would otherwise push the picture out of view. */
-#cam-extras {
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: var(--panel);
-  /* No `min-height: 0` here even though it reads as the obvious companion to
-     the scroller: an id selector outranks the `body.reordering [data-sec-host]`
-     rule that gives an empty host something to aim at, so declaring it would
-     make this column silently undroppable. A scroll container's automatic
-     minimum size is already zero. */
-}
-
-/* Rows: header, body, grip. The body is the 1fr — it is created at runtime by
-   sections.js, which wraps everything after the header, so the old
-   `auto auto auto 1fr` (written for the unwrapped toolbar/rows/shader markup)
-   left the body sized to its content and the rest of the column dead: 360px of
-   empty background that no longer scrolled and, now, could not be dropped
-   into. */
-.panel-map {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-}
-
-/* ── Landscape panel arrangement ─────────────────────────
-   Source order is portrait order (camera, signals, patchbay, audio); landscape
-   places each panel into a cell explicitly, so rearranging the wide layout
-   cannot reshuffle the phone one.
-
-       ┌─────────┬──────────────┬────────┐
-       │ SIGNALS │ CAMERA VIEW  │ AUDIO  │
-       │         ├──────────────┤ ENGINE │
-       │         │  PATCHBAY    │        │
-       └─────────┴──────────────┴────────┘
-
-   The splitters still drive columns 1 and 5 (--col-l / --col-r), so the
-   existing drag/persist logic needs no change — only the contents moved. */
-@media (min-width: 769px) {
-  #main { grid-template-rows: 1fr; }
-
-  /* The COLUMNS take the cells now, not the panels. A panel that claimed its
-     own cell could not be moved out of it — dragging AUDIO ENGINE to the left
-     changed the DOM and the grid put it straight back, because `grid-column:5`
-     is a property of the panel rather than of where it happens to be. Cells
-     belong to the containers; what is inside one is then just DOM order. */
-  .col-l   { grid-column: 1; }
-  #split-l { grid-column: 2; }
-  .col-c   { grid-column: 3; }
-  #split-r { grid-column: 4; }
-  .col-r   { grid-column: 5; }
-
-  .panel-cam { border-bottom: 1px solid var(--border); }
-
-  /* The camera left a ~320px side column for the wide middle one, where a 4:3
-     box would be ~880px tall and swallow the patchbay it now sits above. Cap
-     the height and DERIVE the width from it, rather than capping height alone:
-     the aspect ratio has to stay exactly 4/3 or the landmark overlay — which
-     is drawn in normalised coordinates across the full canvas — would no
-     longer line up with the video under it. */
-  /* :not(.fs-active) because this rule and #video-wrap.fake-fullscreen carry
-     the SAME specificity (one id, one class) and this one is declared later,
-     so it was winning — a "fullscreen" camera pinned to 400px and centred,
-     with the page still visible either side of it. Portrait hid the bug:
-     --cam-w defaults to 100% there, and 100% of a fixed, inset:0 box is the
-     viewport. Excluding the fullscreen state is the fix that says why. */
-  .panel-cam #video-wrap:not(.fs-active) {
-    /* Same custom property the drag handle writes (see ui/resize.js), so one
-       control resizes the camera in both orientations. 400px = the 300px-tall
-       default at 4:3. */
-    width: min(100%, var(--cam-w, 400px));
-    margin-inline: auto;
-  }
-}
 
 /* ── Mobile ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  /* Allow vertical scroll.
-     `overflow-x: clip` rather than `hidden` on the body: `hidden` makes it a
-     scroll container, and since the element that actually scrolls is <html>,
-     anything sticky inside body then sticks to a scrollport that never moves
-     — position:sticky silently does nothing. `clip` suppresses the same
-     horizontal overflow without creating that container. The `hidden`
-     declaration is kept first so browsers without `clip` still get it. */
-  html { height: auto; overflow-y: auto; overflow-x: hidden; overflow-x: clip; }
-  body { height: auto; overflow-y: visible; overflow-x: hidden; overflow-x: clip; }
-
-  #app {
-    height: auto;
-    min-height: 100dvh;
-    grid-template-rows: auto auto;   /* header may wrap to two rows */
-  }
-
-  /* Header: two deliberate rows — centered title, then every button beneath
-     it. Two earlier attempts were worse: overflow-x:auto silently pushed the
-     trailing buttons off-screen (scrolling a header is undiscoverable on iOS,
-     and the scroll container also clipped #donate-pop, which is positioned
-     against #header), and plain flex-wrap left one lonely button dangling on
-     a second line. Explicit rows fit any phone width and stay tidy. */
+  /* The bar goes to the BOTTOM, where a thumb reaches without a reach:
+     the workspace takes the top of the screen and the buttons sit under
+     it, padded past the phone's own bar. Two deliberate rows — centered
+     title, then every button beneath it. Explicit rows fit any phone width
+     and stay tidy. */
+  #app { grid-template-rows: 1fr auto; }
+  #main { order: 1; }
   #header {
+    order: 2;
     flex-direction: column;
     align-items: stretch;
     padding: 6px 10px; gap: 6px;
+    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
     overflow: visible;
-    /* In a *column* container wrapping means new COLUMNS — rows are explicit
-       here, so it is never wanted. */
     flex-wrap: nowrap;
+    border-bottom: none;
+    border-top: 1px solid var(--border);
   }
+  /* Its menus open UP from it. */
+  #preset-pop { top: auto; bottom: calc(100% + 4px); }
   .htitle {
     display: flex; align-items: center; justify-content: center;
     gap: 7px; width: 100%;
   }
   .hbtns {
     display: flex; align-items: center; justify-content: center;
-    gap: 8px; width: 100%; flex-wrap: wrap; row-gap: 6px;
+    gap: 6px; width: 100%; flex-wrap: nowrap;
   }
-  /* Buttons share the row evenly rather than sizing to their text, so the
-     narrow ones (DEV, ?, ♥) still present a comfortable tap target. */
-  .hbtns .btn { flex: 1 1 auto; min-width: 44px; }
+  /* One row of buttons: the wide ones share the width, the two glyphs keep
+     a thumb's width — so nothing wraps onto a row of its own. */
+  .hbtns > .btn, .hbtns > .hdr-menu { flex: 1 1 auto; min-width: 0; }   /* outranks .btn's flex-shrink: 0 */
+  #header [hidden] { display: none; }        /* FIT and TIDY, which the column has no use for */
+  /* The picture's strip: a row of its own under the buttons. */
+  #header > .cam-actions { width: 100%; justify-content: center; gap: 6px; }
+  #header > .cam-actions .depth-toggle { flex: 1 1 auto; min-height: 36px; }
+  .hbtns .btn { padding-left: 4px; padding-right: 4px; }
+  .hbtns .hdr-menu > .btn { flex: 1 1 auto; min-width: 0; }
+  .hbtns > #settings-btn, .hbtns > #tour-btn { flex: 0 0 40px; }
   .logo   { font-size: 11px; flex-shrink: 0; }
   .hsep   { display: none; }
   #status-lbl { display: none; }
   .btn    { padding: 6px 10px; font-size: 9px; min-height: 36px; flex-shrink: 0; }
 
-  /* Main: single column */
-  #main {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-    overflow: visible;
-    gap: 1px;
-    background: var(--border);
+  /* The canvas is the same canvas: a phone pans and pinches it. The hint
+     line is the one thing that does not fit. */
+  .ws-hint { display: none; }
+  .ws-menu { min-width: 200px; max-width: calc(100vw - 16px); }
+
+  /* The narrowest phones: the same row, in a tighter face. */
+  @media (max-width: 360px) {
+    .hbtns .btn { font-size: 8px; letter-spacing: 0.5px; }
+    .hbtns > #settings-btn, .hbtns > #tour-btn { flex-basis: 36px; }
   }
-
-  /* The columns stop being columns entirely, so the page reads as one list of
-     panels — and, more importantly, so the camera can stay stuck to the top of
-     it. position:sticky pins an element within its own PARENT's box: as a
-     block, .col-c was that box, so the picture unstuck the moment the camera
-     column ended and SIGNALS began, which is exactly where you still want to
-     see your hands. `display: contents` dissolves the column, leaving #main —
-     which spans the whole page — as the box the pin is measured against.
-     They must not scroll here either: the document is the scroller in
-     portrait, and a column that made its own scrollport would trap the
-     stickiness in a box that never moves.
-     The boxes come back for the duration of a drag, because the columns are
-     drop hosts and hostUnder hit-tests measured rects — a box that generates
-     none can never be aimed at. */
-  .col { display: contents; }
-  body.reordering .col {
-    display: block;
-    overflow: visible;
-    min-height: 0;
-  }
-  /* The camera's column leads on a phone. It holds the picture, which is both
-     the thing you need in sight while playing and the thing you pull down on
-     to get back to the header — neither works from the middle of the page.
-     With the column dissolved there is no single box left to order, so this
-     lands on everything that reaches #main's grid from inside it. The three
-     selectors are the three contents-dissolved wrappers between .col-c and the
-     grid; each group keeps source order within itself, so the run stays
-     together and in the order the markup gives it. */
-  .col-c > *,
-  .panel-inputs > *,
-  #input-list > * { order: -1; }
-  body.reordering .col-c { order: -1; }
-
-  .splitter { display: none; }
-
-  /* All panels: natural height */
-  .panel, .panel-cam, .panel-map, .panel-sig {
-    display: flex;
-    flex-direction: column;
-    overflow: visible;
-    height: auto;
-    min-width: 0;
-  }
-
-  .pb { overflow: visible; height: auto; }
-
-  /* Cap the signal list so it doesn't eat the page */
-  #sig-list { max-height: 260px; overflow-y: auto; }
-
-  /* Portrait: the camera stays put while the page scrolls, so you can see
-     yourself — and the tracking overlay — while working the patchbay and audio
-     controls below it. This is an instrument you play by moving in front of a
-     camera, so losing sight of the camera while you reach for a control is
-     backwards; the grip below it is there for when the height is in the way. */
-  /* The video pins; the label above it does not. It has to be the PANEL
-     that is sticky — a sticky element can only stick inside its own parent's
-     box, and #video-wrap's parent is this short panel, so sticking the video
-     directly let it scroll away the moment the panel did.
-     
-     The negative offset is what excludes the label: the panel pins its top
-     edge one label-height ABOVE the viewport, so the label slides off and
-     the picture lands flush at 0. --cam-label-h is measured and written by
-     resize.js, since the label's height moves with the font-size breakpoints. */
-  /* position:sticky pins an element inside its own PARENT's box, so nesting the
-     camera in an Inputs section would have capped its travel at the bottom of
-     that section — it would unstick a few hundred pixels down, which is the
-     whole feature gone. `display: contents` removes the group's boxes from
-     layout without removing the group: the header still renders, the four
-     inputs still stack in order, and the camera's parent for positioning is
-     the column again.
-     The boxes come back for the duration of a drag, because hostUnder
-     hit-tests against measured rects and a box that generates none can never
-     be a drop target. */
-  .panel-inputs,
-  .panel-inputs > .sec-body,
-  #input-list { display: contents; }
-  body.reordering .panel-inputs,
-  body.reordering .panel-inputs > .sec-body,
-  body.reordering #input-list { display: block; }
-  /* No box to hang it off, and nothing to resize while the children are laid
-     out by the column. */
-  .panel-inputs > .sec-grip { display: none; }
-
-  /* A panel body carries `overflow-y: auto` so it can scroll inside a column
-     — but in portrait there are no columns, the panel is height:auto, and the
-     declaration only establishes a scrollport that can never scroll. A sticky
-     header inside one resolves against THAT, so it could never pin: the
-     nested sections simply scrolled away under the camera. Bodies that a
-     height was actually dragged onto keep theirs (.sec-scroll). */
-  .panel.sec > .sec-body:not(.sec-scroll) { overflow: visible; }
-  /* Same for the camera's extras box. It scrolls on its own in landscape so a
-     section dropped into it cannot grow the panel that is pinned to the top of
-     the screen — but in portrait it is hoisted OUT of that panel, so the
-     reason is gone and all the declaration leaves behind is a scrollport that
-     pinned MODELS at its top, which is underneath the picture. */
-  #cam-extras { overflow: visible; }
-
-  .panel-cam {
-    position: sticky;
-    top: calc(-1 * var(--cam-label-h, 27px));
-    z-index: 30;
-    background: var(--panel);
-    box-shadow: var(--shadow-lg);
-  }
-  /* Shrinking is done by narrowing the box, not by clipping it: aspect-ratio
-     then takes the height down with it, so the frame stays whole and the
-     landmark overlay stays registered to the video. Clipping would hide the
-     bottom of the frame — exactly where your hands are. */
-  .panel-cam #video-wrap:not(.fs-active) {
-    width: min(100%, var(--cam-w, 100%));
-    margin-inline: auto;
-  }
-}
-
-/* Grab bar under the camera. Hidden everywhere except portrait dev mode. */
-#cam-handle {
-  display: block;
-  height: 16px;
-  flex-shrink: 0;
-  cursor: ns-resize;
-  touch-action: none;              /* the drag is ours, not the scroller's */
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-  position: relative;
-}
-#cam-handle::after {
-  content: '';
-  position: absolute;
-  left: 50%; top: 50%;
-  width: 46px; height: 3px;
-  transform: translate(-50%, -50%);
-  border-radius: 2px;
-  background: var(--border2);
-}
-#cam-handle:active::after, body.resizing-cam #cam-handle::after { background: var(--cyan); }
-
-  /* Mapper rows: keep a scroll cap */
-  /* Roomier than the old 240px so the taller, finger-sized frequency picker
-     (keyboard + arm/nudge buttons + hint) isn't squeezed into a scroll sliver. */
-  #mapper-rows { max-height: 60vh; }
-
-  /* Two-line mapper rows: param + signal + × on top; min, max, curve below.
-     Keeps every control editable on a phone instead of hiding them. */
-  .mapper-thead,
-  .map-row { grid-template-columns: repeat(6, 1fr) 28px; }
-
-  .map-row .m-ap    { grid-row: 1; grid-column: 1 / 4; }
-  .map-row .m-sig   { grid-row: 1; grid-column: 4 / 7; }
-  .map-row .rm-btn  { grid-row: 1; grid-column: 7; }
-  .map-row .m-min   { grid-row: 2; grid-column: 1 / 3; }
-  .map-row .m-max   { grid-row: 2; grid-column: 3 / 5; }
-  .map-row .m-curve { grid-row: 2; grid-column: 5 / 8; }
-
-  .mapper-thead span:nth-child(1) { grid-row: 1; grid-column: 1 / 4; }
-  .mapper-thead span:nth-child(2) { grid-row: 1; grid-column: 4 / 7; }
-  .mapper-thead span:nth-child(3) { grid-row: 2; grid-column: 1 / 3; }
-  .mapper-thead span:nth-child(4) { grid-row: 2; grid-column: 3 / 5; }
-  .mapper-thead span:nth-child(5) { grid-row: 2; grid-column: 5 / 8; }
-  .mapper-thead span:nth-child(6) { grid-row: 1; grid-column: 7; }
 
   /* Touch-friendly targets (≥44 px) */
-  .sig-row  { padding: 8px 10px; }
-  .map-row  { padding: 8px 10px; }
+  .sig-row  { --row-px: 10px; padding: 8px var(--row-px); }
   .wave-btn { padding: 8px 0; }
   .ctrl-row { padding: 5px 0; }
+  .node > .node-head { min-height: 32px; }
+  .sec-fold, .sec-help, .node-pin, .node-close { width: 24px; height: 24px; }
+  .node-grip { width: 22px; height: 22px; }
 
   /* Slightly larger range thumbs */
   input[type="range"]::-webkit-slider-thumb { width: 14px; height: 14px; }
 
-  /* Patchbay: fat-finger friendly. Taller pills, bigger sockets with an even
-     more generous invisible tap halo, and a roomier ×. */
-  .ng-node { padding: 11px 12px; }
-  .ng-node-del { width: 26px; height: 26px; line-height: 24px; font-size: 15px; }
-  .ng-node.ng-in  .ng-node-title { padding-left: 24px; }
-  .ng-node.ng-out .ng-node-title { padding-right: 24px; }
-  .ng-socket { width: 22px; height: 22px; }
-  .ng-socket::after { inset: -17px; }
-  .ng-node.ng-in  .ng-socket.ng-out { right: -11px; }
-  .ng-node.ng-out .ng-socket.ng-in  { left: -11px; }
-  #nodegraph { gap: 34px; }
+  /* Sockets: fat-finger friendly — a bigger dot with an even more generous
+     invisible tap halo. */
+  :root { --sock: 22px; }
+  .port::after { inset: -17px; }
 
   /* Piano picker: draw the keyboard wider than the screen (≈21px white keys
      instead of ≈10px) and let the wrapper scroll, so individual notes are
@@ -2579,46 +2461,31 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
 
   /* Signal list */
   .sig-group { font-size: 10px; padding: 10px 14px 4px; }
-  .sig-row { grid-template-columns: 1fr 52px 110px; gap: 7px; padding: 5px 14px; }
+  .sig-row:not(.sig-row-multi) { --row-px: 14px; grid-template-columns: 1fr 52px 100px 18px; gap: 7px; padding: 5px var(--row-px); }
   .sig-row-multi { grid-template-columns: 1fr; gap: 3px; }
-  .sig-chans { grid-template-columns: 1fr 52px 110px; gap: 4px 7px; padding-left: 12px; }
+  .sig-chans { grid-template-columns: 1fr 52px 100px 18px; gap: 4px 7px; padding-left: 12px; }
   .sig-chan-name { font-size: 10px; }
   .sig-name, .sig-val { font-size: 12px; }
   .sig-bar { height: 4px; }
 
-  /* Mapper (legacy table rows, kept for consistency) + node-graph */
-  .mapper-thead, .map-row {
-    grid-template-columns: 150px 1fr 66px 66px 80px 30px;
-    padding: 7px 14px; gap: 5px;
-  }
-  .mapper-thead { font-size: 10px; }
-  .map-bar { height: 3px; }
-
-  #nodegraph { gap: 64px; padding: 14px 14px 6px; }
-  .ng-hint { font-size: 11px; }
-  .ng-node { padding: 9px 14px; font-size: 12px; }
-  .ng-node.ng-in  .ng-node-title { padding-left: 22px; }
-  .ng-node.ng-out .ng-node-title { padding-right: 22px; }
-  .ng-node-del { width: 22px; height: 22px; line-height: 20px; font-size: 15px; }
-  .ng-socket { width: 20px; height: 20px; }
-  .ng-node.ng-in  .ng-socket.ng-out { right: -10px; }
-  .ng-node.ng-out .ng-socket.ng-in  { left: -10px; }
-  .ng-addbar { padding: 9px 14px; gap: 8px; }
-  #ng-editor { padding: 11px 14px; font-size: 11px; }
-  #ng-editor .ng-edit-label { font-size: 12px; }
-  #ng-editor input { width: 74px; }
-  #ng-editor select { width: 104px; }
-  #ng-editor select.m-steps { width: 66px; }
+  /* The patch on the canvas */
+  .node-fn { font-size: 12px; }
+  :root { --sock: 18px; }
+  .ng-editor { padding: 11px 14px; font-size: 11px; }
+  .ng-editor .ng-edit-label { font-size: 12px; }
+  .ng-editor input { width: 74px; }
+  .ng-editor select { width: 104px; }
+  .ng-editor select.m-steps { width: 66px; }
   .ng-freq-bar .wave-btn { padding: 4px 12px; }
   .ng-freq-oct { font-size: 11px; }
   .ng-freq-hint { font-size: 10px; }
   .ng-freq-kbd { height: 72px; }   /* paired with mapper-ui.js drawFreqKbd() */
+  .ws-menu-item { font-size: 12px; padding: 6px 10px; }
+  .ws-hint { font-size: 10px; }
 
   select, input[type="number"] { padding: 5px 6px; font-size: 11px; }
   .rm-btn { font-size: 15px; padding: 2px 6px; }
 
-  .mapper-toolbar { padding: 11px 14px; gap: 8px; }
-  .mapper-hint { font-size: 11px; }
 
   /* Audio panel */
   #viz-canvas { height: 96px; }   /* paired with viz.js drawViz() */
@@ -2845,7 +2712,6 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
    :focus-visible companions deliberately stay outside this block: a tablet
    with a keyboard still needs its focus ring. */
 @media (hover: hover) {
-  .splitter:hover { background-color: var(--cyan); }
   .btn:hover { border-color: var(--cyan); color: var(--cyan); }
   #donate-pop a:hover { background: var(--faint); color: var(--cyan); }
   .preset-item:hover { background: var(--faint); }
@@ -2854,9 +2720,11 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   .preset-ren:hover { color: var(--purple); border-color: var(--purple); }
   .depth-toggle:hover { color: var(--cyan); border-color: var(--cyan); }
   .sig-row:hover { background: var(--faint); }
-  .ng-node-del:hover { background: var(--faint); color: var(--text); }
-  .ng-socket:hover { background: var(--wire, var(--cyan)); }
-  .map-row:hover { background: var(--faint); }
+  .node-close:hover, .node-pin:hover { background: var(--faint); color: var(--text); }
+  .port:hover { background: var(--wire, var(--cyan)); }
+  .ws-menu-item:hover { background: var(--faint); color: var(--cyan); }
+  .ws-menu-item.danger:hover { color: var(--red); }
+  .node-group > .node-head:hover { border-color: var(--cyan); }
   .rm-btn:hover { color: var(--red); border-color: var(--red); }
   .start-item:hover {
   border-color: var(--cyan);
@@ -2872,7 +2740,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
   border-color: var(--cyan);
   outline: none;
 }
-  .sec-grip:hover::after { background: var(--cyan); width: 44px; }
+  .node-grip:hover::after { border-color: var(--cyan); }
   #uic-select button:hover { background: var(--faint); }
   .stage-item-btn:hover { border-color: var(--cyan); }
 }
@@ -2881,7 +2749,7 @@ body.resizing-sec .sec-grip::after { background: var(--cyan); }
    correctly gone, a tap that toggles something now has one unambiguous cue
    at the moment of contact, before any state change lands. */
 .btn:active, .depth-toggle:active, .wave-btn:active,
-.sec-help:active, .sec-fold:active, .stage-item-btn:active {
+.sec-help:active, .sec-fold:active, .node-pin:active, .node-close:active, .stage-item-btn:active {
   transform: scale(0.96);
   filter: brightness(1.25);
 }
