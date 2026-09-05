@@ -17,7 +17,6 @@ import { diatonicChord, diatonicNote, isDiatonic, isDegreeScale, degreeCountOf,
 import { NOTE_NAMES }                 from './scale.js';
 import { notePool }                   from './arp.js';
 import { arpvoice }                   from './arpvoice.js';
-import { isString }                   from './is.js';
 
 export const DEFAULT_KEY = {
   root: 'C',
@@ -172,21 +171,11 @@ export const chordmode = (() => {
   let key = { ...DEFAULT_KEY };
   let assignments = { ...DEFAULT_ASSIGNMENTS };   // gestureId → degree
   let sevenths = [...DEFAULT_SEVENTHS];
-  // Sources currently sounding: gestureId → the accidental it was voiced with.
-  // A Map rather than one id, because both hands can name at once — and a
-  // face or a stance can name alongside them. The map IS the polyphony: the
-  // bank plays the union of what everything in it asks for.
-  let voices = new Map();
-  const playingIds = () => [...voices.keys()];
-  const anySounding = () => voices.size > 0;
-  // The first of them and the accidental it was voiced with — what the
-  // readouts want when they mean "the chord", singular.
-  const leadId = () => { for (const id of voices.keys()) return id; return null; };
-  const leadAcc = () => { for (const a of voices.values()) return a; return NATURAL; };
+  let playing = null;   // gestureId currently sounding
   let expr = { ...DEFAULT_EXPRESSION };
   let voicing = 'chord';
-  let namingHand = 'any';    // 'any' | 'L' | 'R' — see namingSides()
   let accGestures = { ...DEFAULT_ACCIDENTAL_GESTURES };
+  let playingAcc = NATURAL;   // accidental the sounding note was voiced with
   let latched = null;   // chord handshape held over, in hand/brow modes
   let latchedSide = null;     // which hand latched it — the OTHER one bends it
   let gateOpen = false; // gate control: is the envelope currently attacked
@@ -199,11 +188,7 @@ export const chordmode = (() => {
   // runs the same one, and two arpeggiators for two modes that park each
   // other would be redundant on their face. State and transport live in
   // arpvoice.js; these aliases keep this file reading as it always did.
-  // Every call site here is a RELEASE — the player let go, and nothing is
-  // taking these voices over — so what is ringing falls with the chord
-  // rather than being cut. The hard stop belongs to the arp flip, which
-  // arpvoice owns.
-  const stopArp    = () => arpvoice.release();
+  const stopArp    = () => arpvoice.stop();
   const restartArp = () => arpvoice.restart();
   const runArp     = (freqs, level = 1) => arpvoice.run(freqs, level);
   // An arp flip invalidates this mode's private chord state (the flip itself
@@ -223,19 +208,6 @@ export const chordmode = (() => {
   // Which hand names the chord: the one that is not expressing. In brow mode
   // both hands are free to, since the eyebrows are doing the expressing.
   const chordHand = () => (expr.hand === 'L' ? 'R' : 'L');
-
-  // …and which hands are ALLOWED to, which is a different question.
-  //
-  // Reported from playing: "I'm trying to use my left hand openness to adjust
-  // filter, but it keeps getting read as an open palm gesture." An open hand
-  // held out to drive a cable is a handshape whether or not it was meant as
-  // one, and outside `hand` expression mode every mode scanned both hands —
-  // so a hand doing continuous work could not help also naming chords.
-  //
-  // 'any' is the old behaviour and stays the default. Naming one hand is what
-  // frees the other for the patchbay: the shapes it makes are then just the
-  // shapes a hand makes while it works.
-  const namingSides = () => (namingHand === 'any' ? ['L', 'R'] : [namingHand]);
 
   // The key actually used to build chords. With `follow` on, Pitch Quantize
   // drives it so chords land in the same key the melody snaps to — for any
@@ -290,26 +262,6 @@ export const chordmode = (() => {
     return n ? [n.freq] : null;
   };
 
-  // What the voice bank should be pointed at for EVERYTHING sounding — the
-  // union over the sources, deduped. Two hands naming the same degree is one
-  // note, not two voices spent saying it twice, and the shared octave of two
-  // overlapping triads is one string, not two detuned copies of it.
-  //
-  // Source order is kept: the first source's root leads, so an arpeggio still
-  // starts where the hand that started it says it does.
-  const soundingFreqs = () => {
-    const out = [], seen = new Set();
-    for (const [id, acc] of voices) {
-      for (const f of soundFreqs(id, acc) ?? []) {
-        const k = f.toFixed(3);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        out.push(f);
-      }
-    }
-    return out;
-  };
-
   // The accidental a hand is signalling, or NATURAL for any other shape —
   // including no shape at all, which is what makes "natural" the resting
   // state rather than a third thing to hold.
@@ -331,54 +283,16 @@ export const chordmode = (() => {
     return accidentalOn(namingSide === 'L' ? 'R' : 'L');
   };
 
-  // EVERY held shape that names a degree, with the hand holding it — L then R,
-  // the same precedence gesture.current() uses.
-  //
-  // Plural because gesture mode used to be monophonic: one `playing` id, so
-  // the second hand could name a chord and nothing would happen. Chords are
-  // what this mode is FOR, and "play a C and an E at once" was unreachable.
-  // Each source names independently and they all sound together.
-  //
-  // Deduped by gesture id, because a sideless gesture (a face, a stance) is
-  // held on neither hand and so answers for BOTH — see gesture.activeOn. One
-  // raised eyebrow is one voice, not two.
-  const namedSources = () => {
-    const out = [];
-    const seen = new Set();
-    for (const side of namingSides()) {
+  // The held shape that names a degree, and the hand holding it. Same L-then-R
+  // precedence as gesture.current(), so which shape wins is unchanged — this
+  // just also reports where it is, which is what the off hand is measured
+  // against.
+  const namedWithSide = () => {
+    for (const side of ['L', 'R']) {
       const id = gesture.activeOn(side);
-      if (id === null || seen.has(id) || !liveDegree(assignments[id])) continue;
-      seen.add(id);
-      out.push({ id, side });
+      if (id !== null && liveDegree(assignments[id])) return { id, side };
     }
-    return out;
-  };
-  // The FIRST of those — what the readouts and the accidental logic want when
-  // they mean "the chord", singular.
-  const namedWithSide = () => namedSources()[0] ?? null;
-
-  // Everything stops. One call rather than three lines repeated at every exit,
-  // because the third line — forgetting the sources — is the one that used to
-  // go missing and leave a chord that nothing could stop.
-  const silence = () => { engine.releaseChord(); stopArp(); voices.clear(); };
-
-  // Whether the bank is actually making sound, as opposed to merely being
-  // pointed at a chord. The expressed modes separate those on purpose — one
-  // hand names, the other plays — so a latched shape under a shut gate is a
-  // chord CHOSEN, not a chord heard, and play-along judges what it hears.
-  const audible = () => {
-    if (!anySounding()) return false;
-    if (expr.mode !== 'hand' && expr.mode !== 'brow') return true;
-    return expr.control === 'volume' ? exprLevel > 0 : gateOpen;
-  };
-
-  // What every source is naming right now, with the accidental each is voiced
-  // with. The whole of gesture mode's polyphony is this one line: read them
-  // all instead of reading the first.
-  const namedVoices = () => {
-    const out = new Map();
-    for (const { id, side } of namedSources()) out.set(id, accidentalFor(side));
-    return out;
+    return null;
   };
 
   return {
@@ -386,9 +300,9 @@ export const chordmode = (() => {
     setEnabled(on) {
       enabled = !!on;
       if (!enabled) {
-        silence();
-        latched = null; latchedSide = null;
-        gateOpen = false; voiced = null;
+        engine.releaseChord(); stopArp();
+        playing = null; latched = null; latchedSide = null;
+        gateOpen = false; voiced = null; playingAcc = NATURAL;
       }
     },
 
@@ -403,10 +317,9 @@ export const chordmode = (() => {
       key = { ...key, ...partial };
       // A held chord live-transposes — unless the new mode has fewer degrees
       // and this one just went dormant, which is a release, not a null sound.
-      const held = voices.size;
-      for (const id of playingIds()) if (!liveDegree(assignments[id])) voices.delete(id);
-      if (anySounding()) this._sound({ restart: false, attack: false });
-      else if (held) silence();
+      if (playing && !liveDegree(assignments[playing])) {
+        engine.releaseChord(); stopArp(); playing = null; playingAcc = NATURAL;
+      } else if (playing) this._sound(playing, { restart: false });
     },
 
     assignments: () => ({ ...assignments }),
@@ -426,9 +339,9 @@ export const chordmode = (() => {
       // A triad and a single note are two different sounds on the same four
       // voices, so the switch hands the bank over cleanly instead of leaving
       // the other one's notes ringing underneath.
-      silence();
-      latched = null; latchedSide = null;
-      gateOpen = false; voiced = null;
+      engine.releaseChord(); stopArp();
+      playing = null; latched = null; latchedSide = null;
+      gateOpen = false; voiced = null; playingAcc = NATURAL;
       return voicing;
     },
 
@@ -449,7 +362,7 @@ export const chordmode = (() => {
     // What the off hand is saying right now, for the panel's indicator.
     currentAccidental() {
       if (voicing !== 'note') return NATURAL;
-      if (anySounding()) return leadAcc();
+      if (playing) return playingAcc;
       if (latchedSide !== null) return accidentalFor(latchedSide);
       // Nothing is named yet, so neither hand is the off hand — report either
       // of them. The indicator's job before you commit to a note is to say
@@ -481,43 +394,33 @@ export const chordmode = (() => {
         if (prev && prev !== gestureId && from !== undefined) assignments[prev] = from;
       }
       // A held chord may have just changed hands, or stopped existing.
-      const held = voices.size;
-      for (const id of playingIds()) if (assignments[id] === undefined) voices.delete(id);
-      if (anySounding()) this._sound({ restart: false, attack: false });
-      else if (held) silence();
+      if (playing && assignments[playing] === undefined) { engine.releaseChord(); stopArp(); playing = null; }
+      else if (playing) this._sound(playing, { restart: false });
     },
 
     setSeventh(degree, on) {
       const d = normDegree(degree);
       sevenths[d] = !!on;
       const id = gestureFor(d);
-      if (id && voices.has(id)) this._sound({ restart: false, attack: false });    // live-update a held chord
+      if (id && playing === id) this._sound(id, { restart: false });               // live-update a held chord
     },
 
     unassign(gestureId) {
       delete assignments[gestureId];
-      if (!voices.delete(gestureId)) return;
-      // The OTHER hand is still holding its own chord — that one keeps
-      // ringing, re-pointed without being struck again.
-      if (anySounding()) this._sound({ restart: false, attack: false });
-      else silence();
+      if (playing === gestureId) { engine.releaseChord(); stopArp(); playing = null; }
     },
 
     // Human-readable "gesture → chord" for the live readout ('' when silent).
     currentLabel() {
-      if (!anySounding()) return '';
-      // Every source, joined — two hands make two entries, and a readout that
-      // named only one of them would be describing half of what you hear.
-      return playingIds().map(id => {
-        const g = gesture.list().find(x => x.id === id);
-        const who = g ? gestureLabel(g) : id;
-        if (voicing === 'note') {
-          const n = noteFor(id, voices.get(id));
-          return n ? `${who} → ${n.numeral}${accidentalSign(n.accidental)} · ${n.name}` : '';
-        }
-        const c = chordFor(id);
-        return c ? `${who} → ${c.numeral} · ${c.rootName} ${c.quality}` : '';
-      }).filter(Boolean).join('  +  ');
+      if (!playing) return '';
+      const g = gesture.list().find(x => x.id === playing);
+      const who = g ? gestureLabel(g) : playing;
+      if (voicing === 'note') {
+        const n = noteFor(playing, playingAcc);
+        return n ? `${who} → ${n.numeral}${accidentalSign(n.accidental)} · ${n.name}` : '';
+      }
+      const c = chordFor(playing);
+      return c ? `${who} → ${c.numeral} · ${c.rootName} ${c.quality}` : '';
     },
 
     // What is sounding right now, for anything that wants to DRAW it rather
@@ -525,43 +428,22 @@ export const chordmode = (() => {
     // held. A single note reports as a one-note chord: the overlay lights the
     // keys it is given, and one is a legal number of keys.
     currentChord() {
-      if (!anySounding()) return null;
-      const parts = playingIds().map(id => {
-        if (voicing !== 'note') return chordFor(id);
-        const n = noteFor(id, voices.get(id));
-        return n ? { ...n, midi: [n.midi], freqs: [n.freq], rootName: n.name, quality: 'note' } : null;
-      }).filter(Boolean);
-      if (!parts.length) return null;
-      if (parts.length === 1) return parts[0];
-      // Two sources are ONE sound: one voice bank, one envelope, one set of
-      // lit keys. Merged and deduped, keeping the first source's naming —
-      // a two-hand stack has no chord symbol of its own, and inventing one
-      // would be a worse answer than naming what it was built on.
-      return { ...parts[0],
-               midi: [...new Set(parts.flatMap(c => c.midi))].sort((a, b) => a - b),
-               freqs: soundingFreqs() };
+      if (!playing) return null;
+      if (voicing !== 'note') return chordFor(playing);
+      const n = noteFor(playing, playingAcc);
+      return n ? { ...n, midi: [n.midi], freqs: [n.freq], rootName: n.name, quality: 'note' } : null;
     },
 
-    // Point the bank at everything `voices` names and run the envelope. The
-    // sources are the argument — set them first, then call this.
-    //
     // `restart: false` for a chord that is already sounding and has merely
-    // been transposed, re-voiced, or left by one of two hands — the arpeggio
-    // should carry on in time rather than jumping back to the root, which
-    // would be heard as a stumble every time the key select moves.
-    // `attack: false` goes one further: re-point the voices and leave the
-    // envelope alone, which is what a chord that CHANGED rather than being
-    // struck sounds like.
-    _sound({ restart = true, attack = true } = {}) {
-      const freqs = soundingFreqs();
-      if (!freqs.length) return;
-      if (arpvoice.enabled) {
-        if (restart) restartArp();
-        if (attack) engine.attackChord();
-        return;
-      }
-      engine.setChordVoices(freqs);
-      if (attack) engine.attackChord();
+    // been transposed or re-voiced — the arpeggio should carry on in time
+    // rather than jumping back to the root, which would be heard as a stumble
+    // every time the key select moves.
+    _sound(id, { restart = true, accidental = playingAcc } = {}) {
+      const freqs = soundFreqs(id, accidental);
+      if (!freqs) return;
+      if (!arpvoice.enabled) { engine.playChord(freqs); return; }
+      if (restart) restartArp();
+      engine.attackChord();
     },
 
     tick() {
@@ -575,7 +457,7 @@ export const chordmode = (() => {
       // instrument, not an experiment, and hiding it behind DEV meant the one
       // starting point that needs no wiring was the one nobody could find.
       if (!enabled) {
-        if (anySounding()) silence();
+        if (playing) { engine.releaseChord(); stopArp(); playing = null; }
         return;
       }
       if (expr.mode === 'beat') return this._tickBeat();
@@ -591,44 +473,29 @@ export const chordmode = (() => {
       // shape carries no chord, so this is a belt-and-braces ordering rather
       // than a rule that resolves a real conflict.
       if (releaseGesture && held.includes(releaseGesture)) {
-        if (anySounding()) silence();
+        if (playing) { engine.releaseChord(); stopArp(); playing = null; }
         return;
       }
 
-      // EVERY currently-held gesture that has a chord assigned sounds — both
-      // hands at once, and a face or a stance alongside them.
+      // First currently-held gesture that has a chord assigned wins.
       // `!== undefined`, not truthy: degree 0 is the tonic — which is why this
-      // is resolved by namedSources rather than by scanning `held`.
-      const wanted = namedVoices();
-      let added = 0, gone = 0, bent = 0;
-      for (const [id, acc] of wanted) {
-        if (!voices.has(id)) added++;
-        // In note voicing the accidental is part of WHICH note this is, so a
-        // thumb turning over under a held shape is a new note and re-attacks.
-        // In chord voicing it is always natural and this never fires.
-        else if (voices.get(id) !== acc) bent++;
-      }
-      for (const id of voices.keys()) if (!wanted.has(id)) gone++;
-
-      if (added || gone || bent) {
-        const was = anySounding();
-        voices = wanted;
-        if (!wanted.size) silence();
-        // The bank has ONE envelope, so a note that joins can only be heard by
-        // running it — under a percussive setting a silent re-point would add
-        // nothing audible at all. So an arrival attacks (and the notes already
-        // ringing are struck again with it), while a hand LEAVING only
-        // re-points: the other hand's chord keeps ringing where it was.
-        // The arpeggio restarts at the root for a fresh attack or a shape
-        // swapped for another, and carries on in time when a hand merely
-        // joins or leaves a run already walking.
-        else this._sound({ restart: !was || (added > 0 && gone > 0),
-                           attack: !was || added > 0 || bent > 0 });
+      // is resolved by namedWithSide rather than by scanning `held`.
+      const named = namedWithSide();
+      const id = named?.id ?? null;
+      const acc = accidentalFor(named?.side ?? null);
+      // In note voicing the accidental is part of WHICH note this is, so a
+      // thumb turning over under a held shape is a new note and re-attacks. In
+      // chord voicing it is always natural and this reads as it always did.
+      if (id !== playing || acc !== playingAcc) {
+        if (id) this._sound(id, { restart: id !== playing, accidental: acc });
+        else { engine.releaseChord(); stopArp(); }
+        playing = id;
+        playingAcc = id ? acc : NATURAL;
       }
       // A block chord is set up once and sustains itself; an arpeggio has to be
       // fed. This is why the early-out above became a branch — the state may be
       // unchanged and there can still be notes owed.
-      if (anySounding() && arpvoice.enabled) runArp(soundingFreqs());
+      if (playing && arpvoice.enabled) runArp(soundFreqs(playing, playingAcc));
     },
 
     // 'beat' mode: the metronome is the articulation. On each SAMPLE beat the
@@ -641,23 +508,22 @@ export const chordmode = (() => {
     // the panel says so rather than leaving a mystery.
     _tickBeat() {
       if (!metronome.on) {
-        if (anySounding()) silence();
+        if (playing) { engine.releaseChord(); stopArp(); playing = null; }
         return;
       }
-      if (anySounding() && arpvoice.enabled) runArp(soundingFreqs());
+      if (playing && arpvoice.enabled) runArp(soundFreqs(playing, playingAcc));
       const ev = metronome.sampleThisFrame();
       if (!ev) return;
-      // Polyphonic for the same reason gesture mode is: the beat strikes what
-      // is held, and what is held can be two hands.
-      const wanted = namedVoices();
-      if (wanted.size) {
-        // A struck beat always attacks; the arpeggio only goes back to the
-        // root when the shapes themselves changed between beats.
-        const same = wanted.size === voices.size
-          && [...wanted.keys()].every(id => voices.has(id));
-        voices = wanted;
-        this._sound({ restart: !same });
-      } else if (anySounding()) silence();
+      const named = namedWithSide();
+      const id = named?.id ?? null;
+      const acc = accidentalFor(named?.side ?? null);
+      if (id !== null && liveDegree(assignments[id])) {
+        this._sound(id, { restart: id !== playing, accidental: acc });
+        playing = id;
+        playingAcc = acc;
+      } else if (playing) {
+        engine.releaseChord(); stopArp(); playing = null;
+      }
     },
 
     // hand / brow modes. The handshape names the chord and LATCHES — dropping
@@ -669,9 +535,7 @@ export const chordmode = (() => {
       // and the off hand is defined against the hand that CHOSE the note.
       let named = null, namedSide = null;
       if (expr.mode === 'brow') {
-        // R first here, unlike namedWithSide: brow mode has no expressing hand
-        // to define an off hand against, so this is just "whichever is up".
-        for (const side of namingSides().slice().reverse()) {
+        for (const side of ['R', 'L']) {
           const id = gesture.activeOn(side);
           if (id !== null) { named = id; namedSide = side; break; }
         }
@@ -693,20 +557,13 @@ export const chordmode = (() => {
       }
       const acc = accidentalFor(latchedSide);
       const level = readExpression();
-      // These modes stay one shape at a time, and not by omission: one hand
-      // names and the other plays, so outside brow mode there is only one hand
-      // free to name with. Two-handed play lives in gesture and beat modes,
-      // where neither hand is spoken for.
-      // The latch is recorded as the sounding source even before the gate
-      // opens — latched-but-silent is a state the panel draws differently, and
-      // it needs to know WHICH chord is waiting.
-      if (!latched) { voices.clear(); return; }
-      if (!voices.has(latched)) voices = new Map([[latched, leadAcc()]]);
+      playing = latched;
+      if (!latched) return;
 
       if (expr.control === 'volume') {
         engine.setChordLevel(level);
         gateOpen = level > 0;
-        voices.set(latched, acc);
+        playingAcc = acc;
         if (arpvoice.enabled) {
           // The hand owns loudness on the shared gain and the arp owns rhythm
           // underneath it, so the notes go out at full voice level. Silence is
@@ -718,7 +575,7 @@ export const chordmode = (() => {
           return;
         }
         // Only re-point the voices when the chord actually changes. Ramping
-        // the whole bank's frequencies every frame is the same never-settling
+        // four oscillator frequencies every frame is the same never-settling
         // glide that made continuous volume unplayable in the first place.
         // The accidental is in the signature because bending a note IS the
         // chord changing, and it is the one part of it the off hand can move
@@ -737,43 +594,28 @@ export const chordmode = (() => {
       // A note bent while the gate is open is the same swap as a chord changed
       // under a held hand, so it re-attacks on the new pitch rather than
       // waiting for the gate to close and open again.
-      const changed = on && gateOpen && (voiced !== latched || leadAcc() !== acc);
+      const changed = on && gateOpen && (voiced !== latched || playingAcc !== acc);
       if (on !== gateOpen || changed) {
         gateOpen = on;
         // A swap mid-gate is one chord becoming another under a hand that never
         // let go, so the arpeggio carries on in time; a fresh attack starts the
         // pattern at the root.
         if (on) {
-          voices.set(latched, acc);
-          this._sound({ restart: !changed });
+          this._sound(latched, { restart: !changed, accidental: acc });
           voiced = latched;
+          playingAcc = acc;
         }
         else { engine.releaseChord(); stopArp(); voiced = null; }
       }
-      if (gateOpen && arpvoice.enabled) runArp(soundingFreqs());
+      if (gateOpen && arpvoice.enabled) runArp(soundFreqs(latched, playingAcc));
     },
 
-    // Which degree the bank is POINTED AT, or -1 — for the row indicators,
-    // which draw latched-but-silent differently from sounding. `voices` is
-    // keyed by gesture id; the panel lists chords, so it needs the degree.
+    // Which degree is sounding, or -1 — for the row indicators. `playing` is a
+    // gesture id; the panel lists chords, so it needs the degree.
     soundingDegree() {
-      const id = leadId();
-      if (id === null) return -1;
-      const d = assignments[id];
+      if (!playing) return -1;
+      const d = assignments[playing];
       return d === undefined ? -1 : d;
-    },
-
-    // All of them, and only while they are actually being heard. What
-    // play-along judges against: a chord latched under a shut gate has been
-    // chosen, not played, and scoring it would be scoring a decision.
-    soundingDegrees() {
-      if (!audible()) return [];
-      const out = [];
-      for (const id of voices.keys()) {
-        const d = assignments[id];
-        if (d !== undefined && !out.includes(d)) out.push(d);
-      }
-      return out;
     },
     // Is the release shape being held right now (gesture mode only).
     releaseHeld() {
@@ -789,9 +631,8 @@ export const chordmode = (() => {
     // How many notes the current chord gives the pattern, so the panel can
     // say "3 of 6" rather than leaving the octave setting abstract.
     arpPoolSize() {
-      const freqs = anySounding() ? soundingFreqs()
-                  : latched ? soundFreqs(latched, leadAcc()) ?? [] : [];
-      return notePool(freqs, arpvoice.state().octaves).length;
+      const id = playing ?? latched;
+      return notePool(id ? soundFreqs(id, playingAcc) ?? [] : [], arpvoice.state().octaves).length;
     },
 
     expression: () => ({ ...expr }),
@@ -818,9 +659,8 @@ export const chordmode = (() => {
       // Leaving an expressed chord ringing after switching away from it would
       // be a note nothing can now stop.
       engine.releaseChord();
-      voices.clear();
       latched = null; latchedSide = null;
-      gateOpen = false; voiced = null;
+      gateOpen = false; playing = null; voiced = null; playingAcc = NATURAL;
       return { ...expr };
     },
 
@@ -833,58 +673,22 @@ export const chordmode = (() => {
       return releaseGesture;
     },
 
-    // Which hand is allowed to name a chord. Setting it to one hand is what
-    // frees the other to drive a cable without its shapes being read.
-    // The shape naming a degree right now and the hand holding it, after the
-    // naming-hand filter. Exposed because "which hand did that come from" is
-    // the question this setting exists to answer.
-    namedNow: () => namedWithSide(),
-
-    setNamingHand(v) {
-      namingHand = (v === 'L' || v === 'R') ? v : 'any';
-      return namingHand;
-    },
-    getNamingHand: () => namingHand,
-
     serialize() {
       return { enabled, key: { ...key }, assignments: { ...assignments },
-               // The panel's own view of the mapping: one slot per degree,
-               // null where you cleared it. `assignments` is gestureId → degree
-               // and so cannot say "this degree is empty" — an emptied degree
-               // simply has no entry, which on the way back in is
-               // indistinguishable from a save that predates the degree, and
-               // the merge below then handed the default straight back. That is
-               // why a cleared chord kept reappearing after following a link.
-               // Both are written: `degrees` is authoritative, `assignments`
-               // keeps older readers working.
-               degrees: Array.from({ length: DEGREES }, (_, i) => gestureFor(i)),
                sevenths: sevenths.slice(), releaseGesture, expression: { ...expr },
-               voicing, namingHand, accidentals: { ...accGestures } };
+               voicing, accidentals: { ...accGestures } };
     },
 
     load(data) {
       if (!data) return;
       key = { ...DEFAULT_KEY, ...data.key };
-      // Absent in setups saved before this existed, and 'any' is what those
-      // were doing — so an old patch loads playing exactly as it did.
-      namingHand = (data.namingHand === 'L' || data.namingHand === 'R') ? data.namingHand : 'any';
       sevenths = Array.isArray(data.sevenths)
         ? Array.from({ length: DEGREES }, (_, i) => !!data.sevenths[i])
         : [...DEFAULT_SEVENTHS];
 
-      if (Array.isArray(data.degrees)) {
-        // The authoritative form: exactly what the panel showed, empties and
-        // all. No merge — every degree is accounted for, so a default filling
-        // one in could only contradict what was saved.
-        assignments = {};
-        data.degrees.slice(0, DEGREES).forEach((id, i) => {
-          if (isString(id) && id) assignments[id] = normDegree(i);
-        });
-      } else if (data.assignments) {
-        // Older saves. Merge over the defaults rather than replacing them, so
-        // gestures added in a later version still arrive with a chord for
-        // existing users — accepting that an emptied degree comes back filled,
-        // because nothing in this format distinguishes the two.
+      if (data.assignments) {
+        // Merge over the defaults rather than replacing them, so gestures added
+        // in a later version still arrive with a chord for existing users.
         const merged = { ...DEFAULT_ASSIGNMENTS };
         for (const [id, a] of Object.entries(data.assignments)) {
           if (Number.isFinite(a)) { merged[id] = normDegree(a); continue; }

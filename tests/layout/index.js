@@ -239,7 +239,7 @@ const sections = await page.evaluate(() => {
                // The library folded inside it: present, and its summary
                // clickable even when the fold is shut.
                lib: (() => {
-                 const d = document.getElementById('gesture-lib');
+                 const d = document.getElementById('handshape-lib');
                  return !!d && d.querySelector('summary').getClientRects().length > 0;
                })(),
                models: vis('models'),
@@ -968,39 +968,46 @@ const presets = await (async () => {
   await page.waitForTimeout(400);
   const afterPreset = await badge();
 
-  // ── SHARE takes the screen, and the code on it is readable ──
-  //
-  // This used to measure a DEV-mode code drawn into the corner of the camera
-  // view at one pixel per module. The measurement behind that was sound — one
-  // pixel per module really does survive a screenshot — but the answer was
-  // still 129px square for a typical setup, which is a quarter of the width of
-  // a phone's camera panel and not a corner ornament by any reading. A code
-  // that size needs somewhere it can be the whole point, so the code lives in
-  // SHARE and SHARE now takes the screen.
-  await page.click('#share-btn');
-  await page.waitForTimeout(700);
-  const share = await page.evaluate(() => {
-    const pop = document.getElementById('share-pop');
-    const c = document.getElementById('share-qr');
-    const p = pop.getBoundingClientRect(), q = c.getBoundingClientRect();
+  // ── The dev-mode code, read back off the screen ──
+  await toggleDev(page);
+  await page.waitForTimeout(2600);          // past cam-badge's re-encode window
+  const qr = await page.evaluate(() => {
+    const wrap = document.getElementById('cam-qr');
+    const c = document.getElementById('cam-qr-canvas');
+    const r = c.getBoundingClientRect();
+    const w = wrap.getBoundingClientRect();
+    const frame = document.getElementById('video-wrap').getBoundingClientRect();
     return {
-      open: pop.classList.contains('open'),
-      pop: { w: Math.round(p.width), h: Math.round(p.height),
-             left: Math.round(p.left), top: Math.round(p.top) },
-      qr: { w: Math.round(q.width), h: Math.round(q.height) },
-      vw: innerWidth, vh: innerHeight,
-      // Everything that is not the code keeps a readable measure rather than
-      // stretching to the width of a desktop screen.
-      labelW: Math.round(document.getElementById('share-label').getBoundingClientRect().width),
+      shown: !wrap.hidden && getComputedStyle(wrap).display !== 'none',
+      px: c.width,
+      // Drawn at exactly one CSS pixel per module: any scaling is what puts
+      // module edges between pixels, and that is what a decoder trips on.
+      cssW: Math.round(r.width), cssH: Math.round(r.height),
+      wrapW: Math.round(w.width), wrapH: Math.round(w.height),
+      frameW: Math.round(frame.width), frameH: Math.round(frame.height),
+      // The code cannot shrink to fit — that is the whole point — so what has
+      // to hold instead is that it never takes a click away from a control.
+      clickThrough: getComputedStyle(wrap).pointerEvents === 'none',
+      // Anchored to the corner it was put in, at the shared inset every other
+      // thing on the picture uses, whatever size it comes out.
+      inset: {
+        right:  Math.round(frame.right - w.right),
+        bottom: Math.round(frame.bottom - w.bottom),
+        want: parseFloat(getComputedStyle(document.getElementById('video-wrap'))
+                .getPropertyValue('--cam-inset')),
+      },
     };
   });
-  // The link the app would share right now, for comparison with what a decoder
-  // reads back off the screen.
+  // The link the app would share right now, and the code it needs — for
+  // comparison with what the decoder reads back out of the picture, and with
+  // the number of pixels it was given to say it in.
   const want = await page.evaluate(async () => {
     const { shareableSnapshot, encodeState, shareUrl } = await import('/src/share.js');
-    return shareUrl(await encodeState(shareableSnapshot()));
+    const { encodeQR } = await import('/src/qr.js');
+    const url = shareUrl(await encodeState(shareableSnapshot()));
+    return { url, modules: encodeQR(url, { ecc: 'L' }).size };
   });
-  const shot = await page.locator('#share-qr').screenshot();
+  const shot = await page.locator('#cam-qr').screenshot();
   await page.addScriptTag({ path: join(ROOT, 'node_modules/jsqr/dist/jsQR.js') });
   const decoded = await page.evaluate(async b64 => {
     const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
@@ -1009,14 +1016,14 @@ const presets = await (async () => {
     c.width = bmp.width; c.height = bmp.height;
     c.getContext('2d').drawImage(bmp, 0, 0);
     const img = c.getContext('2d').getImageData(0, 0, c.width, c.height);
-    return { w: bmp.width, h: bmp.height,
-             text: globalThis.jsQR(img.data, img.width, img.height)?.data ?? null };
+    return {
+      w: bmp.width, h: bmp.height,
+      text: globalThis.jsQR(img.data, img.width, img.height)?.data ?? null,
+    };
   }, shot.toString('base64'));
-  const noCamQr = await page.evaluate(() => !document.getElementById('cam-qr'));
 
   await page.close();
-  return { listed, applied, renamed, collided, escaped, afterPreset,
-           share, want, decoded, noCamQr, errs };
+  return { listed, applied, renamed, collided, escaped, afterPreset, qr, want, decoded, errs };
 })();
 
 // ── The controls on the picture are one system ───────────────────────────
@@ -1092,626 +1099,6 @@ const camctl = await (async () => {
 
   await page.close();
   return { small, full, errs };
-})();
-
-// ── The camera view at its two sizes, and what sits on it ────────────────
-//
-// Three regressions, all of them things that LOOK fine in the state you
-// happen to be testing in:
-//
-//   1. Fullscreen was 400px wide and centred on a desktop, with the page
-//      still visible either side. `.panel-cam #video-wrap` and
-//      `#video-wrap.fake-fullscreen` carry the same specificity — one id, one
-//      class — and the responsive one is declared later, so it won. Portrait
-//      hid it completely: --cam-w defaults to 100% there, and 100% of a
-//      fixed, inset:0 box is the viewport.
-//   2. The actions bar sat ON the fullscreen keyboard overlay, which is a
-//      control surface you play with your thumbs.
-//   3. The tracker toggles rendered outside the box labelled Camera Input on
-//      a phone, because #cam-extras leaves the section there to escape the
-//      sticky camera — and they had been put inside it.
-//
-// Measured at both widths, because each of these was correct at one of them.
-const camView = await (async () => {
-  const out = {};
-  for (const [w, h, key] of [[390, 844, 'phone'], [1440, 900, 'desktop']]) {
-    const ctx = await b.newContext({ viewport: { width: w, height: h } });
-    const page = await ctx.newPage();
-    const errs = [];
-    page.on('pageerror', e => errs.push(String(e)));
-    await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(300);
-
-    const trackers = await page.evaluate(() => {
-      const sec = document.querySelector('.panel-cam');
-      const body = sec?.querySelector(':scope > .sec-body');
-      const row = document.getElementById('tracker-row');
-      const b = body?.getBoundingClientRect(), r = row?.getBoundingClientRect();
-      return {
-        inBody: !!body?.contains(row),
-        // Inside the box a reader can see, not merely inside the DOM subtree.
-        within: !!(b && r) && r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5,
-      };
-    });
-
-    await page.evaluate(async () => (await import('/src/ui/fullscreen.js')).fullscreen.open());
-    await page.waitForTimeout(300);
-    const fs = await page.evaluate(() => {
-      const r = document.getElementById('video-wrap').getBoundingClientRect();
-      return { w: Math.round(r.width), h: Math.round(r.height),
-               left: Math.round(r.left), top: Math.round(r.top),
-               vw: innerWidth, vh: innerHeight };
-    });
-
-    await page.evaluate(() => document.getElementById('fskbd-btn').click());
-    await page.waitForTimeout(400);
-    const kbd = await page.evaluate(() => {
-      const box = el => { const r = el.getBoundingClientRect();
-        return { top: Math.round(r.top), bottom: Math.round(r.bottom) }; };
-      return {
-        keys: box(document.getElementById('fs-kbd')),
-        actions: box(document.querySelector('.cam-actions')),
-        reserved: getComputedStyle(document.getElementById('video-wrap'))
-                    .getPropertyValue('--fs-kbd-h').trim(),
-      };
-    });
-    // The keyboard is no longer fullscreen-only, so leaving fullscreen keeps
-    // it — and the reserved space shrinks to the windowed keyboard's own
-    // height rather than going away. What must not happen is the FULLSCREEN
-    // height outliving fullscreen: that is what floats the bar off the bottom.
-    await page.evaluate(() => document.getElementById('fs-btn').click());
-    await page.waitForTimeout(300);
-    const afterExit = await page.evaluate(() =>
-      getComputedStyle(document.getElementById('video-wrap'))
-        .getPropertyValue('--fs-kbd-h').trim());
-
-    out[key] = { trackers, fs, kbd, afterExit, errs };
-    await ctx.close();
-  }
-  return out;
-})();
-
-// ── Coming back to a backgrounded tab ────────────────────────────────────
-//
-// Reported as the camera view going black after losing and regaining focus,
-// while the app still read CV ACTIVE with values in the signals panel — values
-// that were frozen, because the inference loop is gated on the video's clock
-// and a paused element has no clock.
-//
-// There is no camera here, so the stream is a stub: what is under test is the
-// wiring, which is the part that was missing. A paused element has to be
-// played again, an ENDED track has to be replaced (play() alone cannot bring
-// back a camera the browser took), and neither may happen while the tab is
-// still hidden.
-const camRestore = await (async () => {
-  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
-  const page = await ctx.newPage();
-  const errs = [];
-  page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(300);
-
-  const out = await page.evaluate(async () => {
-    const { cvSource } = await import('/src/cv.js');
-    const track = state => ({ readyState: state, stop() {} });
-    // Stand in for the element and the camera. `play()` records that it was
-    // asked and un-pauses, exactly as the real one does.
-    const stub = trackState => {
-      const el = {
-        paused: true, plays: 0,
-        srcObject: trackState ? { getVideoTracks: () => [track(trackState)] } : null,
-        play() { this.plays++; this.paused = false; return Promise.resolve(); },
-      };
-      cvSource.video = el;
-      cvSource.running = true;
-      return el;
-    };
-    let acquired = 0;
-    navigator.mediaDevices.getUserMedia = async () => {
-      acquired++;
-      return { getVideoTracks: () => [track('live')], getTracks: () => [track('live')] };
-    };
-
-    // 1. A live track that is merely paused: play it, do not take the camera.
-    const paused = stub('live');
-    await cvSource.restore();
-    const livePaused = { plays: paused.plays, acquired };
-
-    // 2. A track the browser ended: play() cannot bring that back.
-    const ended = stub('ended');
-    await cvSource.restore();
-    const endedTrack = { acquired, replaced: !!ended.srcObject, plays: ended.plays };
-
-    // 3. With no camera running, nothing happens at all — restore() must not
-    //    start a camera nobody asked for.
-    cvSource.running = false;
-    const before = acquired;
-    const idle = stub('live');
-    cvSource.running = false;
-    await cvSource.restore();
-    const whenStopped = { acquired: acquired - before, plays: idle.plays };
-
-    // 4. The real listener, through a real visibilitychange — the wiring.
-    const wired = stub('live');
-    cvSource.running = true;
-    document.dispatchEvent(new Event('visibilitychange'));
-    await new Promise(r => setTimeout(r, 60));
-    const viaEvent = wired.plays;
-
-    cvSource.running = false;
-    cvSource.video = null;
-    return { livePaused, endedTrack, whenStopped, viaEvent };
-  });
-  await ctx.close();
-  return { ...out, errs };
-})();
-
-// ── Pulling a node out of the patchbay ───────────────────────────────────
-//
-// Reported: "when deleting an output that's connected to an input, the input
-// shouldn't be automatically deleted." It was — an asymmetry, not a policy.
-// Deleting an INPUT already kept its outputs on the board; deleting an output
-// did not keep its input, so pulling one node took two, and the one that went
-// uninvited was the one carrying the range and curve.
-const patchDelete = await (async () => {
-  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
-  const page = await ctx.newPage();
-  const errs = [];
-  page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(400);
-
-  const board = () => page.evaluate(() => ({
-    ins:  [...document.querySelectorAll('.ng-col-in  .ng-node')].map(n => n.dataset.key),
-    outs: [...document.querySelectorAll('.ng-col-out .ng-node')].map(n => n.dataset.key),
-    cables: document.querySelectorAll('.ng-wire').length,
-  }));
-  const del = async (kind, key) => {
-    await page.click(`.ng-node-del[data-kind="${kind}"][data-key="${key}"]`);
-    await page.waitForTimeout(200);
-  };
-
-  // A fresh automated context starts blank — the first-run picker is skipped
-  // under webdriver — so string some cables the way a player would, by
-  // applying a starting patch, rather than reaching past the app to build a
-  // rig by hand.
-  await page.evaluate(async () => {
-    const { mapper } = await import('/src/mapper.js');
-    const { renderMapper } = await import('/src/ui/mapper-ui.js');
-    mapper.applyPreset('hands');
-    renderMapper();
-  });
-  await page.waitForTimeout(250);
-  const start = await board();
-  const pair = await page.evaluate(async () => {
-    const { mapper } = await import('/src/mapper.js');
-    const m = mapper.mappings[0];
-    return m ? { signal: m.signal, param: m.audioParam } : null;
-  });
-
-  // Delete the OUTPUT end. The input it was wired to must stay.
-  await del('out', pair.param);
-  const afterOut = await board();
-
-  // And the mirror image, which already worked — pinned so the two halves
-  // cannot drift apart again.
-  const pair2 = await page.evaluate(async () => {
-    const { mapper } = await import('/src/mapper.js');
-    const m = mapper.mappings[0];
-    return m ? { signal: m.signal, param: m.audioParam } : null;
-  });
-  await del('in', pair2.signal);
-  const afterIn = await board();
-
-  await ctx.close();
-  return { start, pair, afterOut, pair2, afterIn, errs };
-})();
-
-// ── The keyboard overlay, and which hand names a chord ───────────────────
-//
-// Two asks from playing. The keyboard was fullscreen-only; the notes it shows
-// are the notes the instrument is quantised to, which is as worth seeing while
-// wiring as while performing. And chord mode read handshapes off BOTH hands
-// outside `hand` expression mode, so a hand held open to drive a filter kept
-// being read as an open palm — "NAMED BY" is what frees it.
-const camKeys = await (async () => {
-  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
-  const page = await ctx.newPage();
-  const errs = [];
-  page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(350);
-
-  const reserved = () => page.evaluate(() =>
-    getComputedStyle(document.getElementById('video-wrap'))
-      .getPropertyValue('--fs-kbd-h').trim());
-  const keys = async () => {
-    await page.evaluate(() => document.getElementById('fskbd-btn').click());
-    await page.waitForTimeout(350);
-  };
-  const geom = () => page.evaluate(() => {
-    const c = document.getElementById('fs-kbd');
-    const w = document.getElementById('video-wrap');
-    const a = document.querySelector('.cam-actions');
-    const cr = c.getBoundingClientRect(), wr = w.getBoundingClientRect();
-    const ar = a.getBoundingClientRect();
-    return {
-      visible: getComputedStyle(c).display !== 'none' && cr.height > 0,
-      insideFrame: Math.round(cr.bottom) <= Math.round(wr.bottom) + 1,
-      clearsActions: Math.round(ar.bottom) <= Math.round(cr.top),
-    };
-  });
-
-  const btnVisible = await page.evaluate(() => {
-    const e = document.getElementById('fskbd-btn');
-    return !!e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0;
-  });
-  await keys();
-  const on = { ...(await geom()), reserved: await reserved() };
-  await keys();
-  const off = await reserved();
-
-  // …and the fullscreen size is still its own, with the windowed one restored
-  // on the way back out.
-  await keys();
-  await page.evaluate(async () => (await import('/src/ui/fullscreen.js')).fullscreen.open());
-  await page.waitForTimeout(400);
-  const fs = await reserved();
-  await page.evaluate(() => document.getElementById('fs-btn').click());
-  await page.waitForTimeout(400);
-  const back = await reserved();
-
-  // NAMED BY
-  const named = await page.evaluate(async () => {
-    const { chordmode } = await import('/src/chordmode.js');
-    const { renderAudioPanel } = await import('/src/ui/audio-ui.js');
-    const read = () => {
-      const el = document.getElementById('ck-name-hand');
-      return el ? { value: el.value, disabled: el.disabled } : null;
-    };
-    chordmode.setEnabled(true);
-    chordmode.setExpression({ mode: 'gesture' });
-    renderAudioPanel();
-    const free = read();
-    // Choosing a hand has to reach the module, not just the <select>.
-    const el = document.getElementById('ck-name-hand');
-    el.value = 'R';
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    const applied = chordmode.getNamingHand();
-    // In `hand` expression mode the naming hand is already decided by which
-    // hand plays, so the control shows that rather than a second opinion.
-    chordmode.setExpression({ mode: 'hand', hand: 'L' });
-    renderAudioPanel();
-    const derived = read();
-    chordmode.setExpression({ mode: 'gesture' });
-    chordmode.setNamingHand('any');
-    renderAudioPanel();
-    return { free, applied, derived };
-  });
-
-  await ctx.close();
-  return { btnVisible, on, off, fs, back, named, errs };
-})();
-
-// ── Calibrating from where a gesture is CHOSEN, and gestures that are not
-// handshapes ──
-//
-// Two asks from playing: "add calibrate buttons to the chord section, so the
-// user can calibrate whatever gesture is chosen for the chord without needing
-// to find it in the handshapes section", and "allow the user to add new
-// gestures, including ones that don't use hands, as well as rename existing
-// ones". Measured at both ends of the width range because the library heading
-// now carries a kind picker as well as REC, and 320px is where that stops
-// fitting on one line.
-const gestureCfg = {};
-for (const [key, vp] of [['desktop', { width: 1440, height: 900 }],
-                         ['phone',   { width: 320,  height: 780 }]]) {
-  const ctx = await b.newContext({ viewport: vp });
-  const page = await ctx.newPage();
-  const errs = [];
-  page.on('pageerror', e => errs.push(String(e)));
-  // The rename affordance goes through prompt(); an unhandled dialog blocks
-  // the page rather than failing, which reads as a hang, not a failure.
-  page.on('dialog', d => d.accept('Renamed Palm'));
-  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(350);
-
-  const m = await page.evaluate(async () => {
-    const { chordmode } = await import('/src/chordmode.js');
-    const { gesture, KINDS } = await import('/src/gesture.js');
-    const { cvSource } = await import('/src/cv.js');
-    const { renderAudioPanel } = await import('/src/ui/audio-ui.js');
-    chordmode.setEnabled(true);
-    chordmode.setDegreeGesture(0, 'palm');
-    renderAudioPanel();
-    document.querySelector('[data-sec="gesture-mode"]').scrollIntoView();
-
-    // Every row that can name a chord can also calibrate what names it —
-    // including RELEASE, which is the same question about the same shapes.
-    const rows = [...document.querySelectorAll('.chord-assign')].map(r => ({
-      degree: r.dataset.degree,
-      gid: r.querySelector('.ch-cal')?.dataset.gid ?? null,
-      disabled: r.querySelector('.ch-cal')?.disabled ?? null,
-    }));
-    // …and a row with nothing on it offers nothing to calibrate.
-    chordmode.setDegreeGesture(0, null);
-    renderAudioPanel();
-    const emptyRow = (() => {
-      const b = document.querySelector('.chord-assign[data-degree="0"] .ch-cal');
-      return { present: !!b, disabled: !!b?.disabled, gid: b?.dataset.gid ?? null };
-    })();
-    chordmode.setDegreeGesture(0, 'palm');
-    renderAudioPanel();
-
-    // The status line has to be reachable with the library shut — that is the
-    // whole point of not having to go and find the shape in it.
-    const lib = document.getElementById('gesture-lib');
-    lib.open = false;
-    const statusEl = document.getElementById('chord-cal-status');
-    const statusInFold = lib.contains(statusEl);
-    const statusHiddenWhenIdle = getComputedStyle(statusEl).display === 'none';
-
-    // Wiring: the row's button reaches the recogniser, naming the gesture on
-    // THAT row. Stubbed, because the real one waits for camera frames.
-    let asked = null;
-    const realRecal = gesture.recalibrate.bind(gesture);
-    gesture.recalibrate = (id, done) => { asked = id; done({ id, name: 'x' }); };
-    Object.defineProperty(cvSource, 'running', { value: true, configurable: true });
-    document.querySelector('.chord-assign[data-degree="0"] .ch-cal').click();
-    await new Promise(r => setTimeout(r, 3200));
-    gesture.recalibrate = realRecal;
-    const statusText = statusEl.textContent;
-
-    // Renaming, from the library row.
-    const wasNamed = gesture.list().find(g => g.id === 'palm').name;
-    lib.open = true;
-    document.querySelector('.gesture-ren[data-gid="palm"]').click();
-    await new Promise(r => setTimeout(r, 150));
-    const { bus } = await import('/src/bus.js');
-    const renamed = {
-      was: wasNamed,
-      now: gesture.list().find(g => g.id === 'palm').name,
-      signal: bus.signals.get('gesture_palm')?.label,
-      row: document.querySelector('.gesture-row[data-gid="palm"] .gesture-name')?.textContent,
-    };
-    gesture.resetNames();
-    renderAudioPanel();
-
-    // The accidentals choose a gesture too — same complaint, same button. In
-    // note voicing with a free hand they are live; when the other hand is
-    // already playing the volume both the picker and its button stand down.
-    chordmode.setVoicing('note');
-    chordmode.setExpression({ mode: 'gesture' });
-    chordmode.setAccidentalGestures({ sharp: 'point', flat: 'peace' });
-    renderAudioPanel();
-    const accFree = ['ck-acc-sharp', 'ck-acc-flat'].map(id => {
-      const b = document.getElementById(id)?.parentElement.querySelector('.ch-cal');
-      return { gid: b?.dataset.gid ?? null, disabled: b?.disabled ?? null };
-    });
-    chordmode.setExpression({ mode: 'hand', hand: 'L' });
-    renderAudioPanel();
-    const accBusy = ['ck-acc-sharp', 'ck-acc-flat'].map(id =>
-      document.getElementById(id)?.parentElement.querySelector('.ch-cal')?.disabled ?? null);
-    chordmode.setExpression({ mode: 'gesture' });
-    chordmode.setVoicing('chord');
-    renderAudioPanel();
-
-    // The picker lives INSIDE the <summary>, so without stopPropagation
-    // choosing a kind folds the library out from under the choice.
-    const kindFolds = await (async () => {
-      lib.open = true;
-      const sel = document.getElementById('record-kind');
-      sel.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await new Promise(r => setTimeout(r, 120));
-      return !lib.open;
-    })();
-
-    // The heading, and the recording controls it now carries.
-    const title = document.querySelector('.gesture-lib-title');
-    const rec = document.querySelector('.gesture-rec-add');
-    const kindSel = document.getElementById('record-kind');
-    const line = el => Math.round(el.getBoundingClientRect().height);
-    return {
-      rows, emptyRow, statusInFold, statusHiddenWhenIdle, asked, statusText, renamed,
-      kindFolds, accFree, accBusy,
-      heading: title?.textContent.trim(),
-      titleH: line(title), oneLine: line(title),
-      recH: line(rec), kindH: line(kindSel),
-      kinds: [...kindSel.querySelectorAll('option')].map(o => o.value),
-      declared: Object.keys(KINDS),
-      // The whole summary must stay inside the panel, not run out of it.
-      overflows: document.querySelector('.gesture-lib-summary').scrollWidth
-               > document.querySelector('.gesture-lib-summary').clientWidth + 1,
-    };
-  });
-  gestureCfg[key] = { ...m, errs };
-  await ctx.close();
-}
-
-// ── Level bars on the patchbay nodes ──
-//
-// Asked for from playing: "display the input and output strengths as bars on
-// the patchbay nodes." The pair is only worth having if it is honest about
-// what each end means — the input bar is the 0–1 the cable is HANDED
-// (bus.norm, adaptive range and all) and the output bar is what it DELIVERS
-// after curve, invert and steps, so the gap between them is the curve made
-// visible. On a plain linear cable they must therefore read identically.
-//
-// And they must cost the layout nothing: the wires are drawn from measured
-// socket positions, so a bar that participated in layout would drag every
-// cable on the canvas every frame.
-const ngBars = await (async () => {
-  const ctx = await b.newContext({ viewport: { width: 1440, height: 1000 } });
-  const page = await ctx.newPage();
-  const errs = [];
-  page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(350);
-
-  const m = await page.evaluate(async () => {
-    const { mapper } = await import('/src/mapper.js');
-    const { bus } = await import('/src/bus.js');
-    const { renderMapper, updateMapperBars } = await import('/src/ui/mapper-ui.js');
-    mapper.applyPreset('hands');
-    renderMapper();
-    await new Promise(r => requestAnimationFrame(r));
-
-    const lvl = (side, key) => parseFloat(
-      document.querySelector(`.ng-level[data-side="${side}"][data-key="${key}"]`)
-        ?.style.getPropertyValue('--lvl') ?? 'NaN');
-    // Smoothed signals creep toward a target, so settle before reading.
-    const settle = (key, target) => {
-      for (let i = 0; i < 400; i++) bus.update(key, target);
-      for (let i = 0; i < 5; i++) mapper.tick();
-      updateMapperBars();
-    };
-
-    // One bar per node, on both sides.
-    const nodes = [...document.querySelectorAll('.ng-node')];
-    const everyNodeHasOne = nodes.every(n => n.querySelector('.ng-level'));
-    const sides = [...document.querySelectorAll('.ng-level')]
-      .map(el => el.dataset.side);
-    const positioned = getComputedStyle(document.querySelector('.ng-level')).position;
-
-    const cable = mapper.mappings.find(x =>
-      x.signal && x.curve === 'linear' && !x.invert && !x.steps);
-    const sig = bus.signals.get(cable.signal);
-    const at = f => sig.min + (sig.max - sig.min) * f;
-
-    // Driving a bar from empty to full must not move the sockets the wires
-    // are drawn between.
-    const socketY = () => [...document.querySelectorAll('.ng-socket')]
-      .map(el => Math.round(el.getBoundingClientRect().top));
-    settle(cable.signal, at(0));
-    const yEmpty = socketY();
-    settle(cable.signal, at(1));
-    const yFull = socketY();
-    const socketsMoved = yEmpty.some((v, i) => v !== yFull[i]);
-
-    // A linear cable delivers what it is handed.
-    const tracks = [];
-    for (const f of [0, 0.25, 0.5, 0.75, 1]) {
-      settle(cable.signal, at(f));
-      tracks.push({ f, in: lvl('in', cable.signal), out: lvl('out', cable.audioParam) });
-    }
-
-    // INVERT mirrors the output bar without touching the input one.
-    const inv = mapper.mappings.find(x => x.signal && x.audioParam !== cable.audioParam);
-    const isig = bus.signals.get(inv.signal);
-    const iat = isig.min + (isig.max - isig.min) * 0.8;
-    const was = inv.invert;
-    inv.invert = false; settle(inv.signal, iat);
-    const straight = { in: lvl('in', inv.signal), out: lvl('out', inv.audioParam) };
-    inv.invert = true;  settle(inv.signal, iat);
-    const flipped = { in: lvl('in', inv.signal), out: lvl('out', inv.audioParam) };
-    inv.invert = was;
-
-    // The track under the bar is what stops an idle node reading as broken.
-    const trackShown = getComputedStyle(
-      document.querySelector('.ng-node'), '::after').content !== 'none';
-
-    return { everyNodeHasOne, sides, positioned, socketsMoved, tracks,
-             straight, flipped, nodeCount: nodes.length, trackShown };
-  });
-
-  await ctx.close();
-  return { ...m, errs };
-})();
-
-// ── The keyboard overlay under the arpeggiator ──
-//
-// Asked for from playing: "keep the keyboard display honest when the
-// arpeggiator is running — currently it just displays all notes in the
-// arpeggio being held, rather than showing what gets pressed, held, released,
-// and faded." The shape of a note and the reading of the schedule are unit
-// tested (tests/unit/arp-keyboard.test.js); what needs a browser is that the
-// overlay ASKS the arpeggiator at all, and that a level actually reaches the
-// canvas rather than being rounded away.
-const arpKbd = await (async () => {
-  const ctx = await b.newContext({ viewport: { width: 1024, height: 800 } });
-  const page = await ctx.newPage();
-  const errs = [];
-  page.on('pageerror', e => errs.push(String(e)));
-  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(350);
-
-  const m = await page.evaluate(async () => {
-    const { chordmode } = await import('/src/chordmode.js');
-    const { arpvoice } = await import('/src/arpvoice.js');
-    const { updateFsOverlay } = await import('/src/ui/fullscreen.js');
-    chordmode.setEnabled(true);
-    document.getElementById('fskbd-btn').click();
-    await new Promise(r => setTimeout(r, 250));
-
-    const shot = () => {
-      const c = document.getElementById('fs-kbd');
-      return c.getContext('2d').getImageData(0, 0, c.width, c.height).data.join(',');
-    };
-    // Total cyan INK on the keyboard: how many pixels are tinted, weighted by
-    // how strongly. Counting pixels over a fixed threshold instead would be
-    // blind to exactly the thing under test — a note at 35% is drawn, just
-    // pale, and a threshold tuned for a struck note scores it the same as
-    // silence. (It did, on the first run of this block: "dimmer than a struck
-    // one — 0px vs 378px" passed while proving nothing.) The chord tint is
-    // cyan over grey keys, so green-minus-red rises with the level.
-    const ink = () => {
-      const c = document.getElementById('fs-kbd');
-      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-      let sum = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        const v = d[i + 1] - d[i];        // green over red
-        if (v > 4) sum += v;              // ignore the keys' own faint tint
-      }
-      return Math.round(sum / 1000);
-    };
-    const redraw = async () => {
-      const { makeKbdView } = await import('/src/ui/keyboard.js');
-      void makeKbdView;                 // the view caches; force it to repaint
-      updateFsOverlay();
-      await new Promise(r => requestAnimationFrame(r));
-      updateFsOverlay();
-    };
-
-    const CHORD = [261.63, 329.63, 392.0];
-    Object.defineProperty(arpvoice, 'enabled', { get: () => true, configurable: true });
-
-    // The keys have a colour of their own, so an empty keyboard is not zero
-    // ink. Measure that floor rather than assuming one — comparing against a
-    // guessed zero is how the previous version of this block passed while the
-    // note under test was invisible.
-    arpvoice.voices = () => [];
-    await redraw();
-    const baseline = ink();
-
-    // One note, full — an arpeggio's actual state.
-    arpvoice.voices = () => [{ freq: CHORD[0], level: 1 }];
-    await redraw();
-    const oneNote = ink();
-    const oneShot = shot();
-
-    // The whole chord down — what the overlay used to draw regardless.
-    arpvoice.voices = () => CHORD.map(f => ({ freq: f, level: 1 }));
-    await redraw();
-    const wholeChord = ink();
-
-    // The same one note, half faded: fewer cyan pixels, and a different
-    // picture — a level that got rounded to "on" would give an identical one.
-    arpvoice.voices = () => [{ freq: CHORD[0], level: 0.35 }];
-    await redraw();
-    const faded = ink();
-    const fadedShot = shot();
-
-    // Faded all the way out is nothing at all.
-    arpvoice.voices = () => [];
-    await redraw();
-    const silent = ink();
-
-    return { baseline, oneNote, wholeChord, faded, silent,
-             fadeChangedPicture: fadedShot !== oneShot };
-  });
-
-  await ctx.close();
-  return { ...m, errs };
 })();
 
 await b.close(); server.close();
@@ -2135,32 +1522,32 @@ console.log('\nSaved setups\n');
     'a built-in patch clears the name — it is not one of yours',
     `“${p.afterPreset.text}” hidden=${p.afterPreset.hidden}`);
 
-  const sh = p.share;
-  check(p.noCamQr,
-    'the setup is no longer drawn onto the camera view — 129px was never a corner ornament');
-  check(sh.open, 'SHARE opens');
-  // A full-bleed sheet, not a card. What this holds is a code being read by
-  // somebody else's camera across a table, and every pixel of screen is reach.
-  check(sh.pop.w === sh.vw && sh.pop.h === sh.vh && sh.pop.left === 0 && sh.pop.top === 0,
-    'and takes the whole screen',
-    `${sh.pop.w}x${sh.pop.h} at ${sh.pop.left},${sh.pop.top} in ${sh.vw}x${sh.vh}`);
-  check(sh.qr.w === sh.qr.h, 'the code is square', `${sh.qr.w}x${sh.qr.h}`);
-  // The old card capped it at 300px however much screen there was. Anything
-  // that reintroduces a fixed cap fails here rather than on someone's table.
-  check(sh.qr.w > 300, 'and is bigger than the card that used to hold it',
-    `${sh.qr.w}px`);
-  check(sh.qr.w <= sh.vw && sh.qr.h <= sh.vh,
-    'while still fitting on the screen — a cropped code scans like no code',
-    `${sh.qr.w}px in ${sh.vw}x${sh.vh}`);
-  // Full-bleed is for the code, not for a text field stretched across a
-  // desktop monitor.
-  check(sh.labelW < sh.vw, 'the rest of the sheet keeps a readable measure',
-    `name field ${sh.labelW}px of ${sh.vw}px`);
-  // The claim worth testing: a decoder reads it back off the actual pixels.
-  check(p.decoded.text === p.want,
-    'and a screenshot of it decodes back to this setup’s link',
+  const q = p.qr, w = p.want;
+  check(q.shown, 'DEV puts the setup on the frame as a code');
+  // One pixel per module, plus the spec's 4-module quiet zone on each side,
+  // and no CSS scaling on top — a module smeared across a pixel boundary is
+  // what actually stops a code decoding, not a module being small.
+  check(q.px === w.modules + 8,
+    'the code is drawn at exactly one pixel per module, quiet zone included',
+    `${w.modules} modules + 8 → ${q.px}px`);
+  check(q.cssW === q.px && q.cssH === q.px,
+    'and CSS does not scale it back up', `${q.cssW}x${q.cssH}px on a ${q.px}px canvas`);
+  // The code cannot be made smaller — that is the finding — so a dense setup
+  // makes it a large fraction of a small camera panel. What has to hold is
+  // that it stays INSIDE the picture, in the corner it was put in, and never
+  // takes a click from the controls it may reach over.
+  check(q.wrapW <= q.frameW && q.wrapH <= q.frameH,
+    'it fits inside the picture', `${q.wrapW}x${q.wrapH} in ${q.frameW}x${q.frameH}`);
+  check(q.inset.right === q.inset.want && q.inset.bottom === q.inset.want,
+    'anchored to the bottom-right corner, at the shared inset',
+    JSON.stringify(q.inset));
+  check(q.clickThrough, 'and never swallows a click — it is a picture, not a control');
+  // The claim being tested: readable from a SCREENSHOT of the screen, which is
+  // what someone photographing or grabbing the window actually gets.
+  check(p.decoded.text === w.url,
+    'a screenshot of that code decodes back to this setup’s link',
     p.decoded.text === null ? `no code found in ${p.decoded.w}x${p.decoded.h}px`
-      : `${p.decoded.text.length} chars, ${p.decoded.text === p.want ? 'match' : 'MISMATCH'}`);
+      : `${p.decoded.text.length} chars, ${p.decoded.text === w.url ? 'match' : 'MISMATCH'}`);
 }
 
 // ── The controls on the picture are one system ──
@@ -2215,220 +1602,6 @@ console.log('\nCamera-view controls\n');
   check(camctl.full.ctrlH > camctl.small.ctrlH && camctl.full.inset > camctl.small.inset,
     'fullscreen scales the system rather than replacing it',
     `${camctl.small.ctrlH}px→${camctl.full.ctrlH}px, inset ${camctl.small.inset}→${camctl.full.inset}`);
-}
-
-// ── The camera view at its two sizes ──
-console.log('\nCamera view — fullscreen, the keyboard, and the container\n');
-for (const [label, m] of Object.entries(camView)) {
-  check(m.errs.length === 0, `${label}: no page errors`, m.errs.join(' | '));
-  check(m.fs.w === m.fs.vw && m.fs.h === m.fs.vh && m.fs.left === 0 && m.fs.top === 0,
-    `${label}: fullscreen fills the screen`,
-    `${m.fs.w}x${m.fs.h} at ${m.fs.left},${m.fs.top} in ${m.fs.vw}x${m.fs.vh}`);
-  check(m.kbd.actions.bottom <= m.kbd.keys.top,
-    `${label}: the controls sit above the keyboard, not on it`,
-    `actions end ${m.kbd.actions.bottom}, keys start ${m.kbd.keys.top}`);
-  check(parseFloat(m.kbd.reserved) > 0,
-    `${label}: and the space they clear is the keyboard's own height`, m.kbd.reserved);
-  check(parseFloat(m.afterExit) > 0 && parseFloat(m.afterExit) < parseFloat(m.kbd.reserved),
-    `${label}: leaving fullscreen resizes that space rather than keeping it`,
-    `${m.kbd.reserved} → ${m.afterExit || '(unset)'}`);
-  check(m.trackers.inBody && m.trackers.within,
-    `${label}: the tracker toggles are inside the Camera Input container`,
-    `inBody=${m.trackers.inBody} withinBox=${m.trackers.within}`);
-}
-
-// ── Coming back to a backgrounded tab ──
-console.log('\nCamera restore after losing focus\n');
-{
-  const m = camRestore;
-  check(m.errs.length === 0, 'no page errors', m.errs.join(' | '));
-  check(m.livePaused.plays === 1,
-    'a paused element is played again — that is the black frame',
-    `play() called ${m.livePaused.plays}×`);
-  check(m.livePaused.acquired === 0,
-    'and a live track is reused rather than the camera being taken again',
-    `${m.livePaused.acquired} getUserMedia calls`);
-  check(m.endedTrack.acquired === 1 && m.endedTrack.replaced,
-    'an ENDED track is replaced — play() cannot bring back a camera the browser took',
-    `${m.endedTrack.acquired} getUserMedia calls, stream replaced=${m.endedTrack.replaced}`);
-  check(m.endedTrack.plays === 1, 'and the new stream is played');
-  check(m.whenStopped.acquired === 0 && m.whenStopped.plays === 0,
-    'with no camera running it does nothing — focus never starts one uninvited',
-    `${m.whenStopped.acquired} getUserMedia, ${m.whenStopped.plays} play()`);
-  check(m.viaEvent === 1,
-    'and a real visibilitychange drives it, not just a direct call',
-    `play() called ${m.viaEvent}×`);
-}
-
-// ── Pulling a node out of the patchbay ──
-console.log('\nPatchbay node deletion\n');
-{
-  const p = patchDelete;
-  check(p.errs.length === 0, 'no page errors', p.errs.join(' | '));
-  check(!!p.pair, 'the default patch has a cable to work on');
-  check(!p.afterOut.outs.includes(p.pair.param),
-    'deleting an output removes that output', p.pair.param);
-  // The bug, in one line.
-  check(p.afterOut.ins.includes(p.pair.signal),
-    'and LEAVES the input it was wired to on the board',
-    `${p.pair.signal} in [${p.afterOut.ins.join(', ')}]`);
-  check(p.afterOut.cables === p.start.cables - 1,
-    'exactly one cable goes with it',
-    `${p.start.cables} → ${p.afterOut.cables}`);
-  check(!p.afterIn.ins.includes(p.pair2.signal),
-    'deleting an input removes that input', p.pair2.signal);
-  check(p.afterIn.outs.includes(p.pair2.param),
-    'and leaves ITS output — the two halves behave the same way now',
-    `${p.pair2.param} in [${p.afterIn.outs.join(', ')}]`);
-}
-
-// ── Keyboard overlay + NAMED BY ──
-console.log('\nKeyboard overlay and the naming hand\n');
-{
-  const m = camKeys;
-  check(m.errs.length === 0, 'no page errors', m.errs.join(' | '));
-  check(m.btnVisible, '🎹 KEYS is reachable without going fullscreen first');
-  check(m.on.visible, 'and it shows the keyboard in the windowed view');
-  check(m.on.insideFrame, 'inside the frame, not hanging off the bottom');
-  check(m.on.clearsActions, 'with the controls riding above it, as in fullscreen');
-  check(parseFloat(m.on.reserved) > 0, 'the space it takes is reserved', m.on.reserved);
-  // The bug this exposed: the button removes the class itself, so the RAF
-  // path's early-out skipped the publish and the space stayed reserved.
-  check(parseFloat(m.off) === 0, 'and given back when the keyboard is switched off', m.off);
-  check(parseFloat(m.fs) > parseFloat(m.on.reserved),
-    'fullscreen still gets its own, larger keyboard', `${m.on.reserved} → ${m.fs}`);
-  check(m.back === m.on.reserved,
-    'and the windowed size comes back on the way out', `${m.fs} → ${m.back}`);
-
-  check(m.named.free?.value === 'any' && m.named.free?.disabled === false,
-    'NAMED BY offers a choice, defaulting to EITHER — the old behaviour',
-    JSON.stringify(m.named.free));
-  check(m.named.applied === 'R', 'and choosing a hand reaches chord mode', m.named.applied);
-  check(m.named.derived?.disabled === true && m.named.derived?.value === 'R',
-    'in hand-expression mode it shows the hand PLAY WITH already decided',
-    JSON.stringify(m.named.derived));
-}
-
-// ── Calibrate where you choose, and gestures that are not handshapes ──
-console.log('\nGesture configurations — calibrating in place, and non-hand kinds\n');
-for (const [label, m] of Object.entries(gestureCfg)) {
-  check(m.errs.length === 0, `${label}: no page errors`, m.errs.join(' | '));
-
-  // Every degree, plus RELEASE — one gesture each, one calibrate each.
-  check(m.rows.length === 8, `${label}: seven degrees and RELEASE`, `${m.rows.length} rows`);
-  check(m.rows.every(r => r.gid !== null),
-    `${label}: every row that names a chord can calibrate what names it`,
-    JSON.stringify(m.rows.filter(r => r.gid === null)));
-  check(m.rows.every(r => r.disabled === false),
-    `${label}: and they are live wherever a gesture is assigned`,
-    JSON.stringify(m.rows.filter(r => r.disabled)));
-  check(m.emptyRow.present && m.emptyRow.disabled,
-    `${label}: an unassigned row offers nothing to calibrate`,
-    JSON.stringify(m.emptyRow));
-
-  // The point of the button is not having to go and find the shape, so its
-  // status must not report into the fold it saves you opening.
-  check(m.statusInFold === false,
-    `${label}: it reports outside the library, which may well be shut`);
-  check(m.statusHiddenWhenIdle,
-    `${label}: and takes no room while nothing is calibrating`);
-  check(m.asked === 'palm', `${label}: the button calibrates ITS OWN row's gesture`, m.asked);
-  check(/Open Palm/.test(m.statusText) && /✓/.test(m.statusText),
-    `${label}: naming the gesture and saying when it is done`, m.statusText);
-
-  // Renaming.
-  check(m.renamed.now === 'Renamed Palm' && m.renamed.was !== m.renamed.now,
-    `${label}: a gesture can be renamed`, JSON.stringify(m.renamed));
-  check(m.renamed.signal === 'ASL 5 · Renamed Palm',
-    `${label}: the gloss survives it, and the signal label follows`, m.renamed.signal);
-  check(m.renamed.row === '5 · Renamed Palm',
-    `${label}: and so does the row`, m.renamed.row);
-
-  // Non-hand kinds.
-  check(m.heading === 'GESTURE CONFIGURATIONS',
-    `${label}: the library is no longer only handshapes`, m.heading);
-  check(m.kinds.join() === 'hand,face,body' && m.kinds.join() === m.declared.join(),
-    `${label}: REC offers every kind the recogniser actually has`,
-    `${m.kinds.join()} vs ${m.declared.join()}`);
-
-  // "GESTURE" over "CONFIGURATIONS" reads as two headings, and REC parted
-  // from its own picker reads as an unlabelled button.
-  check(m.titleH <= 20, `${label}: the heading stays on one line`, `${m.titleH}px`);
-  check(m.recH <= m.kindH + 4,
-    `${label}: REC stays beside the picker that says what it will record`,
-    `rec ${m.recH}px vs picker ${m.kindH}px`);
-  check(!m.overflows, `${label}: and the heading does not run out of the panel`);
-  check(!m.kindFolds,
-    `${label}: choosing a kind does not fold the library it sits in`);
-
-  // The accidentals choose a gesture as much as a degree row does.
-  check(m.accFree.every(a => a.gid && a.disabled === false),
-    `${label}: the accidental pickers calibrate their own gesture too`,
-    JSON.stringify(m.accFree));
-  check(m.accBusy.every(d => d === true),
-    `${label}: and stand down with the picker when the other hand is busy`,
-    JSON.stringify(m.accBusy));
-}
-
-// ── Level bars on the patchbay nodes ──
-console.log('\nPatchbay level bars\n');
-{
-  const m = ngBars;
-  check(m.errs.length === 0, 'no page errors', m.errs.join(' | '));
-  check(m.nodeCount > 0 && m.everyNodeHasOne,
-    'every node carries a level bar', `${m.nodeCount} nodes`);
-  check(m.sides.includes('in') && m.sides.includes('out'),
-    'on both the input and the output side', m.sides.join(','));
-
-  // The one that would be expensive to get wrong: the wires are drawn from
-  // measured socket positions every render.
-  check(m.positioned === 'absolute',
-    'the bar is taken out of flow, so it cannot resize its node');
-  check(!m.socketsMoved,
-    'and driving a bar from empty to full moves no socket, so no wire moves');
-  check(m.trackShown, 'an idle node still shows its empty track, not nothing');
-
-  // Input = what the cable is handed; output = what it delivers. On a linear
-  // cable those are the same number, which is what makes the pair readable.
-  const near = (a, b) => Math.abs(a - b) <= 0.02;
-  check(m.tracks.every(t => near(t.in, t.out)),
-    'a linear cable delivers what it is handed, so the two bars agree',
-    JSON.stringify(m.tracks));
-  check(near(m.tracks[0].in, 0) && near(m.tracks.at(-1).in, 1),
-    'and the input bar spans its full travel', JSON.stringify(m.tracks));
-
-  // INVERT is an output-side reversal: the input is unchanged, the output
-  // mirrors. (This cable is on a curve, so the pair mirrors about 1 rather
-  // than matching — which is the point: the gap IS the curve.)
-  check(near(m.straight.in, m.flipped.in),
-    'INVERT leaves the input bar alone', `${m.straight.in} vs ${m.flipped.in}`);
-  check(near(m.straight.out + m.flipped.out, 1),
-    'and mirrors the output bar', `${m.straight.out} + ${m.flipped.out}`);
-}
-
-// ── The keyboard overlay under the arpeggiator ──
-console.log('\nKeyboard overlay while the arpeggiator runs\n');
-{
-  const m = arpKbd;
-  check(m.errs.length === 0, 'no page errors', m.errs.join(' | '));
-  check(m.oneNote > m.baseline,
-    'a struck note lights the keyboard', `${m.oneNote} vs empty ${m.baseline}`);
-  // The bug, stated as a measurement: a run sounds one note at a time, so it
-  // must not paint as much of the keyboard as a block chord does.
-  check(m.wholeChord > m.oneNote * 1.5,
-    'and one note is visibly less than the whole chord — an arpeggio is not a chord',
-    `${m.oneNote} vs ${m.wholeChord} ink`);
-  // Strictly BETWEEN silence and a struck note: dimmer than struck, and still
-  // actually on the screen. Half of that is what the first version of this
-  // block failed to check, and it passed while the note was invisible.
-  check(m.faded < m.oneNote && m.faded > m.baseline,
-    'a note part-way through its release is dimmer than a struck one, and still lit',
-    `${m.faded} vs struck ${m.oneNote}, empty ${m.baseline}`);
-  check(m.fadeChangedPicture,
-    'so the level reaches the canvas rather than being rounded to on/off');
-  check(m.silent === m.baseline,
-    'and a note that has faded out leaves the keyboard exactly as it found it',
-    `${m.silent} vs empty ${m.baseline}`);
 }
 
 console.log(`\n${fail} failure(s)\n`);

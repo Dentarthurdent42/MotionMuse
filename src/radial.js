@@ -450,7 +450,7 @@ export const radial = (() => {
     // its continuous level to zero.
     if (volume.mode !== 'off') engine.setChordLevel(0);
     else engine.releaseChord();
-    arpvoice.release();   // a release, not a handover — let the tail ring out
+    arpvoice.stop();
     sounding = null;
     latched = null;
     voicedSig = null;
@@ -733,7 +733,7 @@ export const radial = (() => {
         if (named !== null) latched = named;   // silent: the pointer re-aims freely
         if (sounding !== null) {
           engine.setChordLevel(0);
-          arpvoice.release();                  // silence is a real state, not a quiet one
+          arpvoice.stop();                     // silence is a real state, not a quiet one
           sounding = null; voicedSig = null;
         }
         return;
@@ -745,7 +745,7 @@ export const radial = (() => {
         // has. That is a release: a latch pointing at nothing is a note
         // nothing could ever stop.
         engine.setChordLevel(0);
-        arpvoice.release();
+        arpvoice.stop();
         sounding = null; latched = null; voicedSig = null;
         return;
       }

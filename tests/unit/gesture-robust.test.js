@@ -15,7 +15,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  gesture, matchGesture, kindOf, FEATURES, MATCH_THRESHOLD,
+  gesture, matchGesture, FEATURES, MATCH_THRESHOLD,
 } from '../../src/gesture.js';
 
 // Deterministic PRNG so failures reproduce exactly.
@@ -65,13 +65,7 @@ const nonGesture = () => FEATURES.map((n, i) => {
 // Only entries that carry a template: Thumbs Down and I Love You come from
 // MediaPipe's classifier and deliberately ship without one, so there is nothing
 // here to degrade or to steal a pose with.
-//
-// Hand templates only, because `degrade` above is a model of how a HAND
-// deviates from its template — finger extensions, thumb contacts, palm
-// openness. Running an arm pose through it would be measuring a fiction, and
-// matchGesture never asks the two kinds the same question anyway. The
-// semaphore poses have their own degradation model in semaphore.test.js.
-const T = gesture.list().filter(g => g.f && kindOf(g) === 'hand');
+const T = gesture.list().filter(g => g.f);
 const CLASSICS = ['fist', 'point', 'peace', 'thumbs', 'palm', 'horns'];
 const N = 500;
 

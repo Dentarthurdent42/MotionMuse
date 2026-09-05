@@ -46,22 +46,11 @@ test('the gloss leads the label it is sorted by', () => {
 
 test('handshapes with no gloss are not ASL, so they are not reordered', () => {
   // They follow the glossed ones, in the order they are declared.
-  const tail = gesture.list().filter(g => !g.asl && !g.sem && g.builtin).map(g => g.id);
-  assert.deepEqual(tail, ['horns', 'thumbsdown', 'sem_rest']);
+  const tail = gesture.list().filter(g => !g.asl && g.builtin).map(g => g.id);
+  assert.deepEqual(tail, ['horns', 'thumbsdown']);
   const ids = gesture.list().map(g => g.id);
   assert.ok(ids.indexOf('horns') > ids.indexOf('fist'),
     'the unglossed ones sit after every glossed one');
-});
-
-test('semaphore is its own gloss, in the order the circle is signed', () => {
-  // A letter is a gloss too, just not an ASL one — so the poses are a block
-  // of their own rather than being sorted in among the numerals (where 'A'
-  // would land between 'ILY' and 'L') or dropped in with the unglossed.
-  const ids = gesture.list().filter(g => g.sem).map(g => g.id);
-  assert.deepEqual(ids, ['sem_a', 'sem_b', 'sem_c', 'sem_d', 'sem_e', 'sem_f', 'sem_g']);
-  const all = gesture.list().map(g => g.id);
-  assert.ok(all.indexOf('sem_a') > all.indexOf('gun'),
-    'the ASL glosses come first');
 });
 
 test('ordering keeps every handshape, exactly once', () => {
