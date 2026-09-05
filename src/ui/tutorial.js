@@ -111,22 +111,18 @@ export const TOUR_STEPS = [
 
   // ── Tone Mode ──
   {
-    id: 'patch-nodes', section: 'camera', modes: ['osc'], target: '#cam-signals', title: 'Tone Mode',
-    body: 'Signals drive the synth continuously, and the wiring is on the ' +
-          'canvas: every <b>signal</b> is an output socket ● on the node that ' +
-          'measures it, every <b>parameter</b> an input socket ● on the node ' +
-          'that owns it, and a cable between them is the connection. Drag ● ' +
-          'to ● to connect. One signal can drive several parameters.',
+    id: 'patchbay', section: 'patchbay', modes: ['osc'], target: '.panel-map', title: 'Tone Mode',
+    body: 'Signals drive the synth continuously; the patchbay wires them. ' +
+          '<b>Inputs</b> left, <b>outputs</b> right — drag socket ● to ' +
+          'socket ● to connect. One signal can drive several parameters.',
   },
   {
-    id: 'cable-editor-node', modes: ['osc'], target: '#add-node-btn', title: 'Edit a cable',
-    body: 'Click a cable, or right-click the input it runs into: its editor ' +
-          'opens with range, curve, steps and invert. Oscillator-frequency ' +
-          'cables add a piano keyboard for picking note ranges. A <b>ƒ</b> ' +
-          'function node (from <b>+ NODE</b>) computes between cables.',
+    id: 'cable-editor', section: 'patchbay', modes: ['osc'], target: '.panel-map', title: 'Edit a cable',
+    body: 'Tap a cable: range, curve, steps, invert. Oscillator-frequency ' +
+          'cables add a piano keyboard for picking note ranges.',
   },
   {
-    id: 'preset', modes: ['osc'], target: '#preset-btn', title: 'Presets',
+    id: 'preset', section: 'patchbay', modes: ['osc'], target: '#preset-btn', title: 'Presets',
     body: '<b>PRESET</b> loads a complete patch: right hand height plays ' +
           'pitch, pinch controls volume. <b>Your setups</b> sit above the ' +
           'built-in ones — anything you named in SHARE, or opened from a ' +
@@ -157,13 +153,12 @@ export const TOUR_STEPS = [
           'again to toggle back; the cursor key disarms everything.',
   },
   {
-    id: 'signals', section: 'camera', target: '#cam-signals', title: 'Signals',
-    body: 'Everything the camera measures, live, as this node’s outputs: wrist ' +
-          'height, pinch, finger curl, elbow angle, fingertip touches. Most read ' +
-          'on two channels — <b>displacement</b> is where you are, <b>velocity</b> ' +
-          'is how fast you are moving. A held pose and a flick are different ' +
-          'controls. Each channel ends in a socket ●: drag it to a parameter’s ' +
-          '● anywhere on the canvas to wire it. Click a row to copy its key.',
+    id: 'signals', section: 'signals', target: '#sig-list', title: 'Signals',
+    body: 'Everything the camera measures, live: wrist height, pinch, finger ' +
+          'curl, elbow angle, fingertip touches. Most read on two channels — ' +
+          '<b>displacement</b> is where you are, <b>velocity</b> is how fast ' +
+          'you are moving. A held pose and a flick are different controls. ' +
+          'Any channel can drive any sound parameter; click one to copy its key.',
   },
   {
     id: 'looper', section: 'looper', target: '#loop-state', needs: ['audio'], title: 'Loop pedal',
@@ -179,10 +174,9 @@ export const TOUR_STEPS = [
           '<b>off</b> (a nod is also just a nod); the buttons work either way.',
   },
   {
-    id: 'save-load', target: '#preset-btn', title: 'Save and load',
-    body: 'At the foot of the PRESET menu, <b>SAVE</b> downloads the whole ' +
-          'setup as one file and <b>LOAD</b> restores it. The session also ' +
-          'auto-saves locally.',
+    id: 'save-load', section: 'patchbay', target: '#save-btn', title: 'Save and load',
+    body: '<b>SAVE</b> downloads the whole setup as one file; <b>LOAD</b> ' +
+          'restores it. The session also auto-saves locally.',
   },
   {
     id: 'audio', target: '#audio-btn', title: 'Sound',
@@ -190,14 +184,13 @@ export const TOUR_STEPS = [
           '<b>Space</b> to unmute.',
   },
   {
-    id: 'audio-group', target: '[data-node="group:audio"]', needs: ['audio'], title: 'The audio engine',
-    body: 'Oscillators, filter, reverb, both quantizers — one node each, ' +
-          'framed as a group. Every control here can also be driven by a ' +
-          'cable. Each node’s <b>?</b> explains that node; the group’s caret ' +
-          'collapses the whole engine into one node.',
+    id: 'audio-panel', target: '#audio-panel', needs: ['audio'], title: 'The audio engine',
+    body: 'Oscillators, filter, reverb, both quantizers. Every control here ' +
+          'can also be driven from the patchbay. Each panel’s <b>?</b> ' +
+          'explains that panel.',
   },
   {
-    id: 'sec-visualizer', section: 'output', target: '#viz-wrap', needs: ['audio'],
+    id: 'sec-visualizer', section: 'visualizer', target: '#viz-wrap', needs: ['audio'],
     title: 'Oscilloscope',
     body: 'The output waveform. It keeps moving while muted. Tap it to mute ' +
           'or unmute.',
@@ -245,29 +238,23 @@ export const TOUR_STEPS = [
           'bottom step true silence; <b>PLUCK / KEY / BOW</b> set the attack.',
   },
   {
-    id: 'sec-inputs', section: 'output', target: '#output-params', needs: ['audio'],
-    title: 'Inputs',
-    body: 'Every slider, switch and choice carries an input socket ● beside ' +
-          'it. Drag to set a value by hand; wire a signal into the socket and ' +
-          'the control follows it — a filter type, the key, the tempo included.',
+    id: 'sec-sliders', section: 'sliders', target: '.sec[data-sec-id="sliders"]', needs: ['audio'],
+    title: 'Parameters',
+    body: 'Every audio parameter, grouped like the patchbay’s outputs. Drag ' +
+          'to set a value; a mapped parameter follows its signal.',
   },
   {
-    // Rearranging is invisible until someone tries it, so the tour is the
-    // place a user finds out the canvas is theirs.
-    id: 'workspace', target: '#ws', title: 'Everything is a node',
-    body: 'The whole interface is one canvas. Drag empty space to <b>pan</b>, ' +
-          'scroll to <b>zoom</b>, <b>⌂ FIT</b> to see it all. Drag a node by ' +
-          'its <b>header</b>; its corner <b>grip</b> resizes it, the ' +
-          '<b>caret</b> folds it, <b>⌖</b> pins it to the screen, <b>×</b> ' +
-          'closes it (<b>+ NODE</b> brings anything back). Select several and ' +
-          'press <b>Ctrl+G</b> to fold them into one group node; ' +
-          '<b>⋮⋮ TIDY</b> lays them out. Right-click anything for more. ' +
+    // Rearranging is invisible until someone tries it — there is no button for
+    // it — so the tour is the only place a user finds out it exists.
+    id: 'layout', target: '#audio-panel', needs: ['audio'], title: 'Rearrange anything',
+    body: 'Drag a section’s <b>header</b> to move it, its bottom <b>grip</b> ' +
+          'to resize (double-click to fit), the <b>caret</b> to collapse. ' +
           'The layout is remembered.',
   },
   {
     // No modes gate any more: the game now has a chart for every way of
     // playing, so every tour gets to hear about it.
-    id: 'playalong', section: 'play-along', target: '#game-btn', needs: ['audio'], title: 'Play along',
+    id: 'playalong', section: 'play-along', target: '#audio-panel', needs: ['audio'], title: 'Play along',
     body: 'A falling-note game with a chart for every way of playing: songs ' +
           'for the quantised lead, and <b>generated</b> charts — fresh every ' +
           'start, in your key — for handshapes and the radial ring. ' +
@@ -575,7 +562,7 @@ export function initTutorial() {
   tour.syncButton();
 }
 
-// Run one panel's help. Exported for ui/workspace.js, which owns the header button
+// Run one panel's help. Exported for sections.js, which owns the header button
 // it hangs off; keeping the wiring there means a panel added later gets a `?`
 // for free, the same way it gets a fold caret and a grip.
 export function startSectionHelp(sectionId) {
@@ -598,7 +585,7 @@ export function startSectionHelp(sectionId) {
 // missing or hidden are skipped at runtime anyway, so a setup with no face
 // tracking never reaches the face step without this having to know about it.
 export const stepsForSharedSetup = () => stepsForMode(currentMode()).filter(t =>
-  t.id !== 'welcome' && !(t.id === 'patch-nodes' && !mapper.mappings.length));
+  t.id !== 'welcome' && !(t.section === 'patchbay' && !mapper.mappings.length));
 
 // Offered only on the FIRST open of a given link (share.js fingerprints them)
 // and only when it has something to say: someone who has already seen these

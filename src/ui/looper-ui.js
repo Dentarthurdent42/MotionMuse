@@ -13,9 +13,6 @@ import { cvSource } from '../cv.js';
 import { faceSource } from '../face.js';
 import { lsGet, lsSet } from '../storage.js';
 import { toast } from './status.js';
-import { inPort } from './ports.js';
-import { rows } from './rows.js';
-import { defineControls } from '../controls.js';
 
 const KEY_SRC = 'motionmuse-pedal-src';
 const KEY_SENS = 'motionmuse-pedal-sens';
@@ -51,52 +48,6 @@ export const pedal = makePedal({
 // gesture is opt-in now; the transport buttons work from the start either
 // way, so nothing is out of reach, only out of the way.
 let pedalOn = lsGet(KEY_ON) === '1';
-
-// The pedal's own settings, as inputs a cable can drive (src/controls.js
-// holds the rest of the transport). Defined here because the state is here.
-const PEDAL_IDS = Object.keys(PEDAL_SOURCES);
-defineControls({
-  loop_pedal_src: {
-    label: 'Pedal Gesture', min: 0, max: PEDAL_IDS.length - 1, options: PEDAL_IDS,
-    read: () => Math.max(0, PEDAL_IDS.indexOf(pedal.source)),
-    apply: v => {
-      const id = PEDAL_IDS[Math.round(v)] ?? DEFAULT_PEDAL;
-      if (id === pedal.source) return;
-      pedal.source = id; pedal.reset(); lsSet(KEY_SRC, id);
-      const sel = document.getElementById('pedal-src');
-      if (sel) sel.value = id;
-    },
-  },
-  loop_pedal_on: {
-    label: 'Pedal Armed', min: 0, max: 1, toggle: true,
-    read: () => (pedalOn ? 1 : 0),
-    apply: v => {
-      const on = Math.round(v) >= 1;
-      if (on === pedalOn) return;
-      setPedalOn(on);
-    },
-  },
-  loop_sensitivity: {
-    label: 'Sensitivity', min: 0.3, max: 4, slider: true,
-    read: () => pedal.sensitivity,
-    apply: v => {
-      const r = +Number(v).toFixed(2);
-      if (r === +pedal.sensitivity.toFixed(2)) return;
-      pedal.sensitivity = r; lsSet(KEY_SENS, String(r));
-    },
-  },
-});
-function setPedalOn(on) {
-  pedalOn = on;
-  lsSet(KEY_ON, on ? '1' : '0');
-  const btn = document.getElementById('pedal-on');
-  if (btn) {
-    btn.classList.toggle('on', on);
-    btn.setAttribute('aria-pressed', String(on));
-    btn.textContent = on ? 'ON' : 'OFF';
-  }
-  pedal.reset();
-}
 export const pedalEnabled = () => pedalOn;
 
 // The tracker the chosen pedal needs, and whether it is actually running.
@@ -111,7 +62,7 @@ function pedalReady() {
 export function looperSectionHTML() {
   return `
     <div class="audio-section" data-sec="looper">
-      <div class="audio-section-label">Loop Pedal <span class="head-sock">${inPort('loop_pedal')}</span></div>
+      <div class="audio-section-label">Loop Pedal</div>
       <div class="loop-transport">
         <div class="loop-bar"><div class="loop-bar-fill" id="loop-pos"></div></div>
         <div class="loop-read">
@@ -121,38 +72,27 @@ export function looperSectionHTML() {
       </div>
       <div class="wave-btns">
         <button type="button" class="wave-btn" id="loop-pedal-btn"
-                title="The same thing the pedal does — for a mouse, or a camera that is off. Also the socket on this node's header: a pulse there presses it.">PEDAL</button>
-      </div>
-      <!-- One input per row, on the node's edge: a pulse presses the button. -->
-      <div class="met-row">
-        <span class="chord-key-lbl">${inPort('loop_undo')}UNDO</span>
+                title="The same thing the pedal does — for a mouse, or a camera that is off">PEDAL</button>
         <button type="button" class="wave-btn" id="loop-undo"
                 title="Drop the last layer, keeping the loop running">UNDO</button>
-      </div>
-      <div class="met-row">
-        <span class="chord-key-lbl">${inPort('loop_stop')}STOP</span>
         <button type="button" class="wave-btn" id="loop-stop">STOP</button>
-      </div>
-      <div class="met-row">
-        <span class="chord-key-lbl">${inPort('loop_clear')}CLEAR</span>
         <button type="button" class="wave-btn" id="loop-clear">CLEAR</button>
       </div>
       <div class="quant-notes" id="loop-note"></div>
       <div class="audio-section-label" style="margin-top:8px;">Pedal</div>
-      <div class="met-row">
-        <span class="chord-key-lbl">${inPort('loop_pedal_src')}GESTURE</span>
+      <div class="scale-grid" style="grid-template-columns:1fr 1fr;">
         <select id="pedal-src" aria-label="What presses the pedal">
           ${Object.entries(PEDAL_SOURCES).map(([id, s]) =>
             `<option value="${id}"${id === pedal.source ? ' selected' : ''}>${s.label}</option>`).join('')}
         </select>
-      </div>
-      <div class="met-row">
-        <span class="chord-key-lbl">${inPort('loop_pedal_on')}ARMED</span>
         <button type="button" class="wave-btn${pedalOn ? ' on' : ''}" id="pedal-on"
                 aria-pressed="${pedalOn}"
                 title="Let the gesture press the pedal. Off by default: a nod is also something people do without meaning it. The buttons above work either way.">${pedalOn ? 'ON' : 'OFF'}</button>
       </div>
-      ${rows(['loop_sensitivity'])}
+      <label class="ctrl-row" title="How hard the movement has to be. Watch the meter and nod: a deliberate stab should fill it.">
+        <span class="ctrl-lbl">SENSITIVITY</span>
+        <input type="range" id="pedal-sens" min="0.3" max="4" step="0.05" value="${pedal.sensitivity}">
+      </label>
       <div class="loop-meter"><div class="loop-meter-fill" id="pedal-meter"></div></div>
       <div class="quant-notes" id="pedal-note"></div>
     </div>`;
@@ -187,7 +127,19 @@ export function wireLooperSection() {
     lsSet(KEY_SRC, pedal.source);
     render(looper.snapshot());
   });
-  document.getElementById('pedal-on').addEventListener('click', () => setPedalOn(!pedalOn));
+  const onBtn = document.getElementById('pedal-on');
+  onBtn.addEventListener('click', () => {
+    pedalOn = !pedalOn;
+    lsSet(KEY_ON, pedalOn ? '1' : '0');
+    onBtn.classList.toggle('on', pedalOn);
+    onBtn.setAttribute('aria-pressed', String(pedalOn));
+    onBtn.textContent = pedalOn ? 'ON' : 'OFF';
+    pedal.reset();
+  });
+  document.getElementById('pedal-sens').addEventListener('input', e => {
+    pedal.sensitivity = +e.target.value;
+    lsSet(KEY_SENS, String(pedal.sensitivity));
+  });
 
   looper.subscribe(render);
 }

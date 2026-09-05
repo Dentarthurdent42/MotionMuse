@@ -27,7 +27,7 @@ const CHROME = process.env.CHROME
 
 // Serve from a throwaway copy so the test can mutate files freely.
 const ROOT = mkdtempSync(join(tmpdir(), 'bb-sw-'));
-for (const p of ['index.html', 'sw.js', 'manifest.json', 'css', 'src', 'vendor', 'icons'])
+for (const p of ['index.html', 'sw.js', 'manifest.json', 'css', 'src', 'icons'])
   cpSync(join(REPO, p), join(ROOT, p), { recursive: true });
 
 const MIME = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.json': 'application/json', '.png': 'image/png' };
