@@ -4,9 +4,8 @@
 // Run: npm run test:unit
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ARP_PATTERNS, ARP_MAX_OCTAVES, ARP_MAX_GATE, ARP_MAX_RING,
-         ARP_MAX_SUSTAIN, notePool, stepIndex,
-         stepSeconds, noteSeconds, noteEnvelope, dueSteps } from '../../src/arp.js';
+import { ARP_PATTERNS, ARP_MAX_OCTAVES, ARP_MAX_GATE, notePool, stepIndex,
+         stepSeconds, noteSeconds, dueSteps } from '../../src/arp.js';
 
 // The first `len` steps of a pattern over `n` notes, as a plain array — the
 // shape a player would hum back.
@@ -168,53 +167,4 @@ test('a clock only slightly behind keeps its place, so the pulse holds', () => {
 test('the burst is bounded even with an absurd horizon', () => {
   const { steps } = dueSteps({ at: 0, i: 0 }, 0, 3600, 24);
   assert.ok(steps.length <= 16, `got ${steps.length}`);
-});
-
-
-// ── Sustain: the tail a gate cannot give ──
-//
-// Reported as "the arpeggiator is too staccato by default". It was, at every
-// setting: the engine cut each note dead at its gate with a fade of at most
-// 90 ms, so however long a note was held it ended square. SUSTAIN is the ring
-// AFTER the gate, and the two share one budget — see ARP_MAX_RING.
-test('sustain rings on after the gate closes', () => {
-  const { hold, tail } = noteEnvelope(0.25, 1, 0.5);
-  assert.equal(hold, 0.25, 'the gate is unchanged by a tail');
-  assert.equal(tail, 0.125, 'and the tail is half a step on top');
-});
-
-test('both are in steps, so the shape survives a tempo change', () => {
-  const slow = noteEnvelope(0.5, 0.9, 0.6);
-  const fast = noteEnvelope(0.05, 0.9, 0.6);
-  assert.ok(Math.abs(slow.tail / slow.hold - fast.tail / fast.hold) < 1e-9,
-    'the ratio of tail to hold is the same at 2/s and 20/s');
-});
-
-test('no sustain is the old behaviour — a note that ends at its gate', () => {
-  assert.equal(noteEnvelope(0.25, 0.55, 0).tail, 0);
-  assert.equal(noteEnvelope(0.25, 0.55).tail, 0, 'and omitting it entirely');
-});
-
-test('gate and tail share one budget, so a voice is never cut mid-ring', () => {
-  // The engine round-robins four chord voices; a note alive past ARP_MAX_RING
-  // steps would be silenced by the fourth-next note taking its voice back.
-  for (const step of [0.04, 0.25, 2]) {
-    for (const gate of [0.05, 0.5, 1, 2, ARP_MAX_GATE, 99]) {
-      for (const sustain of [0, 0.5, 1, ARP_MAX_SUSTAIN, 99]) {
-        const { hold, tail } = noteEnvelope(step, gate, sustain);
-        assert.ok(hold + tail <= ARP_MAX_RING * step + 1e-9,
-          `step ${step} gate ${gate} sustain ${sustain} → ${hold + tail}`);
-        assert.ok(tail >= 0, 'a tail is never negative');
-      }
-    }
-  }
-});
-
-test('a gate that eats the whole budget leaves no tail, rather than overrunning', () => {
-  assert.equal(noteEnvelope(0.25, ARP_MAX_RING, 1).tail, 0);
-});
-
-test('junk sustain reads as none', () => {
-  for (const bad of [NaN, undefined, null, 'x', -1])
-    assert.equal(noteEnvelope(0.25, 1, bad).tail, 0, String(bad));
 });

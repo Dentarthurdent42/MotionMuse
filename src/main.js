@@ -94,7 +94,7 @@ function loop() {
   drawViz();
   shader.render();       // cheap no-op unless the shader panel is active
   updateFsOverlay();     // cheap no-op unless fullscreen is active
-  updateCamBadge();      // which saved setup is playing
+  updateCamBadge();      // which saved setup is playing; dev-mode share code
   updateGamePanel();     // cheap no-op unless a song is running
   updateUicOverlay();    // cheap no-op unless the hand cursor is live
   updateStage();         // cheap no-op unless the gesture stage is up
@@ -362,22 +362,6 @@ const wakeAudio = () => { engine.resume(); };
 ['pointerdown', 'keydown'].forEach(ev =>
   document.addEventListener(ev, wakeAudio, { once: true, capture: true }));
 
-// Coming back to a backgrounded tab. The browser paused the camera's <video>
-// on the way out and does not un-pause it on the way in, which is a black
-// frame AND a frozen instrument — the inference loop is gated on the video's
-// clock, so the signals stop moving while everything still claims to be
-// running (see cvSource.restore).
-//
-// Three events rather than one, because they mean different things and a
-// phone does not always send all of them: `visibilitychange` is the tab or
-// app switch, `pageshow` is a restore from the back/forward cache, and
-// `focus` catches a window that was merely behind another one. restore() is
-// idempotent and cheap when there is nothing to do, so the overlap is free.
-const restoreCamera = () => { if (!document.hidden) cvSource.restore(); };
-document.addEventListener('visibilitychange', restoreCamera);
-addEventListener('pageshow', restoreCamera);
-addEventListener('focus', restoreCamera);
-
 initHotkeys({
   mute:   () => { toggleMute(); },
   // The cursor key is the keyboard's version of the clap: opens the arming
@@ -557,7 +541,7 @@ metronome.registerSignals();   // the beat clock is wirable like any signal
 watchRanges();
 initResize();             // draggable panel splitters (desktop)
 initFullscreen();         // fullscreen camera view + keyboard overlay
-initCamBadge();           // the saved setup's name, captioning the frame
+initCamBadge();           // saved-setup name (and, in dev, its QR) on the frame
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
 initSettings();           // ⚙ theme + hotkeys: how the tool looks and is driven

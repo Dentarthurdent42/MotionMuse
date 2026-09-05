@@ -50,8 +50,7 @@ export const PARAM_CATS = () => [
   ['Oscillators', Array.from({ length: engine.getOscCount() }, (_, i) =>
     [`osc${i + 1}_freq`, `osc${i + 1}_detune`, `osc${i + 1}_volume`]).flat()],
   ['Filter',      ['filter_freq', 'filter_q', 'osc_volume']],
-  ['Gesture Mode', ['chord_filter_freq', 'chord_filter_q', 'chord_volume',
-                    'arp_rate', 'arp_gate', 'arp_sustain']],
+  ['Gesture Mode', ['chord_filter_freq', 'chord_filter_q', 'chord_volume', 'arp_rate', 'arp_gate']],
   ['LFO',         ['lfo_rate', 'lfo_depth']],
   ['Output',      ['reverb_mix', 'volume', 'loop_volume']],
   // The function nodes' input sockets — as many as there are nodes, so this
@@ -91,10 +90,6 @@ const sigColor = key => key ? `oklch(0.78 0.14 ${sigHue(key)})` : 'oklch(0.6 0 0
 
 let selectedId = null;          // selected cable (mapping id)
 const wireRefs = new Map();     // mapping id → <path>, cached per drawWires (per-frame lookups)
-// `${side}:${key}` → the node's level bar. Same reason as wireRefs: these are
-// written every RAF, and a querySelector per node per frame is not free.
-const levelRefs = new Map();
-const lastLevel = new Map();    // …and the value last written, to skip no-op writes
 let addedInputs = new Set();    // input nodes with no cable yet (user-added)
 let addedOutputs = new Set();   // output nodes with no cable yet (user-added)
 let wiring = null;              // in-progress connection { side, key, moved }
@@ -149,7 +144,6 @@ export function renderMapper() {
       <span class="ng-node-title" title="${sigLabel(k)}">${sigLabel(k)}</span>
       <button class="ng-socket ng-out" data-side="out" data-key="${k}"
               aria-label="Output of ${sigLabel(k)} — connect to a parameter"></button>
-      <span class="ng-level" data-side="in" data-key="${k}" aria-hidden="true"></span>
     </div>`).join('');
 
   const outNodes = outputs.map(k => {
@@ -161,7 +155,6 @@ export function renderMapper() {
               aria-label="Input of ${engine.PARAMS[k].label}"></button>
       <span class="ng-node-title">${engine.PARAMS[k].label}</span>
       <button class="ng-node-del" data-kind="out" data-key="${k}" aria-label="Remove ${engine.PARAMS[k].label}">×</button>
-      <span class="ng-level" data-side="out" data-key="${k}" aria-hidden="true"></span>
     </div>`;
   }).join('');
 
@@ -223,7 +216,6 @@ export function renderMapper() {
     ${editor}`;
 
   wireHandlers(rows);
-  cacheLevelRefs(rows);
   // A re-render mid-gesture (selecting a node while armed for tap-to-connect)
   // rebuilds the sockets, so re-apply the armed highlight to the new DOM.
   if (wiring) {
@@ -531,16 +523,7 @@ function removeNode(kind, key) {
     });
   } else {
     addedOutputs.delete(key);
-    mapper.mappings.filter(m => m.audioParam === key).forEach(m => {
-      // Keep the far end's node, exactly as deleting an input keeps its
-      // outputs. A node with no cable survives only by being in these sets, so
-      // without this line pulling an output took the input it happened to be
-      // wired to with it — you deleted one thing and lost two, and the one you
-      // did not ask to lose was the one with the settings on it.
-      addedInputs.add(m.signal);
-      rememberSettings(m);
-      mapper.remove(m.id);
-    });
+    mapper.mappings.filter(m => m.audioParam === key).forEach(m => { rememberSettings(m); mapper.remove(m.id); });
   }
   selectedId = null;
   renderMapper();
@@ -702,46 +685,8 @@ function ensureRedrawObserver() {
   _ro.observe(el);
 }
 
-function cacheLevelRefs(rows) {
-  levelRefs.clear();
-  lastLevel.clear();
-  rows.querySelectorAll('.ng-level').forEach(el =>
-    levelRefs.set(`${el.dataset.side}:${el.dataset.key}`, el));
-}
-
-const clamp01 = v => Math.max(0, Math.min(1, v));
-
-// How full an OUTPUT node's bar is. Measured against the driving cable's own
-// [outMin, outMax] rather than the parameter's full range, because that is the
-// travel you are actually playing: a cable narrowed to 200–800 Hz on a cutoff
-// whose range is 20–20000 would otherwise show a sliver that never visibly
-// moves. Reversed windows (outMin > outMax, which is how INVERT can also be
-// spelled) fall out of the same arithmetic — both terms flip sign.
-//
-// Unwired, there is no window, so the parameter's own range is all there is —
-// and it is the right answer there, since whatever is moving the parameter is
-// something other than a cable.
-function outputLevel(key) {
-  const p = engine.PARAMS[key];
-  if (!p) return 0;
-  const m = mapper.mappings.find(x => x.audioParam === key && x.signal);
-  const [lo, hi] = m ? [m.outMin, m.outMax] : [p.min, p.max];
-  return hi === lo ? 0 : clamp01((p.val - lo) / (hi - lo));
-}
-
-// Writes are skipped when nothing moved: this runs every frame, and a style
-// write that changes nothing still costs a recalc.
-function setLevel(refKey, v) {
-  const el = levelRefs.get(refKey);
-  if (!el) return;
-  const q = v.toFixed(3);
-  if (lastLevel.get(refKey) === q) return;
-  lastLevel.set(refKey, q);
-  el.style.setProperty('--lvl', q);
-}
-
 export function updateMapperBars() {
-  if (!wireRefs.size && !levelRefs.size) return;
+  if (!wireRefs.size) return;
   mapper.mappings.forEach(m => {
     const w = wireRefs.get(m.id);
     if (!w || !m.signal) return;
@@ -750,16 +695,4 @@ export function updateMapperBars() {
     if (m.id !== selectedId) w.style.strokeWidth = (2 + norm * 3).toFixed(2);
     w.style.opacity = (0.55 + norm * 0.45).toFixed(2);
   });
-
-  // The two ends of every cable, as bars on the nodes themselves. The input
-  // bar is bus.norm — exactly the 0–1 the cable is handed, adaptive range and
-  // all — so an input reads full-scale when YOUR movement is at its extreme,
-  // not when the sensor's theoretical maximum is. What the output bar then
-  // shows is that same travel after curve, invert and steps have had it.
-  for (const [refKey, el] of levelRefs) {
-    if (!el.isConnected) continue;
-    const i = refKey.indexOf(':');
-    const side = refKey.slice(0, i), key = refKey.slice(i + 1);
-    setLevel(refKey, side === 'in' ? clamp01(bus.norm(key)) : outputLevel(key));
-  }
 }

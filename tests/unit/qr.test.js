@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
-import { encodeQR, drawQR } from '../../src/qr.js';
+import { encodeQR } from '../../src/qr.js';
 
 const require = createRequire(import.meta.url);
 let jsQR = null;
@@ -65,39 +65,6 @@ test('a code decodes at ONE pixel per module', { skip: !jsQR }, () => {
       assert.equal(jsQR(data, width, height)?.data, text,
         `ECC ${ecc} v${qr.version} (${qr.size} modules) at 1px/module`);
     }
-  }
-});
-
-// A canvas is a browser thing, and drawQR only needs somewhere to put numbers
-// and a context that accepts fills. The invariant being checked is arithmetic,
-// not pixels.
-const stubCanvas = () => ({
-  width: 0, height: 0,
-  getContext: () => ({ fillStyle: '', fillRect() {} }),
-});
-
-// The rule the SHARE sheet rests on, pinned where it is cheap to check.
-//
-// A code drawn at a fractional number of pixels per module does not decode —
-// and does not fail gracefully either. Scaling one 121-module code into
-// different boxes and asking jsQR to read it back: 350px and 420px decoded,
-// 500px and 558px found no code at all, with `image-rendering: pixelated` on
-// or off making no difference. There is no "close enough" here, which is why
-// ui/share.js sizes the canvas from drawQR's own scale instead of letting CSS
-// pick a width.
-test('drawQR only ever uses whole pixels per module', () => {
-  const qr = encodeQR(`https://example.com/#s=${'AbC-9_zQ'.repeat(50)}`);
-  const total = qr.size + 8;                 // the spec's 4-module quiet zone
-  for (const target of [200, 350, 420, 500, 558, 640, 1000]) {
-    const canvas = stubCanvas();
-    const { px, scale } = drawQR(canvas, qr, { target });
-    assert.ok(Number.isInteger(scale), `scale ${scale} at target ${target}`);
-    assert.equal(px, total * scale, `px is a whole number of modules at ${target}`);
-    assert.equal(canvas.width, px, 'the backing store is that size');
-    assert.equal(canvas.height, px, 'and square');
-    // Never bigger than asked for — except at the 2px floor, which is a floor
-    // for a camera reading a screen across a room and outranks the request.
-    assert.ok(px <= Math.max(target, total * 2), `${px} exceeds target ${target}`);
   }
 });
 

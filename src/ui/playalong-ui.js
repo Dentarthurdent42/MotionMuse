@@ -60,7 +60,7 @@ function drawLanes(ctx, W, yTop, keysH, view) {
     const x = i * lw;
     ctx.fillStyle = i % 2 ? '#252b34' : '#1e242c';
     ctx.fillRect(x + 0.5, yTop, lw - 1, keysH);
-    if (view.playerLanes?.includes(i)) {
+    if (i === view.playerLane) {
       ctx.fillStyle = 'rgba(0,229,204,0.32)';
       ctx.fillRect(x + 0.5, yTop, lw - 1, keysH);
     }
@@ -69,7 +69,7 @@ function drawLanes(ctx, W, yTop, keysH, view) {
     // Faint guide up the highway, so a falling bar can be aimed at early.
     ctx.strokeStyle = 'rgba(255,255,255,0.05)';
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, yTop); ctx.stroke();
-    ctx.fillStyle = view.playerLanes?.includes(i) ? '#0b0d12' : '#cfd4db';
+    ctx.fillStyle = i === view.playerLane ? '#0b0d12' : '#cfd4db';
     ctx.font = `${Math.max(10, Math.round(keysH * 0.34))}px "IBM Plex Mono", monospace`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(view.laneLabels?.[i] ?? String(i + 1), x + lw / 2, yTop + keysH / 2);
@@ -94,19 +94,14 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
   const hitY = H - keysH;
   // Two vocabularies, one highway: pitch charts land on the piano, degree
   // charts land on lanes. Everything below speaks through centerOf/barW.
-  // Plural, because a note can ask for more than one thing at once: MULTI
-  // wants a note AND the third above it, and a chart note drawn as one bar
-  // while it demands two would be the highway lying about the game.
-  let centersOf, barW;
+  let centerOf, barW;
   if (view.laneCount) {
     const L = drawLanes(ctx, W, hitY, keysH, view);
-    const clamp = d => Math.max(0, Math.min(view.laneCount - 1, d));
-    centersOf = n => (n.degs ?? [n.deg ?? 0]).map(d => L.center(clamp(d)));
+    centerOf = n => L.center(Math.max(0, Math.min(view.laneCount - 1, n.deg ?? 0)));
     barW = Math.max(6, L.w * 0.55);
   } else {
     const L = drawKeys(ctx, W, hitY, keysH, view.root, view.scale, view.playerMidi);
-    const clamp = m => Math.max(KBD_LO, Math.min(KBD_HI, m));
-    centersOf = n => (n.notes ?? [n.m]).map(m => L.keyCenter(clamp(m)));
+    centerOf = n => L.keyCenter(Math.max(KBD_LO, Math.min(KBD_HI, n.m)));
     barW = Math.max(4, L.ww * 0.7);
   }
   const fallMs = view.cfg.fallSec * 1000;
@@ -117,6 +112,7 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
     if (dt > fallMs || dt < -1200) continue;
     const y = hitY * (1 - dt / fallMs);                     // note head
     const len = Math.max(6, (n.durMs / fallMs) * hitY);     // bar length
+    const x = centerOf(n);
     const w = barW;
 
     if (n.status === 'hit') {
@@ -124,16 +120,14 @@ export function drawGame(canvas, view, { height = 170, keysH = 40 } = {}) {
       if (age > 350) continue;                              // quick flash, tier-colored
       ctx.globalAlpha = Math.max(0, 1 - age / 350);
       ctx.fillStyle = n.tier === 'perfect' ? '#f0a500' : OSC_COLS[0];
-      for (const x of centersOf(n)) ctx.fillRect(x - w / 2, hitY - 10, w, 10);
+      ctx.fillRect(x - w / 2, hitY - 10, w, 10);
       ctx.globalAlpha = 1;
       continue;
     }
     ctx.fillStyle = n.status === 'miss' ? 'rgba(255,100,114,0.55)' : 'rgba(0,229,204,0.85)';
+    ctx.fillRect(x - w / 2, Math.min(y, hitY) - len, w, len);
     ctx.strokeStyle = 'rgba(8,10,15,0.7)'; ctx.lineWidth = 1;
-    for (const x of centersOf(n)) {
-      ctx.fillRect(x - w / 2, Math.min(y, hitY) - len, w, len);
-      ctx.strokeRect(x - w / 2, Math.min(y, hitY) - len, w, len);
-    }
+    ctx.strokeRect(x - w / 2, Math.min(y, hitY) - len, w, len);
   }
 
   // Hit line.

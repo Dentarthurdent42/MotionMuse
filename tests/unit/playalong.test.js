@@ -4,8 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SONGS } from '../../src/songs.js';
-import { DIFF, judge, mtof, gradeOf, PERFECT_FRAC, POINTS } from '../../src/playalong.js';
-import { LEVELS, voiceChart } from '../../src/chart.js';
+import { DIFF, filterNotes, judge, mtof, gradeOf, PERFECT_FRAC, POINTS } from '../../src/playalong.js';
 import { SCALES, NOTE_NAMES } from '../../src/scale.js';
 
 test('charts are valid: sorted, in range, in scale', () => {
@@ -27,73 +26,41 @@ test('charts are valid: sorted, in range, in scale', () => {
   }
 });
 
-// The bug this replaced a test for: difficulty used to be a note FILTER, and
-// `easy` dropped everything that was not a downbeat or a long note — half the
-// tune, on a setting called easy. Difficulty is polyphony now, so the one
-// thing every level must do is keep the whole song.
-test('no level drops a note from any bundled song', () => {
+test('difficulty filtering: hard ⊇ medium ⊇ easy, all non-empty', () => {
   for (const s of SONGS) {
-    for (const lvl of LEVELS) {
-      const out = voiceChart(s, lvl.id, { root: s.root, mode: s.scale, octave: 4 });
-      assert.equal(out.notes.length, s.notes.length, `${s.id} @ ${lvl.id}`);
-      assert.deepEqual(out.notes.map(n => n.b), s.notes.map(n => n.b),
-        `${s.id} @ ${lvl.id}: beats moved`);
-      for (const n of out.notes) {
-        assert.ok(n.notes.length >= 1 && n.notes.length <= lvl.voices,
-          `${s.id} @ ${lvl.id}: ${n.notes.length} voices`);
-        assert.ok(n.notes.includes(n.m), `${s.id} @ ${lvl.id}: melody note dropped`);
-      }
-    }
+    const hard = filterNotes(s.notes, 'hard', s.beatsPerBar);
+    const med  = filterNotes(s.notes, 'medium', s.beatsPerBar);
+    const easy = filterNotes(s.notes, 'easy', s.beatsPerBar);
+    assert.equal(hard.length, s.notes.length, `${s.id}: hard keeps all`);
+    assert.ok(med.length <= hard.length && med.length > 0, `${s.id}: medium subset`);
+    assert.ok(easy.length <= med.length && easy.length > 0, `${s.id}: easy subset`);
+    // medium keeps only on-the-beat notes
+    assert.ok(med.every(n => n.b % 1 === 0), `${s.id}: medium on-beat only`);
+    // easy keeps only downbeats or long notes
+    assert.ok(easy.every(n => n.b % s.beatsPerBar === 0 || n.d >= 2), `${s.id}: easy filter`);
   }
 });
 
-test('levels are single-note and multi-note, and only that', () => {
-  assert.deepEqual(LEVELS.map(l => l.id), ['single', 'multi']);
-  assert.equal(LEVELS[0].voices, 1);
-  assert.ok(LEVELS[1].voices > 1);
-  // Timing is a property of the game, not of how many notes it asks for. The
-  // old easy bought its wider window by also deleting notes; nothing here
-  // pays for polyphony with reaction time.
-  assert.equal(DIFF.single.window, DIFF.multi.window);
-  assert.equal(DIFF.single.fallSec, DIFF.multi.fallSec);
-  for (const l of LEVELS) assert.ok(DIFF[l.id], `no timing config for ${l.id}`);
-});
-
 test('judge: exact-match windows with timing tiers', () => {
-  const cfg = DIFF.single;                                  // window 200ms → perfect band ±80ms
-  assert.equal(judge([64], [64], -201, 0, cfg), 'pending'); // too early to judge
-  assert.equal(judge([64], [64], -199, 0, cfg), 'good');    // inside early window, outside band
-  assert.equal(judge([64], [64], 199, 0, cfg), 'good');     // inside late window
-  assert.equal(judge([64], [64], 0, 0, cfg), 'perfect');    // dead on
-  assert.equal(judge([64], [64], 80, 0, cfg), 'perfect');   // perfect band edge (40% of 200)
-  assert.equal(judge([64], [64], 81, 0, cfg), 'good');      // just past the band
-  assert.equal(judge([64], [64], -80, 0, cfg), 'perfect');  // early side of the band
-  assert.equal(judge([62], [64], 199, 0, cfg), 'pending');  // wrong note, window open
-  assert.equal(judge([62], [64], 201, 0, cfg), 'miss');     // window expired
-  assert.equal(judge([76], [64], 0, 0, cfg), 'pending');    // octave ≠ match by default
+  const cfg = DIFF.medium;                               // window 180ms → perfect band ±72ms
+  assert.equal(judge(64, 64, -181, 0, cfg), 'pending');  // too early to judge
+  assert.equal(judge(64, 64, -179, 0, cfg), 'good');     // inside early window, outside perfect band
+  assert.equal(judge(64, 64, 179, 0, cfg), 'good');      // inside late window
+  assert.equal(judge(64, 64, 0, 0, cfg), 'perfect');     // dead on
+  assert.equal(judge(64, 64, 72, 0, cfg), 'perfect');    // perfect band edge (40% of 180)
+  assert.equal(judge(64, 64, 73, 0, cfg), 'good');       // just past the band
+  assert.equal(judge(64, 64, -72, 0, cfg), 'perfect');   // early side of the band
+  assert.equal(judge(62, 64, 179, 0, cfg), 'pending');   // wrong note, window open
+  assert.equal(judge(62, 64, 181, 0, cfg), 'miss');      // window expired
+  assert.equal(judge(76, 64, 0, 0, cfg), 'pending');     // octave ≠ match on medium
 });
 
-// Under a Shepard tone the octave is deliberately discarded (shepard.js), so
-// the player is not steering one, and judging them on one would be judging
-// them on a number the instrument refuses to express.
-test('judge: pitch-class matching, for Shepard', () => {
-  const cfg = { ...DIFF.single, pcMatch: true };
-  assert.equal(judge([76], [64], 0, 0, cfg), 'perfect');    // +1 octave
-  assert.equal(judge([52], [64], 0, 0, cfg), 'perfect');    // -1 octave
-  assert.equal(judge([76], [64], 190, 0, cfg), 'good');     // in window, outside the band
-  assert.equal(judge([65], [64], 0, 0, cfg), 'pending');    // a semitone off is still wrong
-});
-
-// MULTI asks for a chord, and a chord is only hit when the whole of it is
-// held — which is exactly what gesture mode's second hand is for.
-test('judge: every wanted note must be covered', () => {
-  const cfg = DIFF.multi;
-  assert.equal(judge([60, 64, 67], [60, 64, 67], 0, 0, cfg), 'perfect');
-  assert.equal(judge([60, 64, 67, 72], [60, 64, 67], 0, 0, cfg), 'perfect',
-    'extra notes do not spoil a hit');
-  assert.equal(judge([60, 64], [60, 64, 67], 0, 0, cfg), 'pending', 'two thirds is not a hit');
-  assert.equal(judge([60, 64], [60, 64, 67], 201, 0, cfg), 'miss');
-  assert.equal(judge([], [60], 0, 0, cfg), 'pending', 'silence hits nothing');
+test('judge: easy is octave-agnostic', () => {
+  const cfg = DIFF.easy;
+  assert.equal(judge(76, 64, 0, 0, cfg), 'perfect');     // +1 octave, dead on
+  assert.equal(judge(52, 64, 0, 0, cfg), 'perfect');     // -1 octave
+  assert.equal(judge(76, 64, 200, 0, cfg), 'good');      // in window, outside perfect band
+  assert.equal(judge(65, 64, 0, 0, cfg), 'pending');     // semitone off is not a hit
 });
 
 test('scoring constants: perfect beats good, band is a proper fraction', () => {
@@ -110,6 +77,11 @@ test('gradeOf boundaries', () => {
   assert.equal(gradeOf(0.6), 'C');
   assert.equal(gradeOf(0.59), 'D');
   assert.equal(gradeOf(0), 'D');
+});
+
+test('difficulty settings are ordered', () => {
+  assert.ok(DIFF.easy.window > DIFF.medium.window && DIFF.medium.window > DIFF.hard.window);
+  assert.ok(DIFF.easy.fallSec > DIFF.medium.fallSec && DIFF.medium.fallSec > DIFF.hard.fallSec);
 });
 
 test('mtof: A4=440, C4≈261.63', () => {

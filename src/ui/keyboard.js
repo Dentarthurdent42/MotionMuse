@@ -45,13 +45,8 @@ export function midiAtPoint(width, height, x, y) {
 // Pure draw. opts: { height, root, scale, markers, labels, dpr }
 //   scale: null → plain keys, no in-scale tint (quantise off)
 //   markers: array of marker midis (one per oscillator); null entries skipped
-//   chord:   what is sounding, painted ON the keys, so the keyboard shows the
-//            harmony as a picture rather than as a note list. Either bare
-//            midis (all equally down — a block chord) or `{m, level}` pairs,
-//            where `level` is 0..1 loudness. The pairs are what an arpeggio
-//            needs: one note is struck while the last is still falling, and
-//            drawing both at full strength would claim a chord that is not
-//            being played.
+//   chord:   midis currently sounding as a chord — painted ON the keys, so the
+//            keyboard shows the harmony as shape rather than as a note list
 //   labels: true → octave anchors (C2…C7) on the C keys
 export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, markers = [], chord = [], labels = false, dpr } = {}) {
   dpr = dpr ?? Math.min(window.devicePixelRatio || 1, 2);
@@ -98,27 +93,13 @@ export function drawKeyboard(canvas, { height = 46, root = 'C', scale = null, ma
   // camera. The sounding octave is drawn solid, its echoes translucent, so the
   // actual voicing is still distinguishable.
   if (chord.length) {
-    // A bare number is a note at full strength — every caller that has no
-    // opinion about loudness keeps working unchanged.
-    const notes = chord.map(c => Number.isFinite(c) ? { m: c, level: 1 } : c)
-                       .filter(n => n && Number.isFinite(n.m));
-    const sounding = new Map();   // midi → level
-    const classes  = new Map();   // pitch class → loudest level in it
-    for (const n of notes) {
-      const lv = Math.max(0, Math.min(1, n.level ?? 1));
-      sounding.set(n.m, Math.max(sounding.get(n.m) ?? 0, lv));
-      classes.set(pc(n.m), Math.max(classes.get(pc(n.m)) ?? 0, lv));
-    }
+    const sounding = new Set(chord);
+    const classes  = new Set(chord.map(pc));
     const CHORD_COL = '0,229,204';                       // the app's cyan
     for (let m = KBD_LO; m <= KBD_HI; m++) {
       if (!classes.has(pc(m))) continue;
-      // The sounding octave is drawn at its own level; the echoes follow the
-      // loudest note of that pitch class, so a fading note's echoes fade with
-      // it instead of hanging on after it has gone.
-      const lv = sounding.get(m) ?? classes.get(pc(m));
-      if (lv <= 0) continue;
       const solid = sounding.has(m);
-      ctx.fillStyle = `rgba(${CHORD_COL},${(solid ? 0.82 : 0.26) * lv})`;
+      ctx.fillStyle = `rgba(${CHORD_COL},${solid ? 0.82 : 0.26})`;
       if (isWhite(m)) {
         const x = L.wIdx.get(m) * L.ww;
         ctx.fillRect(x + 0.5, 0, L.ww - 1, H);
@@ -169,12 +150,8 @@ export function makeKbdView(canvasId, { height = 46 } = {}) {
       const c = document.getElementById(canvasId);
       if (!c) return;
       const h = height instanceof Function ? height() : height;
-      // Levels are quantised into the signature: a fading note has to redraw
-      // as it falls, but not on differences too small to see.
-      const chordSig = (opts.chord ?? []).map(n => Number.isFinite(n)
-        ? `${n}` : `${n?.m}:${Math.round((n?.level ?? 1) * 16)}`).join(',');
       const s = `${opts.root}|${opts.scale}|${c.clientWidth}|${h}`
-              + `|${(opts.markers ?? []).join(',')}|${chordSig}`;
+              + `|${(opts.markers ?? []).join(',')}|${(opts.chord ?? []).join(',')}`;
       if (s === sig) return;
       sig = s;
       drawKeyboard(c, { ...opts, height: h });
