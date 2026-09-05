@@ -4,7 +4,7 @@ A browser-based instrument that maps live webcam data — hand position, gesture
 
 ## Demo
 
-![MotionMuse: one canvas of nodes — the camera and inputs, the patch wiring hand signals to synth parameters with cables, and the audio engine grouped beside it — shown with the default Hands patch loaded and the output muted](docs/screenshot.png)
+![MotionMuse: the camera panel, the patchbay wiring hand signals to synth parameters, and the audio engine — shown with the default Hands patch loaded and the output muted](docs/screenshot.png)
 
 <sub>Kept in step with the UI automatically — see [Keeping the screenshot honest](#keeping-the-screenshot-honest). Regenerate by hand with `npm run screenshot`.</sub>
 
@@ -38,7 +38,7 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1. Registering with `velocity: true` also creates a `<key>_vel` sibling the bus keeps fed with the rate of change — see [Velocities](#velocities--every-measure-also-reports-how-fast-it-is-changing).
 - **Tracking toggles**: **✋ L**, **R ✋**, **🧍 POSE**, **☺ FACE** and **◉ GAZE** — one row of chips inside **Camera Input**, under the picture — switch each model off outright. (They live with that input because what the camera tracks is a property of it, not of the app's header; they are beside the picture rather than on top of it because a control over the frame covers the thing you are watching. Hands and pose can be set before the camera starts; face and gaze wake once there is a stream to run on.) Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` plus a swappable **pose backend** (`src/posebackends.js` — MediaPipe lite/full/heavy or TF.js MoveNet), extracts ~30 signals per frame, and writes them into the bus. Hand and pose inference **alternate frames** (each still ≥15 Hz at a 30 fps camera) so per-frame cost stays half of running both, and every positional signal passes through a per-signal **One-Euro filter** (`src/filter.js`, applied in `bus.update`) — the standard low-latency jitter filter: heavy smoothing on a held pose, light smoothing on fast moves.
-- **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert, invert+ease), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** on the workspace canvas (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: every **signal** is an output socket ● on the node that measures it (the trackers' signals are listed inside **Camera Input**, the microphone's on **Microphone**, the metronome's on **Metronome**, a function node's on the function node), every **parameter** is an input socket ● beside the control that shows it, on the node that owns it (cutoff on **Filter**, Main Vol on **Output**, KEY ROOT on **Pitch Quantize** — `src/params.js` keeps the map), and the two are joined by colour-coded bezier **cables** (a hue per signal, walking the wheel by the golden angle so neighbours are never alike) across the same canvas the panels sit on (see [The workspace](#the-workspace-everything-is-a-node)). Crucially an output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each input takes one incoming cable, and a new one replaces the old. Drag from any ● to any ● of the other side, in either direction, to connect (or tap one, then the other) — sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A node's header moves the node; only a socket starts a cable. A cable's width/opacity pulses with its live value (see *Two bars, two different numbers* below); range and curve stay hidden until you click a cable (or make one, or right-click a wired input socket), which opens the editor as a floating popover beside it — Escape or a click elsewhere closes it — and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **inverted** with its `⇅ INVERT` toggle — the input's high end then drives the output's low end, which composes with (rather than replaces) the curve, so any response shape can run either way round. A cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. Switches, choices and counts take a cable too (`src/controls.js`): FILTER TYPE, CHORD FILTER TYPE, KEY ROOT, KEY SCALE, TEMPO, the two quantisers' on switches and GATE, METRONOME on, ARP on and ARP PATTERN, the **number of oscillators** (the socket on the Oscillators node's header — a cable there adds and removes voices as it rises and falls, and a cable to a slot that has gone is kept, undrawn, until the slot is back), and the **on/off of GESTURE MODE, RADIAL MODE and the MICROPHONE** (the socket on each node's header) are registered as engine parameters whose value is an index into their options (0/1 for a switch, bpm for the tempo, a count for the bank) with an `apply` hook the engine calls on set; a cable into one gets `steps` = its option count by default, so a hand's travel lands *on* a filter type rather than between two, and the hook only acts when the rounded value changes — the panel's own buttons keep working, and the editor reads "now LOWPASS". Wire a hand's height into KEY ROOT and the scale transposes as you rise; wire a pulse into ARP ON and it switches. Cables come from wiring by hand and from presets; the **+ NODE** menu (also right-click or double-click the canvas — searchable) adds function nodes, brings closed panels back and groups the selection. The sockets are parts of their nodes, so deleting a cable (its × in the editor) leaves both ends in place to be re-wired, and an input *remembers* its range, curve, steps and invert flag, so wiring a different signal into it (or unplugging and re-plugging) doesn't reset them. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
+- **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert, invert+ease), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value, and **each node carries its own level bar** along the bottom edge (see *Two bars, two different numbers* below); range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **inverted** with its `⇅ INVERT` toggle — the input's high end then drives the output's low end, which composes with (rather than replaces) the curve, so any response shape can run either way round. A cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired. An output also *remembers* its range, curve, steps and invert flag, so re-wiring a different input into it (or unplugging and re-plugging) doesn't reset them. Each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
 - **Audio Engine** (`src/engine.js`): a **resizable oscillator bank** — one oscillator by default, up to eight, each with its own frequency, detune, waveform and **level** (`oscN_freq` / `oscN_detune` / `oscN_volume`) — through a BiquadFilter, and the chord-mode voice bank through a **second, independent filter and level** (`chord_filter_freq` / `chord_filter_q` / `chord_volume`, with `osc_volume` as the whole bank's level, the lead's counterpart to `chord_volume`). The two sources converge into a shared convolution reverb and main gain. All driven by the Web Audio API with 25 ms parameter smoothing. **Volume is the exception**: it snaps onto a perceptual step ladder and fires *one* envelope per level change instead of re-smoothing every frame — see Volume quantisation below. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
 - **Dynamics** (`src/dynamics.js`): the volume step ladder — equal-loudness (dB) levels, an exact-silence bottom rung, and the sticky rounding that keeps a jittery hand from chattering between levels.
@@ -144,8 +144,8 @@ unreadable, which is exactly the trap a light theme sets.
 The **Oscillators** panel starts with **one** oscillator and a `− n +` stepper to
 add more, up to eight. Each one gets a row of waveform buttons, a colour that
 matches its marker on the pitch-quantise keyboard, and its **own level** —
-`Osc1 Vol`, `Osc2 Vol`, … each with an input socket ● beside it, mappable
-from the patchbay like anything else.
+`Osc1 Vol`, `Osc2 Vol`, … under Parameters, mappable from the patchbay like
+anything else.
 
 This replaced a fixed pair of oscillators balanced by a single `Osc Mix 1↔2`
 crossfade. One oscillator was not expressible with that arrangement (the mix
@@ -157,8 +157,9 @@ than dropped.
 The stepper goes down to **zero**. Gesture mode has its own voice bank, filter,
 level and envelope, so it is a complete instrument on its own, and leaving a
 lead oscillator running underneath it is a drone nobody asked for. With an empty
-bank the Oscillators rows and every `oscN_*` slider disappear — and with them
-their input sockets, since the patchbay reads the same table. Starting Play Along puts one oscillator back, because the game scores the
+bank the Oscillators rows and every `oscN_*` slider disappear — and so does the
+Oscillators group in the patchbay's output picker, since both read the same
+table. Starting Play Along puts one oscillator back, because the game scores the
 pitch of oscillator 1 and cannot judge anything without it.
 
 Gesture mode's chords are voiced well below the lead on purpose — they were always a bed
@@ -186,10 +187,9 @@ A slot's values and waveform survive its removal, so shrinking to hear one voice
 and growing back returns the sound you had instead of resetting the slot you were
 part-way through dialling in.
 
-The sliders on the engine's panels and the input sockets beside them come from
-one table (`src/params.js`, which also says which node owns each parameter) —
-so a parameter has one home, and the panel and the patchbay cannot drift
-apart.
+The **Parameters** section groups its sliders under the same headings the
+patchbay's output picker uses, from the same table — so a parameter is in the
+same place whichever way you go looking for it, and the two cannot drift apart.
 
 ## First run: pick a starting point
 
@@ -300,10 +300,10 @@ The state is compressed and carried in the URL **fragment**, which is never sent
 to a server. There is no server; a shared setup stays between the two people
 holding the phones.
 
-What travels is the **instrument**, not the window. Where the nodes sit on the
-canvas — positions, sizes, groups, the view — describes the screen you arranged
-them on, and pushing a phone's layout onto a laptop is not "the same
-settings". The pose-model choice is left behind for the same reason: a
+What travels is the **instrument**, not the window. Panel widths, section
+heights, section order and which column you dragged something to describe the
+screen you arranged them on, and pushing a phone's layout onto a laptop is not
+"the same settings". The pose-model choice is left behind for the same reason: a
 MoveNet variant picked for one machine's GPU is not a recommendation for
 someone else's. Theme, dev mode and **which models are running** — hands (each
 side separately), pose, face and gaze — do travel, along with every mapping,
@@ -356,9 +356,9 @@ a trade worth making. The test sweep pins both the 159 that work and the one
 step-over, so this cannot be quietly undone — and if the underlying bug is ever
 found, one deleted line restores the cell.
 
-The **oscilloscope** is a node like any other: it folds, pins and moves like
-the rest, and ships in the AUDIO ENGINE group. It lives *outside* the panel
-that `renderAudioPanel` rebuilds, because that rebuild
+The **oscilloscope** at the top of the audio column is a section like any
+other: it folds away with its caret and can be dragged to another column. It
+lives *outside* the panel that `renderAudioPanel` rebuilds, because that rebuild
 would recreate its canvas and drop the click-to-mute handler with it.
 
 It **normalizes its own amplitude**. Drawn at true scale it was an almost flat
@@ -372,166 +372,91 @@ the alternative is amplifying dither into a waveform and drawing a signal that
 is not there. Silence has to look like silence
 (`tests/unit/scope-gain.test.js`).
 
-## The workspace: everything is a node
+## Sections: containers, scrolling and resizing
 
-The interface is **one canvas**, and everything on it is a node — the camera,
-the microphone, the metronome, each block of the audio engine, every function
-node, and the groups that hold them; the signals and parameters are the sockets
-on those nodes. It works the way a node editor does in Blender, Unreal or
-TouchDesigner rather than the way a settings page does (on a phone the same
-nodes make one scrolling column instead — see below):
+Every section — camera view, signals, models, patchbay, gesture mode,
+each audio block, the parameter sliders — is its own container: a bordered box
+with a header strip, a body that can scroll on its own, and a **grip along the
+bottom edge** to set its height. Drag the grip to resize, **double-click it to
+fit the content** again. Heights persist per section.
 
-- **Pan** by dragging empty canvas (or the middle button from anywhere);
-  **zoom** with the wheel or a pinch; **⌂ FIT** (or `Home`) shows everything,
-  `F` fits the selection. A wheel over a list that scrolls scrolls the list.
-- **Gesture Mode's handshapes are cables too** (`src/chordcables.js`): each
-  degree row, RELEASE, ♯ and ♭ is an input socket on the node, and the shape
-  that plays it is the cable from that shape's signal on the camera — so the
-  chords starter opens with ten cables you can see, follow and re-plug.
-  Choosing a shape in a row strings the cable; stringing the cable sets the
-  row; wire anything else in (a metronome pulse, a function node) and the
-  cable holds the degree while it reads high, the row reading WIRED. A patch
-  that replaces the cables takes the shapes with it; switching the mode on
-  with nothing assigned brings the default shapes back.
-- **⌕ FIND** (or `/`, `Ctrl+K`) searches every node by name and, once you
-  type, every socket by its label with the node it is on (the **+ NODE**
-  search lists the same under *Go to*, so typing "gesture" there reaches the
-  node rather than "nothing matches"); picking one brings
-  a closed panel back, opens a collapsed group, unfolds the node, opens a
-  closed tracker group for its socket, fits (or scrolls) to it and flashes it.
-- **Move** a node by its header. **Resize** it by the grip in its corner —
-  the camera keeps its 4:3, so its grip sets a width. The **caret** folds a
-  node to its header; **⌖** pins it to the screen, where it stays put while
-  the canvas pans under it (pin the camera, then wander around the patch);
-  **×** closes a panel (bring it back from **+ NODE → Panels**), deletes a
-  function node, or ungroups a group.
-- **Select** by clicking a header, add with Shift, or drag a box on empty
-  canvas with Shift held. `Delete` removes the selection; `Escape` clears it.
-- **Group**: select nodes and press **Ctrl+G** (or right-click → *Group
-  selected*). A group is a frame around its members, dragged as one, and
-  **collapsed** (its caret) into a single node whose sockets are the members'
-  outward-facing ones — a cable that leaves the group ends on the group and a
-  cable that stays inside it disappears with it; only the sockets whose cables
-  cross the boundary are exposed, so a closed box shows what runs in and out
-  of it and nothing else. Double-click a
-  group's title to rename it; drop a node inside a frame to add it, drag it
-  out to remove it; nest groups in groups. This is how primitive nodes compose
-  into larger ones, and the two containers the app ships with — **INPUTS**
-  and **AUDIO ENGINE** — are simply groups. Ungroup them if you like; they
-  are not special. Function nodes land in the column between them, where the
-  cables they compute on run; there is no patch panel — the patch *is* the
-  canvas, and what acts on it as a whole (**PRESET**, and SAVE / LOAD of the
-  entire setup as a file, at the foot of that menu) lives in the header.
-- **⋮⋮ TIDY** lays the wired nodes out by what feeds what (inputs left,
-  functions between, audio nodes right — a layered graph layout from
-  [dagre](vendor/LICENSES.md)) and packs the unwired ones beside them; with
-  nodes selected it arranges only those, and a group's *Tidy inside* arranges
-  its members.
-- **Right-click** a node for its menu (fold, pin, group, leave its group, fit,
-  close); right-click or double-click the canvas for the **+ NODE** menu —
-  **Panels** (closed panels to bring back), **Selection** (group what is
-  selected) and **Function** (the function-node types).
+So there are two levels of scrolling, which is the point: long lists (signals,
+gestures, output sliders) scroll *inside* their section, and the sections
+themselves scroll within their column. Pin the ones you're working with to the
+size you want and page through the rest.
 
-**Signals are outputs, parameters are inputs, and both live on the nodes they
-belong to.** There is no separate list of signals to drag from and no bank of
-sliders standing in for the engine: a hand's height is a socket ● on its row
-inside **Camera Input**, where the trackers' signals are listed by tracker
-(name, live value, bar, socket; a group whose tracker is off folds closed), the
-microphone's signals sit on **Microphone**, the metronome's pulses and ramps
-on **Metronome**, and every parameter is a socket ● beside the control that
-shows it — filter cutoff on **Filter**, Main Vol on **Output**, KEY ROOT on
-**Pitch Quantize** (`src/params.js` maps each key to its owner). Switches and
-choices are sockets too (`src/controls.js`) — every one, on every node: a
-mode's, the microphone's and the camera's ON/OFF, each tracker's (on its
-group's summary in the camera node), the output's MUTE, the number of
-OSCILLATORS and each one's waveform, the kit, the key and the tuning, the
-metronome's TIME and click, the loop pedal's transport (a pulse presses the
-pedal, UNDO, STOP or CLEAR) and its gesture, the quantiser's ladder, both
-envelopes, the arpeggiator. A cable into a choice is quantised by default
-onto its options. The sockets **straddle the node's border** — inputs on
-the left edge, outputs on the right, the way pins sit on a Blueprint or a
-geometry node — and the cables are drawn beneath the nodes, so every cable
-visibly starts on one ring and ends on another. A signal group folded shut
-(its tracker is off, or you closed it) keeps the sockets of its *wired*
-signals in its summary, one under another on the border, so a cable never
-ends on a closed box; open the group and the rows take over. When a socket
-really is out of sight (a node folded or collapsed, a row scrolled out of a
-node that was given a height) the cable ends at that node's edge and is
-drawn dashed, so a wire never points at nothing.
+Sections start at their natural height with **no** scrollbar; only open-ended
+lists get a default height. Giving every section a scroller by default would
+trade one annoyance for a worse one. A section that *is* clipped fades at its
+bottom edge, and the fade lifts when you reach the end — a 3px scrollbar is not
+an affordance.
 
-The layout — every position, size, fold, pin, group and the view — persists in
-one localStorage key and travels in a saved file (not in a shared link, which
-carries the instrument rather than the window). **RESET** in ⚙ settings puts
-every node back where the app ships it, in place, and forgets the rest.
+**The content height is the ceiling.** Drag past it and the height is released
+rather than pinned there: a section taller than its contents is a box of empty
+space with its own scrollbar, and pinning it at exactly the content height would
+stop it growing the next time its list gained a row — it would just start
+hiding it.
 
-**Every panel is a node without anyone making it one.** The panels are still
-authored as sections (index.html) and rendered as sections
-(`src/ui/audio-ui.js` rebuilds its markup on every structural change); the
-workspace (`src/ui/workspace.js`) picks up any section that appears in its
-staging area and moves the element onto the canvas as a node, keeping its
-listeners and canvas contexts intact — so a panel added next week is a node
-with a header, a grip, a fold caret, a pin and a **?** for free, and a panel
-that rebuilds itself comes back at the position it had. The model behind it —
-positions, membership, what a collapsed group exposes, how it is saved — is
-`src/workspace.js`, kept free of the DOM so `tests/unit/workspace.test.js`
-can pin it down; `npm run test:layout` then drives the real canvas with real
-pointer events: dragging a header moves the node by the drag divided by the
-zoom, a node dragged out of its frame leaves the group, socket-to-socket drags
-and tap-tap both wire a cable, a collapsed group exposes the right sockets,
-TIDY leaves nothing overlapping, the CSS fullscreen fills the screen from
-inside a zoomed canvas, and a moved node stays moved through a re-render and a
-reload.
+In **portrait**, the camera panel is pinned to the top of the page, and
+everything inside it is pinned with it. The dev-only **EEG / EMG / MODELS**
+sections therefore move *out* of that panel at that width and become its next
+sibling — in a single-column stack, exactly where they already appeared —
+returning inside it in landscape, where the grid places each panel in an
+explicit cell and a stray child would land in whatever cell was free. It is a
+DOM move because there is no CSS for "opt out of an ancestor's stickiness":
+`position: sticky` pins the element's whole box, and this content's only problem
+was which box it was in.
 
-A node's header carries a **hue drawn from its identity**, so the same node is
-the same colour wherever it is dragged and you can aim at the amber one without
-reading it. Decoration only: no state is carried by colour, and the accent's
-lightness is a per-theme token, because a stripe tuned for near-black grounds
-vanishes on near-white.
+A **drop host is the panel, not its collapsible body.** It was the body, which
+made a dropped section a child of the thing the fold button hides: collapse
+SIGNALS and a MODELS panel someone had dragged into that column vanished with
+it. A section moved into a column is a *neighbour* of that column's content, not
+part of it, so it sits beside the body and only the body folds away.
+
+**Drag a section's header to move it** — up and down within its column, or
+across into another one. Each column offers a single drop host, outlined while
+you drag, and an empty one (the camera column with its dev-only sections
+hidden, say) grows a target so it can still be aimed at. Placement moves the
+real DOM node, which is what makes one drag mean the same thing in both
+orientations: landscape puts the columns in explicit grid cells and portrait
+stacks them in source order, so a *stored* position has to name a container,
+not a coordinate. Both the host and the position within it are re-applied after
+every render, so a move survives the audio panel rebuilding its markup and a
+reload. Drag a section back to the column it started in and the override is
+dropped rather than pinned.
+
+Each container also carries a **hue drawn from where it is on screen** — column
+sets the base, vertical position walks it — so you can aim at a section without
+reading its title. It's derived from measured geometry rather than declared per
+section, because a hardcoded hue would lie the moment a section moved. It is
+decoration only: no state is carried by colour, and the accent's lightness is a
+per-theme token, because a stripe tuned for near-black grounds vanishes on
+near-white.
+
+This is applied at runtime (`src/ui/sections.js`) rather than baked into a
+dozen template strings: each section already had the same shape — a header
+followed by content — so a section added next week gets a container, a
+scroller and a grip without anyone remembering to add them. `npm run
+test:layout` fails the build if a section loses its body, its grip or its id,
+if a column stops offering a drop host, if a relocated section drifts back to
+its birth column across a render or a reload, or if a section ends up taller
+than its own contents.
 
 The collapse caret is **drawn from borders, not typed as a character**. The UI
 face is IBM Plex Mono, which has no chevron glyph, so a text caret falls back to
 whatever the platform substitutes — a different weight, size and baseline on
 every device, which is exactly the legibility problem it kept having.
 
-**What is not a node.** The header strip — the things that act on the canvas
-(add, fit, tidy) or on the app (settings, the tour) — and the controls that
-sit *on the camera picture*: mute, share, the trackers, and above all
-**⛶ FULL / ✕ EXIT**, which is one button that belongs to the picture it puts
-on the whole screen. Separating the exit from the fullscreen would be a node
-you could lose on the way out.
+The camera view resizes with its own handle instead, directly beneath it: it
+has to keep an exact 4:3 box or the landmark overlay stops lining up with the
+video, so that handle drags vertically but writes a *width* and lets the aspect
+ratio set the height.
 
-**On a phone the workspace is a column, not a canvas.** A pan-and-zoom
-canvas on a screen four fingers wide is a smear: at a scale where a node is
-readable only a sliver of the world is on screen, and at a scale where the
-world is on screen nothing is readable. So below the phone breakpoint
-(768px) the same nodes stack in **one column the width of the screen**,
-scrolled by the finger — the inputs, then the picture, then the engine, each
-group a frame around its members as before. Everything else is unchanged:
-the sockets are on the node edges, cables run between them (along the
-column's gutters — out of the output socket to the right edge, along it to
-the gap above the input's node, across, down the left edge and in — since a
-cable cannot cross a node that is the whole width of the column), nodes
-fold, pin, close and group, and the add menu is a long-press away. Position
-has just lost a dimension: a node's place is its **rank** in the column, a
-drag on its header moves it up or down (the column scrolls under it near the
-edges), and the stack closes up behind it. **Pinch in** shows the whole
-column as a **map**; a tap on the map — or a pinch out over a node — scrolls
-to it. TIDY restores the shipped order. The column is its own store
-(`motionmuse-workspace-column`), so a phone's order and a desktop's
-arrangement never scramble each other; ⚙ → LAYOUT overrides the choice for a
-narrow window that wants the canvas or a wide one that wants the stack, and
-a window that crosses the breakpoint in `auto` switches in place. The
-header is a **bar at the bottom** of a phone's screen, where a thumb reaches
-it without a stretch, and its menus open upward from it. **The picture stays
-with you**: it is lifted out of the camera node into the strip that rides
-the top of the column (`src/ui/cam-sticky.js`), sits over its place in the
-node while that is on screen, and shrinks to a thumbnail in the top-right
-corner as you scroll past — so the tracking is always in view while you
-reach a slider three screens down; a tap on the thumbnail scrolls back up.
-FIT and TIDY, which fit and arrange a canvas, are not shown in the column
-— a pinch in is the map.
-The CSS fullscreen lifts the same picture out to fill the screen and puts it
-back where it found it on exit.
+In **portrait** the camera also **sticks to the top** of the scroll, so you can
+still see yourself — and the tracking overlay — while working the patchbay and
+audio controls below it. This is an instrument you play by moving in front of a
+camera; losing sight of the camera while reaching for a control is backwards.
+The handle is there for when the height gets in the way.
 
 ## Every slider also takes a typed number
 
@@ -601,34 +526,35 @@ does the pose-model choice, which is a judgement about one machine's GPU.
 
 ### Two bars, two different numbers
 
-A cable has a reading at each end, and the two deliberately report
-*different* quantities:
+Every node shows its live strength as a bar along its bottom edge, in the
+colour of the cable it belongs to. The two ends deliberately report *different*
+quantities:
 
-- The **signal's** bar, on its row in the node that measures it, is
-  `bus.norm(signal)` — precisely the 0–1 the cable is handed. That is the
-  adaptive figure, so it reads full-scale when *your* movement is at its
-  extreme, not when the sensor's theoretical maximum is.
-- The **control** the cable lands on shows what the cable *delivers*, after
-  `curve`, `invert` and `steps` have had it — the slider sits at the value, a
-  switch reads its state, and the cable editor prints it (`now LOWPASS`). The
-  cable itself thickens and brightens with the same figure.
+- An **input** bar is `bus.norm(signal)` — precisely the 0–1 the cable is
+  handed. That is the adaptive figure, so an input reads full-scale when *your*
+  movement is at its extreme, not when the sensor's theoretical maximum is.
+- An **output** bar is what the cable *delivers*, after `curve`, `invert` and
+  `steps` have had it.
 
-So on a plain linear cable the two agree exactly, and **the gap between them
-is the curve, made visible**: on a `quad` cable a signal at 0.8 delivers 0.64
-of the way across the cable's `min`–`max` window, and flipping `⇅ INVERT`
-delivers 0.36. You can watch the response shape you chose actually doing
-something, which is otherwise only inferable from the sound.
+So on a plain linear cable the two bars agree exactly, and **the gap between
+them is the curve, made visible**: on a `quad` cable an input at 0.8 shows an
+output at 0.64, and flipping `⇅ INVERT` shows 0.36. You can watch the response
+shape you chose actually doing something, which is otherwise only inferable
+from the sound.
 
-A **function node** is the one node that carries a level bar of its own, along
-its bottom edge: its output is a signal that no row anywhere else displays, so
-the bar is where its level is read.
+An output bar is measured against **its cable's own `min`/`max` window**, not
+the parameter's full range — a cable narrowed to 200–800 Hz on a cutoff whose
+range is 20–20000 would otherwise show a sliver that never visibly moves.
+Reversed windows (`min` > `max`, which is the other way to spell INVERT) fall
+out of the same arithmetic, since both terms flip sign. An *unwired* output has
+no window, so it falls back to the parameter's own range and stays a neutral
+grey rather than borrowing a cable colour it doesn't have.
 
-Neither bar takes part in layout: a signal row's fill grows inside a track
-of fixed width, and a function node's bar is absolutely positioned and driven
-by `transform: scaleX()`. The cables are drawn from *measured socket
-positions*, so a bar that pushed its neighbours about would drag every wire on
-the canvas every frame. The layout suite asserts exactly that — driving a
-value from empty to full must move no socket. An empty bar also keeps a faint track underneath it, because a bar
+The bar is absolutely positioned and driven by `transform: scaleX()`, never by
+width: the cables are drawn from *measured socket positions*, so a bar that
+participated in layout would drag every wire on the canvas every frame. The
+layout suite asserts exactly that — driving a bar from empty to full must move
+no socket. An empty bar also keeps a faint track underneath it, because a bar
 pinned at zero and a node with no bar at all look identical, and "quiet" should
 not read as "broken".
 
@@ -639,29 +565,29 @@ nodes** are what you get when the middle is allowed to grow — the shader-graph
 move, done with the machinery already there. A node is *both ends of the
 existing patchbay at once*:
 
-- each **input socket** registers as an engine parameter (`ƒ1 Math · A`),
-  and sits on the node's edge like any other input — so any existing cable
-  can drive it, with its full curve / range / steps / invert kit;
+- each **input socket** registers as an engine parameter (`ƒ1 Math · A`,
+  under the picker's **GRAPH NODES** category) — so any existing cable can
+  drive it, with its full curve / range / steps / invert kit;
 - its **output** registers as a bus signal (`ƒ1 Math`, in the **graph**
   group) — so any existing cable can read it onward, into an audio parameter
   or into *another node's* input.
 
-No new cable type, no new kind of socket, no new persistence path: the graph **is**
-the patchbay, just allowed to bend back on itself. Add nodes from **+ NODE →
-Function**; a node's own discrete choices (a Math node's op, an LFO's wave)
-sit inside it, its sockets on its edges, and its × takes every cable
-attached to it. Values are 0..1 on both sides — the cable's out-range
+No new cable type, no new picker, no new persistence path: the graph **is**
+the patchbay, just allowed to bend back on itself. Add nodes with
+**+ add node…**; each live node gets a row in the panel for its own discrete
+choices (a Math node's op, an LFO's wave) and its ×, which also takes every
+cable attached to it. Values are 0..1 on both sides — the cable's out-range
 does the scaling into real units, exactly as it always has.
 
-**A × takes a cable or a node, never the far end.** Pulling a function node
-takes the cables that ran to it — a cable to nowhere is not a thing — but the
-sockets at the *far* end of those cables are parts of other nodes and stay
-where they are. A cable's × (in its editor) takes only the cable: both sockets
-remain, and the input keeps the range, curve, steps and invert flag it was
-given, so the next cable into it — or the same one, re-plugged — picks up
-where the last left off. An unwired socket is a perfectly good thing to have —
-it is what every socket is until something reaches it — so there is no reason
-for a deletion at one end to touch the other.
+**A × takes one node, never two.** Pulling a node takes the cables that ran to
+it — a cable to nowhere is not a thing — but the node at the *far* end of each
+of those cables stays on the board. This was an asymmetry rather than a
+policy: deleting an input already kept its outputs, and deleting an output did
+not keep its input, so pulling one node quietly took a second one with it, and
+the one that vanished uninvited was the one carrying the range and the curve.
+A node with no cable is a perfectly good thing to have — it is what
+**add an input ↓** produces — so there is no reason for one to be swept up by
+a deletion at the other end.
 
 | Node | What it computes |
 |---|---|
@@ -901,7 +827,7 @@ overdub lands in the bar, and how many times one nod counts as a press.
 ## Pitch quantisation (scales & tuning)
 
 By default the oscillators glide continuously. The **Pitch Quantize** panel
-(in the AUDIO ENGINE group) snaps both oscillator frequencies onto the
+(top of the Audio Engine column) snaps both oscillator frequencies onto the
 nearest note of a chosen **root**, **scale** and **tuning system**, so gestures
 play *in key* instead of sliding microtonally.
 
@@ -984,7 +910,7 @@ closed, like a real hand), before → after:
 
 ## Sound kits
 
-The **Sound Kit** selector (in the AUDIO ENGINE group) applies instrument
+The **Sound Kit** selector (top of the Audio Engine column) applies instrument
 timbre presets — **Synth, Piano, Organ, Trumpet, Strings, Flute, Bass** — built
 from custom harmonic waveforms, filter and effect settings on the synth engine
 (synthesized approximations, not samples; zero downloads, works offline).
@@ -1014,7 +940,7 @@ card becomes a bottom sheet.
 **Every panel explains itself.** Each section header carries a **?** at its right
 end that runs just that panel's steps — Volume Quantize tells you what GATE does
 without walking you past the camera button and the welcome first. The buttons
-appear automatically: `src/ui/workspace.js` gives one to any node that has steps,
+appear automatically: `src/ui/sections.js` gives one to any panel that has steps,
 the same way it gives every panel a fold caret and a resize grip, so a panel
 added later gets its **?** for free and a panel with nothing to say gets none.
 
@@ -1102,9 +1028,9 @@ class hidden by CSS unless `<body class="dev">`.
 
 ## Shader — visual output
 
-The **Shader** node ships in the middle column, beside the function nodes,
-not in the AUDIO ENGINE group: it is driven by signals and mappings, so it belongs beside the wiring that
-feeds it rather than among the synth's parameters. It renders a WebGL fragment shader (plasma / warp / bars)
+The **Shader** panel sits in the **patchbay** column, not the audio one: it is
+driven by signals and mappings, so it belongs beside the wiring that feeds it
+rather than among the synth's parameters. It renders a WebGL fragment shader (plasma / warp / bars)
 that reacts to the live audio level and two signals you pick (default
 `hand_R_x` / `hand_R_y`). It honors `prefers-reduced-motion` (freezes the time
 term). `src/shader.js` is the renderer (one program, `u_mode` branch);
@@ -1126,9 +1052,8 @@ labels, and icon **plus** text — never icon-only). Toggle controls expose
 ## Gesture mode
 
 **Gesture Mode** (formerly *Chord Mode*) is one section holding both halves of
-playing by gesture: the instrument on top — voicing, expression, the degree
-assignments (the key, the envelope and the arpeggiator both modes share sit
-on the **CHORD VOICE** node beside it) — and the **GESTURE
+playing by gesture: the instrument on top — key, voicing, expression, the
+degree assignments, the arpeggiator and envelope — and the **GESTURE
 CONFIGURATIONS** library folded underneath, where a gesture is calibrated,
 recorded, renamed and removed. They were two sections once, and each grew
 read-only echoes of the other to stay legible (chips on the shape rows
@@ -1614,8 +1539,7 @@ tone and read the intervals back. Harmonic minor therefore comes out
 
 Holding an assigned gesture sustains its chord; releasing it lets the chord go
 (hold-to-sound), shaped by a proper **ADSR** — attack, decay, sustain level and
-release, set on the **CHORD VOICE** node both play modes sound through (see
-Radial mode below). The envelope sits on the shared chord
+release, set in the Gesture Mode section. The envelope sits on the shared chord
 gain rather than per voice: the whole chord is one note here (the voices are
 its intervals), so one envelope is what a player means by "the chord's attack".
 Retriggering mid-release starts from the dying value rather than snapping to
@@ -1975,35 +1899,35 @@ and it keeps a minimum depth component, so an edge-on ring stays a readable
 ellipse instead of collapsing to a line — applied to the maths and the
 picture together, so what you see is what is measured.
 
-**What both modes sound through lives on one node, CHORD VOICE**, between
-them and the Chord Filter: the **key** (root, mode, octave, and FOLLOW to
-Pitch Quantize — nobody plays two scales at once), the **7ths** (one button
-per degree, labelled with the numeral it now sounds, `V` → `V7` — a 7th
-belongs to the chord rather than to whatever is playing it), the chord
-**envelope**, the **arpeggiator** and the chord bank's **SHEPARD** switch.
-Each mode used to carry its own copy of every one of these rows, rendering
-from the same state, so a change in one panel silently moved the other and a
-row hidden with a switched-off mode was a setting nothing on screen could
-reach. Now there is one row for each, every one an input socket, and the
-modes hold only what is theirs: what names a chord, what points at one, what
-sounds it.
+Three things are deliberately **shared with Gesture Mode** rather than owned
+here:
 
-Two things the modes still share by construction rather than by a node:
-
-- **The voicing.** **PLAY** offers the same choice in both: **SINGLE NOTES**
-  (the default here — pointing reads as melody) or **CHORDS**, the degree's
-  whole chord with its 7ths.
+- **The key.** The KEY row edits the *same* root/mode/octave (with the same
+  FOLLOW to Pitch Quantize) that gesture mode plays in — nobody plays two
+  scales at once, so there is one scale to pick, reachable from either panel,
+  and the two rows can never disagree because they render from one state.
+- **The voicing.** **PLAY** offers the same choice: **SINGLE NOTES** (the
+  default here — pointing reads as melody) or **CHORDS**, the degree's whole
+  chord with its 7ths as set in the gesture panel.
 - **The accidentals.** In note voicing the hand *not* wearing the menu bends
   the note with the same two shapes (**Thumbs Up** = ♯, **Thumbs Down** = ♭ by
   default — one setting, gesture mode's). A thumb turning over under a held
   note re-attacks it at the new pitch, at the held strength.
+- **The 7ths.** In chord voicing a **7THS** row appears, one button per
+  section, labelled with the numeral that degree currently sounds — so the
+  label says what the toggle did (`V` → `V7`). It writes the same table
+  gesture mode's per-chord **7th** buttons do, because a 7th belongs to the
+  chord rather than to whatever is playing it. It has to live here as well as
+  there: gesture mode's rows are hidden whenever it is switched off, and
+  enabling radial mode switches it off, so without this row the ring's
+  chords honoured a 7ths table nothing on screen could reach.
 
 **Shepard tones are the default voice** for this mode: enabling the menu
-switches the chord bank's SHEPARD on, because a menu that wraps around a
-joint pairs naturally with a timbre that wraps around the octave — runs
-around the ring climb without ever leaving their register. Toggling SHEPARD
-on the Chord Voice node overrules the default for good; the auto-on never
-fights a choice you have made.
+switches the chord bank's SHEPARD on (see Gesture Mode), because a menu that
+wraps around a joint pairs naturally with a timbre that wraps around the
+octave — runs around the ring climb without ever leaving their register.
+Toggling SHEPARD from the radial panel overrules the default for good; the
+auto-on never fights a choice you have made.
 
 Only **one** of Radial Mode and Gesture Mode is on at a time — both voice
 through the same chord bank, and two writers on one bank is a race, not
@@ -2013,8 +1937,10 @@ and setting a mode up before switching to it is half the point of having two —
 hiding the place a chord's 7th or the key is set the moment you switch away
 made every shared setting unreachable from where you were standing.
 
-The **chord ADSR** on the Chord Voice node shapes entry-speed notes; in the
-signal-volume modes there is no envelope to run — you are the envelope.
+The section also carries the **chord ADSR** — the same four sliders gesture
+mode has, writing the same envelope, since both modes voice through the same
+bank. It shapes entry-speed notes; in the signal-volume modes there is no
+envelope to run — you are the envelope.
 
 The ring is drawn on the **camera overlay**, under the skeletons, in the
 overlay's own mirrored space, with note-name labels (numerals in chord
@@ -2103,14 +2029,13 @@ all:
   there is a picture that target is gone — covering the view with a button
   would be covering the instrument — and **⏹ STOP** takes its place in the
   strip beside ⛶ FULL.
-- **Mute, SHARE, the source link and ♥** are in the header bar, where every
-  other control of the tool is — and in fullscreen, which has no bar, the
-  same strip rides the picture bottom-left, opposite the picture's own
+- **Mute, SHARE, the source link and ♥** sit bottom-left, opposite that
   strip, so neither covers the other and the middle of the frame — where you
-  are — stays clear. Mute keeps its amber, because muted is a *state*, not a
-  disabled control. The ♥ popover opens beside the ♥ wherever it is: under it
-  in the header, above it from a phone's bottom bar or the fullscreen
-  picture's lower edge.
+  are — stays clear. Small and quiet: they never compete with what they sit
+  over. Mute keeps its amber, because muted is a *state*, not a disabled
+  control. The ♥ popover opens upward from there, and hangs off the frame
+  rather than off the strip — the strip clips its segments to its own rounded
+  corners, and would clip the popover with them.
 
 ### One system, not eight chips
 
@@ -2172,7 +2097,7 @@ keyboard's height off the bottom of a windowed view.
 ### Coming back to a backgrounded tab
 
 Reported as the camera view going black after losing and regaining focus —
-while the app still read **CV ACTIVE** with values in the signal list. It
+while the app still read **CV ACTIVE** with values in the signals panel. It
 looked alive because the values were *frozen*: the last ones read before the
 tab went away.
 
@@ -2432,7 +2357,7 @@ mid-song discards the run.
 
 ## Saving & loading
 
-**SAVE** (at the foot of the header's PRESET menu) downloads the entire instrument — every
+**SAVE** (in the mapper toolbar) downloads the entire instrument — every
 mapping plus all audio parameters, waveform/filter choices, the pitch-quantise
 tuning, the volume-step configuration, and everything gesture-side (custom
 recordings, hidden built-ins, calibrated templates, the chord key and its degree
@@ -2498,11 +2423,10 @@ degrees the twin is an **angular velocity**: `elbow_L_vel` and
 because degrees per second is spans per second like anything else.
 
 They are ordinary bus signals rather than a special case, so everything that
-already walks the bus picks them up for free — the patchbay (a velocity's
-socket sits on its own channel row beneath its measure's, and it is labelled
-`… Δ` wherever a signal is named), the shader's axis pickers, the signal lists
-on the input nodes, saved patches, and `trackersFor()`, which knows a velocity
-needs the same model its measure does.
+already walks the bus picks them up for free — the patchbay's input picker
+(listed beside their measure, labelled `… Δ`), the shader's axis pickers, the
+signals panel, saved patches, and `trackersFor()`, which knows a velocity needs
+the same model its measure does.
 
 - **Signed.** Which *way* something is moving is half of what it tells you, so
   the range is symmetric about zero: full scale is four spans of the source per
@@ -2524,9 +2448,8 @@ matches and thumb contacts are on/off, `hand_dz` is itself a difference (its
 derivative would be an acceleration), and `mic_clarity` reports how much to
 trust the pitch, which is a diagnostic rather than something to play.
 
-In a node's signal list a measure with a velocity puts its name on its own
-line with both channels indented beneath it, each with its own number, bar and
-socket:
+In the signals panel a measure with a velocity puts its name on its own line
+with both channels indented beneath it, each with its own number and bar:
 
 ```
 L Hand Depth
@@ -2534,7 +2457,7 @@ L Hand Depth
     VELOCITY       1.90  ▓▓▓▓▓░░░░░░░
 ```
 
-The bar column is a fixed width in **every** row of the list, so any two bars
+The bar column is a fixed width in **every** row of the panel, so any two bars
 are read off the same ruler. The velocity bar shows **speed**, filling from
 empty in either direction — a signed value drawn straight would sit half-full
 while nothing moved — and the number beside it keeps the sign, which is where
@@ -2557,20 +2480,19 @@ on first use (`src/face.js`, own detection loop and overlay — the hand/pose
 pipeline is untouched). All face/gaze signals are registered up front, so they
 can be mapped (and saved in presets) before tracking is enabled.
 
-## Resizable nodes
+## Resizable panels
 
-Every node has a grip in its bottom-right corner: drag it to set the node's
-width and height (double-click the grip to fit the content again). A node
-given a height scrolls its body inside it; the open-ended list — GESTURE
-MODE — starts with one so it scrolls rather than runs down the canvas. The camera node keeps an exact 4:3 box (the landmark overlay is
-drawn in normalised coordinates across the whole canvas), so its grip sets a
-width and the aspect ratio sets the height. Sizes persist with the layout.
+On desktop, drag the dividers between the three columns to resize them
+(double-click a divider to reset). Widths persist across sessions. A narrow
+window squeezes the columns down to fit, but only for display — your chosen
+widths are kept and come back when there's room again.
 
 ## Desktop sizing
 
 This is a dense, small-text control surface by design — great on a laptop,
 cramped on a large monitor. Windows **≥1200px wide** get a deliberately larger
-pass: text, paddings, sliders, sockets and piano keyboards all scale up together, via a single
+pass: text, paddings, sliders, node-graph sockets, piano keyboards and the
+default side-panel widths all scale up together, via a single
 `@media (min-width: 1200px)` block in `css/main.css` plus a matching
 `src/ui/viewport.js` `isDesktop()` check for the handful of canvases (piano
 keyboards, the game highway, the oscilloscope) that draw at a JS-specified
@@ -2614,15 +2536,7 @@ silently falls back to the monocular estimate. The pluggable backend lives in
 index.html          HTML skeleton
 css/
   main.css          All styles (CSS variables, layout, components)
-vendor/             Third-party libraries, bundled by scripts/vendor.mjs into
-                    single-file ES modules the browser loads directly —
-                    lit-html (templating), d3-zoom (pan/zoom), dagre (TIDY
-                    layout). See vendor/LICENSES.md.
 src/
-  workspace.js      The workspace model: nodes, groups, what a collapsed group
-                    exposes, persistence (DOM-free, unit-tested)
-  params.js         Parameter categories and which node owns each parameter /
-                    signal (paramOwner, signalOwner)
   bus.js            Signal registry (adaptive calibration + One-Euro smoothing)
   filter.js         One-Euro low-latency jitter filter
   qr.js             QR encoder (byte mode, no dependencies)
@@ -2635,8 +2549,6 @@ src/
   math.js           Geometry helpers (dist3, angles, openness, extension,
                     thumb-out and thumb-to-fingertip contact)
   engine.js         Web Audio API synthesiser
-  controls.js       Mappable switches and choices (filter type, key, tempo,
-                    gates, arp) as engine params
   scale.js          Scale + tuning pitch quantiser
   storage.js        Brand-prefixed localStorage + legacy-key migration
   dynamics.js       Volume step ladder (dB levels, silence gate, hysteresis)
@@ -2662,8 +2574,7 @@ src/
   main.js           Event handlers and RAF entry point
   ui/
     status.js       Status dot and toast notifications
-    workspace.js    The canvas: viewport, node shells, section adoption, drag /
-                    resize / select, groups, pinning, the add menu, TIDY
+    resize.js       Draggable panel splitters (desktop)
     viewport.js     isDesktop() breakpoint check, shared with main.css
     fullscreen.js   Fullscreen camera view + keyboard overlay
     cam-badge.js    Setup name on the frame (+ the DEV-mode QR of it)
@@ -2671,10 +2582,8 @@ src/
     playalong-ui.js Falling-note highway renderer + game panel
     gesture-ui.js   Gesture Mode panel section (assignments + handshape library)
     shader-ui.js    Shader visual-output panel section
-    signals.js      Signal lists inside the camera / mic / metronome nodes
-                    (output sockets, live values)
-    mapper-ui.js    The patch on the canvas: sockets on the panels, cables,
-                    the floating cable editor, function nodes
+    signals.js      Signal panel (build + live update)
+    mapper-ui.js    Mapper rows (render + live bars)
     audio-ui.js     Audio panel (waveform buttons, sliders)
     model-ui.js     Dev-mode pose model comparison panel
     donate.js       Support/donations popover
@@ -2684,7 +2593,6 @@ src/
     hotkeys.js      Keyboard shortcuts (mute, default Space) — rebindable,
                     persisted, and kept clear of typing
 scripts/
-  vendor.mjs        Bundles the libraries in package.json into vendor/
   mobile-serve.mjs  Local HTTPS server for on-device (phone) testing
   screenshot.mjs    Regenerates docs/screenshot.png (npm run screenshot)
   screenshot-sync.mjs
@@ -2694,14 +2602,12 @@ scripts/
   lib/capture.mjs   The one capture recipe both screenshot scripts share
 sw.js               Service worker (network-first app shell, cached MediaPipe models)
 tests/
-  unit/             node --test suites (workspace model, chords, diatonic degrees, gesture mode,
+  unit/             node --test suites (chords, diatonic degrees, gesture mode,
                     gesture matching + degradation robustness, judging, notes,
                     filter, dynamics, stepped volume, mapper steps, hotkeys)
   contrast/         WCAG contrast checks over the OKLab palette
   gesture-img/      Gesture recognition over reference photos (MediaPipe);
                     --calibrate prints vectors + pairwise template distances
-  layout/           The header at every breakpoint, and the node workspace —
-                    adoption, placement, chrome, gestures, persistence
   tutorial/         Tour staleness guard — fails CI if a step targets dead UI
   sw-freshness/     Proves a redeploy is visible on the very next load
   audio-launch/     Engine starts muted and usable against a *suspended*
@@ -2725,19 +2631,6 @@ python3 -m http.server 8080
 ```
 
 Then open `http://localhost:8080`.
-
-### Dependencies
-
-The app runs on three small, permissively licensed libraries —
-[lit-html](https://lit.dev/) (BSD-3) for the workspace's templates,
-[d3-zoom](https://d3js.org/d3-zoom) (ISC) for the viewport, and
-[dagre](https://github.com/dagrejs/dagre) (MIT) for TIDY. There is still no
-build step between a commit and a deploy: each library is bundled **once**, by
-`npm run vendor` (esbuild), into a single-file ES module under `vendor/` that
-is committed like any other source file, imported by relative path, and
-precached by the service worker like any other module. Bump a version in
-`package.json`, re-run `npm run vendor`, commit the result;
-`vendor/LICENSES.md` is regenerated with it.
 
 ## Testing on mobile
 
@@ -2814,19 +2707,15 @@ is honest about it rather than papering over it with a large tolerance.
 
 ## UI/UX tests
 
-**Disabled until further notice.** This suite takes Playwright screenshots
-across four viewports and has Claude Vision grade them — an API call per
-viewport, judged rather than asserted — so it is switched off in CI and
-`npm run test:ui` exits at once. The deterministic guards (contrast, tutorial,
-service worker, audio launch, layout) are what gate a change. To run it anyway:
+The test suite takes Playwright screenshots across four viewports and evaluates them with Claude Vision:
 
 ```bash
 npm install
-MOTIONMUSE_UI_TESTS=1 ANTHROPIC_API_KEY=sk-ant-… npm run test:ui
+ANTHROPIC_API_KEY=sk-ant-… npm run test:ui
 # open test-results/ui-ux-report.html
 ```
 
-Without `ANTHROPIC_API_KEY` the screenshots are still saved but LLM evaluation is skipped.
+Without `ANTHROPIC_API_KEY` the screenshots are still saved but LLM evaluation is skipped (CI exits 0).
 
 ## Inference HUD (dev mode)
 

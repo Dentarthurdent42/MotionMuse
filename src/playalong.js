@@ -16,6 +16,7 @@ import { chordmode }    from './chordmode.js';
 import { radial }       from './radial.js';
 import { midiOf }       from './ui/keyboard.js';
 import { toast }        from './ui/status.js';
+import { renderMapper } from './ui/mapper-ui.js';
 
 // Difficulty is POLYPHONY now, not note-dropping: see chart.js. The timing
 // window and fall speed are the same for both levels, because how long you
@@ -194,9 +195,7 @@ export const playalong = {
         toast(`Added mapping: ${sig === 'hand_L_y' ? 'Left' : 'Right'} Wrist Y → Osc${i} pitch`);
         added++;
       }
-      // The canvas redraws its cables on demand, and asking for it lazily
-      // keeps this module free of the DOM the patchbay needs.
-      if (added) import('./ui/mapper-ui.js').then(m => m.renderMapper());
+      if (added) renderMapper();
     } else {
       // A degree chart is played through a play mode, so that mode has to be
       // on — same rule as the lead voice above: the game sets up what it

@@ -19,23 +19,16 @@
     "test:tutorial": "node tests/tutorial/index.js",
     "test:sw": "node tests/sw-freshness/index.js",
     "test:launch": "node tests/audio-launch/index.js",
-    "test:layout": "node tests/layout/index.js",
-    "vendor": "node scripts/vendor.mjs"
+    "test:layout": "node tests/layout/index.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.54.0",
     "playwright": "^1.52.0"
   },
   "devDependencies": {
-    "@dagrejs/dagre": "^1.1.5",
     "@mediapipe/tasks-vision": "^1.0.1",
     "@oxlint/plugins": "^1.79.0",
-    "d3-selection": "^3.0.0",
-    "d3-transition": "^3.0.1",
-    "d3-zoom": "^3.0.0",
-    "esbuild": "^0.25.9",
     "jsqr": "^1.4.0",
-    "lit-html": "^3.3.1",
     "oxlint": "^1.79.0",
     "three": "^0.185.1"
   }

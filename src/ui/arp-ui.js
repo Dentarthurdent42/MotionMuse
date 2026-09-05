@@ -11,8 +11,6 @@ import { engine }    from '../engine.js';
 import { metronome } from '../metronome.js';
 import { arpvoice, ARP_SYNCS } from '../arpvoice.js';
 import { ARP_PATTERNS, ARP_MAX_OCTAVES, noteEnvelope } from '../arp.js';
-import { inPort } from './mapper-ui.js';
-import { syncControls } from '../controls.js';
 
 const PATTERN_LABEL = {
   up: 'UP', down: 'DOWN', updown: 'UP · DOWN', downup: 'DOWN · UP', random: 'RANDOM',
@@ -24,37 +22,30 @@ export function arpRowHTML(p) {
   const arpRate = engine.PARAMS.arp_rate, arpGate = engine.PARAMS.arp_gate;
   const arpSus = engine.PARAMS.arp_sustain;
   const synced = a.sync > 0 && metronome.on;
-  // The arpeggiator is one instrument shared by both play modes; its row —
-  // and its input sockets — live on the CHORD VOICE node (src/ui/voice-ui.js).
-  const sock = key => (p === 'cv' ? inPort(key) : '');
   return `
     <div class="chord-arp">
-      <span class="chord-key-lbl">${sock('arp_on')}ARP</span>
+      <span class="chord-key-lbl">ARP</span>
       <button class="wave-btn${a.enabled ? ' on' : ''}" id="${p}-arp" aria-pressed="${a.enabled}"
               title="Play the held chord one note at a time instead of as a block. Same chord, same input, same expression — the notes just take turns. One arpeggiator serves both play modes.">${a.enabled ? 'ON' : 'OFF'}</button>
-      <select id="${p}-arp-oct" class="arp-oct" aria-label="Arpeggio octave range" ${a.enabled ? '' : 'disabled'}
+      <select id="${p}-arp-pattern" aria-label="Arpeggio pattern" ${a.enabled ? '' : 'disabled'}
+              title="The order the chord's notes are played in. UP · DOWN turns at the ends without playing them twice.">
+        ${ARP_PATTERNS.map(k => `<option value="${k}"${k === a.pattern ? ' selected' : ''}>${PATTERN_LABEL[k]}</option>`).join('')}
+      </select>
+      <select id="${p}-arp-oct" aria-label="Arpeggio octave range" ${a.enabled ? '' : 'disabled'}
               title="How many octaves the run covers. More octaves means more notes before the pattern repeats.">
         ${Array.from({ length: ARP_MAX_OCTAVES }, (_, i) => i + 1).map(o =>
           `<option value="${o}"${o === a.octaves ? ' selected' : ''}>${o} OCT</option>`).join('')}
       </select>
     </div>
-    <!-- Its own row, so the pattern's socket has the node's edge to itself. -->
-    <div class="chord-arp chord-arp-pat">
-      <span class="chord-key-lbl">${sock('arp_pattern')}PATTERN</span>
-      <select id="${p}-arp-pattern" aria-label="Arpeggio pattern" ${a.enabled ? '' : 'disabled'}
-              title="The order the chord's notes are played in. UP · DOWN turns at the ends without playing them twice.">
-        ${ARP_PATTERNS.map(k => `<option value="${k}"${k === a.pattern ? ' selected' : ''}>${PATTERN_LABEL[k]}</option>`).join('')}
-      </select>
-    </div>
     ${a.enabled ? `
     <div class="chord-arp-cal">
-      <label class="ctrl-lbl" title="Notes per second. Also an input socket — wire a signal to it and your hand drives the tempo. Dimmed while SYNC follows the metronome instead.">${sock('arp_rate')}RATE
+      <label class="ctrl-lbl" title="Notes per second. Also a patchbay output — wire a signal to Arp Rate and your hand drives the tempo. Dimmed while SYNC follows the metronome instead.">RATE
         <input type="range" id="${p}-arp-rate" min="${arpRate.min}" max="${arpRate.max}" step="0.1" value="${arpRate.val}"${synced ? ' disabled' : ''}>
       </label>
-      <label class="ctrl-lbl" title="How long each note rings, in steps: below 1 is staccato, 1 runs notes wall-to-wall, above 1 lets each note ring under the ones that follow. Also an input socket.">${sock('arp_gate')}GATE
+      <label class="ctrl-lbl" title="How long each note rings, in steps: below 1 is staccato, 1 runs notes wall-to-wall, above 1 lets each note ring under the ones that follow. Also a patchbay output.">GATE
         <input type="range" id="${p}-arp-gate" min="${arpGate.min}" max="${arpGate.max}" step="0.01" value="${arpGate.val}">
       </label>
-      <label class="ctrl-lbl" title="How long each note rings ON after its gate closes, in steps — the tail. A gate alone cannot give a note one: without sustain the engine cuts every note dead at its gate, which is what makes an arpeggio sound clipped at any speed. Also an input socket.">${sock('arp_sustain')}SUS
+      <label class="ctrl-lbl" title="How long each note rings ON after its gate closes, in steps — the tail. A gate alone cannot give a note one: without sustain the engine cuts every note dead at its gate, which is what makes an arpeggio sound clipped at any speed. Also a patchbay output.">SUS
         <input type="range" id="${p}-arp-sus" min="${arpSus.min}" max="${arpSus.max}" step="0.01" value="${arpSus.val}">
       </label>
       <label class="ctrl-lbl" title="Lock the run to the metronome: steps per beat, taking effect while the metronome is ON. FREE uses the RATE slider.">SYNC
@@ -72,13 +63,10 @@ export function wireArpRow(p, rerender) {
   // a re-render mid-drag drops the pointer capture.
   document.getElementById(`${p}-arp`)?.addEventListener('click', () => {
     arpvoice.set({ enabled: !arpvoice.enabled });
-    syncControls();
     rerender();
   });
-  document.getElementById(`${p}-arp-pattern`)?.addEventListener('change', e => {
-    arpvoice.set({ pattern: e.target.value });
-    syncControls();
-  });
+  document.getElementById(`${p}-arp-pattern`)?.addEventListener('change', e =>
+    arpvoice.set({ pattern: e.target.value }));
   document.getElementById(`${p}-arp-oct`)?.addEventListener('change', e =>
     arpvoice.set({ octaves: Number(e.target.value) }));
   document.getElementById(`${p}-arp-sync`)?.addEventListener('change', e => {
