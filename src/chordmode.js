@@ -187,14 +187,6 @@ export const chordmode = (() => {
   let voicing = 'chord';
   let namingHand = 'any';    // 'any' | 'L' | 'R' — see namingSides()
   let accGestures = { ...DEFAULT_ACCIDENTAL_GESTURES };
-  // A degree, the release or an accidental can be held by a CABLE instead of
-  // a handshape: any signal wired into its socket (src/chordcables.js). The
-  // cable's end is a pseudo-gesture id — 'cable:<what>' — assigned like a
-  // shape and held while the cable reads high. Read alongside the hands.
-  let cableHeld = new Set();
-  // "The assignments changed" — the cables that draw them follow.
-  const assignCbs = [];
-  const notifyAssign = () => assignCbs.forEach(cb => cb());
   let latched = null;   // chord handshape held over, in hand/brow modes
   let latchedSide = null;     // which hand latched it — the OTHER one bends it
   let gateOpen = false; // gate control: is the envelope currently attacked
@@ -322,8 +314,6 @@ export const chordmode = (() => {
   // including no shape at all, which is what makes "natural" the resting
   // state rather than a third thing to hold.
   const accidentalOn = side => {
-    if (cableHeld.has(accGestures.sharp)) return SHARP;
-    if (cableHeld.has(accGestures.flat)) return FLAT;
     const held = gesture.activeOn(side);
     if (held === null) return NATURAL;
     if (held === accGestures.sharp) return SHARP;
@@ -360,13 +350,6 @@ export const chordmode = (() => {
       if (id === null || seen.has(id) || !liveDegree(assignments[id])) continue;
       seen.add(id);
       out.push({ id, side });
-    }
-    // A cable holding a degree names it like a hand would — from no side,
-    // so no hand's accidental applies to it.
-    for (const id of cableHeld) {
-      if (seen.has(id) || !liveDegree(assignments[id])) continue;
-      seen.add(id);
-      out.push({ id, side: null });
     }
     return out;
   };
@@ -406,22 +389,7 @@ export const chordmode = (() => {
         silence();
         latched = null; latchedSide = null;
         gateOpen = false; voiced = null;
-      } else {
-        if (!Object.keys(assignments).length && !releaseGesture) {
-          // Switched on with nothing to play: a patch that replaced the
-          // cables took the shapes with them. The mode arrives with its shapes.
-          assignments = { ...DEFAULT_ASSIGNMENTS };
-          releaseGesture = DEFAULT_RELEASE_GESTURE;
-          accGestures = { ...DEFAULT_ACCIDENTAL_GESTURES };
-        }
-        notifyAssign();      // the cables are drawn while the mode is on
       }
-    },
-
-    // Cables (src/chordcables.js): what changed, and what a cable holds.
-    onAssign(cb) { assignCbs.push(cb); },
-    setCableHeld(id, on) {
-      if (on) cableHeld.add(id); else cableHeld.delete(id);
     },
 
     key: () => ({ ...key }),
@@ -476,7 +444,6 @@ export const chordmode = (() => {
         else next.sharp = null;
       }
       accGestures = next;
-      notifyAssign();
       return { ...accGestures };
     },
     // What the off hand is saying right now, for the panel's indicator.
@@ -518,7 +485,6 @@ export const chordmode = (() => {
       for (const id of playingIds()) if (assignments[id] === undefined) voices.delete(id);
       if (anySounding()) this._sound({ restart: false, attack: false });
       else if (held) silence();
-      notifyAssign();
     },
 
     setSeventh(degree, on) {
@@ -624,7 +590,7 @@ export const chordmode = (() => {
       // Checked first, but the assignment writers now guarantee the release
       // shape carries no chord, so this is a belt-and-braces ordering rather
       // than a rule that resolves a real conflict.
-      if (releaseGesture && (held.includes(releaseGesture) || cableHeld.has(releaseGesture))) {
+      if (releaseGesture && held.includes(releaseGesture)) {
         if (anySounding()) silence();
         return;
       }
@@ -864,7 +830,6 @@ export const chordmode = (() => {
     setReleaseGesture(id) {
       releaseGesture = id || null;
       if (releaseGesture) this.unassign(releaseGesture);
-      notifyAssign();
       return releaseGesture;
     },
 
@@ -875,7 +840,6 @@ export const chordmode = (() => {
     // the question this setting exists to answer.
     namedNow: () => namedWithSide(),
 
-    namingHand: () => namingHand,
     setNamingHand(v) {
       namingHand = (v === 'L' || v === 'R') ? v : 'any';
       return namingHand;
@@ -968,7 +932,6 @@ export const chordmode = (() => {
         else seen.add(d);
       }
       this.setEnabled(!!data.enabled);
-      notifyAssign();
     },
   };
 })();

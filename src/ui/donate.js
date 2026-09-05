@@ -26,24 +26,12 @@ export function initDonate() {
     ${LINKS.map(([name, url]) => `
       <a href="${url}" target="_blank" rel="noopener" role="menuitem">${name} ↗</a>`).join('')}
   `;
-  document.body.appendChild(pop);
+  (document.getElementById('video-wrap') ?? btn.parentElement).appendChild(pop);
 
-  // Beside the ♥, wherever it is: under it in the header, above it when the
-  // bar is at the bottom of a phone's screen or the ♥ is on the fullscreen
-  // picture's lower edge. Fixed, so a transformed ancestor cannot move it.
-  const place = () => {
-    const r = btn.getBoundingClientRect();
-    const up = r.top > window.innerHeight / 2;
-    pop.style.left = `${Math.round(Math.max(6, Math.min(r.left, window.innerWidth - pop.offsetWidth - 6)))}px`;
-    pop.style.top = up ? 'auto' : `${Math.round(r.bottom + 4)}px`;
-    pop.style.bottom = up ? `${Math.round(window.innerHeight - r.top + 4)}px` : 'auto';
-  };
   const setOpen = open => {
     pop.hidden = !open;
     btn.setAttribute('aria-expanded', String(open));
-    if (open) place();
   };
-  window.addEventListener('resize', () => { if (!pop.hidden) place(); });
   btn.addEventListener('click', e => { e.stopPropagation(); setOpen(pop.hidden); });
   document.addEventListener('click', e => {
     if (!pop.hidden && !pop.contains(e.target)) setOpen(false);

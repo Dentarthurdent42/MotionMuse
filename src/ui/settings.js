@@ -14,7 +14,7 @@ import { devmode }                   from '../devmode.js';
 import { buildInfo, buildLabel }        from '../build.js';
 import { keyLabel, getBinding, setBinding, captureNextKey } from './hotkeys.js';
 import { uicontrol } from '../uicontrol.js';
-import { resetLayout, layoutMode, setLayoutMode } from './workspace.js';
+import { resetLayout }               from './sections.js';
 
 let pop = null;
 
@@ -62,19 +62,9 @@ function build() {
          it — including ones that moved the sections it names. Without this the
          only cure is clearing site data, which also takes your gestures,
          patches and presets with it. -->
-    <!-- Two ways to hold the workspace: the pan-and-zoom canvas, or one
-         column the width of the screen. Auto picks by the screen — a phone
-         gets the column — and this is the override for a small window that
-         wants the canvas, or a big one that wants the stack. -->
     <label class="set-row">LAYOUT
-      <select id="layout-mode-select" title="Auto: one scrolling column on a phone, the pan-and-zoom canvas otherwise. Or choose either, whatever the screen.">
-        ${[['auto', 'auto'], ['canvas', 'canvas · pan & zoom'], ['column', 'column · one stack']].map(([v, l]) =>
-          `<option value="${v}"${layoutMode() === v ? ' selected' : ''}>${l}</option>`).join('')}
-      </select>
-    </label>
-    <label class="set-row">RESET LAYOUT
       <button class="wave-btn" id="layout-reset-btn" type="button"
-              title="Put every node back where the app puts it, forgetting any you have moved, resized, grouped, pinned or closed. Gestures, patches and presets are untouched.">RESET</button>
+              title="Put every section back where the app puts it, forgetting any you have moved, resized or collapsed. Gestures, patches and presets are untouched.">RESET</button>
     </label>
     <!-- Which build is on screen. Here rather than only in the console because
          the question it answers — "am I looking at a cached copy?" — comes up
@@ -88,7 +78,6 @@ function build() {
   });
 
   el.querySelector('#theme-select').addEventListener('change', e => setTheme(e.target.value));
-  el.querySelector('#layout-mode-select').addEventListener('change', e => setLayoutMode(e.target.value));
 
   // Two taps, because it discards work and there is no undo — the second tap
   // is the confirmation, and moving away from the button cancels it.
@@ -156,12 +145,8 @@ export function initSettings() {
     // Anchored to the button rather than the header: the header is a
     // containing block for its own popovers, and on mobile it wraps to three
     // rows, which would drag the menu down with it.
-    // Below the button, or above it when the bar is at the bottom of the
-    // screen (a phone): the menu opens away from the edge it hangs from.
     const r = btn.getBoundingClientRect();
-    const up = r.top > window.innerHeight / 2;
-    pop.style.top = up ? 'auto' : `${Math.round(r.bottom + 4)}px`;
-    pop.style.bottom = up ? `${Math.round(window.innerHeight - r.top + 4)}px` : 'auto';
+    pop.style.top = `${Math.round(r.bottom + 4)}px`;
     pop.style.right = `${Math.round(window.innerWidth - r.right)}px`;
     pop.classList.add('open');
     btn.setAttribute('aria-expanded', 'true');

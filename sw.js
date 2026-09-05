@@ -1,4 +1,4 @@
-const CACHE = 'motionmuse-v39';
+const CACHE = 'motionmuse-v33';
 
 // MediaPipe wasm + .task model files live at versioned/immutable URLs, so
 // cache-first is safe and saves ~10-25MB of re-download on every cold load
@@ -23,7 +23,6 @@ const STATIC = [
   '/src/filter.js',
   '/src/math.js',
   '/src/engine.js',
-  '/src/controls.js',
   '/src/audiosession.js',
   '/src/scale.js',
   '/src/storage.js',
@@ -50,6 +49,7 @@ const STATIC = [
   '/src/depth.js',
   '/src/face.js',
   '/src/ui/status.js',
+  '/src/ui/resize.js',
   '/src/ui/viewport.js',
   '/src/ui/fullscreen.js',
   '/src/ui/cam-badge.js',
@@ -64,22 +64,12 @@ const STATIC = [
   '/src/ui/mapper-ui.js',
   '/src/ui/arp-ui.js',
   '/src/ui/audio-ui.js',
-  '/src/ui/ports.js',
-  '/src/ui/rows.js',
-  '/src/ui/voice-ui.js',
   '/src/ui/viz.js',
   '/src/ui/donate.js',
   '/src/ui/hotkeys.js',
   '/src/ui/share.js',
   '/src/ui/firstrun.js',
-  '/src/ui/workspace.js',
-  '/src/ui/cam-sticky.js',
-  '/src/workspace.js',
-  '/src/chordcables.js',
-  '/src/params.js',
-  '/vendor/lit-html.js',
-  '/vendor/d3-zoom.js',
-  '/vendor/dagre.js',
+  '/src/ui/sections.js',
   '/src/ui/theme.js',
   '/src/ui/tutorial.js',
   '/src/ui/preset-menu.js',
