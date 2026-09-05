@@ -11,16 +11,6 @@ import { gesture }                                          from './gesture.js';
 import { uicontrol }                                        from './uicontrol.js';
 import { metronome }                                        from './metronome.js';
 import { radial }                                           from './radial.js';
-import { overlayPalette }                                   from './overlaypalette.js';
-
-// 30fps is plenty for musical control; a 60Hz camera would double the
-// inference load for no audible benefit. A module constant because the camera
-// is asked for in two places now — the first start, and the recovery after a
-// browser hands it back (see `restore`) — and two copies of a constraint set
-// is two cameras that can differ.
-const CAMERA_CONSTRAINTS = {
-  video: { width: 640, height: 480, frameRate: { ideal: 30 }, facingMode: 'user' },
-};
 
 // How sure the handedness guess has to be before it is allowed to REJECT a
 // hand. MediaPipe reports a score per detection; below this the label is a coin
@@ -58,22 +48,18 @@ const POSE_SIGNALS = [
 ];
 
 
-// Hand skeleton topology (MediaPipe 21 landmarks), split by ROLE: the palm is
-// the hand's chassis and draws in its side colour; each finger is a chain of
-// four joints and three bones that draws in its own hue with a lightness ramp
-// toward the tip (see overlaypalette.js). One flat list of connections was
-// enough when the whole hand was one colour; it isn't the shape of the
-// colouring any more.
-const PALM_CONNS = [[0,1],[0,5],[0,9],[0,13],[0,17],[5,9],[9,13],[13,17]];
-const FINGER_CHAINS = [
-  [1,2,3,4], [5,6,7,8], [9,10,11,12], [13,14,15,16], [17,18,19,20],
+// Hand skeleton connections (MediaPipe 21-landmark topology)
+const HAND_CONNS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [0,9],[9,10],[10,11],[11,12],
+  [0,13],[13,14],[14,15],[15,16],
+  [0,17],[17,18],[18,19],[19,20],
+  [5,9],[9,13],[13,17],
 ];
 
-// Pose skeleton (subset of 33-landmark BlazePose), same split: the torso is
-// furniture, the arms are limbs that ramp toward the wrists they hand over to.
-const TORSO_CONNS = [[11,12],[11,23],[12,24],[23,24]];
-const ARM_CONNS = { L: { upper: [11,13], fore: [13,15] },
-                    R: { upper: [12,14], fore: [14,16] } };
+// Pose skeleton connections (subset of 33-landmark BlazePose)
+const POSE_CONNS = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24]];
 
 export const cvSource = {
   hand:     null,
@@ -369,7 +355,11 @@ export const cvSource = {
     this.canvas = document.getElementById('overlay');
     this.ctx    = this.canvas.getContext('2d');
 
-    const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      // 30fps is plenty for musical control; a 60Hz camera would double
+      // the inference load for no audible benefit.
+      video: { width: 640, height: 480, frameRate: { ideal: 30 }, facingMode: 'user' },
+    });
     this.video.srcObject = stream;
     await new Promise(r => this.video.onloadedmetadata = r);
 
@@ -390,45 +380,6 @@ export const cvSource = {
   // ── Camera shutdown ──────────────────────────────────────────────────
   // Actually releases the camera: stops every MediaStream track (turning the
   // hardware indicator off), detaches the stream, and resets the view.
-  // ── Coming back to a backgrounded tab ────────────────────────────────
-  //
-  // Reported as the camera view going black after losing and regaining focus,
-  // with the app otherwise looking alive: the status still read CV ACTIVE and
-  // the signals panel still showed values. It looked alive because the values
-  // were FROZEN — the last ones read before the tab went away.
-  //
-  // Both halves come from the same thing. A backgrounded tab has its <video>
-  // paused by the browser, and on iOS the camera track is often ended
-  // outright; either way `currentTime` stops advancing, and the inference loop
-  // is gated on exactly that (see `loop`), so it stops feeding the bus while
-  // still running. Nothing restarts the element on the way back in: `autoplay`
-  // already fired once and does not fire again.
-  //
-  // So the fix has two cases, and the cheap one is not enough on its own:
-  // play() revives a merely paused element, but a track the browser ENDED is
-  // gone for good and only a fresh getUserMedia brings the camera back. The
-  // models, the canvases and the loop are untouched — this reattaches a stream
-  // to a pipeline that never stopped, rather than restarting the camera.
-  async restore() {
-    if (!this.running || !this.video) return false;
-    const track = this.video.srcObject?.getVideoTracks?.()[0];
-    if (!track || track.readyState === 'ended') {
-      try {
-        this.video.srcObject = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
-      } catch {
-        // Permission withdrawn, or the device taken by another app while we
-        // were away. Leave the view as it is rather than tearing the session
-        // down: STOP and START are right there, and they say what happened.
-        return false;
-      }
-    }
-    // A paused element that is not resumed is the black frame. play() can also
-    // be refused when the tab is not really foregrounded yet, which is why the
-    // caller listens for the events that mean it is.
-    try { await this.video.play(); } catch { /* not focused yet */ }
-    return !this.video.paused;
-  },
-
   stopCamera() {
     this.running = false;
     // No camera means no hands to steer with — an armed cursor would be a
@@ -762,12 +713,6 @@ export const cvSource = {
       put('nose_y', nose.y); // raw: high = head down
     }
     for (const k of POSE_SIGNALS) if (!fresh.has(k)) bus.decay(k);
-    // Body gestures are matched off the joint angles above, and a decayed
-    // channel reads the same as a genuine zero — so a body is only present
-    // for matching while the model is actually placing the joints a stance is
-    // made of. (Landmarks it merely guessed at are already gated out above.)
-    gesture.setPresence('body', fresh.has('elbow_L') || fresh.has('elbow_R')
-                             || fresh.has('shoulder_elev_L') || fresh.has('shoulder_elev_R'));
 
     // Torso distance-from-camera (LiDAR if active, else shoulder-span estimate).
     depthSource.feedPose(lm ?? null);
@@ -806,93 +751,60 @@ export const cvSource = {
     // its own contrast (scrim + halos), so no theme token goes in.
     radial.draw(ctx, lx, ly);
 
-    // Skeleton colours come from the ACTIVE THEME (overlaypalette.js): the
-    // side anchors are the theme's own --purple/--cyan accents, each finger a
-    // hue of its own, each chain a lightness ramp toward its tip — so a bone
-    // or joint is tellable both from its neighbours and from the other hand,
-    // and the overlay recolours itself when the theme does.
+    // Batched drawing: one stroked path per hand (all 24 connections), one
+    // filled path per dot colour — ~8 canvas ops instead of ~100.
     //
-    // Still batched, by (colour, line width): a fingered palette costs ~40
-    // small path ops per frame instead of the flat palette's 8 — trivial for
-    // canvas — where styling every segment individually would be ~150 style
-    // changes, which is the cost batching was added to avoid.
-    const pal = overlayPalette();
-    const batches = new Map();
-    const batch = (col, w) => {
-      const key = `${col}|${w}`;
-      let b = batches.get(key);
-      if (!b) { b = { col, w, segs: [], dots: [] }; batches.set(key, b); }
-      return b;
-    };
-    const seg = (b, lm, i, j) => {
-      if (lm[i] && lm[j]) b.segs.push(lx(lm[i].x), ly(lm[i].y), lx(lm[j].x), ly(lm[j].y));
-    };
-    const dot = (b, lm, i, r) => { if (lm[i]) b.dots.push(lx(lm[i].x), ly(lm[i].y), r); };
-
-    // `hands` is the resolved side→landmarks map, so the colours come from
+    // `hands` is the resolved side→landmarks map, so the colour comes from
     // the side the hand was actually filed under rather than from a label
     // read a second time — the picture and the signals cannot disagree.
     for (const s of ['L', 'R']) {
       const lm = hands?.[s];
-      if (!lm) continue;
-      const P = pal.side[s];
-      const web = batch(P.web, 1.5);
-      PALM_CONNS.forEach(([a, b]) => seg(web, lm, a, b));
-      FINGER_CHAINS.forEach((chain, f) => {
-        const F = P.fingers[f];
-        for (let k = 0; k < 3; k++) seg(batch(F.bones[k], 1.5), lm, chain[k], chain[k + 1]);
-        // Tips are the landmarks a player watches (they are where contact
-        // and extension live), so they get the lightest step and a bigger dot.
-        chain.forEach((li, k) => dot(batch(F.joints[k], 0), lm, li, k === 3 ? 2.6 : 2));
-      });
-    }
-
-    if (pose) {
-      const torso = batch(pal.torsoBone, 2);
-      TORSO_CONNS.forEach(([a, b]) => seg(torso, pose, a, b));
-      for (const s of ['L', 'R']) {
-        const P = pal.side[s];
-        seg(batch(P.upperArm, 2), pose, ...ARM_CONNS[s].upper);
-        seg(batch(P.forearm, 2), pose, ...ARM_CONNS[s].fore);
-        dot(batch(P.elbow, 0), pose, ARM_CONNS[s].fore[0], 3);
-        // The wrist dot wears the palm colour: the arm ends where its hand
-        // begins, and the two skeletons say so in the same ink.
-        dot(batch(P.wrist, 0), pose, ARM_CONNS[s].fore[1], 3);
-      }
-      dot(batch(pal.shoulder, 0), pose, 11, 3);
-      dot(batch(pal.shoulder, 0), pose, 12, 3);
-    }
-
-    for (const { col, w, segs, dots } of batches.values()) {
-      if (segs.length) {
-        ctx.strokeStyle = col; ctx.lineWidth = w;
+      if (lm) {
+        const col = s === 'R' ? '#00e5cc' : '#9d5cff';
+        ctx.strokeStyle = col + 'aa'; ctx.lineWidth = 1.5;
         ctx.beginPath();
-        for (let i = 0; i < segs.length; i += 4) {
-          ctx.moveTo(segs[i], segs[i + 1]);
-          ctx.lineTo(segs[i + 2], segs[i + 3]);
-        }
+        HAND_CONNS.forEach(([a, b]) => {
+          ctx.moveTo(lx(lm[a].x), ly(lm[a].y));
+          ctx.lineTo(lx(lm[b].x), ly(lm[b].y));
+        });
         ctx.stroke();
-      }
-      if (dots.length) {
         ctx.fillStyle = col;
         ctx.beginPath();
-        for (let i = 0; i < dots.length; i += 3) {
-          ctx.moveTo(dots[i] + dots[i + 2], dots[i + 1]);
-          ctx.arc(dots[i], dots[i + 1], dots[i + 2], 0, Math.PI * 2);
-        }
+        lm.forEach((pt, i) => {
+          if (i === 0) return;
+          ctx.moveTo(lx(pt.x) + 2, ly(pt.y));
+          ctx.arc(lx(pt.x), ly(pt.y), 2, 0, Math.PI * 2);
+        });
+        ctx.fill();
+        // The wrist anchor is the one neutral mark on the overlay, and the
+        // stage tints the video toward its own lightness — so it inks dark on
+        // a light stage and white on a dark one. The hand and pose colours
+        // below stay fixed: they identify left from right and hand from body
+        // over arbitrary camera content, which is not a job for the palette.
+        ctx.fillStyle = themeToken('--glass-ink', '#fff');
+        ctx.beginPath();
+        ctx.arc(lx(lm[0].x), ly(lm[0].y), 3, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
-    // The wrist anchor stays the one neutral mark on the overlay: the stage
-    // tints the video toward its own lightness, so it inks dark on a light
-    // stage and white on a dark one.
-    for (const s of ['L', 'R']) {
-      const lm = hands?.[s];
-      if (!lm?.[0]) continue;
-      ctx.fillStyle = themeToken('--glass-ink', '#fff');
+    if (pose) {
+      const lm = pose;
+      ctx.strokeStyle = '#f0a50066'; ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(lx(lm[0].x), ly(lm[0].y), 3, 0, Math.PI * 2);
+      POSE_CONNS.forEach(([a, b]) => {
+        if (!lm[a] || !lm[b]) return;
+        ctx.moveTo(lx(lm[a].x), ly(lm[a].y));
+        ctx.lineTo(lx(lm[b].x), ly(lm[b].y));
+      });
+      ctx.stroke();
+      ctx.fillStyle = '#f0a500';
+      ctx.beginPath();
+      [11, 12, 13, 14, 15, 16].forEach(i => {
+        if (!lm[i]) return;
+        ctx.moveTo(lx(lm[i].x) + 3, ly(lm[i].y));
+        ctx.arc(lx(lm[i].x), ly(lm[i].y), 3, 0, Math.PI * 2);
+      });
       ctx.fill();
     }
 

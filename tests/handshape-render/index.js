@@ -89,14 +89,11 @@ await page.goto(`http://127.0.0.1:${port}${RIG_PATH}`);
 const results = await page.evaluate(async () => {
   const THREE = await import('three');
   const { buildRig } = await import('/scripts/handrig.js');
-  const { gesture, matchGesture, templateDistance, kindOf, FEATURES } = await import('/src/gesture.js');
+  const { gesture, matchGesture, templateDistance, FEATURES } = await import('/src/gesture.js');
   const { fingerExt, handOpenness, dist3, thumbOut, thumbContact } = await import('/src/math.js');
 
   const rig = buildRig(THREE);
-  // The rig is a HAND. Posing it from an arm-position vector would read
-  // finger channels that a body template does not have and render a hand
-  // nobody described.
-  const all = gesture.list().filter(g => g.f && kindOf(g) === 'hand');
+  const all = gesture.list().filter(g => g.f);
   const out = { features: FEATURES, handshapes: [] };
   for (const t of all) {
     rig.pose(t);

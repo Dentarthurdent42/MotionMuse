@@ -36,17 +36,10 @@ const MODEL = join(HERE, 'hand_landmarker.task');   // provide locally to run of
 // half-straight. That was survivable when extension was a base-to-tip
 // distance; measuring the joints themselves means the photo has to actually
 // show them. `asl10` is the same handshape with the fingers in view.
-//
-// `asl3b` is a SECOND hand making ASL 3, added because the first one's
-// template did not recognise it in the field. Two photos of the same shape
-// from different hands is the only thing that keeps a template honest: fitted
-// to one photo it matches one person, and the failure is invisible until
-// somebody else holds the pose.
 const CASES = {
   fist: 'fist', victory: 'peace', point: 'point',
   asl1: 'point', asl2: 'peace',  asl3: 'asl3', asl4: 'asl4', asl5: 'palm',
   asl6: 'asl6',  asl7: 'asl7',   asl8: 'asl8', asl9: 'asl9', asl10: 'thumbs',
-  asl3b: 'asl3',
 };
 
 if (!existsSync(MP)) { console.log('SKIP: @mediapipe/tasks-vision not installed'); process.exit(0); }
@@ -85,15 +78,8 @@ const results = await p.evaluate(async (imgs) => {
     baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate: 'CPU' },
     numHands: 1, runningMode: 'IMAGE' });
   const { fingerExt, handOpenness, dist3, thumbOut, thumbContact } = await import('/src/math.js');
-  const { gesture, matchGesture, templateDistance, templateSeparation, kindOf,
-          FEATURES, SEPARATION_FLOOR } = await import('/src/gesture.js');
-  // This suite measures HANDS from photographs of hands, so it asks the hand
-  // templates. The arm poses are a different channel list and a different
-  // question — scoring one against a finger vector does not give a wrong
-  // answer, it gives a confident one — and matchGesture already refuses to.
-  // The ranked runners-up below would otherwise report that refusal as a
-  // near miss.
-  const handTemplates = gesture.list().filter(g => kindOf(g) === 'hand');
+  const { gesture, matchGesture, templateDistance, templateSeparation, FEATURES, SEPARATION_FLOOR } =
+    await import('/src/gesture.js');
   const load = src => new Promise(r => { const im = new Image(); im.onload = () => r(im); im.src = src; });
   const out = { images: {}, features: FEATURES, floor: SEPARATION_FLOOR };
   for (const [name, src] of Object.entries(imgs)) {
@@ -107,7 +93,7 @@ const results = await p.evaluate(async (imgs) => {
       thumbOut(lm),
       thumbContact(lm,1), thumbContact(lm,2), thumbContact(lm,3), thumbContact(lm,4),
     ].map(x => +x.toFixed(3));
-    const all = handTemplates;
+    const all = gesture.list();
     const m = matchGesture(f, all);
     out.images[name] = {
       detected: true, match: m?.id ?? null, dist: m ? +m.dist.toFixed(3) : null, f,
@@ -119,7 +105,7 @@ const results = await p.evaluate(async (imgs) => {
   // Pairwise separation over the whole shipped template set — via the shared
   // templateSeparation (min over both directions, since masks are
   // asymmetric), the same definition the unit floor test uses.
-  const T = handTemplates;
+  const T = gesture.list();
   const pairs = [];
   for (let i = 0; i < T.length; i++)
     for (let j = i + 1; j < T.length; j++)
@@ -161,13 +147,8 @@ if (CALIBRATE) {
   }
   console.log('\n── Shipped templates ' + '─'.repeat(47));
   console.log('  ' + 'id'.padEnd(9) + 'source'.padEnd(11) + results.features.map(pad).join(''));
-  for (const [id, src, f] of results.templates) {
-    // `thumbsdown` and `iloveyou` are recognised by MediaPipe's own classifier
-    // and carry no feature vector, so there is nothing to tabulate — say so
-    // rather than throwing halfway down the table, which is what this did.
-    console.log('  ' + id.padEnd(9) + src.padEnd(11)
-      + (f ? f.map(v => pad(v.toFixed(2))).join('') : '(classifier only — no template vector)'));
-  }
+  for (const [id, src, f] of results.templates)
+    console.log('  ' + id.padEnd(9) + src.padEnd(11) + f.map(v => pad(v.toFixed(2))).join(''));
   console.log('\n── Pairwise distances, closest first ' + '─'.repeat(31));
   for (const [a, bId, d] of results.pairs.slice(0, 20))
     console.log(`  ${d.toFixed(3)}  ${a} ~ ${bId}`);

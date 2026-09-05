@@ -384,17 +384,19 @@ function penalty(m, size) {
  * module size is what makes a QR blur and stop scanning.
  * `quiet` is the mandatory light border, in modules (the standard says 4).
  */
-export function drawQR(canvas, qr, { quiet = 4, dark = '#000', light = '#fff', target = 640 } = {}) {
+export function drawQR(canvas, qr, { quiet = 4, dark = '#000', light = '#fff', target = 640, min = 2 } = {}) {
   const total = qr.size + quiet * 2;
   // Backing store sized independently of the CSS box, and generously: a phone
   // reading a code off another screen is working from whatever the display
   // renders, and at 2px per module a dense code is at the edge of legible.
   // Whole pixels per module, always — a fractional module is what makes a QR
-  // blur into something no camera will lock onto. The floor of 2 is a floor
-  // for a CAMERA: one pixel per module does decode, but only from a
-  // screenshot of these exact pixels, with nothing optical in the path. Every
-  // code this app draws is read by a phone pointed at a screen.
-  const scale = Math.max(2, Math.floor(target / total));
+  // blur into something no camera will lock onto.
+  //
+  // `min` is that 2px floor, and it is a floor for a CAMERA. A caller whose
+  // reader is a screenshot of these exact pixels — nothing optical in the
+  // path, nothing to focus — can lower it to 1, which is where the format
+  // itself bottoms out. Nobody should lower it for a code a phone will read.
+  const scale = Math.max(min, Math.floor(target / total));
   const px = total * scale;
   canvas.width = px;
   canvas.height = px;

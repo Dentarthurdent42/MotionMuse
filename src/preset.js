@@ -52,14 +52,6 @@ const UI_KEYS = {
   hotkeys:     'motionmuse-hotkeys',
   dev:         'motionmuse-dev',
   uicontrol:   'motionmuse-uicontrol',
-  // The nod pedal: which gesture drives the looper transport, how sensitive it
-  // is, and whether it is armed. These sat in three loose keys that nothing
-  // collected, so the one thing about the pedal you actually have to tune —
-  // its sensitivity — was lost by every save, every session restore and every
-  // shared link. They are settings, not geometry.
-  pedalSrc:    'motionmuse-pedal-src',
-  pedalSens:   'motionmuse-pedal-sens',
-  pedalOn:     'motionmuse-pedal-on',
 };
 
 function uiSnapshot() {

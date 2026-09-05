@@ -38,7 +38,7 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 - **Signal Bus** (`src/bus.js`): a central `Map` of named signals (e.g. `hand_L_y`, `pinch_R`, `elbow_L`). Any source can `register` and `update` signals; any consumer can `norm`-alise them to 0–1. Registering with `velocity: true` also creates a `<key>_vel` sibling the bus keeps fed with the rate of change — see [Velocities](#velocities--every-measure-also-reports-how-fast-it-is-changing).
 - **Tracking toggles**: **✋ L**, **R ✋**, **🧍 POSE**, **☺ FACE** and **◉ GAZE** — one row of chips inside **Camera Input**, under the picture — switch each model off outright. (They live with that input because what the camera tracks is a property of it, not of the app's header; they are beside the picture rather than on top of it because a control over the frame covers the thing you are watching. Hands and pose can be set before the camera starts; face and gaze wake once there is a stream to run on.) Hand tracking costs roughly twice what pose does and is normally the frame-rate bottleneck, so this is the bluntest lever available. With hands and pose both on the two models alternate frames; with one off, **the other runs every frame** rather than idling on its turn. Left and right are separate for a reason beyond cost: handedness is a **guess**, inferred from the hand's appearance, and a single hand at an odd angle gets mislabelled — silently swapping every signal it drives to the other side's keys. Enabling exactly one side skips the guess entirely (whatever is detected *is* that hand) and drops `numHands` to 1, so the landmark stage runs once. Dev mode's **MODELS** panel adds the pose model size and the `GPU`/`CPU` delegate, which applies to *both* models.
 - **CV Source** (`src/cv.js`): runs MediaPipe `HandLandmarker` plus a swappable **pose backend** (`src/posebackends.js` — MediaPipe lite/full/heavy or TF.js MoveNet), extracts ~30 signals per frame, and writes them into the bus. Hand and pose inference **alternate frames** (each still ≥15 Hz at a 30 fps camera) so per-frame cost stays half of running both, and every positional signal passes through a per-signal **One-Euro filter** (`src/filter.js`, applied in `bus.update`) — the standard low-latency jitter filter: heavy smoothing on a held pose, light smoothing on fast moves.
-- **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert, invert+ease), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value, and **each node carries its own level bar** along the bottom edge (see *Two bars, two different numbers* below); range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **inverted** with its `⇅ INVERT` toggle — the input's high end then drives the output's low end, which composes with (rather than replaces) the curve, so any response shape can run either way round. A cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired. An output also *remembers* its range, curve, steps and invert flag, so re-wiring a different input into it (or unplugging and re-plugging) doesn't reset them. Each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
+- **Mapper** (`src/mapper.js`): each mapping takes one signal, applies a curve (linear, quad, cubic, log, sqrt, invert, invert+ease), scales it to an output range, and writes it to an audio parameter on every RAF tick. It's presented as a **node graph** (`src/ui/mapper-ui.js`) à la Blender geometry nodes / UE Blueprints: **input** signal nodes on the left, **output** parameter nodes on the right, joined by colour-coded bezier **cables**. Crucially each input is a single node whose one output socket **fans out** — reuse a signal by wiring it to as many parameters as you like; each parameter takes one incoming cable. Drag between two nodes to connect (or tap one, then the other) — the whole pill is a drag handle, sockets carry an oversized invisible tap target, and a release lands on the nearest eligible socket within a fingertip's radius, so wiring works with a thumb and not just a mouse. A cable's width/opacity pulses with its live value; range and curve stay hidden until you click a cable, and hovering a cable highlights it while dimming the rest, so wires stay easy to follow. Any cable can also be **inverted** with its `⇅ INVERT` toggle — the input's high end then drives the output's low end, which composes with (rather than replaces) the curve, so any response shape can run either way round. A cable can also be **quantised into N discrete levels** with its `steps` field (applied after the curve, so pair it with `log`/`quad` for perceptual spacing) — a stepped filter cutoff gives you a handful of definite timbres instead of a continuous smear. The **+ add input…** and **+ add output…** pickers keep their choices grouped by category (signal group / parameter section) rather than one flat list. Nodes stay put once placed: deleting a cable (its × in the editor) leaves both endpoint nodes on the canvas to be re-wired. An output also *remembers* its range, curve, steps and invert flag, so re-wiring a different input into it (or unplugging and re-plugging) doesn't reset them. Each node has its own × — placed on the pill's *outer* edge, opposite its socket, so a fat finger can't hit both — to remove it outright, so even a lone input/output pair can be disconnected or cleared. For **oscillator-frequency** cables the range editor grows a tone picker: a labeled piano keyboard, QWERTY playing (`A W S E D F T G Y H U J` = C…B, `Z`/`X` shift octave) while the editor is open, **−**/**+** semitone nudges, and min/max fields that accept note names (`A4`, `Db3`) as well as Hz — every pick is auditioned through the one-shot voice. **SET MIN** / **SET MAX** choose which endpoint the next pick sets, and the choice *stays put*: keep tapping or nudging to correct MIN until you explicitly press SET MAX. On narrow screens the keyboard renders wider than the panel and scrolls horizontally, so individual keys stay big enough to tap (a horizontal drag pans instead of picking).
 - **Audio Engine** (`src/engine.js`): a **resizable oscillator bank** — one oscillator by default, up to eight, each with its own frequency, detune, waveform and **level** (`oscN_freq` / `oscN_detune` / `oscN_volume`) — through a BiquadFilter, and the chord-mode voice bank through a **second, independent filter and level** (`chord_filter_freq` / `chord_filter_q` / `chord_volume`, with `osc_volume` as the whole bank's level, the lead's counterpart to `chord_volume`). The two sources converge into a shared convolution reverb and main gain. All driven by the Web Audio API with 25 ms parameter smoothing. **Volume is the exception**: it snaps onto a perceptual step ladder and fires *one* envelope per level change instead of re-smoothing every frame — see Volume quantisation below. Sliders carry **magnetic snap points** at musically meaningful values (½ volume, centre detune, unity Q…) marked by tick notches — drag near one and the thumb detents onto it; signal-driven (mapped) values are never snapped.
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
 - **Dynamics** (`src/dynamics.js`): the volume step ladder — equal-loudness (dB) levels, an exact-silence bottom rung, and the sticky rounding that keeps a jittery hand from chattering between levels.
@@ -262,39 +262,9 @@ Fullscreen API rejects anything else.) The tour for the arriving setup then
 a fullscreen camera is a walkthrough of nothing.
 
 
-**SHARE** (on the camera view, among the picture's own controls) shows a QR
-code of everything you have set up. Point a phone at it and the app opens
-configured the same way — the point being that handing someone a patch should
-not require a file, an account or a server.
-
-**It takes the whole screen.** The code was a 360px card in the middle of the
-page, which made sense as a popover and no sense as a thing being read: the
-reader is somebody else's camera, across a table or a room, and every pixel of
-screen is reach. A code confined to a card is one you have to walk over to.
-Full-bleed also removes the app behind it as something to aim at by mistake.
-The code takes as much of the sheet as it can while leaving room for the name
-and the buttons; everything that is *not* the code keeps a readable measure
-rather than stretching across a desktop monitor.
-
-**It is sized in whole modules, in JS, and never by CSS.** Asking CSS for
-`width: min(100%, 62dvh)` hands the browser a backing store of one size to
-resample into a box of another, and at a fractional ratio the module edges
-land between pixels. That is not a "slightly softer" code, it is a coin flip:
-scaling the same 121-module code into 350px and 420px boxes decoded, 500px and
-558px found no code at all, and turning `image-rendering: pixelated` on or off
-changed nothing — both modes failed at exactly the same two sizes. So
-`ui/share.js` measures the room the sheet has, asks `drawQR` for the largest
-**whole** number of pixels per module that fits, and sets the canvas to
-exactly that. Nothing is resampled, and the result is correct by construction
-rather than by luck: 363px at 3px/module on a 390px phone, 605px at 5px/module
-on a 1440px desktop — against the 300px the old card capped it at.
-
-The sheet's side padding is 8px for the same reason. The code can only grow in
-whole steps, so a step of padding is often a whole step of code: at 20px the
-phone fell back to 2px per module and a 242px code. A phone's keyboard does not
-shrink the layout viewport, so when the name field takes focus the sheet is
-moved and resized to `visualViewport` — otherwise its bottom half, buttons
-included, would sit behind the keys.
+**SHARE** (beside SAVE and LOAD) shows a QR code of everything you have set up.
+Point a phone at it and the app opens configured the same way — the point being
+that handing someone a patch should not require a file, an account or a server.
 
 The state is compressed and carried in the URL **fragment**, which is never sent
 to a server. There is no server; a shared setup stays between the two people
@@ -360,17 +330,6 @@ The **oscilloscope** at the top of the audio column is a section like any
 other: it folds away with its caret and can be dragged to another column. It
 lives *outside* the panel that `renderAudioPanel` rebuilds, because that rebuild
 would recreate its canvas and drop the click-to-mute handler with it.
-
-It **normalizes its own amplitude**. Drawn at true scale it was an almost flat
-line with a few squiggles in it, because a quiet signal really is quiet — and a
-scope that only reads when you are loud is a scope that is useless exactly
-while you are shaping a sound. So it follows the frame peak with a fast attack
-and a slow release (`followPeak` in `src/ui/viz.js`) and scales the trace to
-fill the box (`scopeScale`, capped at ×50). The cap matters less than the
-**floor**: below `SCOPE_FLOOR` the gain is zero and the line is flat, because
-the alternative is amplifying dither into a waveform and drawing a signal that
-is not there. Silence has to look like silence
-(`tests/unit/scope-gain.test.js`).
 
 ## Sections: containers, scrolling and resizing
 
@@ -489,75 +448,6 @@ it. `tests/layout/index.js` checks, in a real browser at every width, that
 every slider is paired, that a typed value reaches the parameter exactly, and
 that no section starts scrolling because of it.
 
-### What a link carries, and three things it used to drop
-
-A shared link is `shareableSnapshot()` — the whole `snapshot()`, with the `ui`
-block filtered down to what describes the *instrument* rather than the window.
-Three things were escaping it, and they were not all the same kind of bug:
-
-- **Shepard was never in `engine.snapshot()` at all.** Not a share bug: a saved
-  file and a session restore lost it too. It is a different *sound* — the
-  voices are rebuilt as octave stacks — so it was the one part of the patch no
-  snapshot could describe. It restores *before* the parameters, because
-  `setShepard` rebuilds the affected bank and a rebuild afterwards would hand
-  the new voices their defaults.
-- **A chord-gesture selection survived unless you had cleared one.** The saved
-  form is `assignments`, a `gestureId → degree` map, in which an emptied degree
-  simply has no entry — which on the way back in is indistinguishable from a
-  save made before that degree existed, and the merge-over-defaults then handed
-  the default straight back. `serialize()` now also writes `degrees`: one slot
-  per degree, `null` where you cleared it, which is exactly what the panel
-  shows. When present it is authoritative and nothing is merged; when absent
-  (an older save) the merge runs as before, because for *that* format filling
-  a gap in really is the better guess.
-- **The pedal lived in three loose keys nothing collected.** Which gesture
-  drives the looper transport, its sensitivity, and whether it is armed sat in
-  `motionmuse-pedal-{src,sens,on}`, outside `UI_KEYS` — so the one thing about
-  the pedal you actually have to tune was lost by every save, every session
-  restore and every link.
-
-`hotkeys` and `uicontrol` now travel too, for the reason `tracking` always did:
-they are how a setup is *played*. A patch whose looper answers a nod at a tuned
-sensitivity, or whose author expects you to drive the panel with your hands,
-arrives unplayable without them — the same failure as handing someone a mapping
-without the tracker that feeds it. Geometry still stays behind: panel widths,
-section order, folds and heights describe the screen it was arranged on, and so
-does the pose-model choice, which is a judgement about one machine's GPU.
-
-### Two bars, two different numbers
-
-Every node shows its live strength as a bar along its bottom edge, in the
-colour of the cable it belongs to. The two ends deliberately report *different*
-quantities:
-
-- An **input** bar is `bus.norm(signal)` — precisely the 0–1 the cable is
-  handed. That is the adaptive figure, so an input reads full-scale when *your*
-  movement is at its extreme, not when the sensor's theoretical maximum is.
-- An **output** bar is what the cable *delivers*, after `curve`, `invert` and
-  `steps` have had it.
-
-So on a plain linear cable the two bars agree exactly, and **the gap between
-them is the curve, made visible**: on a `quad` cable an input at 0.8 shows an
-output at 0.64, and flipping `⇅ INVERT` shows 0.36. You can watch the response
-shape you chose actually doing something, which is otherwise only inferable
-from the sound.
-
-An output bar is measured against **its cable's own `min`/`max` window**, not
-the parameter's full range — a cable narrowed to 200–800 Hz on a cutoff whose
-range is 20–20000 would otherwise show a sliver that never visibly moves.
-Reversed windows (`min` > `max`, which is the other way to spell INVERT) fall
-out of the same arithmetic, since both terms flip sign. An *unwired* output has
-no window, so it falls back to the parameter's own range and stays a neutral
-grey rather than borrowing a cable colour it doesn't have.
-
-The bar is absolutely positioned and driven by `transform: scaleX()`, never by
-width: the cables are drawn from *measured socket positions*, so a bar that
-participated in layout would drag every wire on the canvas every frame. The
-layout suite asserts exactly that — driving a bar from empty to full must move
-no socket. An empty bar also keeps a faint track underneath it, because a bar
-pinned at zero and a node with no bar at all look identical, and "quiet" should
-not read as "broken".
-
 ## Function nodes — the patchbay's interior
 
 The patchbay used to be one hop: signal → cable → parameter. **Function
@@ -578,16 +468,6 @@ the patchbay, just allowed to bend back on itself. Add nodes with
 choices (a Math node's op, an LFO's wave) and its ×, which also takes every
 cable attached to it. Values are 0..1 on both sides — the cable's out-range
 does the scaling into real units, exactly as it always has.
-
-**A × takes one node, never two.** Pulling a node takes the cables that ran to
-it — a cable to nowhere is not a thing — but the node at the *far* end of each
-of those cables stays on the board. This was an asymmetry rather than a
-policy: deleting an input already kept its outputs, and deleting an output did
-not keep its input, so pulling one node quietly took a second one with it, and
-the one that vanished uninvited was the one carrying the range and the curve.
-A node with no cable is a perfectly good thing to have — it is what
-**add an input ↓** produces — so there is no reason for one to be swept up by
-a deletion at the other end.
 
 | Node | What it computes |
 |---|---|
@@ -695,33 +575,43 @@ instrument, and **not** cleared when you move a slider — you are still playing
 your setup, just changed, and a name that vanished on the first knob turn would
 be a name nobody trusts.
 
-**A QR code on the camera view was tried, and dropped.** The idea was that a
-setup could be handed over by screenshotting the picture, with no dialog in
-the way — which raised a question worth answering on its own: how small can a
-QR code be and still be read?
+**In DEV mode, the setup itself is on the frame as a QR code** (bottom-right,
+opposite the tracker toggles). It is there so a setup can be handed over by
+photographing or screenshotting the picture, with no dialog in the way — which
+raised the question of how small such a code can honestly be.
 
-**Measured, not guessed.** Render at N device pixels per module, screenshot
-the pixels the browser actually painted, and hand them to **jsQR** — an
-independent decoder, not our own encoder agreeing with itself. The answer is
-**one pixel per module**. The floor is not the module *size* but the
-requirement that modules land on **whole** pixels: a code scaled to 1.5×
-smears every module edge across two pixels and stops decoding long before a 1×
-one does. `tests/unit/qr.test.js` pins that at 1 px/module across a range of
-payload sizes and both ECC levels the app uses.
+**How small: measured, not guessed.** Render the code at N device pixels per
+module, screenshot the pixels the browser actually painted, and hand them to
+**jsQR** — an independent decoder, not our own encoder agreeing with itself.
+The answer is **one pixel per module**: the default setup's link is 1328
+characters, which at ECC L needs a 121×121-module code — 121px, plus the
+spec's four-module quiet zone on each side, 129px square in all — and it
+decodes. (L for the same reason the SHARE dialog uses it: the tolerance the
+higher levels buy is for a code that is torn, dirty or badly lit, none of
+which happens to a screenshot taken seconds ago. It is also the fewest
+modules — M would need 137, so 145px.) The
+floor is not the module *size* but the requirement that modules land on
+**whole** pixels — a code scaled to 1.5× smears every module edge across two
+pixels and stops decoding long before a 1× one does. So the canvas is drawn at
+exactly 1 px per module and CSS never scales it:
+`drawQR(canvas, qr, { quiet: 4, min: 1, target: qr.size + 8 })`. `min` is
+drawQR's usual floor of 2 px per module, and that floor is there for a
+*camera* — the SHARE dialog keeps it, because a phone is reading a screen
+across a room. Only a caller whose reader is a screenshot of
+those exact pixels, with nothing optical in the path, should lower it. The
+layout suite pins the whole claim end to end — the 1:1 drawing, that the code
+stays inside the picture and anchored to its corner, and a real Playwright
+screenshot decoding back to the link the app would have shared — and
+`tests/unit/qr.test.js` pins the encoder half of it at 1 px/module across a
+range of payload sizes and both of the levels the app uses, so a regression
+surfaces in `npm run test:unit` and not only under a browser.
 
-**And the answer was still too big.** The default setup's link is 1328
-characters, which at ECC L needs a 121×121-module code — 129px square with the
-spec's quiet zone. That is a quarter of the width of a phone's camera panel: a
-corner ornament in name only, and there is no shrinking it, because 1 px per
-module is where the format bottoms out. A code that size has to be somewhere
-it can be the whole point. So it is not on the camera view, and **SHARE takes
-the screen instead** (below) — which is a better answer to the original
-problem anyway, since the thing being read is somebody else's camera across a
-table, and every pixel of screen is reach.
-
-The measurement is kept here rather than deleted because it is the reason the
-feature is *not* there. Anyone who proposes putting a code back on the frame
-is proposing 129px of it.
+Small does not mean *tiny in the frame*, though. The code is as small as the
+payload allows and no smaller, so a dense setup makes it a large fraction of a
+narrow camera panel — there is no scaling it down without breaking the thing
+that makes it readable. What holds instead is that it is `pointer-events:
+none`: it is a picture to photograph, never a control, so a code that reaches
+over a button can't take that button's click.
 
 The store is `src/saved.js`, in localStorage under `motionmuse-saved-v1`. It
 filters what it reads: an entry that is not a named snapshot is dropped rather
@@ -1052,143 +942,15 @@ labels, and icon **plus** text — never icon-only). Toggle controls expose
 ## Gesture mode
 
 **Gesture Mode** (formerly *Chord Mode*) is one section holding both halves of
-playing by gesture: the instrument on top — key, voicing, expression, the
-degree assignments, the arpeggiator and envelope — and the **GESTURE
-CONFIGURATIONS** library folded underneath, where a gesture is calibrated,
-recorded, renamed and removed. They were two sections once, and each grew
-read-only echoes of the other to stay legible (chips on the shape rows
-repeating the assignments, calibration state repeated beside the selects).
-Merging them retired the echoes: the assignment is stated once, in the rows,
-and the library is one fold away. The fold follows the mode until you touch it
-— closed while the mode is on, open while it is off, and your own choice wins
-from then on.
-
-### Calibrating where you chose, not where it is defined
-
-Every assignment row — the seven degrees and **RELEASE** — carries a **⊙**
-beside its picker that calibrates whatever gesture is on that row. The library
-is where a gesture is *defined*, but the moment you discover a template is
-wrong is the moment a chord does not sound, and that is the row, with the fold
-below it very possibly shut. Its countdown reports into a status line that
-lives *outside* that fold, since not having to open it is the entire point. A
-row with nothing assigned has nothing to calibrate, and says so by being
-disabled rather than by failing when pressed.
-
-### Gestures that are not handshapes
-
-Nothing in the recogniser was ever about hands. `templateDistance` is a
-weighted RMS over channels normalized to 0–1, and the bus already publishes two
-more sets of exactly that: the face model's expression channels and the pose
-model's joint angles. So a gesture now declares a **kind** — a named channel
-list with its own weights — and **● REC** takes a picker saying which to
-record:
-
-| Kind | Read from | Channels |
-| --- | --- | --- |
-| `hand` | the hand model | 12: finger extension, openness, spread, thumb carry, four thumb-to-fingertip contacts |
-| `face` | the face model | 14: brows, mouth, smile, pucker, funnel, tongue, cheeks, head yaw and roll |
-| `body` | the pose model | 9: elbow angles, arm raise, shoulder lift and swing, torso tilt |
-
-Two channel groups are deliberately *excluded*. Gaze is not in the face vector
-and `head_x`/`head_y`/`shoulder_width` are not in the body vector: a gesture
-must not also require that you look where you looked, or stand where you stood,
-when you recorded it.
-
-`hand` is the only **sided** kind, because there are two hands and which one is
-making the shape is load-bearing — it is what lets one hand drive a cable while
-the other names chords (see *Which hand names the chord*). A face or a torso is
-singular, so a sideless gesture is held on neither hand and is therefore
-available to *either*: `activeOn('L')` answers with it, and so does
-`activeOn('R')`, or **NAMED BY: LEFT** would quietly make face gestures
-unplayable. A hand gesture on the hand actually asked about still wins, being
-the more specific answer to the question.
-
-Two things this had to get right, both pinned in
-`tests/unit/gesture-kinds.test.js`:
-
-- **A vector read for one kind is never scored against another kind's
-  template.** The arrays are different lengths and mean different things, so a
-  face template asked about a hand vector does not return a *wrong* answer — it
-  returns a confident one. `matchGesture` filters by kind, and
-  `templateSeparation` returns `Infinity` across kinds, because two gestures
-  that are never asked at the same time cannot collide however close their
-  numbers look.
-- **A resting face and no face at all are the same all-zero vector.** The hand
-  kind can read presence off its own channels (a hand that leaves frame decays
-  to zero on channels that are never zero while it is there), but an
-  expression cannot. So `face.js` and `cv.js` report presence explicitly —
-  the same way `cv.js` already reports the canned classification — and a
-  sideless gesture matches nothing until its model says there is something to
-  read. Without that, a recorded neutral expression sits permanently matched
-  against a model that is switched off.
-
-A gesture with no `kind` is a hand gesture: every built-in that does not say
-otherwise, and every setup ever saved. Recording that never receives a frame —
-the face tracker is off, say — gives up after five seconds and names the
-tracker you need, rather than counting down forever.
-
-### Semaphore: the arms can count too
-
-The hands can count to ten; the arms can too, and from across a room. Eight
-**body** gestures ship: flag semaphore's **first circle**, `A`–`G` plus
-**Rest**. Because semaphore's letters `A`–`J` double as the digits `1`–`0`,
-`A`…`G` **are** `1`…`7` — seven arm positions for the seven degrees of a key,
-in a notation that already means those numbers. They are sources like any
-other, so with Gesture Mode's polyphony you can hold a degree with your arms
-and add another with a hand.
-
-The circle, in **your own** frame, sweeping from your lower right over the top
-to your lower left — which is the order the letters run in:
-
-| | position | | position |
-| --- | --- | --- | --- |
-| **A · 1** | right arm low (45° below horizontal) | **E · 5** | left arm high |
-| **B · 2** | right arm out (horizontal) | **F · 6** | left arm out |
-| **C · 3** | right arm high (45° above horizontal) | **G · 7** | left arm low |
-| **D · 4** | right arm up (vertical) | **Rest** | both arms down |
-
-*"In the first circle, the letters A to C are made with the right arm, and E to
-G with the left, and D with either as convenient"* — D is the right arm here,
-which makes A–D one unbroken lift of the same arm.
-
-**The mirror is the trap.** Published semaphore charts are drawn in *receive*
-mode, as the reader sees them, so the arm drawn on the left of a chart is the
-signaller's right. A template built by copying one straight across would put
-every letter on the wrong arm — and the set would still be self-consistent and
-still pass a separation test, which is why `tests/unit/semaphore.test.js`
-asserts the handedness directly rather than only the spacing.
-
-Elevation is the whole of the metric. `arm_raise` is the angle from the torso's
-own downward axis over 180, so the five semaphore heights land on exact
-quarters — `0.00` down, `0.25` low, `0.50` out, `0.75` high, `1.00` up. The
-mask keeps **only** the two elevation channels per arm; elbow angle, azimuth
-and torso tilt are left out, not because they are noise but because caring
-about them would make each letter demand a *posture* rather than a *position*:
-a slightly bent elbow, a step toward the camera, or standing at an angle would
-each cost you the note. Every letter survives ±10° of aim plus frame noise in
-at least 95% of frames.
-
-**Rest is a template, not the absence of one.** Standing normally sits 0.177
-from both A and G — inside the 0.20 match threshold — so without a pose of its
-own, simply standing there would name a degree and sound a chord nobody asked
-for. It is also a real semaphore position: the interval signal.
-
-They are not flagged `est`. That flag is for a template someone *guessed* at —
-the geometric hand models, which describe a shape nobody measured. These are
-not guesses: the positions are the specification and 45° of elevation is what
-`arm_raise` reads as 0.25 by its own definition. Fit them to your own body with
-**⊙** anyway if your arms sit differently.
-
-### Renaming
-
-**✎** on any row renames a gesture. Built-ins are code, so the new name is kept
-*beside* the built-in (the same way a recalibrated template is) rather than
-edited into it, and `resetNames()` gives the shipped name back. An **ASL gloss
-is never touched**: the gloss is what the shape *is* and what the list is
-ordered by; the name is only what you call it. So renaming *Open Palm* leaves
-`ASL 5 · Whatever You Called It`, in the row, in the pickers, and on the
-`gesture_<id>` bus signal, which is re-labelled so the patchbay agrees with the
-panel.
+playing by handshape: the instrument on top — key, voicing, expression, the
+degree assignments, the arpeggiator and envelope — and the **HANDSHAPES**
+library folded underneath, where a shape is calibrated, recorded and removed.
+They were two sections once, and each grew read-only echoes of the other to
+stay legible (chips on the shape rows repeating the assignments, calibration
+state repeated beside the selects). Merging them retired the echoes: the
+assignment is stated once, in the rows, and the library is one fold away. The
+fold follows the mode until you touch it — closed while the mode is on, open
+while it is off, and your own choice wins from then on.
 
 ### One hand means one hand
 
@@ -1260,60 +1022,6 @@ had been passing everything through. `tests/unit/pose-visibility.test.js`.
 pose landmarks that survived the gate — rather than the raw model output. The
 picture and the signals now come from the same values, so the overlay cannot
 show a hand that is not playing anything.
-
-### The skeleton palette follows the theme
-
-The skeletons used to be three hardcoded hexes — one per hand, one for the
-pose — which ignored the theme entirely and, within a hand, made every bone
-and joint the same mark. They are now **derived from the active theme's own
-accent tokens** (`src/overlaypalette.js`), and derived into structure:
-
-- **Chassis** — the palm web, wrist and arm of each side wear the theme's own
-  side accents: right = `--cyan`, left = `--purple`, *whatever the theme put
-  in those slots*. On ember, whose "cyan" slot holds orange, the right hand is
-  orange — the skeleton follows the theme's decision, not a colour of its own.
-- **A hue per finger, in chromatic order** — thumb → pinky is red, yellow,
-  green, blue, violet, the same on both hands, at the theme's chroma and
-  lightness. The first cut spread each hand's hues around its own side anchor
-  — which made every hand a monotonic hue sweep and the pair of them
-  illegible: two sweeps starting from different anchors read as ten assorted
-  colours. An ordering is only an ordering if the viewer already knows it,
-  and the spectrum is the one hue order everyone arrives knowing; with the
-  fingers shared between hands, the chassis and arms are what say left from
-  right.
-- **A lightness ramp along each chain** — joints step through four
-  lightnesses from knuckle to tip, bones take the midpoints, fingertips get
-  the lightest step and a bigger dot. The pose's arms ramp the same way,
-  upper arm darker than forearm, ending at a wrist dot in the palm colour —
-  the arm flows into the hand it belongs to. The torso stays one quiet
-  `--amber`: furniture, not a limb.
-
-The space is **OKLab, in its polar OKLCH form** — not OKHSL/OKHSV, for a
-concrete reason: the theme tokens are authored in OKLCH in `main.css`, and
-OKHSL/OKHSV renormalise lightness and saturation against the sRGB gamut's
-shape, so "the token's lightness, one step lighter" would stop being that the
-moment it was computed. Better still, what the palette hands the canvas is
-oklch() **strings**: the browser renders the skeleton through the same code
-that renders the stylesheet, so the two cannot drift. (`src/okcolor.js` exists
-so the *tests* can measure those rendered colours without a browser; it is
-verified against Chrome's canvas — which, measured, resolves out-of-gamut
-oklch() by per-channel clipping, not by the css-color-4 chroma mapping, which
-disagreed with the browser by up to ΔEok 0.22.)
-
-"Distinguishable" is **measured, not asserted**
-(`tests/unit/overlay-palette.test.js`, against the real tokens parsed out of
-`main.css`, so a new or retuned theme is covered the day it lands): every
-pairwise ΔEok between the marks on a hand, every adjacent ramp step, and the
-two hands against each other, all with floors sitting near three times the
-~0.02 just-noticeable difference. Two bugs those floors caught before any eye
-did: the middle finger's centre bone was the palm's *exact* colour (same hue,
-same lightness — ΔEok 0.000), and on high-lightness themes the ramp's top
-steps ran off the sRGB gamut ceiling, where the browser's clip crushed two
-"different" steps to ΔEok 0.003 — one colour wearing two names. The fixes are
-the palm sitting below the whole ramp at half chroma (lightness survives
-gamut clipping; chroma near the edge does not — several themes author accents
-slightly *outside* sRGB), and the ramp window sliding down so its top step
-stays where chroma still has room to live.
 
 ### Presets switch the models they need
 
@@ -1455,42 +1163,6 @@ Calibrated templates replace the estimate in place, keeping the gesture's id —
 chord assignments and mappings survive — clear the `est` flag, and save with
 presets.
 
-#### 2-vs-3, and what one photo cannot tell you
-
-That last sentence was written as a caveat and turned out to be a bug report:
-ASL 3 stopped being recognised for a second person. Three things had gone
-wrong together, and the fix needed all of them.
-
-- **The template was fitted to one photo.** `asl3`'s reference hand held its
-  ring and pinky half-curled (0.52); a second hand folded them properly (0.35)
-  and landed 0.102 away, with `peace` only 0.023 further off. A template
-  measured from one hand matches one hand, and nothing says so until somebody
-  else holds the pose — so there is now a second photo, `asl3b.jpg`, and the
-  template is the midpoint of the two.
-- **Re-centring alone made it worse.** Moving `asl3` toward the second hand
-  moves it toward `peace`, and the midpoint on its own drops the pair to 0.142
-  — under the 0.15 separation floor. The suite refuses it, correctly.
-- **The channel that separates them was voting at a quarter strength.** ASL 3
-  is a peace sign plus a thumb, so `thumb` and `thumbOut` are what tell them
-  apart — and `peace` masks `thumbOut` out, because a peace sign genuinely
-  turns up with the thumb both tucked and clear. That leaves `thumb`, which was
-  weighted **0.25**: a leftover from when extension was a base-to-tip distance
-  covering a 0.09 span. As a joint angle it carries a real ~0.45 span, so it is
-  now **0.7** — still under the finger channels, since `thumbOut` remains the
-  more direct statement wherever a template is willing to hear it.
-
-Together: the second hand's margin over `peace` goes from **0.023 to 0.109**,
-and the worst margin across *all fourteen* reference photos improves from 0.023
-to 0.102 — this was not only ASL 3's problem, it was just ASL 3 that noticed.
-The `peace ~ asl3` separation stays above the floor at 0.165.
-
-A note on the illustrations in `icons/handshapes/`: they are rendered from the
-templates, but the renderer is **not deterministic** — re-running it changes
-every picture by about as many pixels as a real template edit does (~12k of
-65k, on an untouched shape). So they are not regenerated as part of a template
-change; there is no way to tell the real difference from the jitter, and they
-are DEV-only and badged under-construction for that reason.
-
 `npm run test:gesture-img` runs the hand pipeline over the reference photos,
 asserts each maps to the right gesture, and fails if a template edit pushes any
 pair below the separation floor. Add `-- --calibrate` to print the measured
@@ -1545,39 +1217,6 @@ its intervals), so one envelope is what a player means by "the chord's attack".
 Retriggering mid-release starts from the dying value rather than snapping to
 zero, so fast chord changes don't click.
 
-### Every source at once
-
-**Everything naming a degree sounds, together.** Both hands, and a body pose
-alongside them — the bank plays the **union** of what they all ask for, with
-notes two chords share voiced once rather than twice. The mode was monophonic
-until now: one held id, so a second hand naming a chord did nothing at all,
-and "play a C and an E together" was unreachable in the mode whose whole
-subject is chords. It is also what makes the play-along *multiple notes* level
-playable here.
-
-The bank holds **eight** voices for it (it held four, which was one triad and
-a voice spare — the whole budget back when only one hand could name). Two
-sevenths is eight notes, and a bank that silently dropped the last four would
-make the second hand sound broken rather than quiet.
-
-One envelope for the lot means arrivals and departures are not symmetrical,
-and both readings are deliberate: a hand **joining** attacks (the notes
-already ringing are struck again with it) because under a percussive setting a
-silently added note is an inaudible one, while a hand **leaving** only
-re-points the voices — letting go of one hand must never restrike the other's
-chord, which would be a note you did not play at a moment you did not choose.
-The arpeggio restarts at the root for a fresh attack or a shape swapped for
-another, and carries on in time when a hand merely joins or leaves a run
-already walking.
-
-**RELEASE** stops everything, not one source: a per-hand release would leave
-the other hand's chord with nothing able to end it.
-
-The **expressed** modes below stay one shape at a time, and not by omission —
-one hand names while the other plays, so there is only one hand free to name
-with. Two-handed play lives in the handshape and metronome modes, where
-neither hand is spoken for.
-
 ### What sounds the chord
 
 **PLAY WITH** picks what actually plays a chord once a handshape has named it:
@@ -1594,26 +1233,6 @@ neither hand is spoken for.
 - **Metronome beats** — the clock plays it: the shape held when one of the
   metronome's SAMPLE beats lands is struck then, and only then. See the
   Metronome section; needs it switched on.
-
-**NAMED BY** is which hand a handshape is read from: **EITHER**, **LEFT** or
-**RIGHT**. It still applies with several sources sounding: naming one hand
-frees the other, and polyphony does not quietly take that back.
-
-It exists because the other hand is usually busy. Reported from playing: *"I'm
-trying to use my left hand openness to adjust filter, but it keeps getting read
-as an open palm gesture."* An open hand held out to drive a cable **is** an
-open palm — the recognizer is not wrong, it is just answering a question nobody
-asked. Outside the two-handed mode, chord mode scanned both hands, so a hand
-doing continuous work could not help also naming chords. Naming one hand is
-what frees the other for the patchbay: the shapes it makes are then simply the
-shapes a hand makes while it works.
-
-**EITHER** is the default and the behaviour that shipped, so nothing that
-worked before changes, and a setup saved without the setting loads as EITHER —
-which is exactly what it was doing. In **Other hand — openness** the naming
-hand is already decided (it is the one not playing), so the control shows that
-and dims rather than offering a second, contradicting opinion — the same
-arrangement as RATE dimming under SYNC in the arpeggiator.
 
 and how that signal is read (the two signal modes only):
 
@@ -1725,69 +1344,16 @@ mode restarts the run on each SAMPLE strike.
 | **Pattern** | `UP`, `DOWN`, `UP · DOWN`, `DOWN · UP`, `RANDOM`. |
 | **Octaves** | 1–3. Two octaves over a seventh chord is an eight-note run. |
 | **RATE** | Notes per second (0.5–24). The readout gives the tempo equivalent, reading steps as eighth notes. |
-| **GATE** | How long each note is **held**, in steps (0.05–3, default 0.9). Below 1 is staccato inside the step, 1 runs the notes wall-to-wall, and above 1 each note is still held while the ones after it start. |
-| **SUS** | How long it **rings out after** that, also in steps (0–3, default 0.6) — the tail. |
+| **GATE** | How long each note rings, in steps (0.05–3). Below 1 is staccato, 1 runs the notes wall-to-wall, and above 1 each note rings under the ones that follow — the voices overlap, like an arpeggio under a sustain pedal. |
 
 `UP · DOWN` reflects at the ends rather than concatenating an up-run with a
 down-run: over a triad it plays `0 1 2 1`, not `0 1 2 2 1 0`. The naive version
 sounds both endpoints twice, which lands as a stumble on every turn.
 
-### Why a gate is not enough
-
-Reported as "the arpeggiator is too staccato by default", and it was — at
-*every* setting of every control, which is the part that matters. The engine
-cut each arp note dead at its gate with a fade of at most 90 ms, so the run
-was a procession of flat-topped blocks however long the blocks were. A gate
-can make a note longer; it cannot give it a **shape**, and the difference
-between a note that stops and a note that rings is most of what separates an
-instrument from a metronome with pitches.
-
-So the note's life is two controls now. GATE is how long it is held; **SUS**
-is how long it decays afterwards. Both are in *steps*, so the shape survives a
-tempo change: an arpeggio that rings a half-step under the next note keeps
-doing that at 2/s and at 20/s.
-
-They share one budget. The engine round-robins its chord voices, so a note
-still sounding when its own voice comes round again would be cut mid-ring by
-the note reclaiming it — which means the cap has to cover the note's *whole*
-life, gate plus tail, not each half separately. Eight voices leave room for
-seven steps; the cap stays at **three**, because past that every note of a bar
-is sounding at once and the pattern stops reading as an arpeggio at all. Turning the gate up therefore
-eats into the tail rather than pushing the note past the point where it gets
-chopped. The readout reports the tail the notes are **actually** getting, not
-the slider's wish, because those differ exactly when a long gate has squeezed
-it. `tests/unit/arp.test.js` walks the grid of step, gate and sustain and
-holds the budget.
-
-The default moved with it: **gate 0.9, sustain 0.6**, where gate alone used to
-be 0.55. A note that stopped just past halfway through its own step is what
-"too staccato" was.
-
-### Letting go is not the same as swapping
-
-Reported alongside it: "when releasing a chord that's being sustained, it
-should continue sustaining, rather than immediately silencing it."
-
-The arp owns the chord bank's voices, and it had one way of handing them back
-— a 30 ms cut. That is right when *another chord* is taking those voices over, because
-anything still ringing would sound underneath the new one. It is wrong when
-nothing is taking them: the player let go, and what was ringing should fall
-with the chord's own release. Every release path was calling the cut, so
-letting go of a chord sounded like switching it off — and once notes had a
-sustain tail, the cut was throwing away most of the note.
-
-So there are two of them now. `arpvoice.stop()` is the hard stop and belongs
-to the arp flip, where the block chord really is taking the voices. `release()`
-does the same bookkeeping but drops only the notes that have **not sounded
-yet** — they belong to a chord that has ended — and lets the one still ringing
-fade over `engine.releaseChordVoices()`. One pass covers both cases because a
-voice mid-note is at its peak and falls from there, while a voice holding only
-a note that never started is already at zero, so its ramp is silence.
-
-**Rate, gate and sustain are patchbay outputs** (`Arp Rate`, `Arp Gate`,
-`Arp Sustain`, under Gesture Mode), which is the point of expressing the rate
-as a plain number rather than a tempo: wire a signal to `arp_rate` and your
-hand drives how fast the chord churns, the same way it drives the filter.
+**Rate and gate are patchbay outputs** (`Arp Rate`, `Arp Gate`, under Chord
+Mode), which is the point of expressing the rate as a plain number rather than
+a tempo: wire a signal to `arp_rate` and your hand drives how fast the chord
+churns, the same way it drives the filter.
 
 And when there IS a clock — the metronome — **SYNC** locks the run to it,
 which is the **default** (`2/BEAT`, eighth notes). It does two things,
@@ -1805,7 +1371,7 @@ hole in the pulse. A tab left in the background stops `requestAnimationFrame`
 entirely — on return the clock resyncs to now rather than firing the minutes of
 steps it "owes", which would arrive as one burst of noise.
 
-Notes go out round-robin across the voices of the same chord bank, so each
+Notes go out round-robin across the four voices of the same chord bank, so each
 note's release tail rings under the next note's attack; with a single voice the
 gate would have to shut before the next note could open, which is the
 difference between an arpeggio and a stutter. The pattern order, the note pool
@@ -1930,7 +1496,7 @@ Toggling SHEPARD from the radial panel overrules the default for good; the
 auto-on never fights a choice you have made.
 
 Only **one** of Radial Mode and Gesture Mode is on at a time — both voice
-through the same chord bank, and two writers on one bank is a race, not
+through the same four chord voices, and two writers on one bank is a race, not
 a duet. Enabling either parks the other; both toggles say so by their state.
 The parked mode's **controls stay visible**: only what SOUNDS is exclusive,
 and setting a mode up before switching to it is half the point of having two —
@@ -1945,12 +1511,10 @@ envelope to run — you are the envelope.
 The ring is drawn on the **camera overlay**, under the skeletons, in the
 overlay's own mirrored space, with note-name labels (numerals in chord
 voicing) counter-flipped so they read correctly in the mirror. Its contrast
-is **self-contained**: the ring sits over arbitrary camera content — a
-cluttered room, a striped shirt, a face — and it brings its own scrim and
-halos rather than borrowing contrast. (The skeletons, which once kept fixed
-colours for that reason, are now derived from the theme — see *The skeleton
-palette follows the theme* — but they draw over the ring's scrim, which is
-what keeps them legible there.) Every section carries its own **dark glass scrim**, every edge and
+is **self-contained**, for the same reason the skeleton colours are fixed
+rather than themed: the ring sits over arbitrary camera content — a cluttered
+room, a striped shirt, a face — and legibility over that is not a job for the
+palette. Every section carries its own **dark glass scrim**, every edge and
 glyph is **haloed** in that dark under light ink, and the active section's
 tint (the pointing hand's overlay colour, stronger while sounding) sits on
 top of the scrim rather than replacing it. A pointer line, haloed the same
@@ -2075,110 +1639,15 @@ size" is exactly the claim a stylesheet quietly stops honouring.
 
 What is left in the page header is what belongs to the **tool** rather than
 the instrument: settings and the tour. And what the camera *tracks* went the
-other way, off the picture and into **Camera Input** beside it (above) — and
-specifically *inside* that container, with the picture the toggles apply to.
-They had been put in `#cam-extras`, the drop host that sits below the video,
-and on a phone that box **leaves the section entirely**: it is moved out to
-escape the sticky camera, which pins its whole box, so the toggles rendered
-outside the border labelled Camera Input. The drop host still leaves; the
-tracker row does not, because it is not a section someone dragged there — it
-is part of this input.
-
-**And the controls clear the keyboard.** With the fullscreen keyboard overlay
-up, the actions bar was drawn on top of the keys — which are a control surface
-you play with your thumbs, so the bar was both in the way and one mis-tap from
-muting. `ui/fullscreen.js` publishes the overlay's height as `--fs-kbd-h` and
-the bar (and the ♥ popover it opens) rides above it. Published rather than
-duplicated: the height is `makeKbdView`'s to decide — 14% of the frame,
-floored at 40px — and a second copy of that expression in CSS is a copy that
-goes stale. Leaving fullscreen resets it to zero, or the bar would float a
-keyboard's height off the bottom of a windowed view.
-
-### Coming back to a backgrounded tab
-
-Reported as the camera view going black after losing and regaining focus —
-while the app still read **CV ACTIVE** with values in the signals panel. It
-looked alive because the values were *frozen*: the last ones read before the
-tab went away.
-
-Both halves are the same fault. A backgrounded tab has its `<video>` paused by
-the browser, and on iOS the camera track is often ended outright. Either way
-`currentTime` stops advancing — and the inference loop is gated on exactly
-that, so it keeps running while feeding the bus nothing. Nothing restarts the
-element on the way back in, because `autoplay` already fired once and does not
-fire again.
-
-`cvSource.restore()` handles both cases, and the cheap one is not enough on
-its own: `play()` revives a merely paused element, but a track the browser
-**ended** is gone for good and only a fresh `getUserMedia` brings the camera
-back. The models, canvases and loop are untouched — this reattaches a stream
-to a pipeline that never stopped, rather than restarting the camera. It is
-driven by three events, because they mean different things and a phone does
-not always send all of them: `visibilitychange` (tab or app switch), `pageshow`
-(back/forward cache) and `focus` (a window that was merely behind another).
-With no camera running it does nothing at all — regaining focus must never
-start a camera nobody asked for.
+other way, off the picture and into **Camera Input** beside it (above).
 
 ## Fullscreen camera view
 
 **⛶ FULL** (below the camera toggles) makes the camera view fullscreen — via
 the native Fullscreen API where available, or a CSS takeover on iPhone Safari
-(which has no element fullscreen). **🎹 KEYS** overlays the live pitch-quantise
-keyboard along the bottom of the view — in the windowed camera panel as well as
-in fullscreen, since the notes it shows are the notes the instrument is
-quantised to, which is as worth seeing while you are wiring something as while
-you are playing it. Its height is published as `--fs-kbd-h` so the controls on
-the frame ride above it rather than sitting on the keys, and released the
-moment it is switched off. Gesture overlays keep
+(which has no element fullscreen). In fullscreen, **🎹 KEYS** overlays the live
+pitch-quantise keyboard along the bottom of the view. Gesture overlays keep
 their alignment at any screen shape.
-
-### The keyboard tells the truth about an arpeggio
-
-The overlay paints the sounding harmony onto the keys. For a **block chord**
-that is every note at full strength, because every note really is down. For an
-**arpeggio** it was the same picture — and that was a lie: a run sounds one
-note at a time, and the keyboard claimed all four were held for as long as you
-held the gesture. It was describing a way of playing nobody had chosen.
-
-Under the arp the overlay reads the *schedule* instead, so a note is drawn
-being **struck, held for its gate, falling through its tail, and gone**. The
-numbers it draws from are the ones `engine.arpNote` scheduled the gain from:
-`noteSpans()` states the envelope once in `arp.js`, the engine asks it for its
-gain breakpoints, and `noteLevelAt()` evaluates the same piecewise line for the
-display. A display that modelled the envelope separately would be a second
-opinion about the sound, and the first thing to go stale the next time the
-envelope changed.
-
-Three details this needed:
-
-- **A note is drawn the way it was played.** Gate, sustain and rate are all
-  live patchbay outputs, so the setting in force *now* is not necessarily the
-  one a still-ringing note was struck under — each scheduled note therefore
-  carries its own envelope and frequency rather than having them re-derived.
-- **Notes still in the future are not "pressed".** The scheduler runs a horizon
-  ahead of the audio clock, so at any instant half the schedule has not
-  happened yet.
-- **Letting the chord go is not the same as cutting it.** `release()` hands the
-  voices to the chord's own release, so the display follows them down over that
-  time instead of blanking while the room is still sounding — the same lie as
-  showing every chord note at once, at the other end of the note. `stop()` is
-  the hard cut and does blank, because there really is nothing left ringing.
-
-`drawKeyboard`'s `chord` option therefore takes either bare midis (all equally
-down) or `{m, level}` pairs. Bare numbers still mean full strength, so every
-caller with no opinion about loudness is unchanged.
-
-The CSS takeover is `position: fixed; inset: 0`, and it spent a while losing a
-specificity tie. `.panel-cam #video-wrap` — the responsive rule that gives the
-camera its width in each orientation — and `#video-wrap.fake-fullscreen` both
-weigh one id and one class, and the responsive one is declared later, so it
-won: "fullscreen" on a desktop was 400px wide and centred, with the page still
-visible either side of it. Portrait hid the bug completely, because `--cam-w`
-defaults to `100%` there and 100% of a fixed, `inset: 0` box *is* the
-viewport — so the phone looked right and the laptop did not. The responsive
-rules now exclude `:not(.fs-active)`, which both fixes it and says why; the
-layout suite measures the fullscreen box against the viewport at both widths,
-since either one alone would have passed.
 
 ## Hand cursor (drive the UI by hand)
 
@@ -2278,30 +1747,20 @@ chart for **every way of playing**, not just the oscillator patch:
   the piano keys, and you *hit* a note by steering osc 1's quantised pitch
   onto the target as it crosses the line — using whatever gesture drives
   `osc1_freq` (a Left-Wrist-Y mapping is added automatically if none exists).
-  The song is **transposed into the key the instrument is set to**, and the
-  quantiser is pointed at that key, so a round never moves the instrument out
-  from under you; your tuning is restored afterwards. Under a **Shepard**
-  lead the guide is a Shepard stack too and matching is by **pitch class** —
-  the lead's octave is deliberately discarded (`src/shepard.js`), so grading
-  an exact octave would grade a number the instrument refuses to express.
+  Starting one turns pitch quantise on in the song's key and restores your
+  tuning afterwards.
 - **Degree charts** (the generated entries): the piano strip becomes **lanes,
   one per degree of the key**, labeled with their numerals, and you hit a bar
   by *sounding that degree* as it lands — a handshape in Gesture Mode, or
   pointing the ring at that section in Radial Mode. Starting one switches the
-  right mode on if it is off, and says so. Pitch-class scoring does not
-  apply: a lane is exact. The chart is generated in — and a stored chart
-  transposed into — **your** key, which is not a nicety here: "IV" in the
-  chart's key is a different chord from "IV" in the key your handshapes are
-  assigned in, so a chart in its own key made the lanes lie.
+  right mode on if it is off, and says so. Octave-agnostic scoring does not
+  apply: a lane is exact.
 
 A quiet **guide** melody can be toggled; hits and misses get audio feedback.
 
-**⚄ Generated charts** are procedural: seeded, and built **in the key the
-instrument is currently set to** — the shared key both play modes read — so
-practising a progression practises *your* key. Tempo, length and density are
-the seed's, not the difficulty's: difficulty is polyphony now, so a generator
-still grading its own density by it was reading a setting that no longer takes
-those values. Melodies
+**⚄ Generated charts** are procedural: seeded, sized by the difficulty, and
+built **in the key the instrument is currently set to** — the shared key both
+play modes read — so practising a progression practises *your* key. Melodies
 walk the scale (stepwise mostly, chord tones favoured on downbeats, a real
 cadence onto the tonic); degree charts follow a functional-harmony walk whose
 last two bars are always dominant → tonic, so even a random progression ends
@@ -2334,24 +1793,9 @@ mid-song discards the run.
   Scarborough Fair. Chart format:
   `{ bpm, beatsPerBar, root, scale, notes: [{ b, m, d }] }` — beat, MIDI note,
   duration in beats; degree-chart notes carry `deg` beside the guide-midi `m`.
-- **Difficulty is polyphony, not note-dropping** — *single note* and
-  *multiple notes*. It used to be a note FILTER, and `easy` dropped everything
-  that was not a downbeat or a long note: half the tune, on the setting a
-  beginner picks. Both levels now play the **whole song**, and both share one
-  timing window (±200 ms), because how long you have to hit a note is a
-  property of the game rather than of how many notes it is asking for — the
-  old `easy` bought its wider window by also deleting music.
-
-  *Multiple notes* adds the **diatonic third above** each note and wants both
-  held — in whichever vocabulary the chart speaks. A pitch chart asks for two
-  MIDI notes and reads **every sounding oscillator**, so the round sets up one
-  steerable pitch per voice (a second oscillator and a Right-Wrist-Y mapping,
-  and says so); a degree chart lights **two lanes**, which is exactly what
-  Gesture Mode's second hand is for and what it could not do at all before.
-  Two voices rather than a triad, deliberately: MULTI has to be playable in
-  every mode the game judges, and two notes is what two hands can hold.
-  Transposition and voicing live in `src/chart.js`
-  (`tests/unit/chart.test.js`).
+- **Difficulties:** *easy* (downbeats & long notes only, ±250 ms window,
+  slow fall, octave-agnostic matching), *medium* (on-the-beat notes, ±180 ms),
+  *hard* (every note, ±120 ms, fast fall).
 - The game renders in the panel and — best experience — on the fullscreen
   overlay. Game logic: `src/playalong.js`; renderer: `src/ui/playalong-ui.js`.
 
@@ -2556,8 +2000,6 @@ src/
   preset.js         Save/load of mappings + settings (file + localStorage)
   soundkit.js       Instrument timbre presets (synthesized)
   songs.js          Bundled play-along note charts
-  chart.js          Chart transforms: degrees ↔ MIDI, transpose into a key,
-                    voice a chart for a difficulty level
   playalong.js      Play-along game logic (scheduler, judging, difficulties)
   chords.js         Chord construction + diatonic degrees (I–vii in any mode),
                     and single notes with an accidental

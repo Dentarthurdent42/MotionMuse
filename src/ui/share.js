@@ -88,43 +88,6 @@ function keep() {
 // Nothing has to be told: the PRESET menu re-reads the store every time it
 // opens, so a setup named here is in the list the next time anyone looks.
 
-// The last code encoded, kept so the sheet can be resized — a rotation, a
-// keyboard coming up — without re-encoding. Encoding compresses the whole
-// state and lays out a QR; refitting only redraws it.
-let lastQr = null;
-
-// Draw the code at a WHOLE number of pixels per module, and show it at exactly
-// that size.
-//
-// This is the one thing a QR on a screen cannot be sloppy about. Sizing the
-// canvas in CSS — `width: min(100%, 62dvh)` — asks the browser to resample a
-// backing store of one size into a box of another, and at a fractional ratio
-// every module edge lands between pixels. `image-rendering: pixelated` keeps
-// the edges hard but makes the modules UNEVEN, some a pixel wider than their
-// neighbours, and a decoder reading the result finds nothing at all. Measured:
-// a 558px box holding a 640px canvas did not decode.
-//
-// So the available box is measured first, `drawQR` picks the largest integer
-// scale that fits inside it, and the canvas is then shown at its own natural
-// size. Nothing is resampled.
-function fitQr() {
-  const canvas = pop?.querySelector('#share-qr');
-  if (!canvas || !lastQr) return;
-  // What the sheet can give it: the content width of the column, and enough
-  // height left over for the name, the note and the buttons under it.
-  const room = Math.max(120, Math.min(
-    pop.clientWidth - 16,
-    (globalThis.visualViewport?.height ?? innerHeight) * 0.68,
-  ));
-  const { px } = drawQR(canvas, lastQr, {
-    target: room,
-    dark: getComputedStyle(document.body).getPropertyValue('--text').trim() || '#000',
-    light: getComputedStyle(document.body).getPropertyValue('--panel').trim() || '#fff',
-  });
-  canvas.style.width = `${px}px`;
-  canvas.style.height = `${px}px`;
-}
-
 async function render() {
   const canvas = pop.querySelector('#share-qr');
   const note = pop.querySelector('#share-note');
@@ -137,10 +100,12 @@ async function render() {
     // Level L: the most payload per module, and the trade it gives up —
     // tolerance of a torn or dirty code — does not apply to a picture on a
     // screen being read seconds later.
-    lastQr = encodeQR(currentUrl, { ecc: 'L' });
+    const qr = encodeQR(currentUrl, { ecc: 'L' });
     canvas.style.display = '';
-    fitQr();
-    const qr = lastQr;
+    drawQR(canvas, qr, {
+      dark: getComputedStyle(document.body).getPropertyValue('--text').trim() || '#000',
+      light: getComputedStyle(document.body).getPropertyValue('--panel').trim() || '#fff',
+    });
     note.textContent = qr.version > QR_COMFORTABLE_VERSION
       ? `Dense code (v${qr.version}) — hold steady, shorten the name, or use COPY LINK`
       : `${currentUrl.length} characters · point a camera at it`;
@@ -148,7 +113,6 @@ async function render() {
   } catch (err) {
     // Too big for any QR version, or no CompressionStream. The link still
     // works — only the picture of it does not.
-    lastQr = null;
     canvas.style.display = 'none';
     note.textContent = `Too much to fit in a QR code — use COPY LINK (${err.message})`;
     note.classList.add('warn');
@@ -160,21 +124,14 @@ async function render() {
 // A phone's keyboard does not shrink the layout viewport, so a dialog centred
 // in it sits half behind the keyboard the moment the description field takes
 // focus — and the QR code is what ends up covered, which is the one thing that
-// has to stay on screen for someone to point a camera at.
-//
-// The sheet is inset:0 on the LAYOUT viewport, which is exactly the viewport a
-// keyboard does not shrink, so left alone its bottom half — the name field and
-// the buttons — would be behind the keys. visualViewport is the only thing
-// that reports the area the keyboard has left, so the sheet is moved and
-// resized to fill THAT instead.
+// has to stay on screen for someone to point a camera at. visualViewport is
+// the only thing that reports the area the keyboard has left, so the popover
+// is centred in THAT and capped to its height.
 function fitToViewport() {
   const vv = globalThis.visualViewport;
   if (!pop || !vv) return;
-  pop.style.top = `${vv.offsetTop}px`;
-  pop.style.height = `${vv.height}px`;
-  // The code is sized to the room the sheet has, and the sheet just changed
-  // size. Redrawn, not re-encoded.
-  fitQr();
+  pop.style.top = `${vv.offsetTop + vv.height / 2}px`;
+  pop.style.maxHeight = `${Math.max(0, vv.height - 16)}px`;
 }
 
 function setOpen(open) {
@@ -194,7 +151,7 @@ function setOpen(open) {
     // Hand the position back to the stylesheet, so a resize while closed
     // cannot leave it pinned where a keyboard once was.
     pop.style.top = '';
-    pop.style.height = '';
+    pop.style.maxHeight = '';
   }
 }
 
