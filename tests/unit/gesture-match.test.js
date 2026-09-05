@@ -7,7 +7,6 @@ import assert from 'node:assert/strict';
 
 import {
   gesture, gestureLabel, matchGesture, templateDistance, templateSeparation,
-  kindOf, specOf,
   FEATURES, WEIGHTS, NEUTRAL, padTemplate, maskFromLength,
   MATCH_THRESHOLD, SEPARATION_FLOOR,
 } from '../../src/gesture.js';
@@ -44,30 +43,12 @@ test('a pose too far from everything is rejected', () => {
 });
 
 test('weights actually weight: the same error costs more on a louder channel', () => {
-  // The ORDER is the invariant, not any one number. The contacts are what
-  // separate the ASL numbers, so they cost the most; `spread` measured
-  // unpredictably, so it costs the least.
-  //
-  // `thumb` used to be tested as a channel the contacts should "dominate" by
-  // more than 2×, which encoded it as nearly dead — true when extension was a
-  // base-to-tip distance covering a 0.09 span. As a joint angle it carries a
-  // real ~0.45 span, and leaving it at a quarter vote is what let a hand
-  // making ASL 3 read as a peace sign (see WEIGHTS in gesture.js). So the
-  // claim here is now the ranking: louder than spread, quieter than a finger.
   const base = { id: 't', f: V(0.5) };
-  const cost = name => {
-    const f = V(0.5); f[FEATURES.indexOf(name)] += 0.3;
-    return templateDistance(f, base);
-  };
-  const thumb = cost('thumb'), contact = cost('cPinky');
-  const finger = cost('index'), spread = cost('spread');
-  assert.ok(contact > finger, `contact ${contact.toFixed(3)} > finger ${finger.toFixed(3)}`);
-  assert.ok(finger > thumb, `finger ${finger.toFixed(3)} > thumb ${thumb.toFixed(3)}`);
-  assert.ok(thumb > spread, `thumb ${thumb.toFixed(3)} > spread ${spread.toFixed(3)}`);
-  // And it is no longer a throwaway: a thumb that has moved has to cost
-  // something a near-tie can be decided on.
-  assert.ok(thumb > finger * 0.7,
-    `thumb ${thumb.toFixed(3)} is a real vote against finger ${finger.toFixed(3)}`);
+  const bump = i => { const f = V(0.5); f[i] += 0.3; return f; };
+  const thumb    = templateDistance(bump(FEATURES.indexOf('thumb')), base);
+  const contact  = templateDistance(bump(FEATURES.indexOf('cPinky')), base);
+  assert.ok(contact > thumb * 2,
+    `contact ${contact.toFixed(3)} should dominate dead thumb channel ${thumb.toFixed(3)}`);
 });
 
 test('hysteresis keeps the currently-held gesture but does not create matches', () => {
@@ -109,23 +90,17 @@ test('no two shipped templates sit closer than the separation floor', () => {
     'threshold has drifted far past the separation floor');
 });
 
-// Full length for ITS OWN kind: a hand template is 12 finger channels and a
-// body template is 9 joint ones, and a template padded against the wrong
-// channel list is a pose read in the wrong language.
 test('every template is full length and in range', () => {
   for (const g of withTemplates()) {
-    const spec = specOf(g);
-    assert.equal(g.f.length, spec.features.length, `${g.id} wrong length`);
+    assert.equal(g.f.length, FEATURES.length, `${g.id} wrong length`);
     for (const [i, v] of g.f.entries())
-      assert.ok(Number.isFinite(v) && v >= 0 && v <= 1, `${g.id}.${spec.features[i]} = ${v}`);
+      assert.ok(Number.isFinite(v) && v >= 0 && v <= 1, `${g.id}.${FEATURES[i]} = ${v}`);
   }
 });
 
 test('each template is its own nearest neighbour', () => {
   const T = withTemplates();
-  // Asked in its own kind, which is the only way it is ever asked live: a
-  // vector read for one kind is not a question the others can answer.
-  for (const g of T) assert.equal(matchGesture(g.f, T, MATCH_THRESHOLD, null, kindOf(g)).id, g.id);
+  for (const g of T) assert.equal(matchGesture(g.f, T).id, g.id);
 });
 
 test('ASL numbers ship with both a name and a numeral', () => {

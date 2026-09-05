@@ -129,7 +129,7 @@ export function renderAudioPanel() {
           })()}
         </select>
         <select id="diff-select" title="Difficulty"${gameActive ? ' disabled' : ''}>
-          ${playalong.levels.map(l => `<option value="${l.id}"${l.id === playalong.lastDiff ? ' selected' : ''}>${l.name}</option>`).join('')}
+          ${['easy', 'medium', 'hard'].map(d => `<option value="${d}"${d === playalong.lastDiff ? ' selected' : ''}>${d}</option>`).join('')}
         </select>
       </div>
       <div class="wave-btns" style="margin-top:4px;">

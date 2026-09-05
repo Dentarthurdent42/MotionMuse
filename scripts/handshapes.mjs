@@ -79,7 +79,7 @@ await page.goto(`http://127.0.0.1:${port}${RIG_PATH}`);
 
 const handshapes = await page.evaluate(async ({ SIZE }) => {
   const THREE = await import('three');
-  const { gesture, kindOf } = await import('/src/gesture.js');
+  const { gesture } = await import('/src/gesture.js');
   // The rig and the decode live in scripts/handrig.js, shared with
   // tests/handshape-render so the pictures and the check that they are
   // faithful cannot drift apart.
@@ -109,7 +109,6 @@ const handshapes = await page.evaluate(async ({ SIZE }) => {
   const out = [];
   for (const g of gesture.list()) {
     if (!g.f) continue;                 // no template, nothing truthful to draw
-    if (kindOf(g) !== 'hand') continue; // …and a hand rig cannot draw an arm pose
     pose(g);
     renderer.render(scene, camera);
     out.push({ id: g.id, name: g.name, asl: g.asl ?? null,

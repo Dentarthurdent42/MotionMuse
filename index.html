@@ -113,6 +113,11 @@
                the view rather than another button. Absent entirely when
                nothing is named — an empty label is worse than no label. -->
           <div class="cam-name" id="cam-name" hidden></div>
+          <!-- DEV: the setup as a QR code, at the smallest size that survives
+               a screenshot. Measured, not guessed — see the README. -->
+          <div class="cam-qr uc-feature" id="cam-qr" role="img" hidden>
+            <canvas id="cam-qr-canvas"></canvas>
+          </div>
           <!-- What you reach for while playing, or while handing the thing to
                someone else: on the picture, where your eyes already are, and
                small and quiet so it never competes with what it sits over.
@@ -148,7 +153,7 @@
                     title="Under construction — hand cursor: clap, then hold up a hand to arm it (DEV mode feature)"><span id="uic-btn-lbl">🖐 CURSOR</span><span class="src-tab-wip">🚧</span></button>
             <button id="stage-btn" class="depth-toggle uc-feature"
                     title="Under construction — the fullscreen gesture stage: glass panels you grab, throw and force-pull (DEV mode feature)">◭ STAGE<span class="src-tab-wip">🚧</span></button>
-            <button id="fskbd-btn" class="depth-toggle"
+            <button id="fskbd-btn" class="depth-toggle fs-only"
                     title="Show the piano keyboard overlay">🎹 KEYS</button>
           </div>
           <!-- Inference timings. Dev-only: these are numbers for tuning the
@@ -187,33 +192,6 @@
              makes its height precious — this drags it smaller. Shown only there
              (see the mobile block in main.css). -->
         <div id="cam-handle" title="Drag to resize the camera view — double-click to reset"></div>
-        <!-- What the camera tracks — a property of this input, so it lives in
-             this input's own container, with the picture it applies to, rather
-             than on the picture (where it covered the frame), in the page
-             header (where it belonged to nothing), or in #cam-extras below
-             (which leaves the section entirely on a phone, so the toggles
-             ended up outside the box labelled Camera Input). One compact row:
-             these are chips, not buttons, so the row costs the column a line
-             rather than a block.
-             Hands and pose work before the camera starts (they set intent the
-             loop reads); FACE and GAZE load a model onto the live stream, so
-             they stay disabled until there is one. -->
-        <div class="cam-trackers" id="tracker-row"
-             title="What the camera tracks. Hands and pose can be set before the camera starts; FACE and GAZE load a model onto the live stream.">
-            <!-- Hand tracking costs about twice what pose does and is the usual
-                 frame-rate bottleneck, so both are switchable outright. With one
-                 off the other stops sharing frames and runs at the full rate. -->
-            <button class="depth-toggle on" id="hands-l-btn"
-                    title="Track the left hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">✋ L</button>
-            <button class="depth-toggle on" id="hands-r-btn"
-                    title="Track the right hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">R ✋</button>
-            <button class="depth-toggle on" id="pose-btn"
-                    title="Body pose tracking. Turn it off to give hand tracking the whole frame budget.">🧍 POSE</button>
-            <button class="depth-toggle" id="face-btn" disabled
-                    title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears — start the camera first">☺ FACE</button>
-            <button class="depth-toggle" id="gaze-btn" disabled
-                    title="Track pupil orientation as gaze_x / gaze_y signals — start the camera first">◉ GAZE</button>
-        </div>
         <!-- Everything in Camera Input that is not the picture lives in one
              box, and that box is a drop host (see src/ui/sections.js). Keeping
              it separate from #video-wrap is what leaves the sticky-camera and
@@ -221,6 +199,30 @@
              scrolls inside this box instead of growing the section that is
              pinned to the top of a phone screen. -->
         <div id="cam-extras" data-sec-host="cam">
+          <!-- What the camera tracks — a property of this input, so it lives
+               in this input's container rather than on the picture (where it
+               covered the frame) or in the page header (where it belonged to
+               nothing). One compact row: these are chips, not buttons, so the
+               row costs the column a line rather than a block.
+               Hands and pose work before the camera starts (they set intent
+               the loop reads); FACE and GAZE load a model onto the live
+               stream, so they stay disabled until there is one. -->
+          <div class="cam-trackers" id="tracker-row"
+               title="What the camera tracks. Hands and pose can be set before the camera starts; FACE and GAZE load a model onto the live stream.">
+              <!-- Hand tracking costs about twice what pose does and is the usual
+                   frame-rate bottleneck, so both are switchable outright. With one
+                   off the other stops sharing frames and runs at the full rate. -->
+              <button class="depth-toggle on" id="hands-l-btn"
+                      title="Track the left hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">✋ L</button>
+              <button class="depth-toggle on" id="hands-r-btn"
+                      title="Track the right hand. With only one side enabled, MediaPipe no longer has to guess which hand it is seeing — and it only runs the landmark stage once.">R ✋</button>
+              <button class="depth-toggle on" id="pose-btn"
+                      title="Body pose tracking. Turn it off to give hand tracking the whole frame budget.">🧍 POSE</button>
+              <button class="depth-toggle" id="face-btn" disabled
+                      title="Track facial landmarks: eyebrows, lips, tongue, cheeks, ears — start the camera first">☺ FACE</button>
+              <button class="depth-toggle" id="gaze-btn" disabled
+                      title="Track pupil orientation as gaze_x / gaze_y signals — start the camera first">◉ GAZE</button>
+          </div>
           <!-- .audio-section, not .panel: as a subsection of Camera Input it is the
                same kind of container as its neighbours, and `.panel.sec` strips the
                border, margin and radius that make a section read as a card. -->

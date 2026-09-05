@@ -6,7 +6,6 @@
 // Either toggle loads the (shared) face model on first use.
 
 import { bus } from './bus.js';
-import { gesture } from './gesture.js';
 import { push30 } from './math.js';
 import { lsGet, lsSet } from './storage.js';
 import { themeToken } from './ui/theme.js';
@@ -152,11 +151,6 @@ export const faceSource = {
   },
 
   _decayAll() {
-    // A resting face and no face at all are the same all-zero vector, so a
-    // face gesture can only be matched while this says there is a face to
-    // read. Left implicit, a recorded expression would sit permanently
-    // "matched" against a dead model.
-    gesture.setPresence('face', false);
     ['brow_raise','brow_furrow','brow_L','brow_R','mouth_open','smile','pucker','lips_funnel',
      'tongue_out','cheek_puff','cheek_squint_L','cheek_squint_R'].forEach(k => bus.decay(k));
     ['gaze_x','gaze_y','head_yaw','head_roll'].forEach(k => bus.decay(k, 0.8));
@@ -194,9 +188,6 @@ export const faceSource = {
     const bs = {};
     cats.forEach(c => { bs[c.categoryName] = c.score; });
 
-    // Expression channels are what a face gesture is made of, so a face is
-    // only "present" for matching while they are actually being published.
-    gesture.setPresence('face', this.faceOn);
     if (this.faceOn) {
       bus.update('brow_raise',     bs.browInnerUp ?? 0);
       bus.update('brow_furrow',    ((bs.browDownLeft ?? 0) + (bs.browDownRight ?? 0)) / 2);
