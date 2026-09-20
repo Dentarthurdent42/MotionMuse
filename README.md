@@ -1052,8 +1052,10 @@ The tour is built for a project that changes weekly:
   step is skipped gracefully instead — the app never breaks because the tour
   lagged a release.
 - **The spotlight is a hole, not a ring.** One scrim covers the screen while
-  the tour is open — dimmed to 72% and blurred (`--scrim` / `--scrim-blur`,
-  the same pair every dimmed background in the app uses) — and the step's
+  the tour is open — dimmed to 72% and softly blurred (`--scrim` /
+  `--scrim-blur`, the same pair every dimmed background in the app uses; the
+  blur is 3px, enough to take the edge off what is behind without making it
+  unrecognisable) — and the step's
   target is cut out of it as a keyhole polygon, so the one thing you are being
   asked to look at keeps its own colour and its own focus while everything
   around it recedes. The hole is computed from the ring's own numbers, so the
