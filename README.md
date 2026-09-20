@@ -1051,6 +1051,17 @@ The tour is built for a project that changes weekly:
   panel's **?** opens nothing, or a **?** opens more than its own panel's steps. At runtime a stale
   step is skipped gracefully instead — the app never breaks because the tour
   lagged a release.
+- **The spotlight is a hole, not a ring.** One scrim covers the screen while
+  the tour is open — dimmed to 72% and blurred (`--scrim` / `--scrim-blur`,
+  the same pair every dimmed background in the app uses) — and the step's
+  target is cut out of it as a keyhole polygon, so the one thing you are being
+  asked to look at keeps its own colour and its own focus while everything
+  around it recedes. The hole is computed from the ring's own numbers, so the
+  outline can never drift off the clearing it outlines. This replaced two
+  dimmers — a plain backdrop for the cards with no target and the ring's own
+  9999px box-shadow for the spotlit ones — which was fine while the dimming
+  was a light wash and stopped being fine once it blurred: a shadow cannot
+  blur, and blurring the whole screen would have taken the target with it.
 - **The spotlight follows its target.** The ring tracks the target's rectangle
   on a frame loop while the tour is open, rather than repositioning on `resize`
   and `scroll`. Those two miss the cases that matter: a pinch moves only the

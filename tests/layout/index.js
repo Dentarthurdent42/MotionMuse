@@ -1201,6 +1201,103 @@ const chordCables = await (async () => {
   return { fresh, picked, wired, unplugged, errs };
 })();
 
+// ── Dimming: every scrim dims AND blurs, and the spotlight keeps its hole ──
+const dimming = await (async () => {
+  // A scrim's depth and blur, whichever colour syntax the browser computes it
+  // in — rgba(…, 0.72) for a literal, oklab(… / 0.85) for a color-mix.
+  const scrimOf = (page, id) => page.evaluate(i => {
+    const el = document.getElementById(i);
+    if (!el) return { missing: true };
+    const cs = getComputedStyle(el);
+    const m = /[,/]\s*([\d.]+)\s*\)\s*$/.exec(cs.backgroundColor);
+    return { alpha: m ? +m[1] : 1, blur: (cs.backdropFilter || cs.webkitBackdropFilter || 'none') };
+  }, id);
+
+  // The first-run picker needs a context that looks like a real visitor, and
+  // it gets one of its own: dismissing it starts the guided tour for whatever
+  // way of playing was picked, which would take the spotlight checks below
+  // away from the one-step tour they park there on purpose.
+  const firstCtx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  await firstCtx.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+  const firstPage = await firstCtx.newPage();
+  const errs = [];
+  firstPage.on('pageerror', e => errs.push(String(e)));
+  await firstPage.goto(URL_, { waitUntil: 'networkidle' });
+  await firstPage.waitForTimeout(600);
+  const start = await scrimOf(firstPage, 'start-pop');
+  await firstCtx.close();
+
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await ctx.newPage();
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+
+  // Park a one-step tour on whatever node is actually on screen: which panels
+  // exist depends on the starting point, and a step whose target does not
+  // resolve is skipped — which would leave this checking the targetless case
+  // twice over.
+  const spotSel = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('#ws .node-panel')].find(e => e.getClientRects().length);
+    return el ? `[data-node="${el.dataset.node}"]` : null;
+  });
+  await page.evaluate(async sel => {
+    const { tour } = await import('/src/ui/tutorial.js');
+    tour.start({ steps: [{ id: 'spot', title: 'Spot', body: 'x', target: sel }] });
+  }, spotSel);
+  await page.waitForTimeout(700);
+  const spot = await page.evaluate(() => {
+    const bd = document.getElementById('tour-backdrop'), rg = document.getElementById('tour-ring');
+    const clip = getComputedStyle(bd).clipPath || '';
+    // The keyhole in px. Its four corners are the only points off the left
+    // edge — the outer rectangle is written in percentages and the slit runs
+    // along x=0 — so the hole is their bounding box, whatever order they come
+    // in and however many points the path ends up with.
+    const pts = [...clip.matchAll(/(-?[\d.]+)px\s+(-?[\d.]+)px/g)].map(m => [+m[1], +m[2]]);
+    const inner = pts.filter(([x]) => x !== 0);
+    const xs = inner.map(p => p[0]), ys = inner.map(p => p[1]);
+    const r = rg.getBoundingClientRect();
+    return {
+      isPolygon: clip.startsWith('polygon'),
+      pts: pts.length,
+      hole: inner.length >= 4
+        ? { x: Math.min(...xs), y: Math.min(...ys), r: Math.max(...xs), b: Math.max(...ys) } : null,
+      ring: { x: r.left, y: r.top, r: r.right, b: r.bottom },
+      ringShadow: getComputedStyle(rg).boxShadow,
+      ringShown: getComputedStyle(rg).display,
+      backdropShown: getComputedStyle(bd).display,
+      card: document.querySelector('#tour-card .tour-title')?.textContent ?? null,
+    };
+  });
+  const tourScrim = await scrimOf(page, 'tour-backdrop');
+
+  // A card with no target dims the whole screen and cuts no hole. Escape
+  // first: starting a tour while one is already open leaves the old step
+  // (and its hole) in place, which would make this pass on stale state.
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  await page.evaluate(async () => {
+    const { tour } = await import('/src/ui/tutorial.js');
+    tour.start({ steps: [{ id: 'plain', title: 'Welcome', body: 'x' }] });
+  });
+  await page.waitForTimeout(500);
+  const plain = await page.evaluate(() => {
+    const bd = document.getElementById('tour-backdrop');
+    return { clip: getComputedStyle(bd).clipPath, shown: getComputedStyle(bd).display,
+             ring: getComputedStyle(document.getElementById('tour-ring')).display };
+  });
+
+  // The two smaller scrims: the muted banner over the scope, the HUD strip
+  // over the picture. Both keep the stage's own polarity, so they are read
+  // for depth and blur rather than for a particular colour.
+  await page.evaluate(() => { document.getElementById('latency-bar').style.display = 'flex'; });
+  const viz = await scrimOf(page, 'viz-muted');
+  const hud = await scrimOf(page, 'latency-bar');
+
+  await ctx.close();
+  return { start, spot: { ...spot, sel: spotSel }, tourScrim, plain, viz, hud, errs };
+})();
+
 // The inference HUD is dev-only, and each of its rows belongs to a model that
 // is actually running.
 const hud = await (async () => {
@@ -2495,6 +2592,30 @@ for (const [key, f] of Object.entries(find)) {
   check(!f.back.hidden && f.back.selected === 'panel:metronome', `${key}: picking the closed panel brings it back`, JSON.stringify(f.back));
   check(f.socket.drawn && f.socket.inRow && f.socket.groupOpen && f.socket.flashed && f.socket.onScreen,
     `${key}: Ctrl+K finds a socket inside a closed tracker group and opens it`, JSON.stringify(f.socket));
+}
+
+console.log('\nDimming\n');
+{
+  const { start, spot, tourScrim, plain, viz, hud, errs } = dimming;
+  check(errs.length === 0, 'dimming: no page errors', errs.join(' | '));
+  const blurred = s => /blur\(\s*[1-9]/.test(s.blur);
+  for (const [what, sc, floor] of [['the first-run picker', start, 0.7],
+                                   ['the tour', tourScrim, 0.7],
+                                   ['the muted banner', viz, 0.8],
+                                   ['the HUD strip', hud, 0.75]]) {
+    check(!sc.missing && sc.alpha >= floor, `dimming: ${what} dims to at least ${floor}`, JSON.stringify(sc));
+    check(blurred(sc), `dimming: ${what} blurs what is behind it`, sc.blur);
+  }
+  // The spotlight: one scrim with a hole in it, the hole exactly the ring.
+  check(spot.ringShown === 'block' && spot.backdropShown === 'block' && spot.isPolygon && !!spot.hole,
+    'dimming: a spotlit step cuts a keyhole in the scrim',
+    JSON.stringify({ on: spot.sel, card: spot.card, ring: spot.ringShown, shown: spot.backdropShown, pts: spot.pts }));
+  const off = spot.hole ? Math.max(Math.abs(spot.hole.x - spot.ring.x), Math.abs(spot.hole.y - spot.ring.y),
+                                   Math.abs(spot.hole.r - spot.ring.r), Math.abs(spot.hole.b - spot.ring.b)) : 999;
+  check(off <= 1, 'dimming: and the hole is exactly the ring, so the target stays sharp', `off by ${off.toFixed(1)}px`);
+  check(!/9999px/.test(spot.ringShadow), 'dimming: the ring no longer dims with its own shadow', spot.ringShadow.slice(0, 60));
+  check(plain.shown === 'block' && plain.clip === 'none' && plain.ring === 'none',
+    'dimming: a card with no target dims everything and cuts no hole', JSON.stringify(plain));
 }
 
 console.log('\nInference HUD\n');
