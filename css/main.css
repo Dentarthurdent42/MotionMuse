@@ -31,6 +31,18 @@
   --green:     oklch(0.87 0.160 155);
   --shadow:    0 2px 6px rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 8px 22px rgba(0, 0, 0, 0.6);
+  /* Dimming: how far back the app goes behind a modal or a spotlight, and
+     the blur that goes with it. One depth and one blur for the whole app, so
+     every scrim reads as the same gesture rather than as several different
+     washes. The blur is what makes a heavy scrim work: dimming alone leaves
+     the shapes behind it competing with the thing in front, and what is
+     behind a dialog here is usually a live camera picture — all shape and
+     motion. Blurring takes the detail out and leaves the colour, so the
+     dimmed layer reads as distance instead of as clutter. The tint is the
+     app's own near-black rather than pure black: over a light theme a black
+     wash reads as a hole, this reads as the room going dark. */
+  --scrim: rgba(6, 9, 15, 0.72);
+  --scrim-blur: blur(10px);
   --accent-l: 0.72; --accent-c: 0.13;
   /* LED tokens: glyphs that *light up* — the status dot, gesture dots, meter
      and bar fills, the scope trace. Never text. On dark grounds a lit thing
@@ -847,6 +859,13 @@ button.wave-btn { font-family: 'IBM Plex Mono', monospace; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+/* Some people find a blurred backdrop unreadable or sickening, and say so
+   through the OS. Take the blur away for them and make the scrim nearly
+   solid instead: the job of the dimming is to put the app behind the
+   dialogue, and opacity does that on its own. */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --scrim: rgba(6, 9, 15, 0.94); --scrim-blur: none; }
+}
 
 /* ── Camera header ───────────────────────────────────────
    The camera used to carry a one-tab .src-tabs strip — cyan fill, title case,
@@ -949,8 +968,11 @@ body.no-scroll { overflow: hidden; }
 #latency-bar {
   position: absolute; bottom: 0; left: 0; right: 0;
   /* Scrim in the glass's own colour, so the HUD keeps the stage's polarity
-     instead of stamping a black strip across a light one. */
-  background: color-mix(in oklab, var(--glass) 55%, transparent);
+     instead of stamping a black strip across a light one — and blurred, so
+     the numbers sit on a wash of the picture rather than on the picture. */
+  background: color-mix(in oklab, var(--glass) 80%, transparent);
+  backdrop-filter: var(--scrim-blur);
+  -webkit-backdrop-filter: var(--scrim-blur);
   color: var(--led-accent);
   font-family: monospace;
   font-size: 9px; letter-spacing: .07em;
@@ -1302,7 +1324,12 @@ option { background: var(--panel); }
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center; gap: 4px;
   font-size: 10px; letter-spacing: 1.5px; color: var(--amber);
-  background: color-mix(in oklab, var(--glass) 62%, transparent);
+  /* Scrim in the glass's own colour, so the banner keeps the stage's
+     polarity; blurred, because a running trace behind the words is the
+     thing that makes them hard to read. */
+  background: color-mix(in oklab, var(--glass) 85%, transparent);
+  backdrop-filter: var(--scrim-blur);
+  -webkit-backdrop-filter: var(--scrim-blur);
   pointer-events: none;   /* the banner is a readout, not a target */
 }
 #viz-muted[hidden] { display: none; }
@@ -1388,7 +1415,9 @@ option { background: var(--panel); }
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: oklch(0 0 0 / 0.62);
+  background: var(--scrim);
+  backdrop-filter: var(--scrim-blur);
+  -webkit-backdrop-filter: var(--scrim-blur);
   overflow-y: auto;
 }
 .start-card {
@@ -1944,17 +1973,27 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* ── Guided tour ─────────────────────────────────────────── */
+/* The scrim is always up during the tour, and ui/tutorial.js cuts a hole in
+   it around whatever the current step points at — so the target keeps its
+   own colour and its own focus while the rest of the app recedes. The hole
+   is why the dimming can be this heavy: the one thing you are being asked
+   to look at is never behind it. */
 #tour-backdrop {
   position: fixed; inset: 0;
-  background: rgba(6, 9, 15, 0.45);
+  background: var(--scrim);
+  backdrop-filter: var(--scrim-blur);
+  -webkit-backdrop-filter: var(--scrim-blur);
   z-index: 1000;
   pointer-events: none;   /* the app stays clickable — "try it now" works */
+  transition: clip-path 0.25s;
 }
+/* Just the outline now: the scrim behind it does the dimming, where it used
+   to be this ring's own 9999px shadow doing it. */
 #tour-ring {
   position: fixed;
   border: 2px solid var(--cyan);
   border-radius: 4px;
-  box-shadow: 0 0 0 9999px rgba(6, 9, 15, 0.45), 0 0 18px var(--led-accent);
+  box-shadow: 0 0 18px var(--led-accent);
   z-index: 1001;
   pointer-events: none;
   transition: left 0.25s, top 0.25s, width 0.25s, height 0.25s;

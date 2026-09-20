@@ -433,6 +433,20 @@ export const tour = (() => {
     else if (e.key === 'ArrowLeft') back();
   }
 
+  // A full-viewport rectangle with a rectangular hole in it, as one polygon.
+  //
+  // The outer edge is traced clockwise and the hole anticlockwise, which is
+  // what makes the non-zero fill rule read the inner loop as a hole; the two
+  // are joined by a zero-width slit running left from the hole to the edge of
+  // the screen, so it is a single closed path. `polygon(evenodd, …)` would say
+  // the same thing in fewer points, but its fill-rule argument is not
+  // everywhere yet, and a scrim that silently covered the thing it is meant to
+  // be pointing at is not a failure worth risking for six points.
+  const keyhole = (x, y, w, h) => `polygon(\
+0 0, 100% 0, 100% 100%, 0 100%, \
+0 ${y}px, ${x}px ${y}px, ${x}px ${y + h}px, \
+${x + w}px ${y + h}px, ${x + w}px ${y}px, 0 ${y}px)`;
+
   // Position the ring around the (re-queried) target and the card near it.
   // Selectors are re-resolved every time so a re-rendered panel — the app
   // rebuilds sections wholesale — can't leave the spotlight on a dead node.
@@ -441,9 +455,14 @@ export const tour = (() => {
     const st = step();
     const t = resolve(st.target);
     const { backdrop, ring, card } = els;
-    // The ring's oversized box-shadow doubles as the dimmer when a target is
-    // spotlit; the plain backdrop covers the targetless (welcome/finish) cards.
-    backdrop.style.display = t ? 'none' : 'block';
+    // One dimmer for both kinds of step: the backdrop is always up, and when
+    // a step points at something the app cuts that rectangle out of it (see
+    // keyhole below). The dimmer used to be two things — this backdrop for
+    // the targetless cards and the ring's own 9999px shadow for the spotlit
+    // ones — which was fine while the dimming was a light wash and stopped
+    // being fine once it blurred: a blur cannot be painted by a box-shadow,
+    // and blurring the whole screen would take the target with it.
+    backdrop.style.display = 'block';
     // getBoundingClientRect answers in real screen pixels, but a length we
     // write back is read in the element's own zoomed units. Under a page zoom
     // (a browser extension, a user stylesheet — not Ctrl+/−, which resizes the
@@ -455,13 +474,19 @@ export const tour = (() => {
     if (t) {
       const r = t.getBoundingClientRect();
       const pad = 6;
+      const x = (r.left - pad) / z, y = (r.top - pad) / z;
+      const w = (r.width + 2 * pad) / z, h = (r.height + 2 * pad) / z;
       ring.style.display = 'block';
-      ring.style.left   = (r.left - pad) / z + 'px';
-      ring.style.top    = (r.top - pad) / z + 'px';
-      ring.style.width  = (r.width + 2 * pad) / z + 'px';
-      ring.style.height = (r.height + 2 * pad) / z + 'px';
+      ring.style.left   = x + 'px';
+      ring.style.top    = y + 'px';
+      ring.style.width  = w + 'px';
+      ring.style.height = h + 'px';
+      // The same box the ring outlines, cut out of the scrim. Computed from
+      // the ring's own numbers so the two can never drift apart.
+      backdrop.style.clipPath = keyhole(x, y, w, h);
     } else {
       ring.style.display = 'none';
+      backdrop.style.clipPath = 'none';
     }
     // Card: below the target if there's room, else above; centered when no
     // target. Small screens get a bottom sheet instead.
