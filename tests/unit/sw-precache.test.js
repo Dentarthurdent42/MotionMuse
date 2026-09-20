@@ -24,7 +24,7 @@ const jsIn = dir => readdirSync(join(ROOT, dir))
   .filter(f => f.endsWith('.js'))
   .map(f => `/${dir}/${f}`);
 
-const modules = [...jsIn('src'), ...jsIn('src/ui')];
+const modules = [...jsIn('src'), ...jsIn('src/ui'), ...jsIn('vendor')];
 
 test('the precache list names every module in src/', () => {
   const missing = modules.filter(m => !sw.includes(`'${m}'`));
@@ -36,7 +36,7 @@ test('the precache list names nothing that no longer exists', () => {
   // The other direction: a stale entry makes install() fetch a 404, and a
   // failed precache rejects the whole install — so one deleted file left in
   // the list stops the service worker updating at all.
-  const listed = [...sw.matchAll(/'(\/src\/[^']+\.js)'/g)].map(m => m[1]);
+  const listed = [...sw.matchAll(/'(\/(?:src|vendor)\/[^']+\.js)'/g)].map(m => m[1]);
   const gone = listed.filter(p => !modules.includes(p));
   assert.deepEqual(gone, [], `listed but missing from disk: ${gone.join(', ')}`);
 });

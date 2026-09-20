@@ -19,19 +19,18 @@
 // it: every assignment row calibrates its own.
 
 import { gesture, gestureLabel, KINDS, kindOf } from '../gesture.js';
-import { arpRowHTML, wireArpRow, updateArpRow } from './arp-ui.js';
-import { setReadout } from './numeric.js';
 import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS,
          VOICINGS, accidentalSign } from '../chordmode.js';
-import { diatonicChord, DEGREE_SCALES } from '../chords.js';
-import { NOTE_NAMES } from '../scale.js';
+import { DEGREE_KEYS, RELEASE_KEY, ACC_KEYS, isCableId } from '../chordcables.js';
+import { diatonicChord } from '../chords.js';
+import { rows } from './rows.js';
 import { cvSource }   from '../cv.js';
-import { engine }     from '../engine.js';
 import { radial }     from '../radial.js';
 import { toast }      from './status.js';
 import { buildSigPanel } from './signals.js';
+import { inPort } from './mapper-ui.js';
+import { syncControls } from '../controls.js';
 
-const opt = (v, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`;
 
 // What you are asked to hold, per kind — "hold the pose" is wrong advice for
 // an expression, and "your own hand" is wrong for a stance.
@@ -51,18 +50,11 @@ let gestureLibOpen = null;
 
 // The key select is narrow; scale.js's full names ("major (ionian)") get
 // clipped mid-word, so shorten them for this one control.
-const MODE_LABELS = {
-  'major (ionian)':   'major',
-  'natural minor':    'minor',
-  'harmonic minor':   'harm min',
-  'major pentatonic': 'maj pent',
-  'minor pentatonic': 'min pent',
-};
 
 export function gestureModeSection() {
   const gestures = gesture.list();
   const relId = chordmode.getReleaseGesture();
-  const env = engine.getChordEnv();
+  const eff = chordmode.effectiveKey();
   const on = chordmode.enabled;
 
   const row = g => {
@@ -144,30 +136,15 @@ export function gestureModeSection() {
   // can do both jobs without the two ever being asked at once. `· est` rides
   // along with the name: whether a shape is calibrated is exactly what you
   // want to know at the moment you wire it to something.
-  const gestureOptions = sel => `<option value=""${!sel ? ' selected' : ''}>—</option>`
+  // A slot held by a cable that is not a handshape's shows what holds it;
+  // the picker is the cable's, not the other way round.
+  const gestureOptions = sel => isCableId(sel) ? `<option value="" selected>WIRED</option>`
+    : `<option value=""${!sel ? ' selected' : ''}>—</option>`
     + gestures.map(g =>
         `<option value="${g.id}"${g.id === sel ? ' selected' : ''}>`
         + `${gestureLabel(g)}${g.est ? ' · est' : ''}</option>`).join('');
 
-  const key  = chordmode.key();
-  const eff  = chordmode.effectiveKey();
   const sevenths = chordmode.sevenths();
-  const flw  = chordmode.isFollowing();   // armed *and* actually overriding
-  const keyRow = `
-    <div class="chord-key">
-      <span class="chord-key-lbl">KEY</span>
-      <select id="ck-root" ${flw ? 'disabled' : ''} aria-label="Chord key root"
-              title="${flw ? 'Following Pitch Quantize' : 'Root of the key chords are built in'}"
-        >${NOTE_NAMES.map(n => opt(n, eff.root)).join('')}</select>
-      <select id="ck-mode" ${flw ? 'disabled' : ''} aria-label="Chord key mode"
-        >${DEGREE_SCALES.map(s => `<option value="${s}"${s === eff.mode ? ' selected' : ''}>${MODE_LABELS[s] ?? s}</option>`).join('')}</select>
-      <select id="ck-oct" aria-label="Chord octave" title="Octave of the chord roots"
-        >${[2, 3, 4, 5].map(o => opt(o, key.octave)).join('')}</select>
-      <button class="wave-btn${key.follow ? ' on' : ''}" id="ck-follow" aria-pressed="${key.follow}"
-              title="${key.follow && !flw
-                ? 'Following Pitch Quantize — inactive until quantise is on'
-                : 'Take the key from Pitch Quantize, so chords match the melody'}">FOLLOW</button>
-    </div>`;
 
   // ── Voicing: the chord, or the single note it is built on ───────────────
   //
@@ -202,7 +179,7 @@ export function gestureModeSection() {
 
   const voicingRow = `
     <div class="chord-voicing">
-      <span class="chord-key-lbl">PLAY</span>
+      <span class="chord-key-lbl">${inPort('chord_voicing')}PLAY</span>
       <select id="ck-voicing" aria-label="Whether a handshape sounds a chord or one note"
               title="The same handshapes and the same key, sounding either the whole chord on a degree or just that degree's own note.">
         ${VOICINGS.map(v => `<option value="${v}"${v === voicing ? ' selected' : ''}>${VOICING_LABEL[v]}</option>`).join('')}
@@ -210,26 +187,26 @@ export function gestureModeSection() {
       <span class="acc-read" id="ck-acc-read"
             title="What your other hand is saying about the note right now.">${isNote ? '♮' : '—'}</span>
     </div>
-    ${!isNote ? '' : `
-    <div class="chord-expr-cal chord-acc">
+    
+    <div class="chord-expr-cal chord-acc${isNote ? '' : ' dimmed'}" title="${isNote ? '' : 'Accidentals apply to SINGLE NOTES — a chord has none'}">
       <label class="ctrl-lbl" title="${accBusy
         ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
-        : 'Hold this on your other hand to raise the note a semitone'}">♯ SHARP
-        <select id="ck-acc-sharp" ${accBusy ? 'disabled' : ''}
+        : 'Hold this on your other hand to raise the note a semitone'}">${inPort(ACC_KEYS.sharp)}♯ SHARP
+        <select id="ck-acc-sharp" ${accBusy || !isNote || isCableId(accG.sharp) ? 'disabled' : ''}
                 aria-label="Gesture that sharpens the note">${gestureOptions(accG.sharp)}</select>
         ${calBtn(accG.sharp, accBusy)}
       </label>
       <label class="ctrl-lbl" title="${accBusy
         ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
-        : 'Hold this on your other hand to lower the note a semitone'}">♭ FLAT
-        <select id="ck-acc-flat" ${accBusy ? 'disabled' : ''}
+        : 'Hold this on your other hand to lower the note a semitone'}">${inPort(ACC_KEYS.flat)}♭ FLAT
+        <select id="ck-acc-flat" ${accBusy || !isNote || isCableId(accG.flat) ? 'disabled' : ''}
                 aria-label="Gesture that flattens the note">${gestureOptions(accG.flat)}</select>
         ${calBtn(accG.flat, accBusy)}
       </label>
       <div class="quant-notes" style="grid-column:1 / -1;margin:0;">${accBusy
         ? 'The other hand is playing the volume, so every note sounds natural.'
         : 'Neither shape held is natural. The hand that is not naming the note is the one that bends it.'}</div>
-    </div>`}`;
+    </div>`;
 
   // Every control renders whether the mode is ON or not — switching to
   // radial mode must not hide the place a chord's 7th or the key is set, and
@@ -245,6 +222,21 @@ export function gestureModeSection() {
   // it off whatever it was doing before.
 
   const chordRow = i => {
+    // A degree the key does not have (vi, vii over a pentatonic) is still a
+    // row — dimmed — so its socket stays on the node: a cable into it is
+    // kept, dormant, and plays the moment the mode has the degree.
+    const dormant = i >= chordmode.degreeCount();
+    if (dormant) {
+      const gid = chordmode.gestureFor(i);
+      return `
+    <div class="chord-assign dimmed" data-degree="${i}" title="Not a degree of this mode — the row wakes with a mode that has it">
+      ${inPort(DEGREE_KEYS[i])}<span class="gesture-dot" id="cdot-${i}"></span>
+      <span class="chord-degree">${['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'][i]} · —</span>
+      <select class="ch-shape" data-degree="${i}" disabled aria-label="Gesture for a degree this mode does not have">${gestureOptions(gid)}</select>
+      ${calBtn(gid, true)}
+      <span class="ch-sev-gap"></span>
+    </div>`;
+    }
     const c = diatonicChord(eff.root, eff.octave, eff.mode, i, sevenths[i]);
     const gid = chordmode.gestureFor(i);
     // In note voicing the row shows the pitch that will sound, octave and all
@@ -255,11 +247,12 @@ export function gestureModeSection() {
     const n = isNote ? chordmode.noteAt(i) : null;
     return `
     <div class="chord-assign" data-degree="${i}">
-      <span class="gesture-dot" id="cdot-${i}"></span>
+      ${inPort(DEGREE_KEYS[i])}<span class="gesture-dot" id="cdot-${i}"></span>
       <span class="chord-degree" title="${n ? `${n.numeral} · ${n.name}` : `${c.numeral} · ${c.rootName} ${c.quality}`}"
         >${n ? `${n.numeral} · ${n.name}` : `${c.numeral} · ${c.rootName}`}</span>
-      <select class="ch-shape" data-degree="${i}"
+      <select class="ch-shape" data-degree="${i}" ${isCableId(gid) ? 'disabled' : ''}
               aria-label="Gesture that plays ${c.numeral}"
+              title="${isCableId(gid) ? 'Held by the cable on its socket — unplug it to choose a shape' : 'The handshape that plays this degree — a cable from its signal'}"
         >${gestureOptions(gid)}</select>
       ${calBtn(gid)}
       <button class="wave-btn ch-sev${sevenths[i] ? ' on' : ''}" data-degree="${i}"
@@ -285,7 +278,7 @@ export function gestureModeSection() {
   const nameShown = nameFixed ? (ex.hand === 'L' ? 'R' : 'L') : nameHand;
   const nameRow = `
     <div class="chord-expr">
-      <span class="chord-key-lbl">NAMED BY</span>
+      <span class="chord-key-lbl">${inPort('chord_name_hand')}NAMED BY</span>
       <select id="ck-name-hand" aria-label="Which hand names the chord"
               ${nameFixed ? 'disabled' : ''}
               title="${nameFixed
@@ -295,19 +288,26 @@ export function gestureModeSection() {
           `<option value="${v}"${v === nameShown ? ' selected' : ''}>${l}</option>`).join('')}
       </select>
     </div>`;
+  // One input per row, so each socket has the node's edge to itself.
   const exprRow = `
-    <div class="chord-expr">
-      <span class="chord-key-lbl">PLAY WITH</span>
+    <div class="met-row">
+      <span class="chord-key-lbl">${inPort('chord_expr_mode')}PLAY WITH</span>
       <select id="ck-expr-mode" aria-label="What makes the chord sound"
               title="What sounds the chord once a handshape has named it. Two-handed play frees the shape from doing two jobs at once.">
         ${EXPRESSION_MODES.map(m => `<option value="${m}"${m === ex.mode ? ' selected' : ''}>${MODE_LABEL[m]}</option>`).join('')}
       </select>
+    </div>
+    <div class="met-row">
+      <span class="chord-key-lbl">${inPort('chord_expr_hand')}HAND</span>
       <select id="ck-expr-hand" aria-label="Which hand expresses"
               ${ex.mode === 'hand' ? '' : 'disabled'}
               title="The hand that plays; the other names the chord.">
         ${[['L', 'LEFT plays'], ['R', 'RIGHT plays']].map(([v, l]) =>
           `<option value="${v}"${v === ex.hand ? ' selected' : ''}>${l}</option>`).join('')}
       </select>
+    </div>
+    <div class="met-row">
+      <span class="chord-key-lbl">${inPort('chord_expr_control')}READ AS</span>
       <select id="ck-expr-control" aria-label="How the signal is read"
               ${ex.mode === 'hand' || ex.mode === 'brow' ? '' : 'disabled'}
               title="ATTACK / RELEASE runs the envelope past a threshold. VOLUME makes the signal the level itself — there is no envelope to run, you are the envelope.">
@@ -316,35 +316,28 @@ export function gestureModeSection() {
     </div>
     ${ex.mode === 'beat' ? `
     <div class="quant-notes">the shape held when a SAMPLE beat lands is struck then — set the beats in the Metronome section, and switch it on</div>` : ''}
-    ${ex.mode === 'gesture' || ex.mode === 'beat' ? '' : `
     <div class="chord-expr-cal">
-      <label class="ctrl-lbl">OFF AT<input type="range" id="ck-expr-lo" min="0" max="1" step="0.01" value="${ex.lo}"></label>
-      <label class="ctrl-lbl">FULL AT<input type="range" id="ck-expr-hi" min="0" max="1" step="0.01" value="${ex.hi}"></label>
+      ${rows(['chord_expr_lo', 'chord_expr_hi'])}
+      ${ex.mode === 'gesture' || ex.mode === 'beat' ? '' : `
       <div class="expr-meter" id="ck-expr-meter" title="Live: the raw signal, and where it lands after the range above. If the bar never empties, raise OFF AT.">
         <div class="expr-fill" id="ck-expr-fill"></div>
         <span class="expr-read" id="ck-expr-read">—</span>
-      </div>
-    </div>`}`;
-
-  // ── Arpeggiator ────────────────────────────────────────────────────────
-  //
-  // The arpeggiator row is shared with Radial Mode (ui/arp-ui.js) — one arp,
-  // one row, two panels.
-  const arpRow = arpRowHTML('ck');
+      </div>`}
+    </div>`;
 
   // Five rows over a pentatonic key, seven over a diatonic one. A shape
   // assigned to a degree beyond the count keeps its assignment — dormant, and
   // back the moment the mode is — so the rows that disappear here are not
   // deletions.
   const assignRows =
-    Array.from({ length: chordmode.degreeCount() }, (_, i) => chordRow(i)).join('') + `
+    Array.from({ length: DEGREES }, (_, i) => chordRow(i)).join('') + `
     <div class="chord-assign${ex.mode === 'gesture' ? '' : ' dimmed'}" data-degree="release">
-      <span class="gesture-dot" id="cdot-release"></span>
+      ${inPort(RELEASE_KEY)}<span class="gesture-dot" id="cdot-release"></span>
       <span class="chord-degree" title="${ex.mode === 'gesture'
         ? 'Holding this shape lets a held chord go'
         : 'Only used when a handshape holds the chord — here the signal above does the releasing'}"
         >RELEASE</span>
-      <select class="ch-shape" data-degree="release" ${ex.mode === 'gesture' ? '' : 'disabled'}
+      <select class="ch-shape" data-degree="release" ${ex.mode === 'gesture' && !isCableId(relId) ? '' : 'disabled'}
               aria-label="Gesture that releases a held chord"
         >${gestureOptions(relId)}</select>
       ${calBtn(relId)}
@@ -362,31 +355,15 @@ export function gestureModeSection() {
     <div class="audio-section" data-sec="gesture-mode">
       <div class="audio-section-label">
         Gesture Mode
+        <span class="head-sock">${inPort('chord_on')}</span>
         <button class="wave-btn${on ? ' on' : ''}" id="chord-toggle" aria-pressed="${on}"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${on ? 'ON' : 'OFF'}</button>
       </div>
-      ${keyRow}
       ${voicingRow}
       ${exprRow}
       ${nameRow}
       <div id="chord-assigns">${assignRows}</div>
       <div id="chord-cal-status" class="quant-notes" role="status" aria-live="polite"></div>
-      ${arpRow}
-      <div class="scale-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;margin-top:6px;">
-        ${['attack', 'decay', 'sustain', 'release'].map(k => `
-          <label class="ctrl-lbl" style="display:flex;flex-direction:column;gap:2px;">
-            ${k.slice(0, 3).toUpperCase()}
-            <input type="range" class="ck-env" data-env="${k}"
-              min="${engine.CHORD_ENV_RANGE[k][0]}" max="${engine.CHORD_ENV_RANGE[k][1]}"
-              step="0.005" value="${env[k]}">
-            <span class="ctrl-val" id="ck-env-${k}">${k === 'sustain' ? Math.round(env[k] * 100) + '%' : env[k].toFixed(2) + 's'}</span>
-          </label>`).join('')}
-      </div>
-      <div class="wave-btns" style="margin-top:4px;">
-        <button type="button" class="wave-btn${engine.getShepard().chord ? ' on' : ''}" id="shep-chord"
-             aria-pressed="${engine.getShepard().chord}"
-             title="Shepard tones: every chord note becomes a stack of octaves under a fixed loudness curve, so a progression can climb without ever running out of register.">SHEPARD</button>
-      </div>
       <div class="chord-live" id="chord-live" style="display:${on ? 'grid' : 'none'}">
         <div id="chord-readout" class="quant-notes" role="status" aria-live="polite">—</div>
         <div class="chord-vol" title="How loud the chord is right now">
@@ -590,31 +567,10 @@ export function wireGestureSections(rerender) {
     // rule from its own side.
     if (on) radial.setEnabled(false);
     chordmode.setEnabled(on);
+    syncControls();
     rerender();
   });
 
-  // Key changes re-render: every degree option's label ("V · G") depends on
-  // the key, so the whole assignment list has to be rebuilt.
-  const setKey = partial => { chordmode.setKey(partial); rerender(); };
-  document.getElementById('ck-root')?.addEventListener('change', e => setKey({ root: e.target.value }));
-  document.getElementById('ck-mode')?.addEventListener('change', e => setKey({ mode: e.target.value }));
-  document.getElementById('ck-oct') ?.addEventListener('change', e => setKey({ octave: Number(e.target.value) }));
-  // ADSR sliders mutate in place: a re-render mid-drag would drop the pointer
-  // capture and the slider would stop following the finger.
-  document.getElementById('shep-chord')?.addEventListener('click', () => {
-    engine.setShepard({ chord: !engine.getShepard().chord });
-    rerender();
-  });
-  document.querySelectorAll('.ck-env').forEach(el => {
-    el.addEventListener('input', e => {
-      const k = e.target.dataset.env;
-      const v = engine.setChordEnv({ [k]: +e.target.value })[k];
-      setReadout(document.getElementById(`ck-env-${k}`),
-                 k === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`);
-    });
-  });
-
-  wireArpRow('ck', rerender);
 
   // Re-renders: the accidental pickers appear with SINGLE NOTES, the 7ths go
   // dead, and every row relabels from a chord to the pitch it will sound.
@@ -629,15 +585,6 @@ export function wireGestureSections(rerender) {
   document.getElementById('ck-acc-flat')?.addEventListener('change', e => {
     chordmode.setAccidentalGestures({ flat: e.target.value || null });
     rerender();
-  });
-
-  document.getElementById('ck-follow')?.addEventListener('click', () => {
-    // Turning follow off keeps whatever key was being followed, so the sound
-    // doesn't jump the moment you take manual control.
-    const eff = chordmode.effectiveKey();
-    setKey(chordmode.key().follow
-      ? { follow: false, root: eff.root, mode: eff.mode }
-      : { follow: true });
   });
 
   // Expression: every one of these changes which other controls are live (the
@@ -655,11 +602,6 @@ export function wireGestureSections(rerender) {
   // The range sliders mutate in place — a re-render mid-drag drops the pointer
   // capture, and these are exactly the controls you want to adjust while
   // watching the meter move.
-  document.getElementById('ck-expr-lo')?.addEventListener('input', e =>
-    chordmode.setExpression({ lo: +e.target.value }));
-  document.getElementById('ck-expr-hi')?.addEventListener('input', e =>
-    chordmode.setExpression({ hi: +e.target.value }));
-
   // Choosing a handshape for a chord (or for RELEASE) always re-renders:
   // the shape is taken off whatever it was doing, so at least one other row
   // changes too. Updating only the row that was touched is what would let the
@@ -753,8 +695,6 @@ export function updateGesturePanel() {
       const r = document.getElementById('chord-vol-read');
       if (r && r.textContent !== pct) r.textContent = pct;
     }
-
-    updateArpRow('ck', chordmode.arpPoolSize());
 
     // Live expression meter. Without it, calibrating the range is guesswork:
     // you cannot see that a closed fist still reads 0.38 and so never reaches

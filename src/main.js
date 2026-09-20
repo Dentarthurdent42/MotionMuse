@@ -8,10 +8,10 @@ import { engine }                           from './engine.js';
 import { mapper, trackersFor }              from './mapper.js';
 import { setStatus, toast }                 from './ui/status.js';
 import { buildSigPanel, updateSigPanel, syncSigGroups } from './ui/signals.js';
-import { renderMapper, updateMapperBars }   from './ui/mapper-ui.js';
+import { renderMapper, updateMapperBars, initMapperUI } from './ui/mapper-ui.js';
+import { registerControls, syncControls, onControlChange, defineControls } from './controls.js';
 import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
-import { initResize }                       from './ui/resize.js';
 import { initFullscreen, updateFsOverlay, fullscreen } from './ui/fullscreen.js';
 import { initCamBadge, updateCamBadge }     from './ui/cam-badge.js';
 import { playalong }                        from './playalong.js';
@@ -32,10 +32,12 @@ import { findConfig, setCurrentConfig,
          clearCurrentConfig }               from './saved.js';
 import { initTutorial, maybeOfferTour, offerTourForMode, offerTourForSharedSetup } from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
-import { enhanceSections, colorSections }   from './ui/sections.js';
+import { initWorkspace, relayout, adoptSections } from './ui/workspace.js';
 import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
 import { initTheme }                        from './ui/theme.js';
 import { initSettings }                     from './ui/settings.js';
+import { initCamSticky }                    from './ui/cam-sticky.js';
+import { initChordCables }                  from './chordcables.js';
 import { initShare, consumeSharedLink, announceSharedLink, isConsumingShare } from './ui/share.js';
 import { shouldOfferStart, openStartPicker } from './ui/firstrun.js';
 import { uicontrol }                        from './uicontrol.js';
@@ -50,6 +52,11 @@ import * as preset                          from './preset.js';
 // First thing: it applies the state, persists it and reloads without the
 // fragment, so the sooner it runs the less of the old setup flashes past.
 consumeSharedLink();
+
+// Switches and choices (filter type, key, tempo…) are input sockets too.
+// Registered before the audio panel first renders and before any saved
+// state is replayed, so both find the parameters they refer to.
+registerControls();
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
 function loop() {
@@ -130,7 +137,7 @@ function stopCamera() {
 }
 document.getElementById('cv-stop').addEventListener('click', stopCamera);
 
-document.getElementById('cv-btn').addEventListener('click', async () => {
+async function startCamera() {
   const btn = document.getElementById('cv-btn');
   if (cvSource.running) return;          // the picture hides this button anyway
   btn.disabled = true;
@@ -158,7 +165,8 @@ document.getElementById('cv-btn').addEventListener('click', async () => {
     btn.disabled = false;
     console.error(err);
   }
-});
+}
+document.getElementById('cv-btn').addEventListener('click', startCamera);
 
 // ── Face / gaze tracking toggles (opt-in, camera must be running) ────────
 const faceToggle = (btnId, key, setter, label) => {
@@ -183,6 +191,17 @@ const faceToggle = (btnId, key, setter, label) => {
 };
 // ── Microphone ───────────────────────────────────────────────────────────
 const micBtn = document.getElementById('mic-btn');
+// A cable into the microphone's switch (src/controls.js) reports here once
+// the mic has actually started or stopped; the button and the signal list
+// follow the real state.
+onControlChange(key => {
+  if (key !== 'mic_on' || !micBtn) return;
+  const on = micSource.active;
+  micBtn.textContent = on ? 'ON' : 'OFF';
+  micBtn.classList.toggle('on', on);
+  micBtn.setAttribute('aria-pressed', String(on));
+  buildSigPanel();
+});
 if (micBtn) {
   if (!micSource.supported) {
     micBtn.disabled = true;
@@ -195,6 +214,7 @@ if (micBtn) {
       micBtn.textContent = on ? 'ON' : 'OFF';
       micBtn.classList.toggle('on', on);
       micBtn.setAttribute('aria-pressed', String(on));
+      syncControls();
       // Signals only exist once the mic has been started, so the panel has to
       // be rebuilt to list them — same as the camera does when it starts.
       buildSigPanel();
@@ -245,15 +265,58 @@ const syncers = [
 function syncAllTracking() { syncers.forEach(fn => fn()); syncSigGroups(); }
 syncAllTracking();
 
+// The camera and its trackers as inputs (their state is here). A tracker
+// switch follows its cable; face and gaze need a running camera, so a cable
+// into them while it is off is honoured when it starts. The camera itself
+// remembers what the cable last asked, since a refused start never catches
+// up with it.
+const trackCtl = (label, get, set) => ({
+  label, min: 0, max: 1, toggle: true,
+  read: () => (get() ? 1 : 0),
+  apply: v => { const on = Math.round(v) >= 1; if (on === !!get()) return; set(on); },
+});
+defineControls({
+  camera_on: {
+    label: 'Camera', min: 0, max: 1, toggle: true,
+    read: () => (cvSource.running ? 1 : 0),
+    apply: (() => {
+      let last = null;
+      return v => {
+        const on = Math.round(v) >= 1;
+        if (on === last) return;
+        last = on;
+        if (on && !cvSource.running) startCamera();
+        else if (!on && cvSource.running) stopCamera();
+      };
+    })(),
+  },
+  track_hands_l: trackCtl('Left Hand',  () => cvSource.handsL, on => { cvSource.setTracking({ handsL: on }); syncAllTracking(); }),
+  track_hands_r: trackCtl('Right Hand', () => cvSource.handsR, on => { cvSource.setTracking({ handsR: on }); syncAllTracking(); }),
+  track_pose:    trackCtl('Pose',       () => cvSource.poseOn, on => { cvSource.setTracking({ pose: on }); syncAllTracking(); }),
+  track_face:    trackCtl('Face', () => faceSource.faceOn, on => {
+    rememberFaceIntent(on, faceSource.gazeOn);
+    if (cvSource.running) faceSource.setFace(on).then(syncAllTracking).catch(() => {});
+  }),
+  track_gaze:    trackCtl('Gaze', () => faceSource.gazeOn, on => {
+    rememberFaceIntent(faceSource.faceOn, on);
+    if (cvSource.running) faceSource.setGaze(on).then(syncAllTracking).catch(() => {});
+  }),
+});
+// The mute switch on the Output node, as a cable moves it.
+onControlChange(key => { if (key === 'mute') syncMuteUI(); });
+// Whatever a click or a change did to the instrument, the parameters that
+// mirror its switches and choices read it back — one listener, every panel.
+document.addEventListener('click',  () => syncControls(), true);
+document.addEventListener('change', () => syncControls(), true);
+
 // ── Developer mode ───────────────────────────────────────────────────────
 // The toggle itself lives in the settings popover (ui/settings.js), which is
 // built lazily — so the button is wired there, where it exists, rather than
 // looked up here at startup where it does not.
 //
-// Dev mode reveals whole sections (MODELS, Shader).
-// Position hues are derived from measured geometry and skip hidden elements,
-// so anything revealed here has no hue until this recolours the set.
-devmode.onChange(() => colorSections());
+// Dev mode reveals whole nodes (MODELS, Shader), and the frames around them
+// are measured from what is visible — so they are re-measured here.
+devmode.onChange(() => relayout());
 
 // ── LiDAR / optical depth toggle ─────────────────────────────────────────
 const depthBtn = document.getElementById('depth-btn');
@@ -395,9 +458,12 @@ startAudio();
 // PRESET opens a menu of starting patches; each reports what it still needs
 // switched on (camera / face / gaze) rather than loading silently.
 initPresetMenu({
+  onSave: saveSetup,
+  onLoad: loadSetup,
   onApply: async (preset, missing) => {
     // A built-in patch is not one of your named setups: whatever was playing
-    // has been replaced, so the name on the camera view goes with it.
+    // has been replaced, so the name on the camera view goes with it — and so
+    // do the previous patch's unwired nodes.
     clearCurrentConfig();
     renderMapper();
     // Choosing a patch from the menu is the same statement the first-run picker
@@ -503,14 +569,29 @@ function refreshFromState() {
   if (engine.started) renderAudioPanel();
 }
 
-document.getElementById('save-btn').addEventListener('click', () => {
+// The Oscillators node follows the bank: a preset voiced for two oscillators
+// grows the bank as it loads, and its cables need the second row's sockets
+// to end on. Deferred a tick, so a restore that sets the count and then the
+// parameters is drawn once, after both.
+let oscRedraw = null;
+engine.onOscCountChange(() => {
+  if (oscRedraw) return;
+  oscRedraw = setTimeout(() => {
+    oscRedraw = null;
+    renderAudioPanel();
+    renderMapper();
+  }, 0);
+});
+
+// SAVE and LOAD sit at the foot of the PRESET menu (initPresetMenu above
+// calls these). Declarations, so the menu can be set up before this point.
+function saveSetup() {
   preset.downloadFile();
   preset.saveLocal();
   toast('Settings saved');
-});
-
+}
 const loadFile = document.getElementById('load-file');
-document.getElementById('load-btn').addEventListener('click', () => loadFile.click());
+function loadSetup() { loadFile.click(); }
 loadFile.addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -539,6 +620,20 @@ const persist = () => preset.saveLocal();
 window.addEventListener('beforeunload', persist);
 window.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
 
+// Keep the camera's overlay canvases matched to the picture as its node is
+// resized (they are otherwise sized once at camera start).
+function fitOverlays() {
+  const wrap = document.getElementById('video-wrap');
+  if (!wrap) return;
+  const fit = () => ['overlay', 'face-overlay'].forEach(id => {
+    const c = document.getElementById(id);
+    if (!c) return;
+    if (c.width !== wrap.offsetWidth)  c.width  = wrap.offsetWidth;
+    if (c.height !== wrap.offsetHeight) c.height = wrap.offsetHeight;
+  });
+  new ResizeObserver(fit).observe(wrap);
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────
 initTheme();              // before anything paints, so there is no flash of the default palette
 devmode.init();           // apply persisted dev-mode state to <body>
@@ -555,8 +650,13 @@ metronome.registerSignals();   // the beat clock is wirable like any signal
 // Every slider in the app gets a typed twin, including panels that rebuild
 // themselves and any slider added later — see ui/numeric.js.
 watchRanges();
-initResize();             // draggable panel splitters (desktop)
+initChordCables();        // gesture mode's shapes are cables into its degrees
+initWorkspace();          // the canvas: every section becomes a node on it
+initMapperUI();           // sockets and cables on that canvas
+buildSigPanel();          // every signal is an output socket on its node, camera or not
+fitOverlays();            // landmark canvases follow the camera node's size
 initFullscreen();         // fullscreen camera view + keyboard overlay
+initCamSticky();          // in the column, the picture rides the top of the screen
 initCamBadge();           // the saved setup's name, captioning the frame
 initPlayalongUI();        // registers the fullscreen game renderer
 initDonate();             // ♥ support popover in the header
@@ -618,11 +718,10 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
 }
 renderMapper();
 // Shader controls belong with the patchbay — the shader reads signals and
-// mappings, so it sits beside the wiring rather than among synth parameters.
-// Rendered once: renderMapper() re-runs on every rewire.
+// mappings, so its node sits beside the wiring rather than among synth
+// parameters. Rendered once, then adopted onto the canvas like any section.
 const shaderHost = document.getElementById('shader-host');
-if (shaderHost) { shaderHost.innerHTML = shaderSectionHTML(); wireShaderSection(); }
-enhanceSections();        // wrap every section: own container, scroller, resize grip
+if (shaderHost) { shaderHost.innerHTML = shaderSectionHTML(); wireShaderSection(); adoptSections(shaderHost); }
 loop();
 
 // Say which build this is, once, on startup. The cheapest possible answer to

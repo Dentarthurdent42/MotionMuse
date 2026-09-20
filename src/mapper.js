@@ -5,6 +5,12 @@ import { stickyStep }  from './dynamics.js';
 export const mapper = (() => {
   let mappings = [];
   let nextId = 0;
+  // "The patch changed": add, remove, a load or a preset — once per call,
+  // not once per cable of a load. Gesture mode's assignments follow it
+  // (src/chordcables.js).
+  const changeCbs = [];
+  let loading = false;
+  const changed = () => { if (!loading) changeCbs.forEach(cb => cb()); };
 
   const curves = {
     linear: t => t,
@@ -52,13 +58,16 @@ export const mapper = (() => {
         // run either way round.
         invert: !!invert,
       });
+      changed();
       return id;
     },
 
     remove(id) {
       const i = mappings.findIndex(m => m.id === id);
-      if (i >= 0) mappings.splice(i, 1);
+      if (i >= 0) { mappings.splice(i, 1); changed(); }
     },
+
+    onChange(cb) { changeCbs.push(cb); },
 
     // Plain-object mapping list for save/load (drops the volatile numeric id).
     serialize() {
@@ -70,8 +79,12 @@ export const mapper = (() => {
       mappings.length = 0;   // keep the exported array reference intact
       nextId = 0;
       growBankFor((arr || []).map(m => m?.audioParam));
-      (arr || []).forEach(m =>
-        this.add(m.audioParam, m.signal, m.outMin, m.outMax, m.curve, m.steps, m.invert));
+      loading = true;
+      try {
+        (arr || []).forEach(m =>
+          this.add(m.audioParam, m.signal, m.outMin, m.outMax, m.curve, m.steps, m.invert));
+      } finally { loading = false; }
+      changed();
     },
 
     tick() {
@@ -106,7 +119,9 @@ export const mapper = (() => {
       nextId = 0;
       growBankFor(preset.mappings.map(a => a[0]));
       // [audioParam, signal, outMin, outMax, curve, steps, invert]
-      preset.mappings.forEach(a => this.add(...a));
+      loading = true;
+      try { preset.mappings.forEach(a => this.add(...a)); } finally { loading = false; }
+      changed();
       return preset;
     },
   };
