@@ -37,12 +37,15 @@
      washes. The blur is what makes a heavy scrim work: dimming alone leaves
      the shapes behind it competing with the thing in front, and what is
      behind a dialog here is usually a live camera picture — all shape and
-     motion. Blurring takes the detail out and leaves the colour, so the
-     dimmed layer reads as distance instead of as clutter. The tint is the
+     motion. The blur is slight on purpose: just enough to soften an edge
+     that would otherwise catch the eye, not enough to turn the app into a
+     smear. You should still recognise what you were looking at through it,
+     which is what makes the dimmed layer read as distance rather than as a
+     frosted pane laid over the screen. The tint is the
      app's own near-black rather than pure black: over a light theme a black
      wash reads as a hole, this reads as the room going dark. */
   --scrim: rgba(6, 9, 15, 0.72);
-  --scrim-blur: blur(10px);
+  --scrim-blur: blur(3px);
   --accent-l: 0.72; --accent-c: 0.13;
   /* LED tokens: glyphs that *light up* — the status dot, gesture dots, meter
      and bar fills, the scope trace. Never text. On dark grounds a lit thing
