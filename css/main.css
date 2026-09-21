@@ -2110,8 +2110,25 @@ input[type="range"]::-webkit-slider-thumb {
 .tour-body { font-size: 11px; line-height: 1.55; color: var(--text); }
 .tour-body b { color: var(--amber); font-weight: 500; }
 .tour-nav { display: flex; justify-content: space-between; margin-top: 12px; gap: 8px; }
+.tour-nav-end { display: flex; gap: 8px; }
 .tour-nav .btn[disabled] { opacity: 0.4; cursor: default; }
-/* ? button pulses when the tour has gained steps this user hasn't seen */
+/* The × stays the size it looks, and grows an invisible target around itself.
+   It was 17×16 css px in the corner of a bottom sheet, which on a phone is
+   the only way out of the tour — there is no Escape key, and the scrim
+   deliberately passes presses through to the app rather than closing on a
+   tap outside. Missing it meant being stuck. */
+#tour-close { position: relative; }
+#tour-close::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 44px; height: 44px;
+  transform: translate(-50%, -50%);
+}
+/* The header's `?` carries the same three states a panel's does: a quiet
+   amber mark for unread, a cyan pulse while it is unread AND relevant, and
+   nothing once it has been read. */
+#tour-btn.tour-unread { border-color: color-mix(in oklab, var(--amber) 55%, transparent); color: var(--amber); }
 #tour-btn.tour-new { border-color: var(--cyan); color: var(--cyan); }
 @keyframes tour-pulse {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--led-accent) 50%, transparent); }
@@ -2120,6 +2137,7 @@ input[type="range"]::-webkit-slider-thumb {
 #tour-btn.tour-new { animation: tour-pulse 2s infinite; }
 @media (prefers-reduced-motion: reduce) {
   #tour-btn.tour-new { animation: none; }
+  .sec-help.help-now { animation: none; }
   #tour-ring { transition: none; }
 }
 
@@ -2217,6 +2235,36 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--cyan);
   border-color: var(--cyan);
   outline: none;
+}
+/* Unread: a dot, and nothing else. This is the state most `?`s are in most
+   of the time — help about a panel you are not using — so it has to be
+   legible without ever asking for attention. */
+.sec-help.help-unread {
+  color: var(--amber);
+  border-color: color-mix(in oklab, var(--amber) 55%, transparent);
+}
+.sec-help.help-unread::after {
+  content: '';
+  position: absolute;
+  top: -1px; right: -1px;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+.sec-help { position: relative; }
+/* Unread AND about what you are set up to play: the same dot, plus a slow
+   halo. Two seconds a cycle and it stops the moment you press it — the tour
+   no longer opens itself, so this is the whole of how the app suggests
+   there is something worth reading. */
+.sec-help.help-now {
+  color: var(--cyan);
+  border-color: var(--cyan);
+  animation: help-pulse 2.4s ease-in-out infinite;
+}
+.sec-help.help-now::after { background: var(--cyan); }
+@keyframes help-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--cyan) 45%, transparent); }
+  50%      { box-shadow: 0 0 0 4px transparent; }
 }
 /* A header that already pushes something right (an ON/OFF pill) has its own
    auto margin; a second one would collapse to nothing, so the help button
@@ -2509,6 +2557,7 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   .ctrl-row { padding: 5px 0; }
   .node > .node-head { min-height: 32px; }
   .sec-fold, .sec-help, .node-pin, .node-close { width: 24px; height: 24px; }
+  .tour-head .rm-btn { padding: 8px 12px; font-size: 16px; }
   .node-grip { width: 22px; height: 22px; }
 
   /* Slightly larger range thumbs */

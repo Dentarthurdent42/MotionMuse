@@ -42,7 +42,7 @@ import { graphlib, layout as dagreLayout } from '../../vendor/dagre.js';
 import * as M from '../workspace.js';
 import { lsGet, lsSet, lsDel } from '../storage.js';
 import { isRecord } from '../is.js';
-import { stepsForSection, startSectionHelp } from './tutorial.js';
+import { stepsForSection, startSectionHelp, helpUnread, helpPulses, onHelpChange } from './tutorial.js';
 
 export const LS_KEY = 'motionmuse-workspace';
 // The column layout is its own store: a phone's order of nodes and a
@@ -232,11 +232,22 @@ function chromeButtons(node, head) {
   }
   tail.innerHTML = '';
   if (node.kind === 'panel' && stepsForSection(M.keyOf(node.id)).length) {
+    const key = M.keyOf(node.id);
     const help = document.createElement('button');
     help.className = 'sec-help'; help.type = 'button'; help.textContent = '?';
-    help.title = 'What this node does';
-    help.setAttribute('aria-label', `Help for ${M.keyOf(node.id)}`);
-    help.addEventListener('click', e => { e.stopPropagation(); startSectionHelp(M.keyOf(node.id)); });
+    // Three states, so a `?` says whether it is worth pressing without
+    // anything having to open itself: pulsing for unread help about what you
+    // are set up to play, a quiet dot for unread help about something else,
+    // and plain once it has been read. See ui/tutorial.js.
+    const unread = helpUnread(key), pulse = helpPulses(key);
+    help.classList.toggle('help-unread', unread);
+    help.classList.toggle('help-now', pulse);
+    help.title = pulse ? 'What this node does — worth a look'
+      : unread ? 'What this node does — not read yet'
+      : 'What this node does';
+    help.setAttribute('aria-label',
+      `Help for ${key}${unread ? ' — not read yet' : ''}`);
+    help.addEventListener('click', e => { e.stopPropagation(); startSectionHelp(key); });
     tail.appendChild(help);
   }
   if (node.kind !== 'group') {
@@ -1682,6 +1693,17 @@ export function resetLayout() {
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────
+
+// Reading a panel's help changes what its `?` — and every other one — should
+// look like, so the heads are redrawn rather than left stale until something
+// else happens to touch them.
+onHelpChange(() => {
+  for (const n of state.nodes.values()) {
+    const el = els.get(n.id);
+    const h = el && headOf(el);
+    if (h) chromeButtons(n, h);
+  }
+});
 
 export function initWorkspace() {
   ws = document.getElementById('ws');

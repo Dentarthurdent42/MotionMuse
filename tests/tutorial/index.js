@@ -254,8 +254,61 @@ await share.waitForTimeout(2200);
 const exited = await share.evaluate(() => ({
   fs: document.getElementById('video-wrap').classList.contains('fs-active'),
   tour: !!document.getElementById('tour-card'),
+  // Nothing opens any more: what a shared setup earns is the help ASKING to
+  // be read. The `?` for the way this setup plays pulses; every other one
+  // carries a dot saying there is something behind it you have not seen.
+  pulsing: document.querySelectorAll('.sec-help.help-now').length,
+  unread: document.querySelectorAll('.sec-help.help-unread').length,
+  headerAsks: /tour-(new|unread)/.test(document.getElementById('tour-btn')?.className ?? ''),
 }));
 await shareCtx.close();
+
+// ── Getting out of the tour on a phone ───────────────────────────────────
+//
+// The reported bug: the tour could not be dismissed. On a phone the card is
+// a full-width bottom sheet, there is no Escape key, and the scrim passes
+// presses through to the app on purpose — so the × in its corner is the only
+// way out, and it was 17×16 css px. This drives the real thing at a real
+// phone size and presses it the way a thumb would.
+const phoneCtx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+const phone = await phoneCtx.newPage();
+await phone.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
+await phone.waitForTimeout(700);
+await phone.evaluate(async () => {
+  const { tour, appSteps } = await import('/src/ui/tutorial.js');
+  tour.start({ steps: appSteps() });
+});
+await phone.waitForTimeout(400);
+const closeTarget = await phone.evaluate(() => {
+  const x = document.getElementById('tour-close');
+  if (!x) return null;
+  const r = x.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  // The pressable area, invisible padding included: what a thumb landing
+  // slightly off-centre actually hits.
+  const hits = d => {
+    const el = document.elementFromPoint(cx + d, cy);
+    const el2 = document.elementFromPoint(cx, cy + d);
+    return (el === x || x.contains(el)) && (el2 === x || x.contains(el2));
+  };
+  return { sheet: document.getElementById('tour-card').classList.contains('sheet'),
+           onScreen: r.top >= 0 && r.bottom <= innerHeight,
+           hit10: hits(10), hit14: hits(14),
+           skip: !!document.getElementById('tour-skip') };
+});
+await phone.locator('#tour-close').tap();
+await phone.waitForTimeout(300);
+const closedByX = await phone.evaluate(() => !document.getElementById('tour-card'));
+// And the second way out, for a thumb that never finds the corner at all.
+await phone.evaluate(async () => {
+  const { tour, appSteps } = await import('/src/ui/tutorial.js');
+  tour.start({ steps: appSteps() });
+});
+await phone.waitForTimeout(400);
+await phone.locator('#tour-skip').tap();
+await phone.waitForTimeout(300);
+const closedBySkip = await phone.evaluate(() => !document.getElementById('tour-card'));
+await phoneCtx.close();
 
 await b.close(); server.close();
 
@@ -311,10 +364,30 @@ check(arrival.fs, 'a shared link opens into the fullscreen camera view');
 check(arrival.start, 'with the start button on it, so the camera is one tap away');
 check(!arrival.tour, 'and the tour does not open over it');
 check(!exited.fs, 'leaving fullscreen works from the shared-link arrival');
-check(exited.tour, 'and THAT is when the tour for the shared setup opens');
+// The tour no longer opens itself — here or anywhere. A walkthrough landing
+// unasked in front of an instrument you have not touched is an interruption,
+// and on a phone it arrives as a sheet over the whole app. The help waits to
+// be asked for, and makes the asking obvious instead.
+check(!exited.tour, 'and still nothing opens itself on the way out');
+check(exited.pulsing > 0, 'the help for this way of playing asks to be read',
+  `${exited.pulsing} pulsing`);
+check(exited.unread >= exited.pulsing,
+  'and every unread ? is marked, pulsing or not', `${exited.unread} marked`);
+check(exited.headerAsks, 'the header ? asks too');
 
 check(pageErrors.length === 0, 'no page errors', pageErrors.join('; '));
 
 for (const v of r.visited) console.log(`      ${v}`);
+console.log('\nDismissing the tour on a phone\n');
+check(closeTarget !== null, 'the tour opens on a phone at all');
+check(closeTarget?.sheet, 'and arrives as a bottom sheet');
+check(closeTarget?.onScreen, 'with its close button on screen');
+check(closeTarget?.hit10 && closeTarget?.hit14,
+  'the × is thumb-sized — a press 14px off centre still lands on it',
+  JSON.stringify({ hit10: closeTarget?.hit10, hit14: closeTarget?.hit14 }));
+check(closeTarget?.skip, 'and there is a labelled way out beside BACK/NEXT');
+check(closedByX, 'tapping the × dismisses the tour');
+check(closedBySkip, 'so does SKIP');
+
 console.log(`\n${fail} failure(s)\n`);
 process.exit(fail ? 1 : 0);

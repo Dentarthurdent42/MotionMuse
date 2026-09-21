@@ -30,7 +30,7 @@ import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
 import { findConfig, setCurrentConfig,
          clearCurrentConfig }               from './saved.js';
-import { initTutorial, maybeOfferTour, offerTourForMode, offerTourForSharedSetup } from './ui/tutorial.js';
+import { initTutorial, flagHelpForMode, flagHelpForSharedSetup } from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { initWorkspace, relayout, adoptSections, openAddMenu } from './ui/workspace.js';
 import { shaderSectionHTML, wireShaderSection, setShaderAddHandler } from './ui/shader-ui.js';
@@ -467,10 +467,11 @@ initPresetMenu({
     // do the previous patch's unwired nodes.
     clearCurrentConfig();
     renderMapper();
-    // Choosing a patch from the menu is the same statement the first-run picker
-    // makes, so it earns the same tour — offered once per mode, and silently
-    // skipped for anyone who has already seen it.
-    offerTourForMode('osc');
+    // Choosing a patch from the menu is a statement about what you are about
+    // to do, which is what decides whose `?` is worth pressing — so the help
+    // flags are recomputed. Nothing opens; the relevant buttons just start
+    // asking.
+    flagHelpForMode();
     const changed = await applyTrackers(trackersFor(preset));
     const bits = [preset.hint];
     if (changed.length) bits.push(changed.join(', '));
@@ -693,7 +694,7 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
       refreshFromState();
       preset.saveLocal();
       toast(`${s.name} — ${s.hint}`);
-      maybeOfferTour(s.mode);          // the tour for the way of playing chosen
+      flagHelpForMode();               // the `?`s for the way of playing chosen
     },
   });
 } else if (openedShare) {
@@ -702,20 +703,20 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
   // full frame, with one thing to press. So a shared setup opens straight
   // into the fullscreen camera view.
   fullscreen.open();
-  // …and the tour waits for them to come back out of it. A walkthrough of
-  // panels that are currently behind a fullscreen camera is a walkthrough of
-  // nothing, and only the first time that link is followed: reopening a QR
-  // pinned to a wall lands you on a setup that is already yours.
+  // …and the help waits for them to come back out of it. A `?` pulsing
+  // behind a fullscreen camera is pulsing at nobody, and only the first time
+  // that link is followed: reopening a QR pinned to a wall lands you on a
+  // setup that is already yours.
   if (openedShare.first) {
-    let toured = false;
+    let flagged = false;
     fullscreen.onChange(active => {
-      if (active || toured) return;
-      toured = true;
-      offerTourForSharedSetup();
+      if (active || flagged) return;
+      flagged = true;
+      flagHelpForSharedSetup();
     });
   }
 } else {
-  maybeOfferTour();
+  flagHelpForMode();
 }
 renderMapper();
 // Shader controls belong with the patchbay — the shader reads signals and

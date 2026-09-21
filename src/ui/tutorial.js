@@ -315,13 +315,84 @@ export const TOUR_STEPS = [
   },
 ];
 
-const LS_KEY = 'motionmuse-tour';   // { done: bool, seen: [stepId] }
+// { done, seen: [stepId], offered: [helpId] }
+//
+// `seen` is what has actually been READ — a step counts once it has been
+// rendered on screen. `offered` is what has been PRESSED, which is a
+// different question and is why it is stored separately: pressing a `?` and
+// closing it after one step should stop that button clamouring for attention
+// (you have been shown it) without claiming you read the rest of it.
+const LS_KEY = 'motionmuse-tour';
 
 const loadState = () => {
-  try { return { done: false, seen: [], ...JSON.parse(lsGet(LS_KEY) || '{}') }; }
-  catch { return { done: false, seen: [] }; }
+  try { return { done: false, seen: [], offered: [], ...JSON.parse(lsGet(LS_KEY) || '{}') }; }
+  catch { return { done: false, seen: [], offered: [] }; }
 };
 const saveState = s => lsSet(LS_KEY, JSON.stringify(s));
+
+// ── Which `?` buttons are asking to be pressed ───────────────────────────
+//
+// The tour used to open itself on a first visit. It no longer does: a modal
+// walkthrough in front of an instrument you have not touched yet is an
+// interruption, and on a phone it lands as a sheet over the whole app with
+// one small × to find. So the help waits to be asked for, and the asking is
+// made obvious instead — every `?` carries its own state:
+//
+//   pulsing   unread AND relevant to how you are set up to play right now.
+//             Gently, and only until you press it once.
+//   marked    unread, but about something you are not using. A dot, no
+//             motion: "there is something here you have not read", said
+//             quietly enough to ignore.
+//   plain     read.
+//
+// The header's own `?` is one of these too, under the id below.
+export const APP_HELP = 'app';
+const stepsOf = id => (id === APP_HELP ? appSteps() : stepsForSection(id));
+
+// Read as in rendered: a section with three steps of which you saw one is
+// still unread, and keeps its dot.
+export function helpUnread(id) {
+  const seen = new Set(loadState().seen);
+  return stepsOf(id).some(t => !seen.has(t.id));
+}
+
+// Pulsing is the stronger claim, so it takes much more.
+//
+// The obvious rule — "in the tour for the current mode" — turns out to
+// select everything: almost every panel's steps carry no `modes` tag at all,
+// because they are true however you are playing. Eleven buttons pulsing at
+// once is a worse interruption than the one modal this replaced.
+//
+// So pulsing needs a step tagged for the way you are ACTUALLY set up to
+// play: the handshape steps when gesture mode is on, the patchbay ones when
+// it is not. That is two or three buttons at most, and they are the ones a
+// walkthrough would have opened on. Everything else is unread, not urgent,
+// and says so with a dot.
+//
+// The header's `?` is the exception: it is where "start here" lives, so any
+// unread step in it is worth pointing at.
+export function helpPulses(id) {
+  const st = loadState();
+  if (st.offered.includes(id)) return false;
+  const seen = new Set(st.seen);
+  const mode = currentMode();
+  return stepsOf(id).some(t =>
+    !seen.has(t.id) && (id === APP_HELP ? true : t.modes?.includes(mode)));
+}
+
+export function markHelpOffered(id) {
+  const st = loadState();
+  if (st.offered.includes(id)) return;
+  st.offered = [...st.offered, id];
+  saveState(st);
+}
+
+// The canvas draws the `?` buttons and the header owns its own, so both
+// listen rather than poll: reading the help changes what every other button
+// should look like.
+let helpCbs = [];
+export function onHelpChange(cb) { helpCbs.push(cb); }
+export function refreshHelp() { helpCbs.forEach(cb => { try { cb(); } catch { /* one listener must not stop the rest */ } }); }
 
 // Step ids shipped since this user last finished the tour.
 export const unseenSteps = () => {
@@ -514,18 +585,26 @@ ${x + w}px ${y + h}px, ${x + w}px ${y}px, 0 ${y}px)`;
     const t = resolve(st.target);
     t?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     const last = firstShowable(idx + 1, 1) === -1;
+    // Two ways out, both of them thumb-sized. The × alone was 17×16 css px
+    // in the corner of a bottom sheet — on a phone there is no Escape key and
+    // the scrim deliberately lets presses through to the app, so missing that
+    // one target meant being stuck in the tour with no visible way out.
     els.card.innerHTML = `
       <div class="tour-head">
         <span class="tour-count">${idx + 1}/${steps.length}</span>
-        <button class="rm-btn" id="tour-close" title="Close tour" aria-label="Close tour">×</button>
+        <button class="rm-btn tour-x" id="tour-close" title="Close tour" aria-label="Close tour">×</button>
       </div>
       <div class="tour-title">${st.title}</div>
       <div class="tour-body">${st.body}</div>
       <div class="tour-nav">
-        <button class="btn" id="tour-back" ${firstShowable(idx - 1, -1) === -1 ? 'disabled' : ''}>BACK</button>
-        <button class="btn on" id="tour-next">${last ? 'DONE' : 'NEXT'}</button>
+        <button class="btn" id="tour-skip">${last ? 'CLOSE' : 'SKIP'}</button>
+        <span class="tour-nav-end">
+          <button class="btn" id="tour-back" ${firstShowable(idx - 1, -1) === -1 ? 'disabled' : ''}>BACK</button>
+          <button class="btn on" id="tour-next">${last ? 'DONE' : 'NEXT'}</button>
+        </span>
       </div>`;
     els.card.querySelector('#tour-close').addEventListener('click', () => close(false));
+    els.card.querySelector('#tour-skip').addEventListener('click', () => close(last));
     els.card.querySelector('#tour-back').addEventListener('click', back);
     els.card.querySelector('#tour-next').addEventListener('click', () => last ? close(true) : next());
     position();
@@ -553,6 +632,7 @@ ${x + w}px ${y + h}px, ${x + w}px ${y}px, 0 ${y}px)`;
     idx = -1;
     teardown();
     syncButton();
+    refreshHelp();          // reading it changes how every `?` should look
   }
 
   // Either a mode name, or `{ steps }` for an explicit list (a panel's own
@@ -576,14 +656,20 @@ ${x + w}px ${y + h}px, ${x + w}px ${y}px, 0 ${y}px)`;
     // Only the steps THIS button runs. It used to count every unseen step,
     // which now includes every panel's own help — so it would promise "23 new
     // steps" and then show nine.
-    const seen = new Set(loadState().seen);
-    const fresh = appSteps().filter(t => !seen.has(t.id)).map(t => t.id);
-    const s = loadState();
-    const updated = s.done && fresh.length > 0;
-    btn.classList.toggle('tour-new', updated);
-    btn.title = updated
-      ? `Guided tour — updated! ${fresh.length} new step${fresh.length > 1 ? 's' : ''}`
-      : 'Guided tour';
+    //
+    // The same three states every panel's `?` has. It used to require
+    // `done` — the tour having run once — which was reachable only because
+    // the tour opened itself; now that nothing does, this button would have
+    // stayed silent forever on a first visit, which is the one visit where
+    // it has the most to say.
+    const fresh = appSteps().filter(t => !loadState().seen.includes(t.id));
+    const unread = fresh.length > 0;
+    const pulse = helpPulses(APP_HELP);
+    btn.classList.toggle('tour-unread', unread && !pulse);
+    btn.classList.toggle('tour-new', pulse);
+    btn.title = unread
+      ? `Getting started — ${fresh.length} step${fresh.length > 1 ? 's' : ''} you have not read`
+      : 'Getting started — the camera, sound, and saving. Each panel has its own ?';
   }
 
   return { start, close: () => close(false), get open() { return !!els; }, syncButton };
@@ -593,10 +679,13 @@ export function initTutorial() {
   // The header `?` is no longer "restart the whole tutorial". Every panel
   // explains itself now, so this one keeps what belongs to no panel: the
   // welcome, the header buttons, the sign-off.
-  document.getElementById('tour-btn')?.addEventListener('click', () =>
-    tour.open ? tour.close() : tour.start({ steps: appSteps() }));
-  const btn = document.getElementById('tour-btn');
-  if (btn) btn.title = 'Getting started — the camera, sound, and saving. Each panel has its own ?';
+  document.getElementById('tour-btn')?.addEventListener('click', () => {
+    if (tour.open) { tour.close(); return; }
+    markHelpOffered(APP_HELP);
+    tour.start({ steps: appSteps() });
+    refreshHelp();
+  });
+  onHelpChange(() => tour.syncButton());
   tour.syncButton();
 }
 
@@ -607,17 +696,19 @@ export function startSectionHelp(sectionId) {
   const steps = stepsForSection(sectionId);
   if (!steps.length) return false;
   if (tour.open) tour.close();
+  markHelpOffered(sectionId);
   tour.start({ steps });
+  refreshHelp();
   return true;
 }
 
-// ── The tour for a setup that arrived by link ────────────────────────────
+// ── A setup that arrived by link ─────────────────────────────────────────
 //
-// Following a link is not opening the app for the first time. The link already
-// chose the way of playing and brought a patch with it, so the welcome that
-// asks which mode you want is answering a question nobody asked, and the
-// panels this particular setup never touches are noise standing in front of
-// the thing you were actually handed.
+// Following a link is not opening the app for the first time. The link
+// already chose the way of playing and brought a patch with it, so the
+// welcome that asks which mode you want is answering a question nobody
+// asked, and the panels this particular setup never touches are noise
+// standing in front of the thing you were actually handed.
 //
 // What is left is the mode's own tour minus both — and steps whose target is
 // missing or hidden are skipped at runtime anyway, so a setup with no face
@@ -625,41 +716,21 @@ export function startSectionHelp(sectionId) {
 export const stepsForSharedSetup = () => stepsForMode(currentMode()).filter(t =>
   t.id !== 'welcome' && !(t.id === 'patch-nodes' && !mapper.mappings.length));
 
-// Offered only on the FIRST open of a given link (share.js fingerprints them)
-// and only when it has something to say: someone who has already seen these
-// steps does not need them again because a friend sent the same patch.
-export function offerTourForSharedSetup() {
-  if (navigator.webdriver) return false;
-  const steps = stepsForSharedSetup();
-  const seen = new Set(loadState().seen);
-  if (!steps.some(t => !seen.has(t.id))) return false;
-  // Longer than the picker's wait: a shared link reloads the page and toasts
-  // what it opened, and a modal landing on top of that reads as a glitch.
-  setTimeout(() => tour.start({ steps }), 1200);
-  return true;
-}
-
-// Offer the tour for a way of playing, after the app has settled. Skipping
-// marks it offered — it never auto-opens twice. Automation
-// (navigator.webdriver: the ui-ux screenshot harness, the tutorial test itself)
-// never gets the auto-offer; tests drive tour.start() explicitly.
+// Nothing here opens the tour any more.
 //
-// Called by main.js rather than from initTutorial, because the starting-point
-// picker comes first: the tour is *for* the choice made there, and two modals
-// racing each other is not a welcome.
-export function maybeOfferTour(mode) {
-  if (!loadState().done && !navigator.webdriver) setTimeout(() => tour.start(mode), 700);
-}
-
-// Offer it again for a different mode. Picking a starting point is a statement
-// about what you are about to do, so the tour for THAT is worth offering even to
-// someone who has seen the other one — but only once per mode, tracked through
-// the same `seen` list the "updated" pulse uses.
-export function offerTourForMode(mode) {
-  if (navigator.webdriver) return false;
-  const seen = new Set(loadState().seen);
-  const fresh = stepsForMode(mode).filter(t => !seen.has(t.id));
-  if (!fresh.length) return false;
-  setTimeout(() => tour.start(mode), 700);
-  return true;
-}
+// It used to open itself: on a first visit, on picking a starting point, on
+// following a shared link. Each of those is a moment when someone has just
+// said what they want to do, and answering that with a modal walkthrough
+// puts twenty-nine steps between them and doing it. On a phone it was worse
+// than an interruption — the card lands as a full-width sheet over the app,
+// and the only way out was a 17-pixel × in its corner.
+//
+// So the help stays where it is and asks to be read instead: the `?` for
+// anything relevant and unread pulses gently until it is pressed, and every
+// other `?` carries a quiet dot if there is something behind it you have not
+// seen. Pressing one is a choice; a sheet landing on you is not.
+//
+// These are called at the same moments the tour used to open, because those
+// are still exactly the moments when what counts as "relevant" has changed.
+export const flagHelpForMode = () => refreshHelp();
+export const flagHelpForSharedSetup = () => refreshHelp();
