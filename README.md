@@ -1077,9 +1077,32 @@ The tour is built for a project that changes weekly:
   element's own units while `getBoundingClientRect` answers in screen pixels.
   `npm run test:tutorial` measures ring-against-target under browser zoom,
   pinch zoom, page zoom and a silent reflow.
-- **Returning users see what's new.** Step ids are tracked per user; when a
-  release ships steps you haven't seen, the **?** pulses ("tour updated — 2 new
-  steps") instead of making you sit through the whole thing again.
+- **Nothing opens itself.** The tour used to start on a first visit, on
+  picking a starting point and on following a shared link. Each of those is a
+  moment when someone has just said what they want to do, and answering it
+  with a twenty-nine-step modal puts the walkthrough between them and the
+  instrument. On a phone it was worse: the card lands as a full-width bottom
+  sheet over the app, and the only way out was a 17×16 px **×** in its
+  corner — there is no Escape key on a phone, and the scrim deliberately
+  passes presses through to the app rather than closing on a tap outside.
+- **The help asks to be read instead.** Every **?** carries its own state, so
+  the app can suggest without interrupting:
+  - **pulsing** — unread *and* about the way you are actually set up to play
+    (the handshape steps with gesture mode on, the patchbay ones without).
+    Two seconds a cycle, and it stops the moment you press it. Deliberately
+    narrow: "in the current mode's tour" selects almost everything, because
+    most panels' help is true however you play, and eleven buttons pulsing at
+    once is a worse interruption than the modal this replaced.
+  - **marked** — unread, but about something you are not using. A dot, no
+    motion.
+  - **plain** — read.
+  Read and pressed are tracked separately: pressing a **?** and closing it
+  after one step stops that button clamouring (you have been shown it)
+  without claiming you read the rest, so its dot stays until you have.
+- **Two ways out, both thumb-sized.** The **×** keeps its size but grows a
+  44 px hit area, and a labelled **SKIP** sits beside BACK/NEXT.
+  `npm run test:tutorial` drives a real 390 px phone viewport, presses 14 px
+  off the ×'s centre, and checks both routes actually dismiss it.
 - Steps whose feature needs a particular state (audio on, gesture mode on) simply
   don't show until the app is in it — the tour adapts to what's actually on
   screen.
