@@ -38,15 +38,15 @@ test('a chord-mode link gets the chord steps, not the patchbay tour', () => {
   mapper.load([]);                       // a chord setup wires no cables
   const shown = ids(stepsForSharedSetup());
   assert.ok(shown.some(id => id.startsWith('chords-')), 'the chords steps are there');
-  assert.ok(!shown.includes('patchbay'), 'the patchbay tour is not');
-  assert.ok(!shown.includes('cable-editor'));
+  assert.ok(!shown.includes('patch-nodes'), 'the patchbay tour is not');
+  assert.ok(!shown.includes('cable-editor-node'));
 });
 
 test('a patch with cables keeps the patchbay steps', () => {
   chordmode.load({ enabled: false, key: { ...DEFAULT_KEY }, assignments: {} });
   mapper.load([['hand_R_y', 'osc1_freq', 110, 880, 'linear']]);
   const shown = ids(stepsForSharedSetup());
-  assert.ok(shown.includes('patchbay'), 'a wired patch is worth explaining');
+  assert.ok(shown.includes('patch-nodes'), 'a wired patch is worth explaining');
   assert.ok(!shown.some(id => id.startsWith('chords-')), 'chord steps stay out of a tone patch');
 });
 

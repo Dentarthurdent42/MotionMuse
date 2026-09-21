@@ -444,6 +444,11 @@ export const engine = (() => {
   // so it is a complete instrument on its own, and leaving a lead oscillator
   // running under it is a drone nobody asked for. `|| 1` on the parse would
   // quietly turn 0 into 1, hence the explicit finite check.
+  // Whoever draws the bank listens here: a preset or a loaded file can grow
+  // it from anywhere, and the Oscillators node has to show the new rows —
+  // and their sockets — or the cables to them end on nothing.
+  const oscCountCbs = [];
+  const onOscCountChange = cb => { oscCountCbs.push(cb); };
   function setOscCount(n) {
     const v = Math.round(Number(n));
     const next = Number.isFinite(v) ? Math.max(0, Math.min(MAX_OSCS, v)) : oscCount;
@@ -455,6 +460,7 @@ export const engine = (() => {
       if (next > prev) for (let i = prev; i < next; i++) addOsc(i);
       else dropOscs(next);
     }
+    oscCountCbs.forEach(cb => cb(next, prev));
     return oscCount;
   }
   const getOscCount = () => oscCount;
@@ -465,6 +471,10 @@ export const engine = (() => {
     if (tuning.enabled && isFreqKey(key)) raw = quant.quantize(raw);
     if (volStep.enabled && key === 'volume') return setVolume(raw);
     p.val = Math.max(p.min, Math.min(p.max, raw));
+    // A control (src/controls.js): a switch or a choice the engine does not
+    // own. Its hook acts on the value — before the audio-node cases, which
+    // it has none of, and whether or not the context has started.
+    if (p.apply) { p.apply(p.val); return; }
     if (!started) return;
     const t = ctx.currentTime, sm = 0.025; // 25 ms smoothing
 
@@ -604,8 +614,12 @@ export const engine = (() => {
 
   // ── Full audio-engine state for save/load ────────────────────────────
   function snapshot() {
+    // The audio parameters only. A control (src/controls.js) is a view of
+    // state the snapshot already carries — the tuning, the ladder, the
+    // envelopes, the waveforms, the modes' own saved state — and repeating
+    // sixty of them here made a shared link's QR code too dense to scan.
     const params = {};
-    for (const k in PARAMS) params[k] = PARAMS[k].val;
+    for (const k in PARAMS) if (!PARAMS[k].control) params[k] = PARAMS[k].val;
     return { params, tuning: { ...tuning }, volStep: { ...volStep },
              oscCount, oscTypes: getOscTypes(),
              filterType, chordFilterType,
@@ -615,7 +629,7 @@ export const engine = (() => {
              // with it off — the one part of the patch a snapshot could not
              // describe.
              shepard: { lead: shepLead, chord: shepChord },
-             chordEnv: { ...chordEnv } };
+             chordEnv: { ...chordEnv }, leadEnv: { ...leadEnv, enabled: leadEnvOn } };
   }
   function restore(s) {
     if (!s) return;
@@ -626,6 +640,7 @@ export const engine = (() => {
     if (s.filterType) setFilterType(s.filterType);
     if (s.chordFilterType) setChordFilterType(s.chordFilterType);
     if (s.chordEnv) setChordEnv(s.chordEnv);
+    if (s.leadEnv) setLeadEnv(s.leadEnv);
     // Before the params: setShepard rebuilds the affected bank, and a rebuild
     // after them would hand the new voices their defaults instead.
     if (s.shepard) setShepard(s.shepard);
@@ -977,7 +992,7 @@ export const engine = (() => {
     start, set, stop,
     setTuning, getTuning, noteFor,
     setVolStep, getVolStep, volLevel,
-    setOscCount, getOscCount, MAX_OSCS,
+    setOscCount, getOscCount, onOscCountChange, MAX_OSCS,
     setOscType, getOscType, getOscTypes,
     setFilterType, getFilterType,
     setChordFilterType, getChordFilterType,
