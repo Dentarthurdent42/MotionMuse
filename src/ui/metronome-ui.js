@@ -7,6 +7,8 @@
 
 import { metronome, SIGNATURES, BPM_MIN, BPM_MAX } from '../metronome.js';
 import { setReadout } from './numeric.js';
+import { inPort } from './mapper-ui.js';
+import { syncControls } from '../controls.js';
 
 export function metronomeSection() {
   const c = metronome.config();
@@ -26,11 +28,12 @@ export function metronomeSection() {
     <div class="audio-section" data-sec="metronome">
       <div class="audio-section-label">
         Metronome
+        <span class="head-sock">${inPort('metro_on')}</span>
         <button class="wave-btn${c.on ? ' on' : ''}" id="metro-toggle" aria-pressed="${c.on}"
              style="flex:0 0 auto;margin-left:auto;padding:2px 9px;">${c.on ? 'ON' : 'OFF'}</button>
       </div>
       <div class="met-row">
-        <span class="chord-key-lbl">TEMPO</span>
+        <span class="chord-key-lbl">${inPort('metro_bpm')}TEMPO</span>
         <button type="button" class="wave-btn met-nudge" id="metro-down" aria-label="Slower" title="Slow down">−</button>
         <input type="range" id="metro-bpm" min="${BPM_MIN}" max="${BPM_MAX}" step="1" value="${c.bpm}"
                aria-label="Tempo in beats per minute">
@@ -38,9 +41,12 @@ export function metronomeSection() {
         <span class="ctrl-val" id="metro-bpm-val">${c.bpm}</span>
       </div>
       <div class="met-row">
-        <span class="chord-key-lbl">TIME</span>
+        <span class="chord-key-lbl">${inPort('metro_sig')}TIME</span>
         <select id="metro-sig" aria-label="Time signature"
                 title="Beats per bar — the camera strip, the SAMPLE row and the downbeat accent all follow it">${sigOpts}</select>
+      </div>
+      <div class="met-row">
+        <span class="chord-key-lbl">${inPort('metro_mute')}CLICK</span>
         <button type="button" class="wave-btn met-mute${c.muted ? ' on' : ''}" id="metro-mute" aria-pressed="${c.muted}"
                 title="Silence the click. The clock keeps counting: the camera strip still pulses and the beat-sampled modes still sample.">MUTE</button>
       </div>
@@ -51,12 +57,16 @@ export function metronomeSection() {
       <div class="quant-notes" id="metro-read">${c.on
         ? '● counting'
         : 'switch on to click — and to drive the “Metronome beats” volume modes'}</div>
+      <!-- The clock's own outputs: beat and downbeat pulses, phase ramps.
+           Filled by src/ui/signals.js. -->
+      <div class="sig-list" id="metro-signals"></div>
     </div>`;
 }
 
 export function wireMetronomeSection(rerender) {
   document.getElementById('metro-toggle')?.addEventListener('click', () => {
     metronome.setOn(!metronome.on);
+    syncControls();
     rerender();
   });
   // The slider mutates in place — tempo is adjusted while listening, and a
@@ -64,7 +74,7 @@ export function wireMetronomeSection(rerender) {
   const bpmEl = document.getElementById('metro-bpm');
   const bpmVal = document.getElementById('metro-bpm-val');
   const showBpm = v => setReadout(bpmVal, String(v));
-  bpmEl?.addEventListener('input', e => showBpm(metronome.setBpm(+e.target.value)));
+  bpmEl?.addEventListener('input', e => { showBpm(metronome.setBpm(+e.target.value)); syncControls(); });
   const nudge = dir => {
     const v = metronome.nudge(dir);
     if (bpmEl) bpmEl.value = String(v);
