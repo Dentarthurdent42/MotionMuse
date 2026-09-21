@@ -2284,6 +2284,128 @@ const arpKbd = await (async () => {
   return { ...m, errs };
 })();
 
+// ── Shader nodes: the picture is a patch, wired like everything else ──────
+const shaderNodes = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(700);
+
+  const socket = (side, key) => page.evaluate(([side, key]) => {
+    const el = [...document.querySelectorAll(`.port[data-side="${side}"][data-key="${key}"]`)]
+      .find(p => p.checkVisibility());
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, [side, key]);
+
+  const drag = async (from, to) => {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 18, from.y + 18);
+    await page.mouse.move(to.x, to.y, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+  };
+
+  // Nothing is seeded by default — the panel says so rather than showing a
+  // black rectangle, and every patch, saved setup and share link stays as
+  // small as it was before shaders existed.
+  const empty = await page.evaluate(async () => {
+    const { shadergraph } = await import('/src/shadergraph.js');
+    const el = document.getElementById('shader-empty');
+    return {
+      nodes: shadergraph.nodes().length,
+      shells: document.querySelectorAll('#ws [data-node^="shx:"]').length,
+      noticeShown: !!el && !el.hidden,
+    };
+  });
+
+  // STARTER builds a worked example, and its sockets are typed.
+  await page.evaluate(() => document.getElementById('shader-reset').click());
+  await page.waitForTimeout(350);
+  const start = await page.evaluate(async () => {
+    const { shadergraph } = await import('/src/shadergraph.js');
+    const r = shadergraph.compile();
+    return {
+      nodes: shadergraph.nodes().length,
+      links: shadergraph.links().length,
+      compiles: r.error === null && !!r.frag,
+      shells: document.querySelectorAll('#ws [data-node^="shx:"]').length,
+      outType: document.querySelector('.port[data-side="out"][data-key^="shx_"]')?.dataset.type ?? null,
+      hasFloatSocket: !!document.querySelector('.port[data-side="in"][data-key^="shx_"][data-type="float"]'),
+      hasVec3Socket: !!document.querySelector('.port[data-side="in"][data-key^="shx_"][data-type="vec3"]'),
+      status: document.getElementById('shader-status')?.textContent ?? '',
+      noticeGone: document.getElementById('shader-empty')?.hidden === true,
+    };
+  });
+
+  // A SIGNAL into a shader node's number input — the whole point of putting
+  // the shader on this canvas. Open the depth group so its sockets are up.
+  await page.evaluate(() => { const d = document.querySelector('.sig-sec[data-group="depth"]'); if (d) d.open = true; });
+  await page.waitForTimeout(200);
+  const floatKey = await page.evaluate(() =>
+    document.querySelector('.port[data-side="in"][data-key^="shx_"][data-type="float"]')?.dataset.key ?? null);
+  const sigFrom = await socket('out', 'hand_L_z');
+  const shxTo = floatKey ? await socket('in', floatKey) : null;
+  if (sigFrom && shxTo) await drag(sigFrom, shxTo);
+  const signalWired = await page.evaluate(async k => {
+    const { mapper } = await import('/src/mapper.js');
+    const { shadergraph } = await import('/src/shadergraph.js');
+    const m = mapper.mappings.find(x => x.audioParam === k);
+    return {
+      signal: m?.signal ?? null,
+      uniform: shadergraph.compile().uniforms.some(u => u.key === k),
+      compiles: shadergraph.compile().error === null,
+    };
+  }, floatKey);
+
+  // A shader node's output into another shader node's colour input.
+  const added = await page.evaluate(async () => {
+    const { shadergraph } = await import('/src/shadergraph.js');
+    const { shaderChanged } = await import('/src/ui/shadernode-ui.js');
+    const id = shadergraph.add('voronoi');
+    shaderChanged();
+    return id;
+  });
+  await page.waitForTimeout(250);
+  const shxFrom = await socket('out', `shx_${added}`);
+  const colourKey = await page.evaluate(() =>
+    document.querySelector('.port[data-side="in"][data-key^="shx_"][data-type="vec3"]')?.dataset.key ?? null);
+  const shxColour = colourKey ? await socket('in', colourKey) : null;
+  if (shxFrom && shxColour) await drag(shxFrom, shxColour);
+  const shaderWired = await page.evaluate(async ([n, key]) => {
+    const { shadergraph } = await import('/src/shadergraph.js');
+    const r = shadergraph.compile();
+    return {
+      links: shadergraph.links().length,
+      // An input takes one cable, so wiring into a socket that already had
+      // one REPLACES it — the count need not grow, but this node must now be
+      // the thing feeding that socket.
+      feeds: shadergraph.links().some(l => l.from === n && l.to === key),
+      onlyOne: shadergraph.links().filter(l => l.to === key).length,
+      emitted: r.order.includes(n),
+      compiles: r.error === null,
+      wires: document.querySelectorAll('.ng-wire').length,
+    };
+  }, [added, colourKey]);
+
+  // And the rule that cannot be broken: a per-pixel colour has no single
+  // value, so it must never end up driving an audio parameter.
+  const audioTo = await socket('in', 'volume');
+  const shxFrom2 = await socket('out', `shx_${added}`);
+  if (shxFrom2 && audioTo) await drag(shxFrom2, audioTo);
+  const refused = await page.evaluate(async () => {
+    const { mapper } = await import('/src/mapper.js');
+    return mapper.mappings.filter(m => String(m.signal ?? '').startsWith('shx_')).length;
+  });
+
+  await ctx.close();
+  return { errs, empty, start, signalWired, shaderWired, refused, floatKey, colourKey };
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -2924,6 +3046,38 @@ console.log('\nKeyboard overlay while the arpeggiator runs\n');
     `${m.faded} vs struck ${m.oneNote}, empty ${m.baseline}`);
   check(m.fadeChangedPicture, 'so the level reaches the canvas rather than being rounded to on/off');
   check(m.silent === m.baseline, 'and a note that has faded out leaves the keyboard exactly as it found it', `${m.silent} vs empty ${m.baseline}`);
+}
+
+console.log('\nShader nodes\n');
+{
+  const m = shaderNodes;
+  check(m.errs.length === 0, 'shader: no page errors', m.errs.join(' | '));
+  check(m.empty.nodes === 0 && m.empty.shells === 0,
+    'no shader nodes are seeded into a fresh patch',
+    `${m.empty.nodes} nodes, ${m.empty.shells} shells`);
+  check(m.empty.noticeShown, 'the panel says so instead of showing a black rectangle');
+  check(m.start.nodes >= 4, 'STARTER builds a patch on the canvas', `${m.start.nodes} nodes`);
+  check(m.start.noticeGone, 'and the notice gets out of the way');
+  check(m.start.shells === m.start.nodes, 'each shader node has a shell on the canvas',
+    `${m.start.shells} shells for ${m.start.nodes} nodes`);
+  check(m.start.compiles, 'and it compiles to a shader');
+  check(m.start.status === '', 'with nothing to report on the status line', m.start.status);
+  check(m.start.hasFloatSocket, 'a number input is drawn and typed');
+  check(m.start.hasVec3Socket, 'a colour input is drawn and typed');
+  check(m.start.outType !== null, 'an output socket carries its type', String(m.start.outType));
+  check(m.signalWired.signal === 'hand_L_z',
+    'a signal cable drives a shader node’s number input', String(m.signalWired.signal));
+  check(m.signalWired.uniform, 'and that input is a uniform in the compiled shader', m.floatKey);
+  check(m.signalWired.compiles, 'which still compiles');
+  check(m.shaderWired.feeds, 'a shader output wires into a shader colour input',
+    `${m.shaderWired.links} links`);
+  check(m.shaderWired.onlyOne === 1, 'replacing the cable that was there, not joining it',
+    `${m.shaderWired.onlyOne} into that socket`);
+  check(m.shaderWired.emitted, 'and the node it came from is emitted into the source');
+  check(m.shaderWired.compiles, 'and the patch still compiles');
+  check(m.shaderWired.wires > 0, 'the cables are drawn', `${m.shaderWired.wires} wires`);
+  check(m.refused === 0, 'a per-pixel colour is refused as a driver for an audio parameter',
+    `${m.refused} such cables`);
 }
 
 console.log(`\n${fail} failure(s)\n`);

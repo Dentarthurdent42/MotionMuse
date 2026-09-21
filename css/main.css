@@ -46,6 +46,15 @@
      wash reads as a hole, this reads as the room going dark. */
   --scrim: rgba(6, 9, 15, 0.72);
   --scrim-blur: blur(3px);
+  /* Shader socket types. A shader node's sockets are coloured by WHAT THEY
+     CARRY rather than by which signal reaches them: in a graph where
+     anything plugs into anything, the type is the fact worth seeing at a
+     glance. Three hues far enough apart to be told apart at socket size —
+     and deliberately outside the golden-angle wheel the signals walk, so a
+     shader cable never reads as "some signal I have not identified". */
+  --shx-float: oklch(0.80 0.14 95);    /* a number      — amber  */
+  --shx-vec2:  oklch(0.78 0.13 175);   /* a coordinate  — teal   */
+  --shx-vec3:  oklch(0.76 0.16 330);   /* a colour      — magenta */
   --accent-l: 0.72; --accent-c: 0.13;
   /* LED tokens: glyphs that *light up* — the status dot, gesture dots, meter
      and bar fills, the scope trace. Never text. On dark grounds a lit thing
@@ -1190,6 +1199,52 @@ body.no-scroll { overflow: hidden; }
 .fn-opt input[type="number"] { width: 46px; flex: 0 0 46px; }
 .fn-opt input[type="range"] { flex: 1 1 60px; min-width: 40px; }
 
+/* A shader node is a function node with typed sockets. The socket's own
+   --wire is set per port by ui/shadernode-ui.js, so the ring is the type's
+   colour whether or not anything is plugged into it — an empty COLOUR socket
+   still says "a colour goes here", which is the whole point of typing them. */
+.shx-port { border-color: var(--wire); }
+.shx-port[data-side="out"] { background: var(--wire); }
+/* The one-line description under a node. Small, dim and unselectable: it is
+   there to be read once while you learn the node and ignored ever after. */
+.shx-help {
+  font-size: 9px;
+  line-height: 1.35;
+  color: var(--dim);
+  padding: 0 8px 6px;
+  max-width: 190px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* What the driver said, when it refused the patch. The picture above stays
+   on the last program that worked, so this is the only sign that the newest
+   edit has not landed — it has to be legible rather than tasteful. */
+.shader-status {
+  font-size: 9px;
+  line-height: 1.3;
+  color: var(--dim);
+  min-height: 0;
+  padding: 2px 0 0;
+  word-break: break-word;
+}
+.shader-status.bad { color: var(--red); }
+
+/* A shader cable's editor: one line and a ×. It shares the popover shell with
+   the signal cable's editor, so it only needs the type chip and a tighter
+   layout — there is nothing here to make room for. */
+.shx-editor { display: flex; align-items: center; gap: 8px; max-width: 320px; }
+.shx-editor .ng-ed-title { flex: 1 1 auto; }
+.shx-type {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid var(--wire);
+  border-radius: 2px;
+  color: var(--wire);
+  font-size: 8px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
 /* Cables. `pointer-events: stroke` so a cable can be clicked without its
    bounding box swallowing the canvas around it. */
 .ws-cables { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; z-index: 5; pointer-events: none; }
@@ -1619,6 +1674,7 @@ option { background: var(--panel); }
   border: 1px solid var(--border);
   border-radius: 2px;
 }
+.shader-frame { position: relative; }
 .shader-canvas {
   display: block;
   width: 100%;
@@ -1627,6 +1683,26 @@ option { background: var(--panel); }
   border: 1px solid var(--border);
   border-radius: 2px;
 }
+/* Shown over the canvas while the shader graph has no nodes in it. Centred
+   on the picture it stands in for, so the panel reads as "nothing here yet"
+   rather than as "something here has failed". */
+.shader-empty {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--dim);
+  pointer-events: none;
+}
+.shader-empty[hidden] { display: none; }
+.shader-empty b { color: var(--fg); font-weight: 600; letter-spacing: 1px; }
 .quant-notes {
   margin-top: 6px;
   text-align: center;

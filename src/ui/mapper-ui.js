@@ -25,6 +25,13 @@ import { bus }    from '../bus.js';
 import { engine } from '../engine.js';
 import { mapper } from '../mapper.js';
 import { graph, NODE_TYPES, sigKeyOf, paramKeyOf } from '../graph.js';
+import { shadergraph, isShaderOut, nodeIdOf, shxOutKey } from '../shadergraph.js';
+import {
+  shaderSockets, shaderLinks, shaderKeyColor, shaderKeyLabel, syncShaderNodes,
+  removeShaderNode, shaderMenuEntries, isShaderNodeId, initShaderNodeUI,
+  setOnChange as setShaderOnChange, isShaderLinkId, shaderLinkIdOf,
+} from './shadernode-ui.js';
+import { refreshShaderPanel } from './shader-ui.js';
 import { mtof, parseNote, midiName }        from '../scale.js';
 import { STEP_OPTS }                       from '../dynamics.js';
 import { drawKeyboard, midiAtPoint, midiOf } from './keyboard.js';
@@ -105,6 +112,10 @@ function sockets() {
     const node = paramOwner(k);
     if (node) out.push({ node, side: 'in', key: k });
   }
+  // The shader graph's own sockets — its outputs, and the inputs that carry
+  // a colour or a coordinate rather than a number. Its NUMBER inputs are
+  // engine parameters and came through the loop above.
+  out.push(...shaderSockets());
   return out;
 }
 const sigNodeOf   = key => signalOwner(key, bus.signals.get(key));
@@ -112,13 +123,25 @@ const paramNodeOf = key => paramOwner(key);
 // A cable to a parameter the engine does not have right now — an oscillator
 // slot the bank has shrunk past — is kept in the patch (the slot may come
 // back) but not drawn: a wire to nothing is worse than no wire.
-const links = () => mapper.mappings.filter(m => m.signal && engine.PARAMS[m.audioParam]).map(m => ({
-  id: m.id,
-  from: { node: sigNodeOf(m.signal), key: m.signal },
-  to:   { node: paramNodeOf(m.audioParam), key: m.audioParam },
-}));
-const socketLabel = s => (s.side === 'out' ? sigLabel(s.key) : paramLabel(s.key));
+const links = () => [
+  ...mapper.mappings.filter(m => m.signal && engine.PARAMS[m.audioParam]).map(m => ({
+    id: m.id,
+    from: { node: sigNodeOf(m.signal), key: m.signal },
+    to:   { node: paramNodeOf(m.audioParam), key: m.audioParam },
+  })),
+  // Shader-to-shader cables. Same shape, same drawing code; their ids sit in
+  // a reserved band so the two sets never collide in the canvas's id space.
+  ...shaderLinks(),
+];
+const socketLabel = s =>
+  shaderKeyLabel(s.key) ?? (s.side === 'out' ? sigLabel(s.key) : paramLabel(s.key));
+// A shader socket is coloured by what it CARRIES — number, coordinate,
+// colour — because in a graph where anything plugs into anything the type is
+// the thing worth seeing. Everything else is coloured by the signal reaching
+// it, which is the useful fact when a cable carries one particular signal.
 const socketColor = s => {
+  const shx = shaderKeyColor(s.key);
+  if (shx) return shx;
   if (s.side === 'out') return sigColor(s.key);
   const m = mapper.mappings.find(x => x.audioParam === s.key && x.signal);
   return m ? sigColor(m.signal) : 'var(--dim)';
@@ -180,7 +203,11 @@ export function renderMapper() {
   // Signal and parameter pill nodes belonged to an earlier layout; anything
   // still stored under those kinds is dropped.
   for (const n of WS.allNodes()) if (n.kind === 'sig' || n.kind === 'par') WS.removeNode(n.id);
-  if (selectedId != null && !mapper.mappings.some(m => m.id === selectedId)) closeEditor();
+  syncShaderNodes();
+  const stillThere = isShaderLinkId(selectedId)
+    ? shadergraph.links().some(l => l.id === shaderLinkIdOf(selectedId))
+    : mapper.mappings.some(m => m.id === selectedId);
+  if (selectedId != null && !stillThere) closeEditor();
   syncFoldedPorts();
   paintSockets();
   WS.syncWorkspace();
@@ -200,6 +227,7 @@ export function addFnNode(type, at = null) {
 
 // Remove a function node and, with it, its cables.
 function removeNode(id) {
+  if (isShaderNodeId(id)) { removeShaderNode(id); return; }
   const n = WS.getNode(id);
   if (!n || n.kind !== 'fn') return;
   graph.remove(+id.slice(3));
@@ -209,6 +237,12 @@ function removeNode(id) {
 
 // Remove just the cable.
 function disconnect(id) {
+  if (isShaderLinkId(id)) {
+    shadergraph.disconnect(shaderLinkIdOf(id));
+    if (selectedId === id) closeEditor();
+    renderMapper();
+    return;
+  }
   const m = mapper.mappings.find(x => x.id === id);
   if (m) { rememberSettings(m); mapper.remove(id); }
   if (selectedId === id) closeEditor();
@@ -217,7 +251,19 @@ function disconnect(id) {
 
 // ── Connection logic ─────────────────────────────────────────────────────
 function connect(sigKey, paramKey) {
+  // A shader node's output carries a value PER PIXEL. There is no single
+  // number in it, so it can drive another shader node and nothing else —
+  // wiring one to an oscillator is refused here rather than half-honoured.
+  if (isShaderOut(sigKey)) {
+    if (nodeIdOf(paramKey) == null) return;
+    shadergraph.connect(nodeIdOf(sigKey), paramKey);
+    renderMapper();
+    return;
+  }
   if (!engine.PARAMS[paramKey] || !bus.signals.has(sigKey)) return;
+  // A signal arriving at a shader input is an ordinary cable, but any shader
+  // cable already in that socket has to go: an input takes one.
+  if (nodeIdOf(paramKey) != null) shadergraph.disconnectInput(paramKey);
   // One incoming cable per input: replace whatever was driving this param.
   mapper.mappings.filter(m => m.audioParam === paramKey).forEach(m => {
     rememberSettings(m);
@@ -535,8 +581,37 @@ function editorTpl(m) {
     </div>`;
 }
 
+// A shader cable carries a colour or a coordinate, not a scaled number:
+// there is no range to set, no curve to bend and no steps to quantise to.
+// So its editor is one line saying what runs through it and a × to cut it,
+// rather than the signal cable's full strip with every control disabled.
+function shaderEditorTpl(link) {
+  const type = shadergraph.typeOfKey(link.to) ?? 'value';
+  const word = { float: 'number', vec2: 'coordinate', vec3: 'colour' }[type] ?? type;
+  return html`
+    <div class="ng-editor shx-editor">
+      <span class="ng-ed-title">${shaderKeyLabel(shxOutKey(link.from)) ?? 'shader'}
+        <span class="shx-type" style="--wire:${shaderKeyColor(link.to) ?? 'var(--dim)'}">${word}</span>
+        → ${shaderKeyLabel(link.to) ?? link.to}</span>
+      <button type="button" class="rm-btn ng-del" aria-label="Delete cable"
+              title="Delete this cable" @click=${() => disconnect(link.id + SHX_LINK_BASE)}>×</button>
+    </div>`;
+}
+
+function selShaderLink() {
+  if (!isShaderLinkId(selectedId)) return null;
+  return shadergraph.links().find(l => l.id === shaderLinkIdOf(selectedId)) ?? null;
+}
+
 function renderEditor() {
   if (!editorEl) return;
+  const link = selShaderLink();
+  if (link) {
+    render(shaderEditorTpl(link), editorEl);
+    editorEl.hidden = false;
+    positionEditor();
+    return;
+  }
   const m = selMapping();
   render(m ? editorTpl(m) : nothing, editorEl);
   editorEl.hidden = !m;
@@ -545,10 +620,13 @@ function renderEditor() {
 
 // Beside the input socket, on the screen layer, kept inside the viewport.
 function positionEditor() {
-  const m = selMapping();
-  if (!editorEl || !m || editorEl.hidden) return;
+  const link = selShaderLink();
+  const m = link ? null : selMapping();
+  if (!editorEl || editorEl.hidden || (!m && !link)) return;
   const ws = WS.viewportEl().getBoundingClientRect();
-  const a = anchor(paramNodeOf(m.audioParam), 'in', m.audioParam);
+  const inKey = link ? link.to : m.audioParam;
+  const inNode = link ? `shx:${nodeIdOf(link.to)}` : paramNodeOf(m.audioParam);
+  const a = anchor(inNode, 'in', inKey);
   const s = a ? WS.toScreen(a.pt.x, a.pt.y) : { x: ws.left + ws.width / 2, y: ws.top + ws.height / 2 };
   const w = editorEl.offsetWidth, h = editorEl.offsetHeight;
   let x = s.x - ws.left + 16, y = s.y - ws.top - 12;
@@ -703,15 +781,22 @@ export function updateMapperBars() {
 
 // ── Add-menu entries ─────────────────────────────────────────────────────
 function menuEntries() {
-  return [{ title: 'Function', items: Object.entries(NODE_TYPES).map(([k, t]) => ({
-    label: `ƒ ${t.name}`, hint: t.ins.length ? t.ins.join(', ') : 'a knob',
-    add: (x, y) => WS.selectNodes([addFnNode(k, { x, y })]),
-  })) }];
+  return [
+    { title: 'Function', items: Object.entries(NODE_TYPES).map(([k, t]) => ({
+      label: `ƒ ${t.name}`, hint: t.ins.length ? t.ins.join(', ') : 'a knob',
+      add: (x, y) => WS.selectNodes([addFnNode(k, { x, y })]),
+    })) },
+    ...shaderMenuEntries(),
+  ];
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────
 export function initMapperUI() {
   WS.registerRenderer('fn', renderFn);
+  initShaderNodeUI();
+  // A shader node added, removed or re-optioned redraws the canvas through
+  // the same path a cable change does.
+  setShaderOnChange(() => { renderMapper(); refreshShaderPanel(); });
   WS.setPatchSource({ sockets, links, socketLabel, socketColor, remove: removeNode, entries: menuEntries });
   WS.onCablesDirty(drawWires);
   WS.onViewScroll(positionEditor);      // the column scrolls under the editor

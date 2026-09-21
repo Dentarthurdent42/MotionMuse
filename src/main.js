@@ -32,8 +32,8 @@ import { findConfig, setCurrentConfig,
          clearCurrentConfig }               from './saved.js';
 import { initTutorial, maybeOfferTour, offerTourForMode, offerTourForSharedSetup } from './ui/tutorial.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
-import { initWorkspace, relayout, adoptSections } from './ui/workspace.js';
-import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
+import { initWorkspace, relayout, adoptSections, openAddMenu } from './ui/workspace.js';
+import { shaderSectionHTML, wireShaderSection, setShaderAddHandler } from './ui/shader-ui.js';
 import { initTheme }                        from './ui/theme.js';
 import { initSettings }                     from './ui/settings.js';
 import { initCamSticky }                    from './ui/cam-sticky.js';
@@ -99,7 +99,8 @@ function loop() {
   updateMapperBars();
   if (engine.started) updateAudioSliders();
   drawViz();
-  shader.render();       // cheap no-op unless the shader panel is active
+  shader.render();       // cheap no-op unless the shader panel is active; it
+                         // recompiles only when the node graph's shape changed
   updateFsOverlay();     // cheap no-op unless fullscreen is active
   updateCamBadge();      // which saved setup is playing
   updateGamePanel();     // cheap no-op unless a song is running
@@ -721,7 +722,22 @@ renderMapper();
 // mappings, so its node sits beside the wiring rather than among synth
 // parameters. Rendered once, then adopted onto the canvas like any section.
 const shaderHost = document.getElementById('shader-host');
-if (shaderHost) { shaderHost.innerHTML = shaderSectionHTML(); wireShaderSection(); adoptSections(shaderHost); }
+if (shaderHost) {
+  // Deliberately NOT seeded with a starter patch. Shader nodes are nodes on
+  // the same canvas as the instrument, and cables on that canvas are what
+  // gets saved and shared — so populating the shader by default would put
+  // four nodes and three cables into every patch, every saved setup and
+  // every share link, for people who never open the panel. The panel's
+  // STARTER button is one tap away and says so.
+  // + NODE on the panel opens the canvas's own add menu, so there is one
+  // place where nodes come from however you reach for them.
+  setShaderAddHandler((x, y) => openAddMenu(x, y));
+  shaderHost.innerHTML = shaderSectionHTML();
+  wireShaderSection();
+  adoptSections(shaderHost);
+  // A saved patch may carry shader nodes; give them their shells.
+  renderMapper();
+}
 loop();
 
 // Say which build this is, once, on startup. The cheapest possible answer to
