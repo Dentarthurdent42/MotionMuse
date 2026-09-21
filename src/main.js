@@ -138,34 +138,72 @@ function stopCamera() {
 }
 document.getElementById('cv-stop').addEventListener('click', stopCamera);
 
+// Starting it happens in two stages, and the order matters more than anything
+// else in this function.
+//
+// The camera is asked for first, on its own, with nothing awaited in front of
+// it. The models are ~15MB and used to load first, which meant the permission
+// prompt — the only thing that looks to a person like the camera starting —
+// arrived tens of seconds after the tap on a phone connection, if at all: the
+// prompt needs transient user activation, and that is long gone by then.
+// Reported as the camera simply not starting when you press the frame.
+//
+// So: stream, picture, THEN models. Tracking joins the live picture a few
+// seconds later (cvSource.loop runs with whichever models exist), and if the
+// models fail the camera stays up as a camera rather than the whole thing
+// being torn down — the signals it can't fill are the only loss.
 async function startCamera() {
   const btn = document.getElementById('cv-btn');
   if (cvSource.running) return;          // the picture hides this button anyway
   btn.disabled = true;
-  setLabel(btn, 'LOADING…');
+  setLabel(btn, 'ALLOW CAMERA…');
+  setStatus('loading', 'ASKING FOR CAMERA…');
   try {
-    await cvSource.init();
     await cvSource.startCamera();
-    setStatus('active', 'CV ACTIVE');
-    setLabel(btn, 'START CAMERA');
-    btn.disabled = false;
-    buildSigPanel();
-    renderMapper();
-    // Face & gaze tracking are opt-in once the camera is running: they load a
-    // model onto the live stream, so their buttons in the TRACKING row wake
-    // up here.
-    document.body.classList.add('cam-on');
-    document.getElementById('face-btn').disabled = false;
-    document.getElementById('gaze-btn').disabled = false;
-    // A preset chosen while the camera was off asked for face or gaze; now
-    // there is a stream to run them on.
-    applyFaceIntent();
   } catch (err) {
-    setStatus('error', 'ERROR: ' + err.message.slice(0, 30));
+    setStatus('error', cameraError(err));
     setLabel(btn, 'RETRY');
     btn.disabled = false;
     console.error(err);
+    return;
   }
+  // The picture is live. Everything that depends on having a stream rather
+  // than on having models happens now, not after the download.
+  setLabel(btn, 'START CAMERA');
+  btn.disabled = false;
+  buildSigPanel();
+  renderMapper();
+  // Face & gaze tracking are opt-in once the camera is running: they load a
+  // model onto the live stream, so their buttons in the TRACKING row wake
+  // up here.
+  document.body.classList.add('cam-on');
+  document.getElementById('face-btn').disabled = false;
+  document.getElementById('gaze-btn').disabled = false;
+  // A preset chosen while the camera was off asked for face or gaze; now
+  // there is a stream to run them on.
+  applyFaceIntent();
+
+  try {
+    await cvSource.init();               // sets its own LOADING MODELS… status
+    if (cvSource.running) setStatus('active', 'CV ACTIVE');
+  } catch (err) {
+    // Not fatal: you can see yourself, you just can't be tracked.
+    if (cvSource.running) setStatus('error', 'NO TRACKING: ' + err.message.slice(0, 22));
+    console.error(err);
+  }
+}
+
+// getUserMedia's failures are the ones a person can actually act on, and
+// `NotAllowedError` on its own tells them nothing. Named rather than raw.
+function cameraError(err) {
+  const map = {
+    NotAllowedError:    'CAMERA BLOCKED — ALLOW IT',
+    NotFoundError:      'NO CAMERA FOUND',
+    NotReadableError:   'CAMERA IN USE ELSEWHERE',
+    OverconstrainedError: 'CAMERA UNSUPPORTED',
+    SecurityError:      'CAMERA NEEDS HTTPS',
+  };
+  return map[err?.name] ?? 'ERROR: ' + String(err?.message ?? err).slice(0, 30);
 }
 document.getElementById('cv-btn').addEventListener('click', startCamera);
 
