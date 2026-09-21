@@ -84,6 +84,7 @@ export const cvSource = {
   running:  false,
   lastTime: -1,
   _lat:     null,
+  _signalsReady: false,
 
   // Which models run. Hand tracking is normally the frame-rate bottleneck —
   // it costs roughly twice what pose does — so being able to switch either
@@ -160,7 +161,13 @@ export const cvSource = {
   },
 
   // ── Register all CV signals into the bus ────────────────────────────
+  // Called from startCamera (so the outputs exist the moment the picture
+  // does) and still from init (so a caller that only loads models gets them
+  // too). Registering twice would reset every signal's adaptive calibration,
+  // so the second call is a no-op.
   registerSignals() {
+    if (this._signalsReady) return;
+    this._signalsReady = true;
     ['L', 'R'].forEach(s => {
       const lbl = s === 'L' ? 'Left' : 'Right';
       const g   = `hand ${s.toLowerCase()}`;
@@ -363,15 +370,55 @@ export const cvSource = {
     }
   },
 
+  // Wait for the stream's dimensions, but never forever. `onloadedmetadata`
+  // is a one-shot property assignment: if the event has already fired by the
+  // time we get here the promise never settles, and the button sits on
+  // LOADING… with no error and no way back. Both halves are guarded — the
+  // already-ready case returns at once, and a stream that never reports
+  // metadata gives up after a second and lets the overlay size itself from
+  // the element instead.
+  _metadata(ms = 1000) {
+    if (this.video.readyState >= 1) return Promise.resolve();   // HAVE_METADATA
+    return new Promise(resolve => {
+      const done = () => { clearTimeout(timer); this.video.removeEventListener('loadedmetadata', done); resolve(); };
+      const timer = setTimeout(done, ms);
+      this.video.addEventListener('loadedmetadata', done);
+    });
+  },
+
   // ── Camera startup ───────────────────────────────────────────────────
+  //
+  // getUserMedia is the FIRST thing that happens here, and nothing is awaited
+  // before it. That ordering is the whole point:
+  //
+  //   • the permission prompt is what a person means by "the camera starting",
+  //     so it has to arrive while their finger is still on the button rather
+  //     than after a download;
+  //   • the prompt is gated on transient user activation, which expires a few
+  //     seconds after the tap. The models behind this app are ~15MB (see
+  //     CDN_RE in sw.js); awaiting them first spends that activation on a
+  //     progress bar, and on iOS the call is then refused outright — which
+  //     the UI reports as a permission error for a permission nobody was ever
+  //     asked for.
+  //
+  // So the picture comes up on the stream alone. `loop` runs without models
+  // and simply has nothing to infer yet; main.js loads them behind the live
+  // picture and tracking joins a few seconds later.
   async startCamera() {
     this.video  = document.getElementById('video');
     this.canvas = document.getElementById('overlay');
     this.ctx    = this.canvas.getContext('2d');
 
     const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
+    // The outputs are a property of the camera, not of the models: a patch
+    // can be wired to `hand_L_x` while the hand model is still downloading.
+    this.registerSignals();
     this.video.srcObject = stream;
-    await new Promise(r => this.video.onloadedmetadata = r);
+    await this._metadata();
+    // `autoplay` fired long before this element had a source, and does not
+    // fire again. Without this the picture is a still black frame on iOS —
+    // and `loop` is gated on the video clock, so nothing would ever tick.
+    try { await this.video.play(); } catch { /* resumed by restore() */ }
 
     const wrap = this.video.parentElement;
     this.canvas.width  = wrap.offsetWidth;
@@ -467,14 +514,19 @@ export const cvSource = {
         // other runs EVERY frame rather than idling on its turn: switching
         // pose off is meant to buy hand tracking the whole frame budget, and
         // keeping the alternation would have thrown half of it away.
-        const both = this.handsOn && this.poseOn;
+        // A model that has not finished downloading is simply not in the
+        // alternation yet: the picture and the overlay are already live, and
+        // each model joins the moment it resolves.
+        const handsUp = this.handsOn && !!this.hand;
+        const poseUp  = this.poseOn  && !!this.poseBackend;
+        const both = handsUp && poseUp;
         // An armed hand cursor deserves the frame budget: tilt the
         // alternation to hands 3-of-4 (~22Hz at 30fps) while it is, and give
         // pose the remaining quarter. Plain alternation otherwise.
         const boost = both && uicontrol.wantsPriority();
         const runHand = both ? (boost ? (lat.frame & 3) !== 3 : (lat.frame & 1) === 0)
-                             : this.handsOn;
-        const runPose = both ? !runHand : this.poseOn;
+                             : handsUp;
+        const runPose = both ? !runHand : poseUp;
         if (runHand) {
           const hr = this.hand.recognizeForVideo
             ? this.hand.recognizeForVideo(this.video, now)

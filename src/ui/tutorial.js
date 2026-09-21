@@ -137,9 +137,10 @@ export const TOUR_STEPS = [
   // ── The app around both ──
   {
     id: 'camera', target: '#cv-btn', title: 'Start the camera',
-    body: 'The first start downloads the vision models (a few MB, cached ' +
-          'after that); tracking then runs locally. Click it now if you like ' +
-          '— the tour waits.',
+    body: 'The picture comes up straight away; the vision models (~15MB, ' +
+          'cached after that) load behind it and tracking joins a few ' +
+          'seconds later, running locally. Click it now if you like — the ' +
+          'tour waits.',
   },
   {
     id: 'video', target: '#video-wrap', title: 'Camera view',

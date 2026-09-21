@@ -9,7 +9,7 @@ A browser-based instrument that maps live webcam data — hand position, gesture
 <sub>Kept in step with the UI automatically — see [Keeping the screenshot honest](#keeping-the-screenshot-honest). Regenerate by hand with `npm run screenshot`.</sub>
 
 Open `index.html` (or the Netlify deploy) and:
-1. Click **START CAMERA** — the blank frame *is* the button — MediaPipe loads and begins detecting hands and pose
+1. Click **START CAMERA** — the blank frame *is* the button. The picture comes up on the camera alone; MediaPipe (~15MB) loads behind it and hand and pose tracking join a few seconds later
 2. Click **PRESET** — pick a starting patch (hands, face, gaze or whole-body)
 3. Press **Space** (or click the amber **🔇** on the camera view) to unmute, then move
    and play — the synthesiser is already running, it just starts silent
@@ -2181,10 +2181,17 @@ all:
   the camera runs, so the empty frame is the target: one big **START CAMERA**,
   centred, at any size and in fullscreen alike, where a control in the page
   header would be off-screen entirely. It is a real `<button>`, so the tap
-  that requests camera access is a user gesture wherever it happens. Once
-  there is a picture that target is gone — covering the view with a button
-  would be covering the instrument — and **⏹ STOP** takes its place in the
-  strip beside ⛶ FULL.
+  that requests camera access is a user gesture wherever it happens — and
+  `getUserMedia` is the first thing that tap does, before anything is
+  awaited. That order is load-bearing: the permission prompt is gated on
+  transient user activation, which expires seconds after the tap, so loading
+  the models first (as this used to) meant the prompt arrived long after the
+  activation was gone, or never — reported as the camera simply not starting
+  when you press the frame. The models are loaded behind the live picture
+  instead, and models that fail cost the tracking rather than the camera.
+  Once there is a picture that target is gone — covering the view with a
+  button would be covering the instrument — and **⏹ STOP** takes its place
+  in the strip beside ⛶ FULL.
 - **Mute, SHARE, the source link and ♥** are in the header bar, where every
   other control of the tool is — and in fullscreen, which has no bar, the
   same strip rides the picture bottom-left, opposite the picture's own

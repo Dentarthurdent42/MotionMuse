@@ -2406,6 +2406,92 @@ const shaderNodes = await (async () => {
   return { errs, empty, start, signalWired, shaderWired, refused, floatKey, colourKey };
 })();
 
+// ── Starting the camera: the stream first, the models behind it ──────────
+//
+// Reported as "the camera won't start when pressing the camera view panel".
+// The models are ~15MB and used to be awaited BEFORE getUserMedia, so on a
+// phone the permission prompt — the only thing that looks like the camera
+// starting — arrived tens of seconds after the tap, by which time the
+// transient user activation it needs has expired. Models that never arrive
+// at all took the camera down with them.
+//
+// So the order is the contract: ask for the camera in the tap's own task,
+// put the picture up on the stream alone, load the models behind it.
+const cameraStart = await (async () => {
+  const out = {};
+  for (const mode of ['slow', 'fail']) {
+    const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    // The models: never answered, or refused outright. Either way the camera
+    // must come up without them.
+    await ctx.route('**/vision_bundle.mjs', r =>
+      mode === 'fail' ? r.abort() : new Promise(() => {}));
+    await ctx.route('**/storage.googleapis.com/mediapipe-models/**', r => r.abort());
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on('pageerror', e => errs.push(String(e)));
+    // A camera that is always there, and a record of when it was asked for.
+    await page.addInitScript(() => {
+      window.__gum = 0;
+      navigator.mediaDevices.getUserMedia = async () => {
+        window.__gum++;
+        const c = Object.assign(document.createElement('canvas'), { width: 320, height: 240 });
+        c.getContext('2d').fillRect(0, 0, 320, 240);
+        return c.captureStream(30);
+      };
+    });
+    await page.goto(URL_, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => document.getElementById('cv-btn').click());
+    // Wait for the outcome rather than for a clock: on a loaded runner the
+    // stream can take a moment, and a fixed pause would turn that into a
+    // flake. `cam-on` is the app saying the picture is up.
+    await page.waitForFunction(() => document.body.classList.contains('cam-on'), null, { timeout: 8000 })
+      .catch(() => {});
+    await page.waitForTimeout(400);
+    out[mode] = await page.evaluate(() => {
+      const btn = document.getElementById('cv-btn');
+      const v = document.getElementById('video');
+      return {
+        gum: window.__gum,
+        camOn: document.body.classList.contains('cam-on'),
+        btnHidden: btn.getClientRects().length === 0,
+        streaming: !!v.srcObject && !v.paused,
+        status: document.getElementById('status-lbl').textContent.trim(),
+        // The outputs belong to the camera, not to the models: a patch has to
+        // be wirable to a hand signal while the hand model is still coming.
+        signals: document.querySelectorAll('#cam-signals .sig-row').length,
+        faceEnabled: !document.getElementById('face-btn').disabled,
+      };
+    });
+    out[mode].errs = errs;
+    await ctx.close();
+  }
+
+  // And the failure that IS the camera's own: a named message rather than a
+  // raw DOMException, because it is the one a person can act on.
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await ctx.newPage();
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = () => {
+      const e = new Error('Permission denied'); e.name = 'NotAllowedError';
+      return Promise.reject(e);
+    };
+  });
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => document.getElementById('cv-btn').click());
+  await page.waitForFunction(() => !document.getElementById('cv-btn').disabled, null, { timeout: 8000 })
+    .catch(() => {});
+  out.denied = await page.evaluate(() => ({
+    status: document.getElementById('status-lbl').textContent.trim(),
+    label: document.getElementById('cv-btn').textContent.trim().replace(/\s+/g, ' '),
+    enabled: !document.getElementById('cv-btn').disabled,
+    camOn: document.body.classList.contains('cam-on'),
+  }));
+  await ctx.close();
+  return out;
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -3046,6 +3132,29 @@ console.log('\nKeyboard overlay while the arpeggiator runs\n');
     `${m.faded} vs struck ${m.oneNote}, empty ${m.baseline}`);
   check(m.fadeChangedPicture, 'so the level reaches the canvas rather than being rounded to on/off');
   check(m.silent === m.baseline, 'and a note that has faded out leaves the keyboard exactly as it found it', `${m.silent} vs empty ${m.baseline}`);
+}
+
+console.log('\nStarting the camera\n');
+{
+  for (const [mode, what] of [['slow', 'models that never arrive'], ['fail', 'models that fail outright']]) {
+    const m = cameraStart[mode];
+    check(m.errs.length === 0, `camera (${what}): no page errors`, m.errs.join(' | '));
+    check(m.gum === 1, `the camera is asked for without waiting on ${what}`, `getUserMedia called ${m.gum}×`);
+    check(m.streaming, 'and the picture is live');
+    check(m.camOn && m.btnHidden, 'so the start target gives way to the picture it was standing in for');
+    check(m.signals > 0, 'the camera’s outputs are wirable before any model has loaded', `${m.signals} rows`);
+    check(m.faceEnabled, 'and face / gaze can be switched on, since they load their own model');
+  }
+  check(cameraStart.slow.status === 'LOADING MODELS…',
+    'while the models are still coming, the status line says so', cameraStart.slow.status);
+  check(cameraStart.fail.status.startsWith('NO TRACKING'),
+    'and models that fail cost the tracking, not the camera', cameraStart.fail.status);
+
+  const d = cameraStart.denied;
+  check(d.status === 'CAMERA BLOCKED — ALLOW IT',
+    'a refused camera is reported as a refused camera', d.status);
+  check(d.label === 'RETRY' && d.enabled, 'and the frame offers another go', `${d.label}, enabled ${d.enabled}`);
+  check(!d.camOn, 'without pretending there is a picture');
 }
 
 console.log('\nShader nodes\n');
