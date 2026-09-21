@@ -636,8 +636,9 @@ not read as "broken".
 
 The patchbay used to be one hop: signal → cable → parameter. **Function
 nodes** are what you get when the middle is allowed to grow — the shader-graph
-move, done with the machinery already there. A node is *both ends of the
-existing patchbay at once*:
+move, done with the machinery already there. (There is now a literal shader
+graph too, built on the same bargain — see *Shader — the picture is a patch*.)
+A node is *both ends of the existing patchbay at once*:
 
 - each **input socket** registers as an engine parameter (`ƒ1 Math · A`),
   and sits on the node's edge like any other input — so any existing cable
@@ -1088,7 +1089,7 @@ The tour is built for a project that changes weekly:
 Most features are visible by default, but experimental / in-progress ones are
 tucked behind the **DEV** toggle in the header (persisted). With dev mode off,
 the **EEG/EMG** source tabs, the **◈ LiDAR** depth toggle, the **MODELS** panel,
-the inference HUD under the camera, the **Shader** panel, the **🖐 CURSOR** hand
+the inference HUD under the camera, the **🖐 CURSOR** hand
 cursor (button, its three ⚙ settings rows, and its hotkey) and the **◭ STAGE**
 gesture stage are hidden — a deliberate *progressive-disclosure* choice so
 newcomers meet a simpler surface.
@@ -1113,15 +1114,60 @@ playback no longer checks the flag.
 Lives in `src/devmode.js`; under-construction elements carry a `.uc-feature`
 class hidden by CSS unless `<body class="dev">`.
 
-## Shader — visual output
+## Shader — the picture is a patch
 
-The **Shader** node ships in the middle column, beside the function nodes,
-not in the AUDIO ENGINE group: it is driven by signals and mappings, so it belongs beside the wiring that
-feeds it rather than among the synth's parameters. It renders a WebGL fragment shader (plasma / warp / bars)
-that reacts to the live audio level and two signals you pick (default
-`hand_R_x` / `hand_R_y`). It honors `prefers-reduced-motion` (freezes the time
-term). `src/shader.js` is the renderer (one program, `u_mode` branch);
-`src/ui/shader-ui.js` is the panel. The choice + driving signals save with
+The visual output is not a menu of presets. It is a **node graph on the same
+canvas as the instrument**, wired with the same cables, and it compiles to a
+GLSL fragment shader.
+
+- **Thirty-odd node types**, in the add menu under `Shader · …` — sources
+  (UV, centred coordinate, time, audio level, RGB), coordinate transforms
+  (polar, rotate, scale, offset, tile, kaleidoscope, swirl), patterns
+  (gradient, radial, checker, stripes, circle, ring, box, wave, noise,
+  clouds, cells), maths, vector combine/split, and colour (palette, HSV,
+  levels, saturation, invert, gamma). One **Output** node is the picture;
+  everything upstream of it is what you see, and anything not upstream of it
+  costs nothing.
+- **Sockets are typed and coloured by type** — a *number*, a *coordinate* or
+  a *colour*. Deliberately outside the golden-angle wheel the signals walk,
+  so a shader cable never reads as an unidentified signal. A mismatch is
+  **converted rather than refused** (a number into a colour socket is a
+  grey), because refusing would mean explaining a type system through a
+  disabled socket.
+- **Every number input is an engine parameter** (`shx_<id>_<in>`, in the
+  picker under SHADER NODES), so an ordinary signal cable drives it — curve,
+  range, steps and all — and arrives as a `uniform float`. Wire a wrist to a
+  noise node's SCALE and the noise breathes with your arm. This is the whole
+  point of putting the shader on this canvas rather than beside it.
+- **The reverse can never happen.** A per-pixel colour has no single value,
+  so a shader output is refused as a driver for an audio parameter. That rule
+  lives in one place (`shadergraph.connect`) and is pinned by a test.
+
+**It recompiles only when the patch's shape changes.** Turning a knob does
+not: a knob is a uniform, uploaded every frame for nothing. Adding a node,
+rewiring a cable or changing a node's choice rebuilds the program — and a
+program that fails to link is **refused rather than installed**, so the last
+one that worked keeps drawing while the status line under the picture says
+what the driver said. A patch mid-edit is often briefly nonsense, and a black
+panel that stays black is much harder to get out of than a picture that has
+not caught up.
+
+**Nothing is seeded by default.** Shader nodes are nodes on the shared canvas,
+and cables on that canvas are what gets saved and shared — so populating the
+shader out of the box would put four nodes and three cables into every patch,
+every saved setup and every share link, for people who never open the panel.
+The panel shows what to press instead: **STARTER** builds a worked example
+(clouds → palette ← time → output), **+ NODE** opens the canvas's own add menu.
+
+A cycle compiles instead of hanging, breaking at the seam with the socket's
+default: a shader has no previous frame to read, so a loop is a mistake rather
+than a feedback path. `prefers-reduced-motion` freezes the time term — the
+picture keeps reacting to what you play, it just stops moving on its own.
+
+`src/shadergraph.js` is the catalogue and the compiler, DOM-free and
+WebGL-free (it returns source as a string) so it runs under `node --test`;
+`src/shader.js` owns the GL context; `src/ui/shadernode-ui.js` draws the
+nodes; `src/ui/shader-ui.js` is the output panel. The whole graph saves with
 presets.
 
 ## Accessibility & colour (OKLab)
@@ -2513,9 +2559,9 @@ because degrees per second is spans per second like anything else.
 They are ordinary bus signals rather than a special case, so everything that
 already walks the bus picks them up for free — the patchbay (a velocity's
 socket sits on its own channel row beneath its measure's, and it is labelled
-`… Δ` wherever a signal is named), the shader's axis pickers, the signal lists
-on the input nodes, saved patches, and `trackersFor()`, which knows a velocity
-needs the same model its measure does.
+`… Δ` wherever a signal is named), the shader nodes' number inputs, the signal
+lists on the input nodes, saved patches, and `trackersFor()`, which knows a
+velocity needs the same model its measure does.
 
 - **Signed.** Which *way* something is moving is half of what it tells you, so
   the range is symmetric about zero: full scale is four spans of the source per
@@ -2667,7 +2713,8 @@ src/
                     templates, calibration store
   chordmode.js      Gesture → scale-degree chord/note mapping (hold-to-sound)
   devmode.js        Developer-mode toggle (gates under-construction features)
-  shader.js         WebGL visual-output shader (reacts to audio + signals)
+  shadergraph.js    Shader node catalogue + GLSL compiler (DOM-free)
+  shader.js         WebGL runtime for the compiled shader graph
   cv.js             MediaPipe Hand + swappable pose source (dev inference HUD)
   posebackends.js   Pose backends: MediaPipe lite/full/heavy + TF.js MoveNet
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
@@ -2683,7 +2730,8 @@ src/
     keyboard.js     Shared piano-keyboard renderer
     playalong-ui.js Falling-note highway renderer + game panel
     gesture-ui.js   Gesture Mode panel section (assignments + handshape library)
-    shader-ui.js    Shader visual-output panel section
+    shader-ui.js    Shader output panel (the picture, status, STARTER)
+    shadernode-ui.js  Shader nodes on the canvas: typed sockets, add menu
     signals.js      Signal lists inside the camera / mic / metronome nodes
                     (output sockets, live values)
     mapper-ui.js    The patch on the canvas: sockets on the panels, cables,

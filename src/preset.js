@@ -110,8 +110,11 @@ export function apply(data) {
   if (!data || (data.app !== TAG && !LEGACY_TAGS.includes(data.app))) return false;
   if (data.audio) engine.restore(data.audio);
   // Nodes BEFORE cables: a mapping can name a node's socket, which has to
-  // exist by the time the cable is strung.
+  // exist by the time the cable is strung. That goes for the shader's nodes
+  // as much as the function nodes — a saved cable into a noise node's SCALE
+  // names a parameter that only exists once the shader graph is loaded.
   graph.load(data.graph);
+  if (data.shader) shader.load(data.shader);
   if (Array.isArray(data.mappings)) mapper.load(data.mappings);
   if (data.arp) arpvoice.load(data.arp);
   if (data.gestures) gesture.load(data.gestures);
@@ -121,7 +124,6 @@ export function apply(data) {
   // a snapshot that somehow carries both.
   if (data.radial) radial.load(data.radial);
   if (data.metronome) metronome.load(data.metronome);
-  if (data.shader) shader.load(data.shader);
   // Restore the kit *selection label* only — the exact parameter values came
   // from the snapshot above, so re-applying the kit would stomp them.
   setCurrentLabel(data.kit ?? 'custom');

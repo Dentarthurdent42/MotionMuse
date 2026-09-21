@@ -591,20 +591,39 @@ function restack() {
 // Called whenever anything might have changed a height: the ResizeObserver
 // on every shell, and every sync. Idempotent — a stack that is already in
 // order changes nothing and saves nothing.
+// Where the app ships a node in the column: its canvas column first, then
+// its order within that column. Used by the first column stack and by TIDY,
+// so "the shipped order" means one thing in both.
+const rankTop = id => { const c = M.DEFAULT_COLUMNS[id]; return c ? c.col * 100 + c.order : 999; };
+
 function stackColumn() {
   if (!ws || mode !== 'column') return false;
   const W = ws.clientWidth;
   if (!W) return false;
   const shown = n => n.placed && !n.pinned && M.isShown(state, n.id) && isVisible(els.get(n.id));
-  // The order first, from where the nodes are — a node placed by the canvas
-  // in a column of its own still ranks by that column, so a first visit
-  // reads inputs, then the picture, then the engine.
+  // The order first, from where the nodes are.
+  //
+  // Normally that is y: the stack has run before, so y already says what
+  // comes first, and a node dragged up the column keeps the place the drag
+  // gave it. The exception is the FIRST stack, before anything has been
+  // moved by hand. The canvas placed those nodes in columns side by side,
+  // and this column flattens them — but every node has by then been given
+  // the same x, so "which column were you in" is no longer readable off the
+  // position, and a panel that happens to sit at the top of the middle
+  // column would open above the inputs. So while every top-level node is
+  // still `auto`, the shipped column and order decide instead, which is what
+  // TIDY uses too: inputs, the picture, the engine.
   const levels = [...state.nodes.values()].filter(n => n.kind === 'group' && !n.collapsed)
     .sort((a, b) => depthOf(b.id) - depthOf(a.id)).map(g => g.id);
   levels.push(null);
+  const tops = [...state.nodes.values()].filter(n => !n.parent && shown(n));
+  const untouched = tops.length > 0 && tops.every(n => n.auto);
+  const byShipped = (a, b) => rankTop(a.id) - rankTop(b.id);
   const ranked = new Map(levels.map(parent => [parent,
     [...state.nodes.values()].filter(n => n.parent === parent && shown(n))
-      .sort((a, b) => (a.y - b.y) || (a.x - b.x))]));
+      .sort(parent === null && untouched
+        ? (a, b) => byShipped(a, b) || (a.y - b.y)
+        : (a, b) => (a.y - b.y) || (a.x - b.x))]));
   // 1. Widths: the screen's, less a margin for the sockets that straddle the
   //    edges — and a frame's padding for every frame a node is inside.
   let changed = false;
@@ -652,7 +671,6 @@ function shiftNode(n, dy) {
 // TIDY in the column: the shipped order — inputs, the picture, the engine,
 // and each group's members in the order the app lists them.
 function tidyColumn() {
-  const rankTop = id => { const c = M.DEFAULT_COLUMNS[id]; return c ? c.col * 100 + c.order : 999; };
   const top = [...state.nodes.values()].filter(n => !n.parent && !n.pinned)
     .sort((a, b) => (rankTop(a.id) - rankTop(b.id)) || (a.y - b.y));
   top.forEach((n, i) => { n.y = i * GAP; n.auto = true; });

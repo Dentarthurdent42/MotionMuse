@@ -1,6 +1,6 @@
 // The workspace model: everything on screen is a node on one canvas.
 //
-// A node is one of five kinds, and the canvas does not care which:
+// A node is one of six kinds, and the canvas does not care which:
 //
 //   panel   a section of the old interface — the camera, the signals list, the
 //           oscillators, the loop pedal. Its body is the same markup it always
@@ -8,6 +8,9 @@
 //   sig     a signal on the bus, with one OUTPUT socket.
 //   par     an engine parameter, with one INPUT socket.
 //   fn      a function node (graph.js): input sockets and one output.
+//   shx     a shader node (shadergraph.js). Also inputs and one output, but
+//           its sockets carry colours and coordinates rather than numbers,
+//           and the graph they form is compiled to GLSL rather than run.
 //   group   a frame holding other nodes. Dragged as one; collapsed into a
 //           single node whose sockets are the members' sockets that face
 //           outward. This is how primitive nodes compose into larger ones —
@@ -22,7 +25,7 @@
 
 import { isRecord, isString } from './is.js';
 
-export const KINDS = ['panel', 'sig', 'par', 'fn', 'group'];
+export const KINDS = ['panel', 'sig', 'par', 'fn', 'shx', 'group'];
 
 // Ids are `<kind>:<key>` so the kind is readable off the id and a signal and a
 // parameter with the same bus key can never collide.
