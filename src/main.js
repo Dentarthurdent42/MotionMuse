@@ -31,6 +31,7 @@ import { initPresetMenu }                   from './ui/preset-menu.js';
 import { findConfig, setCurrentConfig,
          clearCurrentConfig }               from './saved.js';
 import { initHeaderHelp }                    from './ui/docpop.js';
+import { initCamDiag, diag }                from './ui/camdiag.js';
 import { changed as docsChanged }           from './ui/nodedocs.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { initWorkspace, relayout, adoptSections, openAddMenu } from './ui/workspace.js';
@@ -49,6 +50,9 @@ import { initStage, updateStage }           from './ui/stage-ui.js';
 import { tickLooperUI, pedalPressed }       from './ui/looper-ui.js';
 import { looper }                           from './looper.js';
 import * as preset                          from './preset.js';
+
+// Before anything else runs, so an early failure is on the log too (?debug).
+initCamDiag({ buildInfo, buildLabel });
 
 // ── A shared setup, if this page was opened from a QR code / link ────────
 // First thing: it applies the state, persists it and reloads without the
@@ -154,15 +158,31 @@ document.getElementById('cv-stop').addEventListener('click', stopCamera);
 // seconds later (cvSource.loop runs with whichever models exist), and if the
 // models fail the camera stays up as a camera rather than the whole thing
 // being torn down — the signals it can't fill are the only loss.
+let starting = false;
 async function startCamera() {
   const btn = document.getElementById('cv-btn');
-  if (cvSource.running) return;          // the picture hides this button anyway
+  diag(`startCamera() — running=${cvSource.running} starting=${starting}`);
+  if (cvSource.running || starting) return;   // the picture hides this button anyway
+  starting = true;
   btn.disabled = true;
   setLabel(btn, 'ALLOW CAMERA…');
   setStatus('loading', 'ASKING FOR CAMERA…');
+  // A permission request the browser never answers is the one failure with
+  // no error to show: no prompt appears (an in-app browser, a prompt the OS
+  // swallowed, one already dismissed), the promise simply never settles, and
+  // the frame sits on ALLOW CAMERA… forever. Say so after a few seconds.
+  const watchdog = setTimeout(() => {
+    diag('getUserMedia: still no answer after 6 s');
+    toast('Still waiting for the camera. If no permission prompt appeared, allow the camera for this site in your browser settings — or, in an app’s built-in browser, open the page in Safari or Chrome.', 10000);
+  }, 6000);
   try {
+    diag('getUserMedia: requested');
     await cvSource.startCamera();
+    diag('getUserMedia: granted, picture up');
   } catch (err) {
+    clearTimeout(watchdog);
+    starting = false;
+    diag(`getUserMedia: FAILED ${err?.name}: ${err?.message}`);
     setStatus('error', cameraError(err));
     setLabel(btn, 'RETRY');
     btn.disabled = false;
@@ -176,6 +196,8 @@ async function startCamera() {
     console.error(err);
     return;
   }
+  clearTimeout(watchdog);
+  starting = false;
   // The picture is live. Everything that depends on having a stream rather
   // than on having models happens now, not after the download.
   setLabel(btn, 'START CAMERA');
@@ -193,9 +215,12 @@ async function startCamera() {
   applyFaceIntent();
 
   try {
+    diag('models: loading');
     await cvSource.init();               // sets its own LOADING MODELS… status
+    diag('models: loaded');
     if (cvSource.running) setStatus('active', 'CV ACTIVE');
   } catch (err) {
+    diag(`models: FAILED ${err?.message}`);
     // Not fatal: you can see yourself, you just can't be tracked.
     if (cvSource.running) {
       setStatus('error', 'NO TRACKING: ' + err.message.slice(0, 22));
@@ -216,10 +241,22 @@ function cameraError(err) {
     NotReadableError:   'CAMERA IN USE ELSEWHERE',
     OverconstrainedError: 'CAMERA UNSUPPORTED',
     SecurityError:      'CAMERA NEEDS HTTPS',
+    NoMediaDevices:     'THIS BROWSER GIVES PAGES NO CAMERA — OPEN IN SAFARI OR CHROME',
   };
   return map[err?.name] ?? 'ERROR: ' + String(err?.message ?? err).slice(0, 30);
 }
 document.getElementById('cv-btn').addEventListener('click', startCamera);
+// The whole blank frame starts it, not only the button laid over it. On a
+// phone the picture is lifted into a sticky strip above a same-size
+// placeholder (ui/cam-sticky.js), and a browser that hit-tests that strip
+// differently lands the tap on the placeholder or the frame's own box —
+// which did nothing, silently. Any tap on either, while there is no picture,
+// is a request for one. Controls inside the frame (FULL, KEYS) keep theirs.
+document.addEventListener('click', e => {
+  if (cvSource.running || e.target.closest('#cv-btn')) return;
+  if (e.target.closest('button, a, select, input, label, .cam-bar, .cam-toggles')) return;
+  if (e.target.closest('#video-wrap, #cam-hold')) { diag('frame tap → startCamera'); startCamera(); }
+});
 
 // ── Face / gaze tracking toggles (opt-in, camera must be running) ────────
 const faceToggle = (btnId, key, setter, label) => {
