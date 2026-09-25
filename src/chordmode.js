@@ -12,8 +12,8 @@ import { bus }                        from './bus.js';
 import { engine }                     from './engine.js';
 import { metronome }                  from './metronome.js';
 import { gesture, gestureLabel }      from './gesture.js';
-import { diatonicChord, diatonicNote, isDiatonic, isDegreeScale, degreeCountOf,
-         NATURAL, SHARP, FLAT }       from './chords.js';
+import { diatonicChord, diatonicNote, qualityChord, isDiatonic, isDegreeScale,
+         degreeCountOf, OVERRIDE_QUALITIES, NATURAL, SHARP, FLAT } from './chords.js';
 import { NOTE_NAMES }                 from './scale.js';
 import { notePool }                   from './arp.js';
 import { arpvoice }                   from './arpvoice.js';
@@ -88,6 +88,40 @@ export const VOICINGS = ['chord', 'note'];
 // cannot be recognized until someone records one. That is why these are
 // settings and not constants.
 export const DEFAULT_ACCIDENTAL_GESTURES = { sharp: 'thumbs', flat: 'thumbsdown' };
+
+// ── Chord quality: what the other hand says about a CHORD ────────────────
+//
+// The accidentals' counterpart in chord voicing. There, a hand saying ♯ or ♭
+// has nothing to act on — a chord degree is not sharp — so the off hand was
+// idle exactly when the key's own qualities ran out: IV is major in a major
+// key and that is the only IV there is. The Chord Quality node gives that hand
+// a job: hold a quality shape and the chord on the degree becomes that
+// quality, root unchanged. The borrowed iv, a V7 in a minor key, a sus4 to
+// lean on before resolving — each one shape away.
+//
+// The defaults are chosen to MEAN their quality, not merely to be free:
+//
+//   major  Thumbs Up     up, bright — and in SINGLE NOTES the same shape is
+//   minor  Thumbs Down   ♯ / ♭. Major is the raised third, minor the lowered
+//                        one: the same "raise / lower" in both voicings, so a
+//                        player learns one idea, not two sets of shapes.
+//   dim    Closed O      the ° a diminished chord is written with IS an O.
+//   dom7   Rock Horns    the blues-and-rock seventh, from the rock hand.
+//   maj7   I Love You    the lush, romantic seventh, from the ILY sign.
+//
+// aug, sus2, sus4 and min7 ship EMPTY, on purpose: every shape left that is
+// not a numeral would be an arbitrary pairing, and the point of the rest is
+// that none of them is. They are one pick (or one cable) away.
+//
+// None of these shapes is an ASL numeral, so no default quality can be read
+// as a degree — the off hand never names a chord by accident while it is
+// colouring one.
+export const QUALITY_KEYS = OVERRIDE_QUALITIES;
+export const DEFAULT_QUALITY_GESTURES = {
+  major: 'thumbs', minor: 'thumbsdown', dim: 'asl0', aug: null,
+  sus2: null, sus4: null, dom7: 'horns', maj7: 'iloveyou', min7: null,
+};
+const isQuality = q => isString(q) && QUALITY_KEYS.includes(q);
 
 // ♯ / ♭ / nothing, for a readout.
 export const accidentalSign = a => (a > 0 ? '♯' : a < 0 ? '♭' : '');
@@ -187,6 +221,7 @@ export const chordmode = (() => {
   let voicing = 'chord';
   let namingHand = 'any';    // 'any' | 'L' | 'R' — see namingSides()
   let accGestures = { ...DEFAULT_ACCIDENTAL_GESTURES };
+  let qualGestures = { ...DEFAULT_QUALITY_GESTURES };
   // A degree, the release or an accidental can be held by a CABLE instead of
   // a handshape: any signal wired into its socket (src/chordcables.js). The
   // cable's end is a pseudo-gesture id — 'cable:<what>' — assigned like a
@@ -266,14 +301,19 @@ export const chordmode = (() => {
   const degreeCount = () => degreeCountOf(effectiveKey().mode);
   const liveDegree = d => d !== undefined && d < degreeCount();
 
-  const chordAt = degree => {
+  // `quality` overrides what the key gives the degree — and the degree's 7th
+  // with it: the quality names the whole chord, so a held MAJ is a triad and
+  // a held MAJ7 a seventh whatever the 7th button says.
+  const chordAt = (degree, quality = null) => {
     const k = effectiveKey();
     const d = normDegree(degree);
-    return diatonicChord(k.root, k.octave, k.mode, d, sevenths[d]);
+    return isQuality(quality)
+      ? qualityChord(k.root, k.octave, k.mode, d, quality)
+      : diatonicChord(k.root, k.octave, k.mode, d, sevenths[d]);
   };
-  const chordFor = id => {
+  const chordFor = (id, quality = null) => {
     const d = assignments[id];
-    return liveDegree(d) ? chordAt(d) : null;
+    return liveDegree(d) ? chordAt(d, quality) : null;
   };
   const gestureFor = degree =>
     Object.keys(assignments).find(id => assignments[id] === normDegree(degree)) ?? null;
@@ -292,9 +332,14 @@ export const chordmode = (() => {
   // What the voice bank should be pointed at for this handshape — the whole
   // chord, or the one note. The single place the voicing decides anything;
   // everything downstream just plays the frequencies it is given.
-  const soundFreqs = (id, accidental = NATURAL) => {
-    if (voicing !== 'note') return chordFor(id)?.freqs ?? null;
-    const n = noteFor(id, accidental);
+  //
+  // The second argument is the source's MODIFIER — what the off hand said —
+  // which is an accidental in note voicing and a quality in chord voicing.
+  // One slot for both because the two are never asked at once: a single note
+  // has no quality, and a chord degree has no sharp.
+  const soundFreqs = (id, mod = NATURAL) => {
+    if (voicing !== 'note') return chordFor(id, isQuality(mod) ? mod : null)?.freqs ?? null;
+    const n = noteFor(id, mod);
     return n ? [n.freq] : null;
   };
 
@@ -330,6 +375,33 @@ export const chordmode = (() => {
     if (held === accGestures.flat) return FLAT;
     return NATURAL;
   };
+
+  // The quality a hand is holding, or null. A cable holding a quality's
+  // socket wins over any hand, as a cable-held accidental does.
+  const qualityOnCable = () => QUALITY_KEYS.find(q => qualGestures[q] && cableHeld.has(qualGestures[q])) ?? null;
+  const qualityOn = side => {
+    const held = gesture.activeOn(side);
+    if (held === null) return null;
+    return QUALITY_KEYS.find(q => qualGestures[q] === held) ?? null;
+  };
+
+  // Chord voicing's counterpart of accidentalFor: the off hand's quality, or
+  // NATURAL for "the key's own". NATURAL rather than null so a source's
+  // modifier is 0 for "unmodified" in both voicings, and a switch between
+  // them never reads as a change. The same hand rule, for the same reason —
+  // in 'hand' expression the off hand is the volume. A cable is not a hand,
+  // so a wired quality applies there too, and to cable-named degrees.
+  const qualityFor = namingSide => {
+    if (voicing === 'note') return NATURAL;
+    const wired = qualityOnCable();
+    if (wired) return wired;
+    if (namingSide === null || expr.mode === 'hand') return NATURAL;
+    return qualityOn(namingSide === 'L' ? 'R' : 'L') ?? NATURAL;
+  };
+
+  // What the off hand says, whichever voicing is asking.
+  const modFor = namingSide =>
+    (voicing === 'note' ? accidentalFor(namingSide) : qualityFor(namingSide));
 
   // Read from whichever hand is not naming the note. In 'hand' expression that
   // hand is already playing the note's loudness — asking it to hold a thumb as
@@ -394,7 +466,7 @@ export const chordmode = (() => {
   // all instead of reading the first.
   const namedVoices = () => {
     const out = new Map();
-    for (const { id, side } of namedSources()) out.set(id, accidentalFor(side));
+    for (const { id, side } of namedSources()) out.set(id, modFor(side));
     return out;
   };
 
@@ -413,6 +485,7 @@ export const chordmode = (() => {
           assignments = { ...DEFAULT_ASSIGNMENTS };
           releaseGesture = DEFAULT_RELEASE_GESTURE;
           accGestures = { ...DEFAULT_ACCIDENTAL_GESTURES };
+          qualGestures = { ...DEFAULT_QUALITY_GESTURES };
         }
         notifyAssign();      // the cables are drawn while the mode is on
       }
@@ -479,6 +552,34 @@ export const chordmode = (() => {
       notifyAssign();
       return { ...accGestures };
     },
+    qualityGestures: () => ({ ...qualGestures }),
+    // One shape, one quality: the shape just set wins and any other quality
+    // holding it goes free — the accidentals' rule. A quality shape MAY also
+    // be an accidental (they are read in different voicings) or a degree
+    // (they are read from different hands), exactly as an accidental may.
+    setQualityGestures(partial) {
+      const next = { ...qualGestures };
+      for (const q of QUALITY_KEYS) {
+        if (partial?.[q] === undefined) continue;
+        const id = isString(partial[q]) && partial[q] ? partial[q] : null;
+        if (id) for (const other of QUALITY_KEYS) if (other !== q && next[other] === id) next[other] = null;
+        next[q] = id;
+      }
+      qualGestures = next;
+      // A held chord re-voices on the next tick, when the modifier is re-read.
+      notifyAssign();
+      return { ...qualGestures };
+    },
+    // The quality the off hand is holding right now, for the node's live
+    // indicator — or null, which is "the key's own".
+    currentQuality() {
+      if (voicing === 'note') return null;
+      if (anySounding()) { const q = leadAcc(); return isQuality(q) ? q : null; }
+      if (latchedSide !== null) { const q = qualityFor(latchedSide); return isQuality(q) ? q : null; }
+      if (expr.mode === 'hand') return qualityOnCable();
+      return qualityOnCable() ?? qualityOn('L') ?? qualityOn('R');
+    },
+
     // What the off hand is saying right now, for the panel's indicator.
     currentAccidental() {
       if (voicing !== 'note') return NATURAL;
@@ -549,7 +650,8 @@ export const chordmode = (() => {
           const n = noteFor(id, voices.get(id));
           return n ? `${who} → ${n.numeral}${accidentalSign(n.accidental)} · ${n.name}` : '';
         }
-        const c = chordFor(id);
+        const q = voices.get(id);
+        const c = chordFor(id, isQuality(q) ? q : null);
         return c ? `${who} → ${c.numeral} · ${c.rootName} ${c.quality}` : '';
       }).filter(Boolean).join('  +  ');
     },
@@ -561,7 +663,10 @@ export const chordmode = (() => {
     currentChord() {
       if (!anySounding()) return null;
       const parts = playingIds().map(id => {
-        if (voicing !== 'note') return chordFor(id);
+        if (voicing !== 'note') {
+          const q = voices.get(id);
+          return chordFor(id, isQuality(q) ? q : null);
+        }
         const n = noteFor(id, voices.get(id));
         return n ? { ...n, midi: [n.midi], freqs: [n.freq], rootName: n.name, quality: 'note' } : null;
       }).filter(Boolean);
@@ -725,7 +830,7 @@ export const chordmode = (() => {
         latchedSide = namedSide;
         voiced = null;                 // the new chord has not been sounded yet
       }
-      const acc = accidentalFor(latchedSide);
+      const acc = modFor(latchedSide);
       const level = readExpression();
       // These modes stay one shape at a time, and not by omission: one hand
       // names and the other plays, so outside brow mode there is only one hand
@@ -895,7 +1000,8 @@ export const chordmode = (() => {
                // keeps older readers working.
                degrees: Array.from({ length: DEGREES }, (_, i) => gestureFor(i)),
                sevenths: sevenths.slice(), releaseGesture, expression: { ...expr },
-               voicing, namingHand, accidentals: { ...accGestures } };
+               voicing, namingHand, accidentals: { ...accGestures },
+               qualities: { ...qualGestures } };
     },
 
     load(data) {
@@ -946,6 +1052,12 @@ export const chordmode = (() => {
       // playing chords, which is what the default says.
       this.setVoicing(data.voicing ?? 'chord');
       this.setAccidentalGestures({ ...DEFAULT_ACCIDENTAL_GESTURES, ...data.accidentals });
+      // Absent in setups saved before the Chord Quality node: those get the
+      // defaults, which only ever act in chord voicing on the hand that is NOT
+      // naming — a hand that, in every default, was holding a shape that did
+      // nothing there. Merged, so a quality added later arrives for them too.
+      qualGestures = { ...DEFAULT_QUALITY_GESTURES };
+      this.setQualityGestures({ ...DEFAULT_QUALITY_GESTURES, ...data.qualities });
 
       // Enforce the bijection on the way in. Loaded data predates it — the same
       // shape could be a chord and the release, and two shapes could share a

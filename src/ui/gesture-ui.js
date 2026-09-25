@@ -445,6 +445,14 @@ function runCalibration(id, statusEl, onDone) {
   }, 900);
 }
 
+// The same, for a row on another node (Chord Quality): the camera guard and
+// the countdown, reporting into that node's own status line.
+export function calibrateGesture(id, statusEl, onDone) {
+  if (!id || gesture.recordingActive) return;
+  if (!cvSource.running) { toast('Start the camera first'); return; }
+  runCalibration(id, statusEl, onDone);
+}
+
 // rerender: renderAudioPanel (used for structural changes).
 export function wireGestureSections(rerender) {
   const recBtn = document.getElementById('record-gesture-btn');
