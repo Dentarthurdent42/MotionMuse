@@ -172,6 +172,20 @@ test('each handshape choice states its voicing rather than inheriting the last',
   assert.equal(chordmode.getVoicing(), 'chord');
 });
 
+// The Chord Quality node is part of what a chord start IS: the off hand's
+// shapes arrive wired, and mean what they say — thumbs up MAJ, thumbs down MIN.
+test('both chord starts arrive with the chord-quality shapes', async () => {
+  const { DEFAULT_QUALITY_GESTURES } = await import('../../src/chordmode.js');
+  for (const id of ['chords', 'radial-chords']) {
+    reset();
+    chordmode.setQualityGestures({ major: null, minor: 'gun', dim: null });
+    await pick(id);
+    assert.deepEqual(chordmode.qualityGestures(), DEFAULT_QUALITY_GESTURES, id);
+  }
+  assert.ok(mapper.mappings.every(m => !m.audioParam.startsWith('chord_qual_')) || chordmode.enabled,
+    'radial does not string gesture mode\'s cables');
+});
+
 test('a mapping preset wires its cables and asks for exactly its trackers', async () => {
   reset();
   const s = await pick('face-brow-mouth');
