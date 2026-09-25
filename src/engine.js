@@ -11,13 +11,26 @@ export const engine = (() => {
       cfilt, chordVol, revb, revgain, drygain, maing, outg;
   let started = false;
 
-  // Muted on launch, always. The engine now starts with the page so every
-  // control is live from the first paint, and starting a synth that makes
-  // noise at someone before they have asked for any would be hostile — on a
-  // phone, in a shared room, most of all on a page they opened to read about.
-  // Deliberately NOT persisted: "it was unmuted last time" is not consent to
-  // make noise now, and the state is one keypress to change.
-  let muted = true;
+  // Sound on at launch. It used to start muted, which made the first thing
+  // anyone had to learn "where is the mute switch" — the instrument looked
+  // alive and said nothing. The browser's autoplay policy is still the real
+  // gate: the context stays suspended, and so silent, until the first tap or
+  // key (main.js wakeAudio), so nothing plays at someone who has not touched
+  // the page. Not persisted either way; it is one keypress to change.
+  let muted = false;
+
+  // ── Source trims ──────────────────────────────────────────────────────
+  //
+  // One gain per thing that makes sound, set from outside by whatever owns
+  // the idea of "this source's share" — today the workspace, whose groups
+  // each carry a volume (see ui/group-volume.js). Kept as a separate stage
+  // rather than folded into the sources' own levels (osc_volume,
+  // chord_volume, loop_volume…) because those are mapped parameters a cable
+  // may be driving every frame; a group fader has to sit on top of that, not
+  // fight it for the same AudioParam.
+  const SOURCES = ['lead', 'chord', 'click', 'loop', 'playalong'];
+  const trimVal = Object.fromEntries(SOURCES.map(k => [k, 1]));
+  const trim = {};
 
   // Chord voice bank (gesture mode): oscillators with per-voice gains into a
   // shared gain, feeding the same filter/reverb chain as the main oscillators.
@@ -269,6 +282,11 @@ export const engine = (() => {
     // mute completely clear of the volume ladder and its silence gate, which
     // live on maing and are measured at the analyser.
     outg    = ctx.createGain(); outg.gain.value = muted ? 0 : 1;
+    for (const k of SOURCES) { trim[k] = ctx.createGain(); trim[k].gain.value = trimVal[k]; }
+    // The two one-shot sources keep the routes they always had: the click onto
+    // the mute gate (past reverb and Main Vol), play-along straight out.
+    trim.click.connect(outg);
+    trim.playalong.connect(ctx.destination);
 
     // Apply stored param values
     filt.frequency.value  = PARAMS.filter_freq.val;
@@ -282,11 +300,12 @@ export const engine = (() => {
     // while Main Vol (and its step ladder) still governs everything:
     //
     //   osc_i → oscGain_i ┐
-    //                     ├→ filt  → oscVol   ┐
-    //                     ┘                   ├→ [dry + reverb] → main → analyser → mute → out
-    //   chords → cfilt → chordVol             ┘
+    //                     ├→ filt  → oscVol → trim.lead   ┐
+    //                     ┘                               ├→ [dry + reverb] → main → analyser → mute → out
+    //   chords → cfilt → chordVol → trim.chord            ┘
     filt.connect(oscVol);
-    oscVol.connect(drygain); oscVol.connect(revb);
+    oscVol.connect(trim.lead);
+    trim.lead.connect(drygain); trim.lead.connect(revb);
     revb.connect(revgain);
     drygain.connect(maing); revgain.connect(maing);
     // The looper taps and returns HERE, on either side of the analyser, and the
@@ -310,7 +329,7 @@ export const engine = (() => {
     loopTap = ctx.createGain(); loopTap.gain.value = 1;
     loopSum = ctx.createGain(); loopSum.gain.value = PARAMS.loop_volume.val;
     maing.connect(loopTap);
-    loopSum.connect(analyser);
+    loopSum.connect(trim.loop); trim.loop.connect(analyser);
     maing.connect(analyser); analyser.connect(outg); outg.connect(ctx.destination);
 
     // LFO → the *lead* filter's cutoff only. Chords deliberately keep a steady
@@ -322,7 +341,8 @@ export const engine = (() => {
     chordGain = ctx.createGain(); chordGain.gain.value = 0;
     chordGain.connect(cfilt);
     cfilt.connect(chordVol);
-    chordVol.connect(drygain); chordVol.connect(revb);
+    chordVol.connect(trim.chord);
+    trim.chord.connect(drygain); trim.chord.connect(revb);
     chordOscs = []; chordVGains = []; chordOn = false;
     for (let i = 0; i < CHORD_VOICES; i++) {
       const g = ctx.createGain();
@@ -675,7 +695,10 @@ export const engine = (() => {
   // One-shot tone voice — used by play-along for the guide melody and
   // hit/miss feedback. Own gain straight to the destination, so it never
   // interferes with the player's synth chain or its parameter smoothing.
-  function playTone({ freq, when = 0, dur = 0.25, type = 'triangle', gain = 0.12 } = {}) {
+  // `source` names whose trim it rides: play-along passes 'playalong', so its
+  // group's fader governs the guide melody; an audition from the range editor
+  // passes nothing and is heard as-is.
+  function playTone({ freq, when = 0, dur = 0.25, type = 'triangle', gain = 0.12, source = null } = {}) {
     if (!started || !(freq > 0)) return;
     const t0 = ctx.currentTime + Math.max(0, when);
     const o = ctx.createOscillator(), g = ctx.createGain();
@@ -685,7 +708,7 @@ export const engine = (() => {
     g.gain.linearRampToValueAtTime(gain, t0 + 0.012);
     g.gain.setValueAtTime(gain, t0 + Math.max(0.012, dur - 0.08));
     g.gain.linearRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g); g.connect(ctx.destination);
+    o.connect(g); g.connect(source && trim[source] ? trim[source] : ctx.destination);
     o.start(t0); o.stop(t0 + dur + 0.05);
     o.onended = () => { o.disconnect(); g.disconnect(); };
   }
@@ -706,7 +729,7 @@ export const engine = (() => {
     g.gain.setValueAtTime(0, t0);
     g.gain.linearRampToValueAtTime(accent ? 0.4 : 0.26, t0 + 0.002);
     g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.06);
-    o.connect(g); g.connect(outg);
+    o.connect(g); g.connect(trim.click);
     o.start(t0); o.stop(t0 + 0.1);
     o.onended = () => { o.disconnect(); g.disconnect(); };
   }
@@ -976,6 +999,21 @@ export const engine = (() => {
   }
   const toggleMuted = () => setMuted(!muted);
 
+  // Set a source's trim (0–1). Works before start(): the value is kept and
+  // the node picks it up when the graph is built. Ramped, not stepped — a
+  // fader dragged across a sounding voice must not click.
+  function setSourceTrim(name, v) {
+    if (!SOURCES.includes(name)) return;
+    const x = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+    trimVal[name] = x;
+    const node = trim[name];
+    if (!started || !node) return;
+    const t = ctx.currentTime;
+    node.gain.cancelScheduledValues(t);
+    node.gain.setValueAtTime(node.gain.value, t);
+    node.gain.linearRampToValueAtTime(x, t + 0.03);
+  }
+
   // An AudioContext created without a user gesture starts suspended, and the
   // page auto-starts the engine, so this is the normal case rather than an
   // error path: the graph exists and every control works, but the clock is
@@ -1008,7 +1046,9 @@ export const engine = (() => {
     setLeadEnv, getLeadEnv, LEAD_ENV_RANGE,
     setShepard, getShepard,
     getWaveform,
-    setMuted, toggleMuted, resume,
+    setMuted, toggleMuted, resume, setSourceTrim,
+    sourceTrim: name => trimVal[name],
+    SOURCES,
     // Where the looper records from and plays back into. Returned together
     // because they are only meaningful as a pair — see the graph comment at
     // the tap — and only once the context exists, so the looper cannot get hold

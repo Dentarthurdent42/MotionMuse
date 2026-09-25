@@ -4,14 +4,14 @@ A browser-based instrument that maps live webcam data — hand position, gesture
 
 ## Demo
 
-![MotionMuse: one canvas of nodes — the camera and inputs, the patch wiring hand signals to synth parameters with cables, and the audio engine grouped beside it — shown with the default Hands patch loaded and the output muted](docs/screenshot.png)
+![MotionMuse: one canvas of nodes — the camera and inputs, the patch wiring hand signals to synth parameters with cables, and the audio engine grouped beside it — shown with the default Hands patch loaded, each group carrying its own volume fader](docs/screenshot.png)
 
 <sub>Kept in step with the UI automatically — see [Keeping the screenshot honest](#keeping-the-screenshot-honest). Regenerate by hand with `npm run screenshot`.</sub>
 
 Open `index.html` (or the Netlify deploy) and:
-1. Click **START CAMERA** — the blank frame *is* the button — MediaPipe loads and begins detecting hands and pose
+1. Click **START CAMERA** — the blank frame *is* the button. The picture comes up on the camera alone; MediaPipe (~15MB) loads behind it and hand and pose tracking join a few seconds later
 2. Click **PRESET** — pick a starting patch (hands, face, gaze or whole-body)
-3. Press **Space** (or click the amber **🔇** on the camera view) to unmute, then move
+3. Move — the sound is on from the start (**Space**, or the **🔊** in the header bar, mutes it)
    and play — the synthesiser is already running, it just starts silent
 
 ## Support
@@ -43,16 +43,23 @@ Webcam → MediaPipe (Hand + Pose) → Signal Bus → Mapper → Web Audio Engin
 - **Scale quantiser** (`src/scale.js`): optionally snaps oscillator frequencies onto a musical scale, root and tuning system before they reach the engine.
 - **Dynamics** (`src/dynamics.js`): the volume step ladder — equal-loudness (dB) levels, an exact-silence bottom rung, and the sticky rounding that keeps a jittery hand from chattering between levels.
 
-## Starting muted
+## Sound on, the metronome's click off
 
 The synthesiser **starts with the page**, so every control in the audio panel is
-live from the first paint — you can build a patch, set ranges and audition
-nothing until you want to. The output is **muted on launch**, because a page
-that makes noise at you before you've asked is hostile on a phone, in a shared
-room, and most of all to someone who came to read about it.
+live from the first paint. The main output starts **unmuted**. It used to start
+muted, which made the first thing anyone had to learn "where is the mute
+switch" — the instrument looked alive and said nothing. Nothing plays at
+someone who hasn't touched the page anyway: the browser keeps the audio clock
+frozen until the first gesture (see below), and that gate, not a mute, is what
+keeps an untouched page quiet.
 
-Muted is shown three ways, because a silent instrument and a broken one look
-identical otherwise:
+The **Metronome** is the opposite: its click starts **muted**. Switching it on
+gives the instrument a beat to lock to — the quantiser, the beat-sampled
+volume modes, the looper — without a click track on top of what you play.
+Press its MUTE to hear it.
+
+When the output is muted it is shown three ways, because a silent instrument
+and a broken one look identical otherwise:
 
 - the mute button on the camera view turns amber (muted is a *state*, not a
   disabled control);
@@ -94,10 +101,11 @@ easy to get backwards, and both are pinned by tests:
   16-bit specifically: 16-bit PCM silence is 0, so an untouched buffer is
   already silent, where 8-bit silence is 128 and an all-zero buffer would be
   full-scale DC — a click on every loop.
-- **It is held only while unmuted, and only on iOS.** A page in the playback
-  category stops whatever the phone was already playing, so taking someone's
-  music the moment they open a page that is not making a sound yet would be a
-  worse bug than the one being fixed. Off iOS it is never created at all:
+- **It is held only while unmuted, from the first touch, and only on iOS.** A
+  page in the playback category stops whatever the phone was already playing,
+  so taking someone's music the moment they open a page they have not touched
+  would be a worse bug than the one being fixed. The first touch is when sound
+  can start, so that is when it is taken; muting gives it back. Off iOS it is never created at all:
   Android would lose audio focus for nothing and the desktop would raise media
   keys for a track that does not exist, and neither platform has the switch.
 
@@ -111,8 +119,8 @@ button keeps **Enter** but loses Space, which is the trade that makes the
 shortcut behave the same way regardless of invisible focus state. And it is
 never intercepted while you're typing in a field or working a `<select>`.
 
-Mute state is deliberately **not remembered** between visits: "you unmuted last
-time" isn't consent to make noise now, and it's one keypress to change.
+Mute state is deliberately **not remembered** between visits: every visit
+starts with the sound on, and it is one keypress to change.
 
 Because the page builds an `AudioContext` without a user gesture, browsers hand
 it back **suspended** — the graph exists and every control works, but the clock
@@ -199,8 +207,8 @@ absence of one, and it made the first thirty seconds a hunt for where the
 instrument was.
 
 The first visit now asks, and it separates the **two ways of playing** — they are
-different instruments, not variations of one, and the split is what tells the
-guided tour which tour to give you:
+different instruments, not variations of one, and the split is what decides
+which node's **?** pulses for you:
 
 **Oscillator** — signals drive pitch and tone. Every mapping preset (**Hands**,
 the two **Face** patches, **Gaze**, **Pose**), plus **Blank**, which sits here
@@ -238,14 +246,13 @@ In full:
 - **Blank** — nothing wired, no trackers, and **no oscillator**. Genuinely
   nothing, not a quiet something.
 
-Choosing applies the patch *and* the trackers it needs, saves the session, then
-starts the guided tour **for that mode** — two modals at once is not a welcome,
-so the tour waits its turn.
+Choosing applies the patch *and* the trackers it needs and saves the session.
+Nothing else opens: the help for that mode starts pulsing on its node instead.
 Dismissing with Escape is the same as choosing Blank: a fresh app has nothing
 wired anyway, so the state after Escape is one of the listed options rather than
 a seventh, undescribed one. The question is asked once and never again.
 
-Automation never sees it, for the same reason it never sees the tour: every
+Automation never sees it: every
 headless suite starts with empty storage and a modal over the app would break
 all of them. `tests/layout` therefore overrides `navigator.webdriver` to
 exercise the real path rather than a stand-in for it.
@@ -257,9 +264,9 @@ an invitation to *play*, not to read a patchbay: someone pointed a phone at a
 QR code, and the next thing they should see is themselves, full frame, with
 one thing to press. (The CSS fullscreen path, not the native one — a link
 lands after a reload with no user gesture anywhere near it, and the native
-Fullscreen API rejects anything else.) The tour for the arriving setup then
-**waits until you leave fullscreen**: a walkthrough of panels that are behind
-a fullscreen camera is a walkthrough of nothing.
+Fullscreen API rejects anything else.) The help for the arriving setup then
+**waits until you leave fullscreen** before its **?** starts pulsing: a
+button pulsing behind a fullscreen camera is pulsing at nobody.
 
 
 **SHARE** (on the camera view, among the picture's own controls) shows a QR
@@ -422,6 +429,21 @@ nodes make one scrolling column instead — see below):
   cables they compute on run; there is no patch panel — the patch *is* the
   canvas, and what acts on it as a whole (**PRESET**, and SAVE / LOAD of the
   entire setup as a file, at the foot of that menu) lives in the header.
+- **Every group is a fader.** The slider in a group's header is its
+  **volume**: it scales everything inside the group that makes sound — the
+  lead Oscillators, the Chord Voice (whatever plays it: Gesture Mode, Radial
+  Mode, the arpeggiator), the Metronome's click, the Loop Pedal's playback and
+  Play Along — and faders **nest like subgroups on a mixing desk**: a source
+  inside a group at 50% inside another at 50% is at 25%, and turning the outer
+  one down never rewrites the inner one's setting. Drag a node into or out of
+  a frame and what you hear follows. A group with nothing in it that sounds
+  still shows its fader, disabled and saying why, rather than a slider that
+  does nothing. Double-click resets to 100%. Under the hood each source has
+  its own trim gain in the engine (`engine.setSourceTrim`), after its own
+  level and before the shared reverb, so a group fader sits *on top of* a
+  mapped level like Osc Volume instead of fighting a cable for the same
+  parameter; `src/ui/group-volume.js` is the one place that knows which node
+  is which source. Levels persist with the layout.
 - **⋮⋮ TIDY** lays the wired nodes out by what feeds what (inputs left,
   functions between, audio nodes right — a layered graph layout from
   [dagre](vendor/LICENSES.md)) and packs the unwired ones beside them; with
@@ -494,7 +516,7 @@ whatever the platform substitutes — a different weight, size and baseline on
 every device, which is exactly the legibility problem it kept having.
 
 **What is not a node.** The header strip — the things that act on the canvas
-(add, fit, tidy) or on the app (settings, the tour) — and the controls that
+(add, fit, tidy) or on the app (settings, help) — and the controls that
 sit *on the camera picture*: mute, share, the trackers, and above all
 **⛶ FULL / ✕ EXIT**, which is one button that belongs to the picture it puts
 on the whole screen. Separating the exit from the fullscreen would be a node
@@ -636,8 +658,9 @@ not read as "broken".
 
 The patchbay used to be one hop: signal → cable → parameter. **Function
 nodes** are what you get when the middle is allowed to grow — the shader-graph
-move, done with the machinery already there. A node is *both ends of the
-existing patchbay at once*:
+move, done with the machinery already there. (There is now a literal shader
+graph too, built on the same bargain — see *Shader — the picture is a patch*.)
+A node is *both ends of the existing patchbay at once*:
 
 - each **input socket** registers as an engine parameter (`ƒ1 Math · A`),
   and sits on the node's edge like any other input — so any existing cable
@@ -1004,91 +1027,53 @@ the chord voices' tone, so chords follow the kit without it touching their level
 either; a chord-only setup with an empty bank still responds to it. The chosen kit is saved with presets. Kits live in `src/soundkit.js`;
 custom waveforms are registered through `engine.defineWave()`.
 
-## Guided tour (in-app tutorial)
+## Help: a card per node
 
-Choosing a starting point starts the tour **for that way of playing**, as
-spotlight coach-marks over the live UI. The app stays fully clickable during the
-tour, so "click it now" actually works. Esc closes, ←/→ navigate; on phones the
-card becomes a bottom sheet.
+There is no guided tour. It was a spotlight walkthrough — up to twenty-nine
+steps — and however it was trimmed, scoped to a mode or made to wait until
+asked, it stood between someone and the instrument they had just opened. Help
+is now **one short card per node**, behind that node's own **?**.
 
-**Every panel explains itself.** Each section header carries a **?** at its right
-end that runs just that panel's steps — Volume Quantize tells you what GATE does
-without walking you past the camera button and the welcome first. The buttons
-appear automatically: `src/ui/workspace.js` gives one to any node that has steps,
-the same way it gives every panel a fold caret and a resize grip, so a panel
-added later gets its **?** for free and a panel with nothing to say gets none.
+- **Every node has one.** Panels, groups, function nodes and shader nodes all
+  get a **?** in their header (`src/ui/workspace.js` adds it, the same way it
+  adds a fold caret and a grip). The words live in `src/ui/nodedocs.js`: a few
+  lines per panel on what it is, the two or three controls that matter, and
+  one tip. Function and shader nodes are documented by *type* — every Math
+  node shares the Math card, and shader cards are built from each node type's
+  own `help` text and typed inputs, so a node type added later is documented
+  the moment it exists.
+- **A card, not a mode.** Pressing **?** opens a small card beside the button
+  (`src/ui/docpop.js`) — no scrim, no spotlight, the canvas still live
+  underneath. It closes on **×** (a 44 px target however small it looks),
+  **Escape**, a tap anywhere else, or the same **?** again. On a phone it sits
+  inside the screen at near full width.
+- **Read or not, at a glance.** Every **?** carries its state:
+  - **pulsing** — unread *and* about the way you are set up to play: Camera
+    Input in Tone Mode, Gesture Mode with handshapes on. One or two buttons,
+    never every one.
+  - **dot** — unread.
+  - **plain** — read. Opening a card is reading it; the state is kept per kind
+    of node and survives reloads.
+- **The header ? is the app's own card**: the quick start and what the header
+  buttons do.
+- **Nothing opens by itself** — not on a first visit, not after picking how to
+  play, not from a shared link. Those are the moments the pulsing moves, not
+  moments to put a card in front of someone.
+- Someone who had read panels in the old tour keeps them read: the first load
+  carries over any panel whose every tour step they had seen.
 
-The header **?** is no longer "restart the whole tutorial". It keeps the steps
-that belong to no panel — the welcome, the camera and sound buttons, saving, the
-sign-off — and its "updated" pulse counts only those, rather than promising 23
-new steps and then showing nine.
-
-**The tour is scoped to a mode.** One tour covering everything meant a
-first-timer who picked gesture mode sat through the patchbay, the cable editor and
-the falling-note game before reaching the one panel they were going to use. Each
-step declares which way of playing it is about — `modes: ['osc']`,
-`modes: ['chords']`, or neither, meaning it is about the app rather than a mode —
-and a run shows the shared steps *in place* around the mode-specific ones rather
-than appending them. The oscillator tour is 16 steps, the chord tour is 16, and
-between them every step is reachable; `npm run test:tutorial` walks both and
-fails if any step belongs to no mode at all.
-
-The **?** button gives the tour for what you are *currently* set up for, read
-from state rather than remembered from the picker — turn gesture mode on later and
-it follows. Choosing a patch from the **PRESET** menu offers the oscillator tour
-the same way, once, to anyone who has not seen it.
-
-The tour is built for a project that changes weekly:
-
-- **It's data.** Every step is one entry in `TOUR_STEPS`
-  (`src/ui/tutorial.js`) — selector, title, two sentences, plus which `mode` and
-  which `section` it belongs to. Adding, moving or retiring a feature means
-  editing one array entry; the file header documents the exact workflow.
-- **It can't silently rot.** `npm run test:tutorial` (run in CI on every PR)
-  boots the app, enables every state steps declare they need, and **fails the
-  build if any step points at UI that no longer exists** — or if a step is
-  tagged for a panel that does not exist (help written and unreachable), or a
-  panel's **?** opens nothing, or a **?** opens more than its own panel's steps. At runtime a stale
-  step is skipped gracefully instead — the app never breaks because the tour
-  lagged a release.
-- **The spotlight is a hole, not a ring.** One scrim covers the screen while
-  the tour is open — dimmed to 72% and softly blurred (`--scrim` /
-  `--scrim-blur`, the same pair every dimmed background in the app uses; the
-  blur is 3px, enough to take the edge off what is behind without making it
-  unrecognisable) — and the step's
-  target is cut out of it as a keyhole polygon, so the one thing you are being
-  asked to look at keeps its own colour and its own focus while everything
-  around it recedes. The hole is computed from the ring's own numbers, so the
-  outline can never drift off the clearing it outlines. This replaced two
-  dimmers — a plain backdrop for the cards with no target and the ring's own
-  9999px box-shadow for the spotlit ones — which was fine while the dimming
-  was a light wash and stopped being fine once it blurred: a shadow cannot
-  blur, and blurring the whole screen would have taken the target with it.
-- **The spotlight follows its target.** The ring tracks the target's rectangle
-  on a frame loop while the tour is open, rather than repositioning on `resize`
-  and `scroll`. Those two miss the cases that matter: a pinch moves only the
-  visual viewport and fires no `resize` at all, and a zoom change reflows
-  *after* the resize handler has run, stranding the ring against a layout that
-  moved out from under it — the symptom being a spotlight sitting in empty
-  space a few hundred pixels from the button it is describing. "The layout
-  changed" is not an event, so the ring watches the rect instead. The same pass
-  divides by any inherited page `zoom`, since a written length is read in the
-  element's own units while `getBoundingClientRect` answers in screen pixels.
-  `npm run test:tutorial` measures ring-against-target under browser zoom,
-  pinch zoom, page zoom and a silent reflow.
-- **Returning users see what's new.** Step ids are tracked per user; when a
-  release ships steps you haven't seen, the **?** pulses ("tour updated — 2 new
-  steps") instead of making you sit through the whole thing again.
-- Steps whose feature needs a particular state (audio on, gesture mode on) simply
-  don't show until the app is in it — the tour adapts to what's actually on
-  screen.
+`npm run test:tutorial` (in CI) boots the app with DEV on and a function and
+shader node added, and fails if any node on the canvas has no **?** or no doc,
+if a doc is written for a panel that no longer exists, or if the card does not
+open, fit the screen, mark itself read and close all four ways at desktop and
+phone widths.
 
 ## Developer mode
 
 Most features are visible by default, but experimental / in-progress ones are
 tucked behind the **DEV** toggle in the header (persisted). With dev mode off,
 the **EEG/EMG** source tabs, the **◈ LiDAR** depth toggle, the **MODELS** panel,
-the inference HUD under the camera, the **Shader** panel, the **🖐 CURSOR** hand
+the inference HUD under the camera, the **🖐 CURSOR** hand
 cursor (button, its three ⚙ settings rows, and its hotkey) and the **◭ STAGE**
 gesture stage are hidden — a deliberate *progressive-disclosure* choice so
 newcomers meet a simpler surface.
@@ -1113,15 +1098,60 @@ playback no longer checks the flag.
 Lives in `src/devmode.js`; under-construction elements carry a `.uc-feature`
 class hidden by CSS unless `<body class="dev">`.
 
-## Shader — visual output
+## Shader — the picture is a patch
 
-The **Shader** node ships in the middle column, beside the function nodes,
-not in the AUDIO ENGINE group: it is driven by signals and mappings, so it belongs beside the wiring that
-feeds it rather than among the synth's parameters. It renders a WebGL fragment shader (plasma / warp / bars)
-that reacts to the live audio level and two signals you pick (default
-`hand_R_x` / `hand_R_y`). It honors `prefers-reduced-motion` (freezes the time
-term). `src/shader.js` is the renderer (one program, `u_mode` branch);
-`src/ui/shader-ui.js` is the panel. The choice + driving signals save with
+The visual output is not a menu of presets. It is a **node graph on the same
+canvas as the instrument**, wired with the same cables, and it compiles to a
+GLSL fragment shader.
+
+- **Thirty-odd node types**, in the add menu under `Shader · …` — sources
+  (UV, centred coordinate, time, audio level, RGB), coordinate transforms
+  (polar, rotate, scale, offset, tile, kaleidoscope, swirl), patterns
+  (gradient, radial, checker, stripes, circle, ring, box, wave, noise,
+  clouds, cells), maths, vector combine/split, and colour (palette, HSV,
+  levels, saturation, invert, gamma). One **Output** node is the picture;
+  everything upstream of it is what you see, and anything not upstream of it
+  costs nothing.
+- **Sockets are typed and coloured by type** — a *number*, a *coordinate* or
+  a *colour*. Deliberately outside the golden-angle wheel the signals walk,
+  so a shader cable never reads as an unidentified signal. A mismatch is
+  **converted rather than refused** (a number into a colour socket is a
+  grey), because refusing would mean explaining a type system through a
+  disabled socket.
+- **Every number input is an engine parameter** (`shx_<id>_<in>`, in the
+  picker under SHADER NODES), so an ordinary signal cable drives it — curve,
+  range, steps and all — and arrives as a `uniform float`. Wire a wrist to a
+  noise node's SCALE and the noise breathes with your arm. This is the whole
+  point of putting the shader on this canvas rather than beside it.
+- **The reverse can never happen.** A per-pixel colour has no single value,
+  so a shader output is refused as a driver for an audio parameter. That rule
+  lives in one place (`shadergraph.connect`) and is pinned by a test.
+
+**It recompiles only when the patch's shape changes.** Turning a knob does
+not: a knob is a uniform, uploaded every frame for nothing. Adding a node,
+rewiring a cable or changing a node's choice rebuilds the program — and a
+program that fails to link is **refused rather than installed**, so the last
+one that worked keeps drawing while the status line under the picture says
+what the driver said. A patch mid-edit is often briefly nonsense, and a black
+panel that stays black is much harder to get out of than a picture that has
+not caught up.
+
+**Nothing is seeded by default.** Shader nodes are nodes on the shared canvas,
+and cables on that canvas are what gets saved and shared — so populating the
+shader out of the box would put four nodes and three cables into every patch,
+every saved setup and every share link, for people who never open the panel.
+The panel shows what to press instead: **STARTER** builds a worked example
+(clouds → palette ← time → output), **+ NODE** opens the canvas's own add menu.
+
+A cycle compiles instead of hanging, breaking at the seam with the socket's
+default: a shader has no previous frame to read, so a loop is a mistake rather
+than a feedback path. `prefers-reduced-motion` freezes the time term — the
+picture keeps reacting to what you play, it just stops moving on its own.
+
+`src/shadergraph.js` is the catalogue and the compiler, DOM-free and
+WebGL-free (it returns source as a string) so it runs under `node --test`;
+`src/shader.js` owns the GL context; `src/ui/shadernode-ui.js` draws the
+nodes; `src/ui/shader-ui.js` is the output panel. The whole graph saves with
 presets.
 
 ## Accessibility & colour (OKLab)
@@ -2112,10 +2142,17 @@ all:
   the camera runs, so the empty frame is the target: one big **START CAMERA**,
   centred, at any size and in fullscreen alike, where a control in the page
   header would be off-screen entirely. It is a real `<button>`, so the tap
-  that requests camera access is a user gesture wherever it happens. Once
-  there is a picture that target is gone — covering the view with a button
-  would be covering the instrument — and **⏹ STOP** takes its place in the
-  strip beside ⛶ FULL.
+  that requests camera access is a user gesture wherever it happens — and
+  `getUserMedia` is the first thing that tap does, before anything is
+  awaited. That order is load-bearing: the permission prompt is gated on
+  transient user activation, which expires seconds after the tap, so loading
+  the models first (as this used to) meant the prompt arrived long after the
+  activation was gone, or never — reported as the camera simply not starting
+  when you press the frame. The models are loaded behind the live picture
+  instead, and models that fail cost the tracking rather than the camera.
+  Once there is a picture that target is gone — covering the view with a
+  button would be covering the instrument — and **⏹ STOP** takes its place
+  in the strip beside ⛶ FULL.
 - **Mute, SHARE, the source link and ♥** are in the header bar, where every
   other control of the tool is — and in fullscreen, which has no bar, the
   same strip rides the picture bottom-left, opposite the picture's own
@@ -2162,7 +2199,7 @@ one radius, both strips at the shared inset — because "they all look the same
 size" is exactly the claim a stylesheet quietly stops honouring.
 
 What is left in the page header is what belongs to the **tool** rather than
-the instrument: settings and the tour. And what the camera *tracks* went the
+the instrument: settings and help. And what the camera *tracks* went the
 other way, off the picture and into **Camera Input** beside it (above) — and
 specifically *inside* that container, with the picture the toggles apply to.
 They had been put in `#cam-extras`, the drop host that sits below the video,
@@ -2513,9 +2550,9 @@ because degrees per second is spans per second like anything else.
 They are ordinary bus signals rather than a special case, so everything that
 already walks the bus picks them up for free — the patchbay (a velocity's
 socket sits on its own channel row beneath its measure's, and it is labelled
-`… Δ` wherever a signal is named), the shader's axis pickers, the signal lists
-on the input nodes, saved patches, and `trackersFor()`, which knows a velocity
-needs the same model its measure does.
+`… Δ` wherever a signal is named), the shader nodes' number inputs, the signal
+lists on the input nodes, saved patches, and `trackersFor()`, which knows a
+velocity needs the same model its measure does.
 
 - **Signed.** Which *way* something is moving is half of what it tells you, so
   the range is symmetric about zero: full scale is four spans of the source per
@@ -2667,7 +2704,8 @@ src/
                     templates, calibration store
   chordmode.js      Gesture → scale-degree chord/note mapping (hold-to-sound)
   devmode.js        Developer-mode toggle (gates under-construction features)
-  shader.js         WebGL visual-output shader (reacts to audio + signals)
+  shadergraph.js    Shader node catalogue + GLSL compiler (DOM-free)
+  shader.js         WebGL runtime for the compiled shader graph
   cv.js             MediaPipe Hand + swappable pose source (dev inference HUD)
   posebackends.js   Pose backends: MediaPipe lite/full/heavy + TF.js MoveNet
   depth.js          Optical depth layer (monocular estimate + WebXR LiDAR/ToF)
@@ -2683,7 +2721,8 @@ src/
     keyboard.js     Shared piano-keyboard renderer
     playalong-ui.js Falling-note highway renderer + game panel
     gesture-ui.js   Gesture Mode panel section (assignments + handshape library)
-    shader-ui.js    Shader visual-output panel section
+    shader-ui.js    Shader output panel (the picture, status, STARTER)
+    shadernode-ui.js  Shader nodes on the canvas: typed sockets, add menu
     signals.js      Signal lists inside the camera / mic / metronome nodes
                     (output sockets, live values)
     mapper-ui.js    The patch on the canvas: sockets on the panels, cables,
@@ -2692,7 +2731,9 @@ src/
     model-ui.js     Dev-mode pose model comparison panel
     donate.js       Support/donations popover
     preset-menu.js  PRESET button → your saved setups + starting patches
-    tutorial.js     Guided tour — TOUR_STEPS data + spotlight engine
+    nodedocs.js     What every node does — the doc behind each ?, and read state
+    docpop.js       The card a ? opens (and the header ?)
+    group-volume.js Which node is which sound source; keeps group faders → engine trims
     viz.js          Waveform oscilloscope canvas
     hotkeys.js      Keyboard shortcuts (mute, default Space) — rebindable,
                     persisted, and kept clear of typing
@@ -2715,9 +2756,9 @@ tests/
                     --calibrate prints vectors + pairwise template distances
   layout/           The header at every breakpoint, and the node workspace —
                     adoption, placement, chrome, gestures, persistence
-  tutorial/         Tour staleness guard — fails CI if a step targets dead UI
+  tutorial/         Node docs guard — every node has a ? and a doc; the card works
   sw-freshness/     Proves a redeploy is visible on the very next load
-  audio-launch/     Engine starts muted and usable against a *suspended*
+  audio-launch/     Engine starts unmuted and usable against a *suspended*
                     AudioContext — the state real browsers give you and
                     headless Chromium does not
   pose-bench/       Synthetic 3D-mannequin pose-model benchmark
@@ -2817,7 +2858,7 @@ under anything a person could point at.
 
 The capture itself is the honest first-run state — camera off (there is no
 webcam in CI, and a fake device renders a spinning test pattern that would
-misrepresent the product), audio started and muted, and the default Hands patch
+misrepresent the product), audio started, and the default Hands patch
 loaded, which is exactly what one click on **PRESET** does.
 
 One caveat: a capture taken on a machine with different fonts will differ

@@ -46,6 +46,15 @@
      wash reads as a hole, this reads as the room going dark. */
   --scrim: rgba(6, 9, 15, 0.72);
   --scrim-blur: blur(3px);
+  /* Shader socket types. A shader node's sockets are coloured by WHAT THEY
+     CARRY rather than by which signal reaches them: in a graph where
+     anything plugs into anything, the type is the fact worth seeing at a
+     glance. Three hues far enough apart to be told apart at socket size —
+     and deliberately outside the golden-angle wheel the signals walk, so a
+     shader cable never reads as "some signal I have not identified". */
+  --shx-float: oklch(0.80 0.14 95);    /* a number      — amber  */
+  --shx-vec2:  oklch(0.78 0.13 175);   /* a coordinate  — teal   */
+  --shx-vec3:  oklch(0.76 0.16 330);   /* a colour      — magenta */
   --accent-l: 0.72; --accent-c: 0.13;
   /* LED tokens: glyphs that *light up* — the status dot, gesture dots, meter
      and bar fills, the scope trace. Never text. On dark grounds a lit thing
@@ -1194,6 +1203,52 @@ body.no-scroll { overflow: hidden; }
 .fn-opt input[type="number"] { width: 46px; flex: 0 0 46px; }
 .fn-opt input[type="range"] { flex: 1 1 60px; min-width: 40px; }
 
+/* A shader node is a function node with typed sockets. The socket's own
+   --wire is set per port by ui/shadernode-ui.js, so the ring is the type's
+   colour whether or not anything is plugged into it — an empty COLOUR socket
+   still says "a colour goes here", which is the whole point of typing them. */
+.shx-port { border-color: var(--wire); }
+.shx-port[data-side="out"] { background: var(--wire); }
+/* The one-line description under a node. Small, dim and unselectable: it is
+   there to be read once while you learn the node and ignored ever after. */
+.shx-help {
+  font-size: 9px;
+  line-height: 1.35;
+  color: var(--dim);
+  padding: 0 8px 6px;
+  max-width: 190px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* What the driver said, when it refused the patch. The picture above stays
+   on the last program that worked, so this is the only sign that the newest
+   edit has not landed — it has to be legible rather than tasteful. */
+.shader-status {
+  font-size: 9px;
+  line-height: 1.3;
+  color: var(--dim);
+  min-height: 0;
+  padding: 2px 0 0;
+  word-break: break-word;
+}
+.shader-status.bad { color: var(--red); }
+
+/* A shader cable's editor: one line and a ×. It shares the popover shell with
+   the signal cable's editor, so it only needs the type chip and a tighter
+   layout — there is nothing here to make room for. */
+.shx-editor { display: flex; align-items: center; gap: 8px; max-width: 320px; }
+.shx-editor .ng-ed-title { flex: 1 1 auto; }
+.shx-type {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid var(--wire);
+  border-radius: 2px;
+  color: var(--wire);
+  font-size: 8px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
 /* Cables. `pointer-events: stroke` so a cable can be clicked without its
    bounding box swallowing the canvas around it. */
 .ws-cables { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; z-index: 5; pointer-events: none; }
@@ -1623,6 +1678,7 @@ option { background: var(--panel); }
   border: 1px solid var(--border);
   border-radius: 2px;
 }
+.shader-frame { position: relative; }
 .shader-canvas {
   display: block;
   width: 100%;
@@ -1631,6 +1687,26 @@ option { background: var(--panel); }
   border: 1px solid var(--border);
   border-radius: 2px;
 }
+/* Shown over the canvas while the shader graph has no nodes in it. Centred
+   on the picture it stands in for, so the panel reads as "nothing here yet"
+   rather than as "something here has failed". */
+.shader-empty {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--dim);
+  pointer-events: none;
+}
+.shader-empty[hidden] { display: none; }
+.shader-empty b { color: var(--fg); font-weight: 600; letter-spacing: 1px; }
 .quant-notes {
   margin-top: 6px;
   text-align: center;
@@ -1979,67 +2055,53 @@ input[type="range"]::-webkit-slider-thumb {
   transform: translateX(-50%) translateY(0);
 }
 
-/* ── Guided tour ─────────────────────────────────────────── */
-/* The scrim is always up during the tour, and ui/tutorial.js cuts a hole in
-   it around whatever the current step points at — so the target keeps its
-   own colour and its own focus while the rest of the app recedes. The hole
-   is why the dimming can be this heavy: the one thing you are being asked
-   to look at is never behind it. */
-#tour-backdrop {
-  position: fixed; inset: 0;
-  background: var(--scrim);
-  backdrop-filter: var(--scrim-blur);
-  -webkit-backdrop-filter: var(--scrim-blur);
-  z-index: 1000;
-  pointer-events: none;   /* the app stays clickable — "try it now" works */
-  transition: clip-path 0.25s;
-}
-/* Just the outline now: the scrim behind it does the dimming, where it used
-   to be this ring's own 9999px shadow doing it. */
-#tour-ring {
+/* ── Node docs (the card a `?` opens) ────────────────────── */
+/* No scrim and no spotlight: a small card beside the button, with the canvas
+   still live underneath. ui/docpop.js positions it inside the viewport. */
+.doc-pop {
   position: fixed;
-  border: 2px solid var(--cyan);
-  border-radius: 4px;
-  box-shadow: 0 0 18px var(--led-accent);
-  z-index: 1001;
-  pointer-events: none;
-  transition: left 0.25s, top 0.25s, width 0.25s, height 0.25s;
-}
-#tour-card {
-  position: fixed;
-  width: 340px; max-width: calc(100vw - 24px);
+  z-index: 1002;
+  width: 340px;
+  overflow: auto;
   background: var(--surface);
   border: 1px solid var(--cyan);
-  padding: 12px 14px;
-  z-index: 1002;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  border-radius: 6px;
+  padding: 10px 14px 12px;
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.5));
 }
-#tour-card.centered {
-  left: 50% !important; top: 50% !important;
-  transform: translate(-50%, -50%);
-}
-#tour-card.sheet {
-  left: 0 !important; right: 0; top: auto !important; bottom: 0;
-  width: 100%; max-width: none;
-  border-left: none; border-right: none; border-bottom: none;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
-}
-.tour-head { display: flex; align-items: center; }
-.tour-count {
-  font-size: 9px; letter-spacing: 1px; color: var(--dim);
-  font-variant-numeric: tabular-nums;
-}
-.tour-head .rm-btn { margin-left: auto; }
-.tour-title {
+.doc-pop[hidden] { display: none; }
+.doc-pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.doc-pop-title {
+  flex: 1 1 auto;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 14px; font-weight: 600; color: var(--cyan);
-  margin: 6px 0 4px;
 }
-.tour-body { font-size: 11px; line-height: 1.55; color: var(--text); }
-.tour-body b { color: var(--amber); font-weight: 500; }
-.tour-nav { display: flex; justify-content: space-between; margin-top: 12px; gap: 8px; }
-.tour-nav .btn[disabled] { opacity: 0.4; cursor: default; }
-/* ? button pulses when the tour has gained steps this user hasn't seen */
+/* Looks small, hits big: on a phone this × is how the card goes away, and a
+   17-pixel target was once all the old tour offered. */
+.doc-pop-close {
+  position: relative;
+  flex: 0 0 auto;
+  width: 24px; height: 24px; padding: 0;
+  border: 1px solid var(--border2); border-radius: 4px;
+  background: none; color: var(--dim); cursor: pointer;
+  font-size: 15px; line-height: 1;
+}
+.doc-pop-close:hover { color: var(--text); border-color: var(--cyan); }
+.doc-pop-close::before {
+  content: '';
+  position: absolute; top: 50%; left: 50%;
+  width: 44px; height: 44px;
+  transform: translate(-50%, -50%);
+}
+.doc-pop-body { font-size: 11.5px; line-height: 1.55; color: var(--text); }
+.doc-pop-body p { margin: 6px 0; }
+.doc-pop-body ul { margin: 6px 0; padding-left: 18px; }
+.doc-pop-body li { margin: 3px 0; }
+.doc-pop-body b { color: var(--amber); font-weight: 500; }
+/* The header's `?` carries the same three states a node's does: a quiet amber
+   mark for unread, a cyan pulse while it is unread AND relevant, and nothing
+   once it has been read. */
+#tour-btn.tour-unread { border-color: color-mix(in oklab, var(--amber) 55%, transparent); color: var(--amber); }
 #tour-btn.tour-new { border-color: var(--cyan); color: var(--cyan); }
 @keyframes tour-pulse {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--led-accent) 50%, transparent); }
@@ -2048,7 +2110,7 @@ input[type="range"]::-webkit-slider-thumb {
 #tour-btn.tour-new { animation: tour-pulse 2s infinite; }
 @media (prefers-reduced-motion: reduce) {
   #tour-btn.tour-new { animation: none; }
-  #tour-ring { transition: none; }
+  .sec-help.help-now { animation: none; }
 }
 
 #audio-panel { display: flex; flex-direction: column; }
@@ -2145,6 +2207,36 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--cyan);
   border-color: var(--cyan);
   outline: none;
+}
+/* Unread: a dot, and nothing else. This is the state most `?`s are in most
+   of the time — help about a panel you are not using — so it has to be
+   legible without ever asking for attention. */
+.sec-help.help-unread {
+  color: var(--amber);
+  border-color: color-mix(in oklab, var(--amber) 55%, transparent);
+}
+.sec-help.help-unread::after {
+  content: '';
+  position: absolute;
+  top: -1px; right: -1px;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+.sec-help { position: relative; }
+/* Unread AND about what you are set up to play: the same dot, plus a slow
+   halo. Two seconds a cycle and it stops the moment you press it — the tour
+   no longer opens itself, so this is the whole of how the app suggests
+   there is something worth reading. */
+.sec-help.help-now {
+  color: var(--cyan);
+  border-color: var(--cyan);
+  animation: help-pulse 2.4s ease-in-out infinite;
+}
+.sec-help.help-now::after { background: var(--cyan); }
+@keyframes help-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--cyan) 45%, transparent); }
+  50%      { box-shadow: 0 0 0 4px transparent; }
 }
 /* A header that already pushes something right (an ON/OFF pill) has its own
    auto margin; a second one would collapse to nothing, so the help button
@@ -2308,7 +2400,20 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   box-shadow: var(--shadow);
 }
 .node-group.collapsed > .node-head { border-radius: 4px 4px 0 0; background: var(--faint); }
-.group-title { flex: 1 1 auto; }
+.group-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The group's fader: a small slider in the frame's own header, because the
+   header is the one part of a frame that is always on screen and always the
+   frame's — a control inside it could be mistaken for a member's. */
+.group-vol {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 9px; letter-spacing: 0.5px; color: var(--dim);
+  text-transform: none;
+}
+.group-vol input[type=range] { width: 64px; margin: 0; accent-color: var(--cyan); }
+.group-vol-val { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+.group-vol.silent { opacity: 0.45; }
+.group-vol.silent input { cursor: not-allowed; }
 .group-rename {
   flex: 1 1 auto; min-width: 0;
   font: inherit; letter-spacing: 1px;
@@ -2813,3 +2918,23 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
     transform: none;
   }
 }
+
+/* Camera diagnostics (?debug) — see src/ui/camdiag.js. Low on the screen,
+   clear of the camera frame at the top of the phone column, because a panel
+   over the frame would block the very tap it is there to watch. On phones it
+   sits above the docked header bar. */
+#cam-diag {
+  position: fixed; left: 4px; right: 4px; bottom: 8px; z-index: 5000;
+  max-height: 30vh; display: flex; flex-direction: column;
+  background: color-mix(in oklab, var(--surface) 94%, transparent);
+  border: 1px solid var(--amber); border-radius: 6px;
+  font: 10px/1.35 'IBM Plex Mono', monospace; color: var(--text);
+}
+.cam-diag-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-bottom: 1px solid var(--border2); }
+.cam-diag-head b { flex: 1; color: var(--amber); letter-spacing: 1px; }
+.cam-diag-head button {
+  font: inherit; padding: 4px 8px; min-height: 28px;
+  background: none; color: var(--text); border: 1px solid var(--border2); border-radius: 4px;
+}
+.cam-diag-list { overflow: auto; padding: 4px 6px; white-space: pre-wrap; word-break: break-word; user-select: text; }
+@media (max-width: 767.98px) { #cam-diag { bottom: 124px; max-height: 26vh; } }
