@@ -122,8 +122,8 @@ function build() {
   wireKeyBtn('#cursor-key-btn', 'cursor');
 
   // Reflect dev mode both ways: the toggle sets it, and `onChange` keeps the
-  // button honest when something else does — the tour turns it on to show the
-  // sections it reveals, and a stale OFF caption here would be a lie.
+  // button honest when something else changes it (a test, a preset), and a
+  // stale OFF caption here would be a lie.
   const devBtn = el.querySelector('#dev-btn');
   devBtn.addEventListener('click', () => devmode.toggle());
   devmode.onChange(on => {

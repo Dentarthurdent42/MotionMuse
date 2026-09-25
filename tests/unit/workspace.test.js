@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createState, serialize, ensure, group, ungroup, remove, setParent,
          visualOwner, exposedPorts, isShown, fitTransform, stackColumns,
-         descendants, nodeId, kindOf, keyOf } from '../../src/workspace.js';
+         descendants, nodeId, kindOf, keyOf, gainOf, setGroupVolume } from '../../src/workspace.js';
 
 test('ids carry their kind', () => {
   assert.equal(nodeId('sig', 'hand_L_y'), 'sig:hand_L_y');
@@ -104,6 +104,39 @@ test('a collapsed group exposes only outward-facing sockets', () => {
     'fn_1_b is fed from outside; fn_1_a is internal and b is unwired');
   assert.deepEqual(outs.map(p => p.key), ['fn_1'],
     'a only feeds a member, so it is hidden with the group');
+});
+
+test('group volumes nest like subgroup faders', () => {
+  const s = createState(null);
+  ensure(s, 'panel:oscillators'); ensure(s, 'panel:metronome'); ensure(s, 'panel:camera');
+  const inner = group(s, ['panel:oscillators'], 'LEAD');
+  const outer = group(s, [inner.id, 'panel:metronome'], 'AUDIO');
+  assert.equal(inner.vol, 1, 'a new group is at full volume');
+  assert.equal(gainOf(s, 'panel:oscillators'), 1);
+  setGroupVolume(s, outer.id, 0.5);
+  setGroupVolume(s, inner.id, 0.5);
+  assert.equal(gainOf(s, 'panel:oscillators'), 0.25, 'inner × outer');
+  assert.equal(gainOf(s, 'panel:metronome'), 0.5, 'only the group it is in');
+  assert.equal(gainOf(s, 'panel:camera'), 1, 'outside every group: untouched');
+  assert.equal(inner.vol, 0.5, 'the outer fader does not rewrite the inner one');
+
+  setGroupVolume(s, inner.id, 7);
+  assert.equal(inner.vol, 1, 'clamped to 1');
+  setGroupVolume(s, inner.id, -3);
+  assert.equal(inner.vol, 0, 'clamped to 0');
+  assert.equal(setGroupVolume(s, 'panel:camera', 0.2), false, 'only groups have a volume');
+
+  setGroupVolume(s, inner.id, 0.3);
+  const back = createState(JSON.parse(JSON.stringify(serialize(s))));
+  assert.equal(back.nodes.get(inner.id).vol, 0.3, 'saved and restored');
+  assert.equal(back.nodes.get(outer.id).vol, 0.5);
+  assert.ok(!('vol' in serialize(createState(null))), 'no noise in a fresh store');
+
+  const junk = createState({ nodes: { 'group:g1': { title: 'X', vol: 'loud' } } });
+  assert.equal(junk.nodes.get('group:g1').vol, 1, 'junk is full volume, never silence');
+
+  ungroup(s, inner.id);
+  assert.equal(gainOf(s, 'panel:oscillators'), 0.5, 'ungrouping drops that fader');
 });
 
 test('fitTransform centres a box and never zooms past 1', () => {

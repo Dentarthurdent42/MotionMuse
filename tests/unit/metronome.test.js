@@ -96,6 +96,7 @@ test('MUTE stops the click and nothing else', () => {
   engine.click = (...a) => calls.push(a);
   try {
     fresh();
+    metronome.setMuted(false);           // the click starts muted; hear it first
     metronome.tick(10);
     assert.equal(calls.length, 1, 'the first beat clicks');
     assert.equal(calls[0][1], true, 'and it is the accented downbeat');
@@ -152,6 +153,16 @@ test('the shared arp follows the metronome when synced, the free rate otherwise'
   assert.ok(Math.abs((90 / 60) * a.sync - 3) < 1e-9, 'synced rate is 3 steps/s at 90 BPM');
   metronome.setOn(false);
   arpvoice.set({ sync: 0 });
+});
+
+test('the click is muted by default, and an older setup that never said is too', () => {
+  metronome.load({});
+  assert.equal(metronome.config().muted, true, 'a fresh metronome is silent');
+  metronome.load({ on: false, bpm: 100, sig: '4/4' });
+  assert.equal(metronome.config().muted, true, 'no muted key → the default');
+  metronome.load({ muted: false });
+  assert.equal(metronome.config().muted, false, 'an explicit unmute is kept');
+  metronome.load({});
 });
 
 test('settings round-trip through serialize/load; junk falls back', () => {

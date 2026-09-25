@@ -272,7 +272,7 @@ export async function consumeSharedLink() {
     const kept = saveConfig(data.label, shareableSnapshot(data));
     if (kept) setCurrentConfig(kept.name);
     // Is this the first time this particular link has been followed? Only a
-    // first open is worth a tour: reopening a pinned QR, or reloading, lands
+    // first open is worth flagging help for: reopening a pinned QR, or reloading, lands
     // you on a setup that is already yours.
     const fp = shareFingerprint(payload);
     const first = lsGet(SEEN_KEY) !== fp;
@@ -296,7 +296,7 @@ export async function consumeSharedLink() {
 // Say so once, after the reload — otherwise the app silently looks different
 // from the one the person left.
 // Returns what just arrived, or null — main.js uses it to decide whether the
-// setup is new enough to be worth a tour.
+// setup is new enough for its help to be worth flagging.
 export function announceSharedLink() {
   const mark = sessionStorage.getItem('motionmuse-shared');
   if (!mark) return null;

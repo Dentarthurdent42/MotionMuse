@@ -12,8 +12,9 @@
 // A function, not a constant: the oscillator bank is resizable, and the
 // function nodes' inputs come and go.
 
-import { engine } from './engine.js';
-import { graph }  from './graph.js';
+import { engine }      from './engine.js';
+import { graph }       from './graph.js';
+import { shadergraph } from './shadergraph.js';
 
 // [category, keys, owning node id] — every key a node can carry. Some are
 // registered by the module that owns their state (src/ui/looper-ui.js,
@@ -49,6 +50,10 @@ const ALL_CATS = () => [
                        'lead_env_on', 'lead_attack', 'lead_decay', 'lead_sustain', 'lead_release'], 'panel:volume-quantize'],
   // The function nodes' input sockets — as many as there are nodes.
   ['Graph Nodes',  graph.inputKeys(), null],
+  // The shader nodes' number inputs. A shader node's coordinate and colour
+  // sockets are not here: they take a cable from another shader node, not a
+  // signal, and shadergraph.js owns those.
+  ['Shader Nodes', shadergraph.inputKeys(), null],
 ];
 export const PARAM_CATS = () => ALL_CATS()
   .map(([cat, keys, owner]) => [cat, keys.filter(k => engine.PARAMS[k]), owner])
@@ -58,6 +63,8 @@ export const PARAM_CATS = () => ALL_CATS()
 export function paramOwner(key) {
   const fn = /^fn_(\d+)_/.exec(key);
   if (fn) return `fn:${fn[1]}`;
+  const shx = /^shx_(\d+)_/.exec(key);
+  if (shx) return `shx:${shx[1]}`;
   for (const [, keys, owner] of ALL_CATS()) if (keys.includes(key)) return owner;
   return null;
 }
