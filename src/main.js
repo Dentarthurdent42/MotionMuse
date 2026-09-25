@@ -50,6 +50,7 @@ import { initStage, updateStage }           from './ui/stage-ui.js';
 import { tickLooperUI, pedalPressed }       from './ui/looper-ui.js';
 import { looper }                           from './looper.js';
 import * as preset                          from './preset.js';
+import { NEWER_SETUP }                      from './presetformat.js';
 
 // Before anything else runs, so an early failure is on the log too (?debug).
 initCamDiag({ buildInfo, buildLabel });
@@ -736,10 +737,15 @@ loadFile.addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    const { uiChanged } = await preset.loadFromFile(file);
+    const { uiChanged, newer } = await preset.loadFromFile(file);
     refreshFromState();
     preset.saveLocal();
-    if (uiChanged) {
+    if (newer) {
+      toast(`${NEWER_SETUP} — ${uiChanged ? 'reloading' : 'loaded'}`);
+      // Longer than the usual 700ms: this is the one message worth reading
+      // before the reload takes it away.
+      if (uiChanged) setTimeout(() => location.reload(), 2500);
+    } else if (uiChanged) {
       // Theme, panel sizes, section heights and tracker state are read once at
       // startup by the modules that own them, so a reload is how they take
       // effect — cheaper and more honest than a second apply path per module

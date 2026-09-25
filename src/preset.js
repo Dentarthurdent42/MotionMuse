@@ -21,13 +21,18 @@ import { metronome } from './metronome.js';
 import { shader } from './shader.js';
 import { lsGet, lsSet } from './storage.js';
 import { isString, isRecord } from './is.js';
+import { PRESET_VERSION, migrate } from './presetformat.js';
 
 const LS_KEY = 'motionmuse-session-v1';
 const TAG    = 'motionmuse-sound';
-// Preset files saved before the rename carry the old tag. They're the same
+// Snapshots saved before a rename carry that era's tag. They're the same
 // format, so keep loading them rather than telling people their file is
-// invalid.
-const LEGACY_TAGS = ['biosignal-sound'];
+// invalid. There have been two renames — biosignal → motionmuse → bytebard →
+// motionmuse — and the ByteBard one is when sharing shipped, so every QR code
+// made in that window says `bytebard-sound`. Only `biosignal-sound` used to be
+// listed here, which turned every one of those codes into "not a MotionMuse
+// setup". tests/unit/share-compat.test.js opens a real one.
+const LEGACY_TAGS = ['bytebard-sound', 'biosignal-sound'];
 
 // Everything that is "how the app is set up" but lives outside the audio graph
 // and the patch: which theme, how the panels and sections are sized, which
@@ -88,7 +93,7 @@ function uiApply(ui) {
 
 export function snapshot() {
   return {
-    app: TAG, v: 2,
+    app: TAG, v: PRESET_VERSION,
     kit: currentKit(),
     graph: graph.serialize(),
     // A shape's cable into gesture mode is implied by the assignment saved
@@ -106,8 +111,18 @@ export function snapshot() {
   };
 }
 
+const isOurs = data => isRecord(data) && (data.app === TAG || LEGACY_TAGS.includes(data.app));
+
+// Every way a snapshot comes back in — a session, a file, a saved
+// configuration, a shared link — is brought up to the current format first
+// (src/presetformat.js), so the modules below only ever read one shape.
 export function apply(data) {
-  if (!data || (data.app !== TAG && !LEGACY_TAGS.includes(data.app))) return false;
+  if (!isOurs(data)) return false;
+  applyCurrent(migrate(data).data);
+  return true;
+}
+
+function applyCurrent(data) {
   if (data.audio) engine.restore(data.audio);
   // Nodes BEFORE cables: a mapping can name a node's socket, which has to
   // exist by the time the cable is strung. That goes for the shader's nodes
@@ -127,17 +142,21 @@ export function apply(data) {
   // Restore the kit *selection label* only — the exact parameter values came
   // from the snapshot above, so re-applying the kit would stomp them.
   setCurrentLabel(data.kit ?? 'custom');
-  return true;
 }
 
 // Full restore including layout/theme/tracking. Separate from apply() because
 // apply() runs on every session restore, and rewriting the UI keys on each
 // startup with values that came from that same startup is pointless churn —
 // this is for an explicit LOAD of a saved file.
+//
+// `newer` says the snapshot came from a later version of the app than this
+// one. It is applied anyway — most of it usually still works — but the caller
+// should say so, or whatever this build does not know about vanishes silently.
 export function applyAll(data) {
-  const ok = apply(data);
-  const uiChanged = ok && uiApply(data.ui);
-  return { ok, uiChanged };
+  if (!isOurs(data)) return { ok: false, uiChanged: false, newer: false };
+  const { data: current, newer } = migrate(data);
+  applyCurrent(current);
+  return { ok: true, uiChanged: uiApply(current.ui), newer };
 }
 
 export function saveLocal() {
@@ -163,7 +182,7 @@ export function downloadFile(name = 'motionmuse-preset.json') {
 // caller can surface a clear message.
 export async function loadFromFile(file) {
   const data = JSON.parse(await file.text());
-  const { ok, uiChanged } = applyAll(data);
+  const { ok, uiChanged, newer } = applyAll(data);
   if (!ok) throw new Error('Not a MotionMuse preset');
-  return { uiChanged };
+  return { uiChanged, newer };
 }
