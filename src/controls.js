@@ -23,7 +23,8 @@ import { arpvoice }  from './arpvoice.js';
 import { ARP_PATTERNS } from './arp.js';
 import { SCALES, NOTE_NAMES } from './scale.js';
 import { chordmode, VOICINGS, EXPRESSION_MODES, EXPRESSION_CONTROLS } from './chordmode.js';
-import { DEGREE_KEYS, RELEASE_KEY, ACC_KEYS, CABLE_ID } from './chordcables.js';
+import { DEGREE_KEYS, RELEASE_KEY, ACC_KEYS, QUALITY_CABLE_KEYS, CABLE_ID } from './chordcables.js';
+import { QUALITY_SYMBOL } from './chords.js';
 import { radial, VOLUME_MODES, FINGERS } from './radial.js';
 import { micSource } from './mic.js';
 import { looper }    from './looper.js';
@@ -397,6 +398,12 @@ CONTROLS[ACC_KEYS.sharp] = { label: 'Sharp', min: 0, max: 1, trigger: true, read
                              apply: onHold(on => chordmode.setCableHeld(CABLE_ID('sharp'), on)) };
 CONTROLS[ACC_KEYS.flat]  = { label: 'Flat', min: 0, max: 1, trigger: true, read: () => 0,
                              apply: onHold(on => chordmode.setCableHeld(CABLE_ID('flat'), on)) };
+// The Chord Quality node's inputs, the same way round: a shape's cable is the
+// assignment, any other cable holds the quality while it reads high.
+for (const [q, key] of Object.entries(QUALITY_CABLE_KEYS)) {
+  CONTROLS[key] = { label: `Quality ${QUALITY_SYMBOL[q] ?? q}`, min: 0, max: 1, trigger: true, read: () => 0,
+                    apply: onHold(on => chordmode.setCableHeld(CABLE_ID(`q_${q}`), on)) };
+}
 
 export const CONTROL_KEYS = Object.keys(CONTROLS);
 export const isControl = key => key in CONTROLS;

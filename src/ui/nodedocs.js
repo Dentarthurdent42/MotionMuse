@@ -132,6 +132,18 @@ export const PANEL_DOCS = {
           shapes.</li>
       </ul>`,
   },
+  'chord-quality': {
+    title: 'Chord Quality', modes: ['chords'],
+    body: `<p>Your <b>other hand</b> — the one not naming the degree — sets the
+      chord's quality. The root stays the degree's; the chord becomes this.</p>
+      <ul>
+        <li><b>Thumbs up</b> major, <b>thumbs down</b> minor (the same shapes
+          that sharpen and flatten single notes), the <b>O</b> diminished,
+          <b>rock horns</b> 7, <b>I love you</b> maj7.</li>
+        <li>Hold nothing and the chord is the key's own.</li>
+        <li>Pick a shape per row, or wire any signal into a row's socket.</li>
+      </ul>`,
+  },
   'radial-mode': {
     title: 'Radial Mode',
     body: `<p>A ring worn on your wrist or shoulder, one section per note of the

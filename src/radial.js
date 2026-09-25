@@ -42,6 +42,7 @@ import { gesture }    from './gesture.js';
 import { torsoFrame } from './math.js';
 import { makeOneEuro } from './filter.js';
 import { NATURAL, SHARP, FLAT } from './chords.js';
+import { isString } from './is.js';
 
 const DEG = 180 / Math.PI;
 
@@ -470,8 +471,10 @@ export const radial = (() => {
   // One key, shared: the same effectiveKey gesture mode plays in.
   const sectionCount = () => chordmode.degreeCount();
 
+  // `acc` is the off hand's modifier: an accidental in note voicing, a chord
+  // quality (a string) in chord voicing — see accidentalNow.
   const freqsFor = (degree, acc) => {
-    if (voicing === 'chord') return chordmode.chordAt(degree)?.freqs ?? null;
+    if (voicing === 'chord') return chordmode.chordAt(degree, isString(acc) ? acc : null)?.freqs ?? null;
     const n = chordmode.noteAt(degree, acc);
     return n ? [n.freq] : null;
   };
@@ -479,14 +482,21 @@ export const radial = (() => {
   // The hand NOT wearing the menu bends the note, with the same two shapes
   // gesture mode uses (chordmode.accidentalGestures() — one setting, shared).
   const offSide = () => (side === 'L' ? 'R' : 'L');
+  //
+  // In chord voicing the same hand names a QUALITY instead, from the Chord
+  // Quality node's shapes (chordmode.qualityGestures() — shared, like the
+  // accidentals): the ring picks the degree, the off hand makes it minor.
   const accidentalNow = () => {
-    if (voicing !== 'note') return NATURAL;
     // With the other hand playing the volume, asking it to hold a thumb as
     // well would be asking for a specific openness — a specific loudness —
     // so accidentals stand down there, exactly as in gesture mode.
     if (volume.mode === 'hand') return NATURAL;
     const held = gesture.activeOn(offSide());
     if (held === null) return NATURAL;
+    if (voicing !== 'note') {
+      const qual = chordmode.qualityGestures();
+      return Object.keys(qual).find(q => qual[q] === held) ?? NATURAL;
+    }
     const acc = chordmode.accidentalGestures();
     if (held === acc.sharp) return SHARP;
     if (held === acc.flat) return FLAT;
@@ -766,6 +776,12 @@ export const radial = (() => {
 
     // ── For the panel and the overlay ───────────────────────────────────
     geometry: () => geo,
+    // The quality the off hand is holding right now (chord voicing), for the
+    // Chord Quality node's indicator — null for "the key's own".
+    currentQuality() {
+      const m = accidentalNow();
+      return isString(m) ? m : null;
+    },
     soundingSection: () => sounding,
     // How many notes the current section gives the shared arp's pattern —
     // the one question only this mode can answer (see chordmode.arpPoolSize).
@@ -780,7 +796,7 @@ export const radial = (() => {
     // chord voicing.
     sectionLabel(i, { long = false } = {}) {
       if (voicing === 'chord') {
-        const c = chordmode.chordAt(i);
+        const c = chordmode.chordAt(i, i === sounding && isString(lastAcc) ? lastAcc : null);
         return long ? `${c.numeral} · ${c.rootName}` : c.numeral;
       }
       const n = chordmode.noteAt(i, i === sounding ? lastAcc : NATURAL);
