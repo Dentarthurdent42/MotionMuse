@@ -2512,6 +2512,40 @@ const cameraStart = await (async () => {
     out.hang = { holdShown, label, toast: t };
     await hctx.close();
   }
+
+  // A tap the browser delivers to the wrong element. Safari on an iPhone was
+  // seen not to reach the button at all in the phone column; stand that in
+  // with an unrelated element laid over the button that takes the touch.
+  // Where the finger lifted still decides it — once.
+  {
+    const mctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await mctx.addInitScript(() => {
+      window.__gum = 0;
+      navigator.mediaDevices.getUserMedia = () => { window.__gum++; return new Promise(() => {}); };
+    });
+    const mp = await mctx.newPage();
+    await mp.goto(URL_, { waitUntil: 'networkidle' });
+    await mp.waitForTimeout(500);
+    const r = await mp.evaluate(() => {
+      const b = document.getElementById('cv-btn').getBoundingClientRect();
+      // Something unrelated to the camera, over the button, takes the touch.
+      const stray = Object.assign(document.createElement('div'), { id: 'stray-target' });
+      Object.assign(stray.style, { position: 'fixed', left: b.left + 'px', top: b.top + 'px',
+        width: b.width + 'px', height: b.height + 'px', zIndex: 99999 });
+      document.body.append(stray);
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2, w: b.width, h: b.height };
+    });
+    const hitBtn = await mp.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('#cv-btn'), r);
+    await mp.touchscreen.tap(r.x, r.y);
+    await mp.waitForTimeout(400);
+    out.misrouted = await mp.evaluate(() => ({
+      gum: window.__gum,
+      label: document.getElementById('cv-btn').textContent.trim().replace(/\s+/g, ' '),
+    }));
+    out.misrouted.hitBtn = hitBtn;
+    out.misrouted.size = [Math.round(r.w), Math.round(r.h)];
+    await mctx.close();
+  }
   return out;
 })();
 
@@ -3198,6 +3232,12 @@ console.log('\nStarting the camera\n');
     'a tap on the frame’s placeholder starts the camera too, not only the button over it', JSON.stringify(h));
   check(/Still waiting for the camera/.test(h.toast),
     'a permission request the browser never answers is reported after a few seconds', h.toast.slice(0, 60));
+
+  const mr = cameraStart.misrouted;
+  check(!mr.hitBtn && mr.size[0] > 0 && mr.size[1] > 0,
+    'with the start button covered, a tap on it lands on something unrelated', JSON.stringify(mr));
+  check(mr.gum === 1 && mr.label === 'ALLOW CAMERA…',
+    'and the camera still starts, exactly once, from where the finger lifted', JSON.stringify(mr));
 }
 
 console.log('\nShader nodes\n');

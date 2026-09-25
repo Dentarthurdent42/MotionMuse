@@ -246,17 +246,59 @@ function cameraError(err) {
   return map[err?.name] ?? 'ERROR: ' + String(err?.message ?? err).slice(0, 30);
 }
 document.getElementById('cv-btn').addEventListener('click', startCamera);
-// The whole blank frame starts it, not only the button laid over it. On a
-// phone the picture is lifted into a sticky strip above a same-size
-// placeholder (ui/cam-sticky.js), and a browser that hit-tests that strip
-// differently lands the tap on the placeholder or the frame's own box —
-// which did nothing, silently. Any tap on either, while there is no picture,
-// is a request for one. Controls inside the frame (FULL, KEYS) keep theirs.
+// The whole blank frame starts it, decided by WHERE the finger lifted rather
+// than by which element Safari says was touched.
+//
+// Reported on an iPhone: pressing START CAMERA changed nothing at all — not
+// even the caption, which the start sets before anything else. So the tap
+// never reached the button. On a phone the picture is lifted into a strip
+// in a zero-height sticky dock at the top of the scrolling column
+// (ui/cam-sticky.js), and WebKit's touch hit-testing is known to misplace
+// content that overflows a composited, zero-size box like that: the touch is
+// delivered to whatever lies underneath, or nowhere useful. Chromium routes
+// it correctly, which is why no desktop or headless test ever saw it.
+//
+// So element targeting is not trusted here. A touch that ends (or a click
+// that lands) inside the frame's on-screen rectangle, while there is no
+// picture, starts the camera — whatever element the browser attributed it
+// to. touchend counts as a user gesture in Safari, so the permission prompt
+// is still allowed; `starting` makes the touchend and the click that follows
+// it one start, not two. Controls drawn over the frame (FULL, KEYS…) keep
+// their own taps.
+const frameRect = () => {
+  for (const id of ['cv-btn', 'cam-hold']) {
+    const el = document.getElementById(id);
+    if (el?.getClientRects().length) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) return r;
+    }
+  }
+  return null;
+};
+const inFrame = (x, y) => {
+  const r = frameRect();
+  return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+};
+const onFrameControl = t => !!t?.closest?.('button:not(#cv-btn), a, select, input, label, .cam-bar, .cam-toggles');
+let touchFrom = null;
+document.addEventListener('touchstart', e => {
+  const t = e.changedTouches[0];
+  touchFrom = t ? { x: t.clientX, y: t.clientY } : null;
+}, { capture: true, passive: true });
+document.addEventListener('touchend', e => {
+  const t = e.changedTouches[0];
+  if (!t || !touchFrom || cvSource.running || starting) return;
+  const moved = Math.hypot(t.clientX - touchFrom.x, t.clientY - touchFrom.y) > 12;   // a scroll, not a tap
+  if (moved || onFrameControl(e.target) || !inFrame(t.clientX, t.clientY)) return;
+  diag(`touchend in frame at ${Math.round(t.clientX)},${Math.round(t.clientY)} → startCamera`);
+  startCamera();
+}, { capture: true, passive: true });
 document.addEventListener('click', e => {
-  if (cvSource.running || e.target.closest('#cv-btn')) return;
-  if (e.target.closest('button, a, select, input, label, .cam-bar, .cam-toggles')) return;
-  if (e.target.closest('#video-wrap, #cam-hold')) { diag('frame tap → startCamera'); startCamera(); }
-});
+  if (cvSource.running || starting || e.target.closest?.('#cv-btn') || onFrameControl(e.target)) return;
+  if (!inFrame(e.clientX, e.clientY) && !e.target.closest?.('#video-wrap, #cam-hold')) return;
+  diag('click in frame → startCamera');
+  startCamera();
+}, true);
 
 // ── Face / gaze tracking toggles (opt-in, camera must be running) ────────
 const faceToggle = (btnId, key, setter, label) => {
