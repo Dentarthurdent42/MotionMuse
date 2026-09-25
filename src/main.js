@@ -66,54 +66,71 @@ consumeSharedLink();
 registerControls();
 
 // ── Main RAF loop ────────────────────────────────────────────────────────
+//
+// The whole body runs inside a try/catch, and requestAnimationFrame is
+// scheduled unconditionally at the end — in `finally`, not after the last
+// line. Before this, one uncaught exception anywhere in the frame (a bad
+// preset, a malformed cable, any bug in any tick) meant this function threw
+// before ever reaching its own reschedule call, which silently ended the
+// loop for good: no more audio parameter updates, no more visualiser, no
+// more per-frame UI sync — the instrument going dead while every ordinary
+// click handler (mute, a gesture picker's <select>) kept firing, which reads
+// as "the whole UI stopped responding" precisely because the one thing that
+// actually stopped was invisible. A frame that fails now logs the error and
+// is simply a frame that did less; the next one still arrives.
 function loop() {
-  mapper.tick();
-  // Function nodes, after the cables have written their inputs: a chain of
-  // nodes settles inside the frame; only the hop through a cable is a frame
-  // behind, which at 60 fps sits under the One-Euro smoothing every camera
-  // signal already carries.
-  graph.tick();
-  micSource.tick();      // cheap no-op unless the mic is on
-  gesture.tick();        // recognize hand gestures → gesture_<id> bus signals
-  // Hand cursor — cheap no-op unless enabled. Sits between gesture and
-  // chordmode so a claim made this frame is respected this frame. DEV-gated
-  // while under construction, and gated HERE rather than inside uicontrol:
-  // hiding the button does not switch the feature off, and the setting
-  // persists, so without this a clap would arm an invisible cursor that
-  // silently claims a hand away from the instrument.
-  if (devmode.enabled) uicontrol.tick();
-  // The metronome BEFORE the play modes: a beat that lands this frame must be
-  // visible to the beat-sampled volume modes this frame, not next.
-  metronome.tick();
-  chordmode.tick();      // cheap no-op unless gesture mode is enabled
-  radial.tick();         // cheap no-op unless radial mode is enabled
-  playalong.tick();      // cheap no-op unless a song is running
-  // The pedal, after the trackers have published this frame's signals and
-  // before anything draws: a nod detected now should move the transport now,
-  // not one frame late — a loop point is a moment, and a frame is 33 ms of it.
-  if (pedalPressed()) looper.pedal();
-  tickLooperUI();
-  updateSigPanel();
-  // Sliders' typed twins follow their slider, whatever moved it — a drag, a
-  // cable, a preset load (see ui/numeric.js).
-  syncNumbers();
-  // Mic meter: the one piece of feedback that tells you the browser is actually
-  // hearing you, which is otherwise invisible until you have wired a cable.
-  if (micSource.active) {
-    const f = document.getElementById('mic-meter-fill');
-    if (f) f.style.width = `${(micSource.level * 100).toFixed(1)}%`;
+  try {
+    mapper.tick();
+    // Function nodes, after the cables have written their inputs: a chain of
+    // nodes settles inside the frame; only the hop through a cable is a frame
+    // behind, which at 60 fps sits under the One-Euro smoothing every camera
+    // signal already carries.
+    graph.tick();
+    micSource.tick();      // cheap no-op unless the mic is on
+    gesture.tick();        // recognize hand gestures → gesture_<id> bus signals
+    // Hand cursor — cheap no-op unless enabled. Sits between gesture and
+    // chordmode so a claim made this frame is respected this frame. DEV-gated
+    // while under construction, and gated HERE rather than inside uicontrol:
+    // hiding the button does not switch the feature off, and the setting
+    // persists, so without this a clap would arm an invisible cursor that
+    // silently claims a hand away from the instrument.
+    if (devmode.enabled) uicontrol.tick();
+    // The metronome BEFORE the play modes: a beat that lands this frame must be
+    // visible to the beat-sampled volume modes this frame, not next.
+    metronome.tick();
+    chordmode.tick();      // cheap no-op unless gesture mode is enabled
+    radial.tick();         // cheap no-op unless radial mode is enabled
+    playalong.tick();      // cheap no-op unless a song is running
+    // The pedal, after the trackers have published this frame's signals and
+    // before anything draws: a nod detected now should move the transport now,
+    // not one frame late — a loop point is a moment, and a frame is 33 ms of it.
+    if (pedalPressed()) looper.pedal();
+    tickLooperUI();
+    updateSigPanel();
+    // Sliders' typed twins follow their slider, whatever moved it — a drag, a
+    // cable, a preset load (see ui/numeric.js).
+    syncNumbers();
+    // Mic meter: the one piece of feedback that tells you the browser is actually
+    // hearing you, which is otherwise invisible until you have wired a cable.
+    if (micSource.active) {
+      const f = document.getElementById('mic-meter-fill');
+      if (f) f.style.width = `${(micSource.level * 100).toFixed(1)}%`;
+    }
+    updateMapperBars();
+    if (engine.started) updateAudioSliders();
+    drawViz();
+    shader.render();       // cheap no-op unless the shader panel is active; it
+                           // recompiles only when the node graph's shape changed
+    updateFsOverlay();     // cheap no-op unless fullscreen is active
+    updateCamBadge();      // which saved setup is playing
+    updateGamePanel();     // cheap no-op unless a song is running
+    updateUicOverlay();    // cheap no-op unless the hand cursor is live
+    updateStage();         // cheap no-op unless the gesture stage is up
+  } catch (err) {
+    console.error('MotionMuse: frame skipped —', err);
+  } finally {
+    requestAnimationFrame(loop);
   }
-  updateMapperBars();
-  if (engine.started) updateAudioSliders();
-  drawViz();
-  shader.render();       // cheap no-op unless the shader panel is active; it
-                         // recompiles only when the node graph's shape changed
-  updateFsOverlay();     // cheap no-op unless fullscreen is active
-  updateCamBadge();      // which saved setup is playing
-  updateGamePanel();     // cheap no-op unless a song is running
-  updateUicOverlay();    // cheap no-op unless the hand cursor is live
-  updateStage();         // cheap no-op unless the gesture stage is up
-  requestAnimationFrame(loop);
 }
 
 // ── Header button labels ─────────────────────────────────────────────────
