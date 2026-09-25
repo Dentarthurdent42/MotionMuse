@@ -475,8 +475,12 @@ html, body {
 #audio-btn.muted { color: var(--amber); border-color: var(--amber); background: #f0a50022; }
 
 /* Stopping the camera only means anything once one is running; starting it is
-   the big target in the middle of the blank frame. */
-.cam-on-only { display: none; }
+   the big target in the middle of the blank frame. !important because
+   `.cam-bar .depth-toggle` (two classes) otherwise outranks this one-class
+   selector and wins on specificity regardless of source order — same
+   problem `.uc-feature` already hit above, same fix. Without it STOP sits
+   next to START CAMERA before the camera has ever run. */
+.cam-on-only { display: none !important; }
 /* inline-flex, not block: it is a segment of .cam-bar and has to keep the
    centring every other segment has. */
 body.cam-on .cam-on-only { display: inline-flex; }

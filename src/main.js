@@ -164,6 +164,11 @@ async function startCamera() {
     setStatus('error', cameraError(err));
     setLabel(btn, 'RETRY');
     btn.disabled = false;
+    // The header status chip carrying that message is `display: none` on
+    // phones (see the max-width: 768px block in main.css) — without a toast
+    // too, a failed start looks identical to a dead button: RETRY sits there
+    // with no visible reason why.
+    toast('Camera failed to start: ' + err.message);
     console.error(err);
     return;
   }
