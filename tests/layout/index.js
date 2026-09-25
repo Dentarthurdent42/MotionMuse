@@ -2493,6 +2493,25 @@ const cameraStart = await (async () => {
     camOn: document.body.classList.contains('cam-on'),
   }));
   await ctx.close();
+
+  // A browser that never answers: no prompt, no error, the promise just
+  // hangs. And a tap that lands on the frame's placeholder rather than the
+  // button laid over it — which is how the phone column is built.
+  {
+    const hctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await hctx.addInitScript(() => { navigator.mediaDevices.getUserMedia = () => new Promise(() => {}); });
+    const hp = await hctx.newPage();
+    await hp.goto(URL_, { waitUntil: 'networkidle' });
+    await hp.waitForTimeout(500);
+    const holdShown = await hp.evaluate(() => !!document.getElementById('cam-hold')?.getClientRects().length);
+    await hp.evaluate(() => document.getElementById('cam-hold')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await hp.waitForTimeout(300);
+    const label = await hp.evaluate(() => document.getElementById('cv-btn').textContent.trim().replace(/\s+/g, ' '));
+    await hp.waitForTimeout(6600);
+    const t = await hp.evaluate(() => { const e = document.getElementById('toast'); return e.classList.contains('show') ? e.textContent : ''; });
+    out.hang = { holdShown, label, toast: t };
+    await hctx.close();
+  }
   return out;
 })();
 
@@ -3173,6 +3192,12 @@ console.log('\nStarting the camera\n');
     'a refused camera is reported as a refused camera', d.status);
   check(d.label === 'RETRY' && d.enabled, 'and the frame offers another go', `${d.label}, enabled ${d.enabled}`);
   check(!d.camOn, 'without pretending there is a picture');
+
+  const h = cameraStart.hang;
+  check(h.holdShown && h.label === 'ALLOW CAMERA…',
+    'a tap on the frame’s placeholder starts the camera too, not only the button over it', JSON.stringify(h));
+  check(/Still waiting for the camera/.test(h.toast),
+    'a permission request the browser never answers is reported after a few seconds', h.toast.slice(0, 60));
 }
 
 console.log('\nShader nodes\n');

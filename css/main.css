@@ -2918,3 +2918,23 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
     transform: none;
   }
 }
+
+/* Camera diagnostics (?debug) — see src/ui/camdiag.js. Low on the screen,
+   clear of the camera frame at the top of the phone column, because a panel
+   over the frame would block the very tap it is there to watch. On phones it
+   sits above the docked header bar. */
+#cam-diag {
+  position: fixed; left: 4px; right: 4px; bottom: 8px; z-index: 5000;
+  max-height: 30vh; display: flex; flex-direction: column;
+  background: color-mix(in oklab, var(--surface) 94%, transparent);
+  border: 1px solid var(--amber); border-radius: 6px;
+  font: 10px/1.35 'IBM Plex Mono', monospace; color: var(--text);
+}
+.cam-diag-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-bottom: 1px solid var(--border2); }
+.cam-diag-head b { flex: 1; color: var(--amber); letter-spacing: 1px; }
+.cam-diag-head button {
+  font: inherit; padding: 4px 8px; min-height: 28px;
+  background: none; color: var(--text); border: 1px solid var(--border2); border-radius: 4px;
+}
+.cam-diag-list { overflow: auto; padding: 4px 6px; white-space: pre-wrap; word-break: break-word; user-select: text; }
+@media (max-width: 767.98px) { #cam-diag { bottom: 124px; max-height: 26vh; } }

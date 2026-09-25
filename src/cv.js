@@ -409,6 +409,14 @@ export const cvSource = {
     this.canvas = document.getElementById('overlay');
     this.ctx    = this.canvas.getContext('2d');
 
+    // Some in-app browsers and insecure pages have no mediaDevices at all;
+    // named, so the message can say what to do rather than "undefined".
+    if (!navigator.mediaDevices?.getUserMedia) {
+      const e = new Error(window.isSecureContext ? 'navigator.mediaDevices is unavailable in this browser'
+                                                  : 'the page is not a secure context (https)');
+      e.name = window.isSecureContext ? 'NoMediaDevices' : 'SecurityError';
+      throw e;
+    }
     const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
     // The outputs are a property of the camera, not of the models: a patch
     // can be wired to `hand_L_x` while the hand model is still downloading.
