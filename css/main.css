@@ -2055,83 +2055,52 @@ input[type="range"]::-webkit-slider-thumb {
   transform: translateX(-50%) translateY(0);
 }
 
-/* ── Guided tour ─────────────────────────────────────────── */
-/* The scrim is always up during the tour, and ui/tutorial.js cuts a hole in
-   it around whatever the current step points at — so the target keeps its
-   own colour and its own focus while the rest of the app recedes. The hole
-   is why the dimming can be this heavy: the one thing you are being asked
-   to look at is never behind it. */
-#tour-backdrop {
-  position: fixed; inset: 0;
-  background: var(--scrim);
-  backdrop-filter: var(--scrim-blur);
-  -webkit-backdrop-filter: var(--scrim-blur);
-  z-index: 1000;
-  pointer-events: none;   /* the app stays clickable — "try it now" works */
-  transition: clip-path 0.25s;
-}
-/* Just the outline now: the scrim behind it does the dimming, where it used
-   to be this ring's own 9999px shadow doing it. */
-#tour-ring {
+/* ── Node docs (the card a `?` opens) ────────────────────── */
+/* No scrim and no spotlight: a small card beside the button, with the canvas
+   still live underneath. ui/docpop.js positions it inside the viewport. */
+.doc-pop {
   position: fixed;
-  border: 2px solid var(--cyan);
-  border-radius: 4px;
-  box-shadow: 0 0 18px var(--led-accent);
-  z-index: 1001;
-  pointer-events: none;
-  transition: left 0.25s, top 0.25s, width 0.25s, height 0.25s;
-}
-#tour-card {
-  position: fixed;
-  width: 340px; max-width: calc(100vw - 24px);
+  z-index: 1002;
+  width: 340px;
+  overflow: auto;
   background: var(--surface);
   border: 1px solid var(--cyan);
-  padding: 12px 14px;
-  z-index: 1002;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  border-radius: 6px;
+  padding: 10px 14px 12px;
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.5));
 }
-#tour-card.centered {
-  left: 50% !important; top: 50% !important;
-  transform: translate(-50%, -50%);
-}
-#tour-card.sheet {
-  left: 0 !important; right: 0; top: auto !important; bottom: 0;
-  width: 100%; max-width: none;
-  border-left: none; border-right: none; border-bottom: none;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
-}
-.tour-head { display: flex; align-items: center; }
-.tour-count {
-  font-size: 9px; letter-spacing: 1px; color: var(--dim);
-  font-variant-numeric: tabular-nums;
-}
-.tour-head .rm-btn { margin-left: auto; }
-.tour-title {
+.doc-pop[hidden] { display: none; }
+.doc-pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.doc-pop-title {
+  flex: 1 1 auto;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 14px; font-weight: 600; color: var(--cyan);
-  margin: 6px 0 4px;
 }
-.tour-body { font-size: 11px; line-height: 1.55; color: var(--text); }
-.tour-body b { color: var(--amber); font-weight: 500; }
-.tour-nav { display: flex; justify-content: space-between; margin-top: 12px; gap: 8px; }
-.tour-nav-end { display: flex; gap: 8px; }
-.tour-nav .btn[disabled] { opacity: 0.4; cursor: default; }
-/* The × stays the size it looks, and grows an invisible target around itself.
-   It was 17×16 css px in the corner of a bottom sheet, which on a phone is
-   the only way out of the tour — there is no Escape key, and the scrim
-   deliberately passes presses through to the app rather than closing on a
-   tap outside. Missing it meant being stuck. */
-#tour-close { position: relative; }
-#tour-close::before {
+/* Looks small, hits big: on a phone this × is how the card goes away, and a
+   17-pixel target was once all the old tour offered. */
+.doc-pop-close {
+  position: relative;
+  flex: 0 0 auto;
+  width: 24px; height: 24px; padding: 0;
+  border: 1px solid var(--border2); border-radius: 4px;
+  background: none; color: var(--dim); cursor: pointer;
+  font-size: 15px; line-height: 1;
+}
+.doc-pop-close:hover { color: var(--text); border-color: var(--cyan); }
+.doc-pop-close::before {
   content: '';
-  position: absolute;
-  top: 50%; left: 50%;
+  position: absolute; top: 50%; left: 50%;
   width: 44px; height: 44px;
   transform: translate(-50%, -50%);
 }
-/* The header's `?` carries the same three states a panel's does: a quiet
-   amber mark for unread, a cyan pulse while it is unread AND relevant, and
-   nothing once it has been read. */
+.doc-pop-body { font-size: 11.5px; line-height: 1.55; color: var(--text); }
+.doc-pop-body p { margin: 6px 0; }
+.doc-pop-body ul { margin: 6px 0; padding-left: 18px; }
+.doc-pop-body li { margin: 3px 0; }
+.doc-pop-body b { color: var(--amber); font-weight: 500; }
+/* The header's `?` carries the same three states a node's does: a quiet amber
+   mark for unread, a cyan pulse while it is unread AND relevant, and nothing
+   once it has been read. */
 #tour-btn.tour-unread { border-color: color-mix(in oklab, var(--amber) 55%, transparent); color: var(--amber); }
 #tour-btn.tour-new { border-color: var(--cyan); color: var(--cyan); }
 @keyframes tour-pulse {
@@ -2142,7 +2111,6 @@ input[type="range"]::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   #tour-btn.tour-new { animation: none; }
   .sec-help.help-now { animation: none; }
-  #tour-ring { transition: none; }
 }
 
 #audio-panel { display: flex; flex-direction: column; }
@@ -2432,7 +2400,20 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   box-shadow: var(--shadow);
 }
 .node-group.collapsed > .node-head { border-radius: 4px 4px 0 0; background: var(--faint); }
-.group-title { flex: 1 1 auto; }
+.group-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The group's fader: a small slider in the frame's own header, because the
+   header is the one part of a frame that is always on screen and always the
+   frame's — a control inside it could be mistaken for a member's. */
+.group-vol {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 9px; letter-spacing: 0.5px; color: var(--dim);
+  text-transform: none;
+}
+.group-vol input[type=range] { width: 64px; margin: 0; accent-color: var(--cyan); }
+.group-vol-val { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+.group-vol.silent { opacity: 0.45; }
+.group-vol.silent input { cursor: not-allowed; }
 .group-rename {
   flex: 1 1 auto; min-width: 0;
   font: inherit; letter-spacing: 1px;
@@ -2561,7 +2542,6 @@ body.ws-resizing .node-grip::after { border-color: var(--cyan); }
   .ctrl-row { padding: 5px 0; }
   .node > .node-head { min-height: 32px; }
   .sec-fold, .sec-help, .node-pin, .node-close { width: 24px; height: 24px; }
-  .tour-head .rm-btn { padding: 8px 12px; font-size: 16px; }
   .node-grip { width: 22px; height: 22px; }
 
   /* Slightly larger range thumbs */

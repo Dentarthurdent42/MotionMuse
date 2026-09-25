@@ -30,9 +30,11 @@ import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
 import { findConfig, setCurrentConfig,
          clearCurrentConfig }               from './saved.js';
-import { initTutorial, flagHelpForMode, flagHelpForSharedSetup } from './ui/tutorial.js';
+import { initHeaderHelp }                    from './ui/docpop.js';
+import { changed as docsChanged }           from './ui/nodedocs.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { initWorkspace, relayout, adoptSections, openAddMenu } from './ui/workspace.js';
+import { initGroupVolume, syncGroupGains }  from './ui/group-volume.js';
 import { shaderSectionHTML, wireShaderSection, setShaderAddHandler } from './ui/shader-ui.js';
 import { initTheme }                        from './ui/theme.js';
 import { initSettings }                     from './ui/settings.js';
@@ -168,7 +170,9 @@ async function startCamera() {
     // phones (see the max-width: 768px block in main.css) — without a toast
     // too, a failed start looks identical to a dead button: RETRY sits there
     // with no visible reason why.
-    toast('Camera failed to start: ' + err.message);
+    // The raw name and message go in too: they are what makes a report
+    // from a phone diagnosable.
+    toast(`Camera failed to start — ${cameraError(err)} (${err?.name ?? 'Error'}: ${err?.message ?? err})`, 8000);
     console.error(err);
     return;
   }
@@ -193,7 +197,12 @@ async function startCamera() {
     if (cvSource.running) setStatus('active', 'CV ACTIVE');
   } catch (err) {
     // Not fatal: you can see yourself, you just can't be tracked.
-    if (cvSource.running) setStatus('error', 'NO TRACKING: ' + err.message.slice(0, 22));
+    if (cvSource.running) {
+      setStatus('error', 'NO TRACKING: ' + err.message.slice(0, 22));
+      // The status chip is hidden on phones; without this the picture would
+      // be up and simply never track, with nothing saying why.
+      toast(`Camera is on, but tracking failed to load (${err?.message ?? err})`, 8000);
+    }
     console.error(err);
   }
 }
@@ -387,12 +396,12 @@ devmode.onChange(on => { if (!on && depthSource.lidarActive) depthSource.stopLid
 // setting is the player's, and DEV should gate reach, not overwrite choices.
 devmode.onChange(on => { if (!on) uicontrol.disarmAll(); });
 
-// ── Audio: starts with the page, muted ───────────────────────────────────
+// ── Audio: starts with the page, sound on ────────────────────────────────
 // The engine used to wait behind a button, which meant every control in the
 // audio panel was absent until you found it — you couldn't set up a patch and
 // then start playing, you had to start first and configure while it ran. Now
-// the graph is built at load so everything is manipulable immediately, and the
-// output is muted so building a patch stays silent until you ask for sound.
+// the graph is built at load so everything is manipulable immediately. The
+// output starts unmuted; the browser keeps it silent until the first gesture.
 //
 // The button is therefore a mute toggle, not a power switch.
 const audioBtn = document.getElementById('audio-btn');
@@ -465,7 +474,14 @@ document.getElementById('viz-wrap').addEventListener('click', toggleMute);
 // Autoplay policy means the context starts suspended and its clock stays
 // frozen until a gesture. Resume on the first one, whatever it is, so the
 // instrument is already awake by the time the user unmutes.
-const wakeAudio = () => { engine.resume(); };
+// Sound is on by default, so this first gesture is also when an iPhone must
+// be told this page plays media — otherwise the Ring/Silent switch silences
+// it (see audiosession.js). Only if still unmuted: someone who muted before
+// touching anything asked for silence.
+const wakeAudio = () => {
+  engine.resume();
+  if (!engine.muted) audioSession.hold();
+};
 ['pointerdown', 'keydown'].forEach(ev =>
   document.addEventListener(ev, wakeAudio, { once: true, capture: true }));
 
@@ -495,7 +511,7 @@ initHotkeys({
   cursor: () => { if (devmode.enabled) uicontrol.hotkey(); },
 });
 onBindingChange(syncMuteUI);    // rebinding the key relabels the button and banner
-syncMuteUI();                   // muted from the first paint, before the graph exists
+syncMuteUI();                   // mute state from the first paint, before the graph exists
 startAudio();
 
 // ── Mapper buttons ───────────────────────────────────────────────────────
@@ -514,7 +530,7 @@ initPresetMenu({
     // to do, which is what decides whose `?` is worth pressing — so the help
     // flags are recomputed. Nothing opens; the relevant buttons just start
     // asking.
-    flagHelpForMode();
+    docsChanged();
     const changed = await applyTrackers(trackersFor(preset));
     const bits = [preset.hint];
     if (changed.length) bits.push(changed.join(', '));
@@ -696,7 +712,9 @@ metronome.registerSignals();   // the beat clock is wirable like any signal
 // themselves and any slider added later — see ui/numeric.js.
 watchRanges();
 initChordCables();        // gesture mode's shapes are cables into its degrees
+initGroupVolume();        // before the canvas: group faders need to know what sounds
 initWorkspace();          // the canvas: every section becomes a node on it
+syncGroupGains();         // …and the engine hears the layout that was restored
 initMapperUI();           // sockets and cables on that canvas
 buildSigPanel();          // every signal is an output socket on its node, camera or not
 fitOverlays();            // landmark canvases follow the camera node's size
@@ -716,7 +734,7 @@ uicontrol.setSingleSide(() =>
 initStage();              // fullscreen gesture stage (DEV, under construction)
 initShare();              // SHARE → a QR code of this setup
 initModelPanel();         // dev-mode pose model comparison panel
-initTutorial();           // guided tour (? button; auto-offers on first visit)
+initHeaderHelp();         // the header ? — how the app works, as one short card
 const hadSession = preset.restoreLocal();   // last session's mappings + settings
 // …which may have just come from a scanned QR code. A setup that arrived that
 // way gets the tour for what it actually is — not the full one, and only the
@@ -737,7 +755,7 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
       refreshFromState();
       preset.saveLocal();
       toast(`${s.name} — ${s.hint}`);
-      flagHelpForMode();               // the `?`s for the way of playing chosen
+      docsChanged();               // the `?`s for the way of playing chosen
     },
   });
 } else if (openedShare) {
@@ -755,11 +773,11 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
     fullscreen.onChange(active => {
       if (active || flagged) return;
       flagged = true;
-      flagHelpForSharedSetup();
+      docsChanged();
     });
   }
 } else {
-  flagHelpForMode();
+  docsChanged();
 }
 renderMapper();
 // Shader controls belong with the patchbay — the shader reads signals and

@@ -10,10 +10,12 @@ export function setStatus(state, text) {
 }
 
 let _toastTimer;
-export function toast(msg) {
+// `ms` is how long it stays. The default suits a confirmation ("Copied");
+// an error someone has to read and act on needs several seconds.
+export function toast(msg, ms = 1400) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => el.classList.remove('show'), 1400);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }

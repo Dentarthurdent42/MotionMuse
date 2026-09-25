@@ -68,9 +68,9 @@ export const STARTERS = [
 // The two ways of playing, kept apart in the picker. They are different
 // instruments, not variations of one: an oscillator patch wires continuous
 // signals to pitch and timbre, handshape mode triggers pitch from shapes. The
-// guided tour follows whichever you choose, so the split is what tells it which
-// tour to give you. Blank sits with the oscillator group because building from
-// nothing means the patchbay.
+// help follows whichever you choose — that mode's node is the `?` that pulses.
+// Blank sits with the oscillator group because building from nothing means
+// the patchbay.
 // Handshapes lead. They are the entries that play music the moment you make a
 // shape, so they are the best first thing to hand someone who has just arrived
 // — and chords were bottom of the list, below a scroll on a phone.
