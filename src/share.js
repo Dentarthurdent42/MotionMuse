@@ -86,6 +86,10 @@ async function pipe(stream, bytes) {
 // A one-character prefix says how the rest is packed, so an old link stays
 // readable if this ever gains another format: 'd' = deflate-raw, 'j' = plain
 // JSON bytes (the fallback where CompressionStream is missing).
+// A letter, once shipped, means that packing forever — printed codes use it.
+// A new packing (a preset deflate dictionary, say) takes a new letter, and a
+// dictionary can never be edited under the same one. What is INSIDE the JSON
+// is versioned separately, by `v` (src/presetformat.js).
 export async function encodeState(state) {
   const json = new TextEncoder().encode(JSON.stringify(state));
   if (!hasCompression()) return 'j' + toB64(json);
@@ -126,11 +130,37 @@ export const shareFingerprint = payload => {
 };
 
 // ── URLs ──────────────────────────────────────────────────────────────────
-export function shareUrl(payload, base) {
-  const u = new URL(base ?? (globalThis.location !== undefined ? location.href : 'https://localhost/'));
-  u.hash = '';
-  u.search = '';
-  return `${u.href.replace(/[?#]$/, '')}#${SHARE_PARAM}=${payload}`;
+//
+// A QR code is a URL frozen into a picture. Once it is printed, pinned to a
+// wall or photographed, nothing can update it — so the address it points at
+// has to be one that will still be answering in years, not wherever the
+// sharer happened to be.
+//
+// Building it from `location` used to mean exactly that: a code made on a
+// Netlify deploy preview, on a Cloudflare mirror, or on /index.html instead of
+// the bare path pointed there forever, and died with it. Every code now points
+// at the one address that is kept alive. If the app ever moves, THIS is the
+// URL that has to keep redirecting, fragment intact.
+export const SHARE_BASE = 'https://dentarthurdent42.github.io/MotionMuse/';
+
+// …except while developing. A link made on localhost or a LAN address (the
+// phone-testing server in scripts/mobile-serve.mjs) is being made to test
+// THIS build, and sending it to production would test the wrong one.
+const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[^.]+\.local)$/;
+
+function shareBase(here) {
+  if (here === undefined) return SHARE_BASE;
+  const u = new URL(here);
+  if (u.protocol === 'file:' || LOCAL_HOST.test(u.hostname)) {
+    u.hash = '';
+    u.search = '';
+    return u.href;
+  }
+  return SHARE_BASE;
+}
+
+export function shareUrl(payload, here = globalThis.location?.href) {
+  return `${shareBase(here).replace(/[?#]$/, '')}#${SHARE_PARAM}=${payload}`;
 }
 
 // The payload in a URL, or null. Tolerant of extra fragment content so a link
