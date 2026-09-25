@@ -258,10 +258,10 @@ export const playalong = {
       for (const m of voices) {
         if (shepardGuide()) {
           for (const p of shepardPartials(mtof(m))) {
-            engine.playTone({ freq: p.freq, when, dur, type: 'sine', gain: gain * p.gain });
+            engine.playTone({ freq: p.freq, when, dur, type: 'sine', gain: gain * p.gain, source: 'playalong' });
           }
         } else {
-          engine.playTone({ freq: mtof(m), when, dur, type: 'triangle', gain });
+          engine.playTone({ freq: mtof(m), when, dur, type: 'triangle', gain, source: 'playalong' });
         }
       }
     }
@@ -291,11 +291,11 @@ export const playalong = {
         score += POINTS[r] + 10 * Math.min(streak, 10);
         lastJudge = { tier: r, atMs: t };
         // Perfect hits chirp a fifth higher than good ones.
-        engine.playTone({ freq: r === 'perfect' ? 2093 : 1568, dur: 0.06, type: 'square', gain: 0.05 });
+        engine.playTone({ freq: r === 'perfect' ? 2093 : 1568, dur: 0.06, type: 'square', gain: 0.05, source: 'playalong' });
       } else if (r === 'miss') {
         n.status = 'miss'; judged++; streak = 0;
         lastJudge = { tier: 'miss', atMs: t };
-        engine.playTone({ freq: 110, dur: 0.12, type: 'sawtooth', gain: 0.05 });
+        engine.playTone({ freq: 110, dur: 0.12, type: 'sawtooth', gain: 0.05, source: 'playalong' });
       }
     }
 

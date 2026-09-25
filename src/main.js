@@ -30,10 +30,13 @@ import { initModelPanel }                   from './ui/model-ui.js';
 import { initPresetMenu }                   from './ui/preset-menu.js';
 import { findConfig, setCurrentConfig,
          clearCurrentConfig }               from './saved.js';
-import { initTutorial, maybeOfferTour, offerTourForMode, offerTourForSharedSetup } from './ui/tutorial.js';
+import { initHeaderHelp }                    from './ui/docpop.js';
+import { initCamDiag, diag }                from './ui/camdiag.js';
+import { changed as docsChanged }           from './ui/nodedocs.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
-import { initWorkspace, relayout, adoptSections } from './ui/workspace.js';
-import { shaderSectionHTML, wireShaderSection } from './ui/shader-ui.js';
+import { initWorkspace, relayout, adoptSections, openAddMenu } from './ui/workspace.js';
+import { initGroupVolume, syncGroupGains }  from './ui/group-volume.js';
+import { shaderSectionHTML, wireShaderSection, setShaderAddHandler } from './ui/shader-ui.js';
 import { initTheme }                        from './ui/theme.js';
 import { initSettings }                     from './ui/settings.js';
 import { initCamSticky }                    from './ui/cam-sticky.js';
@@ -48,6 +51,9 @@ import { tickLooperUI, pedalPressed }       from './ui/looper-ui.js';
 import { looper }                           from './looper.js';
 import * as preset                          from './preset.js';
 import { NEWER_SETUP }                      from './presetformat.js';
+
+// Before anything else runs, so an early failure is on the log too (?debug).
+initCamDiag({ buildInfo, buildLabel });
 
 // ── A shared setup, if this page was opened from a QR code / link ────────
 // First thing: it applies the state, persists it and reloads without the
@@ -100,7 +106,8 @@ function loop() {
   updateMapperBars();
   if (engine.started) updateAudioSliders();
   drawViz();
-  shader.render();       // cheap no-op unless the shader panel is active
+  shader.render();       // cheap no-op unless the shader panel is active; it
+                         // recompiles only when the node graph's shape changed
   updateFsOverlay();     // cheap no-op unless fullscreen is active
   updateCamBadge();      // which saved setup is playing
   updateGamePanel();     // cheap no-op unless a song is running
@@ -138,41 +145,161 @@ function stopCamera() {
 }
 document.getElementById('cv-stop').addEventListener('click', stopCamera);
 
+// Starting it happens in two stages, and the order matters more than anything
+// else in this function.
+//
+// The camera is asked for first, on its own, with nothing awaited in front of
+// it. The models are ~15MB and used to load first, which meant the permission
+// prompt — the only thing that looks to a person like the camera starting —
+// arrived tens of seconds after the tap on a phone connection, if at all: the
+// prompt needs transient user activation, and that is long gone by then.
+// Reported as the camera simply not starting when you press the frame.
+//
+// So: stream, picture, THEN models. Tracking joins the live picture a few
+// seconds later (cvSource.loop runs with whichever models exist), and if the
+// models fail the camera stays up as a camera rather than the whole thing
+// being torn down — the signals it can't fill are the only loss.
+let starting = false;
 async function startCamera() {
   const btn = document.getElementById('cv-btn');
-  if (cvSource.running) return;          // the picture hides this button anyway
+  diag(`startCamera() — running=${cvSource.running} starting=${starting}`);
+  if (cvSource.running || starting) return;   // the picture hides this button anyway
+  starting = true;
   btn.disabled = true;
-  setLabel(btn, 'LOADING…');
+  setLabel(btn, 'ALLOW CAMERA…');
+  setStatus('loading', 'ASKING FOR CAMERA…');
+  // A permission request the browser never answers is the one failure with
+  // no error to show: no prompt appears (an in-app browser, a prompt the OS
+  // swallowed, one already dismissed), the promise simply never settles, and
+  // the frame sits on ALLOW CAMERA… forever. Say so after a few seconds.
+  const watchdog = setTimeout(() => {
+    diag('getUserMedia: still no answer after 6 s');
+    toast('Still waiting for the camera. If no permission prompt appeared, allow the camera for this site in your browser settings — or, in an app’s built-in browser, open the page in Safari or Chrome.', 10000);
+  }, 6000);
   try {
-    await cvSource.init();
+    diag('getUserMedia: requested');
     await cvSource.startCamera();
-    setStatus('active', 'CV ACTIVE');
-    setLabel(btn, 'START CAMERA');
-    btn.disabled = false;
-    buildSigPanel();
-    renderMapper();
-    // Face & gaze tracking are opt-in once the camera is running: they load a
-    // model onto the live stream, so their buttons in the TRACKING row wake
-    // up here.
-    document.body.classList.add('cam-on');
-    document.getElementById('face-btn').disabled = false;
-    document.getElementById('gaze-btn').disabled = false;
-    // A preset chosen while the camera was off asked for face or gaze; now
-    // there is a stream to run them on.
-    applyFaceIntent();
+    diag('getUserMedia: granted, picture up');
   } catch (err) {
-    setStatus('error', 'ERROR: ' + err.message.slice(0, 30));
+    clearTimeout(watchdog);
+    starting = false;
+    diag(`getUserMedia: FAILED ${err?.name}: ${err?.message}`);
+    setStatus('error', cameraError(err));
     setLabel(btn, 'RETRY');
     btn.disabled = false;
     // The header status chip carrying that message is `display: none` on
     // phones (see the max-width: 768px block in main.css) — without a toast
     // too, a failed start looks identical to a dead button: RETRY sits there
     // with no visible reason why.
-    toast('Camera failed to start: ' + err.message);
+    // The raw name and message go in too: they are what makes a report
+    // from a phone diagnosable.
+    toast(`Camera failed to start — ${cameraError(err)} (${err?.name ?? 'Error'}: ${err?.message ?? err})`, 8000);
+    console.error(err);
+    return;
+  }
+  clearTimeout(watchdog);
+  starting = false;
+  // The picture is live. Everything that depends on having a stream rather
+  // than on having models happens now, not after the download.
+  setLabel(btn, 'START CAMERA');
+  btn.disabled = false;
+  buildSigPanel();
+  renderMapper();
+  // Face & gaze tracking are opt-in once the camera is running: they load a
+  // model onto the live stream, so their buttons in the TRACKING row wake
+  // up here.
+  document.body.classList.add('cam-on');
+  document.getElementById('face-btn').disabled = false;
+  document.getElementById('gaze-btn').disabled = false;
+  // A preset chosen while the camera was off asked for face or gaze; now
+  // there is a stream to run them on.
+  applyFaceIntent();
+
+  try {
+    diag('models: loading');
+    await cvSource.init();               // sets its own LOADING MODELS… status
+    diag('models: loaded');
+    if (cvSource.running) setStatus('active', 'CV ACTIVE');
+  } catch (err) {
+    diag(`models: FAILED ${err?.message}`);
+    // Not fatal: you can see yourself, you just can't be tracked.
+    if (cvSource.running) {
+      setStatus('error', 'NO TRACKING: ' + err.message.slice(0, 22));
+      // The status chip is hidden on phones; without this the picture would
+      // be up and simply never track, with nothing saying why.
+      toast(`Camera is on, but tracking failed to load (${err?.message ?? err})`, 8000);
+    }
     console.error(err);
   }
 }
+
+// getUserMedia's failures are the ones a person can actually act on, and
+// `NotAllowedError` on its own tells them nothing. Named rather than raw.
+function cameraError(err) {
+  const map = {
+    NotAllowedError:    'CAMERA BLOCKED — ALLOW IT',
+    NotFoundError:      'NO CAMERA FOUND',
+    NotReadableError:   'CAMERA IN USE ELSEWHERE',
+    OverconstrainedError: 'CAMERA UNSUPPORTED',
+    SecurityError:      'CAMERA NEEDS HTTPS',
+    NoMediaDevices:     'THIS BROWSER GIVES PAGES NO CAMERA — OPEN IN SAFARI OR CHROME',
+  };
+  return map[err?.name] ?? 'ERROR: ' + String(err?.message ?? err).slice(0, 30);
+}
 document.getElementById('cv-btn').addEventListener('click', startCamera);
+// The whole blank frame starts it, decided by WHERE the finger lifted rather
+// than by which element Safari says was touched.
+//
+// Reported on an iPhone: pressing START CAMERA changed nothing at all — not
+// even the caption, which the start sets before anything else. So the tap
+// never reached the button. On a phone the picture is lifted into a strip
+// in a zero-height sticky dock at the top of the scrolling column
+// (ui/cam-sticky.js), and WebKit's touch hit-testing is known to misplace
+// content that overflows a composited, zero-size box like that: the touch is
+// delivered to whatever lies underneath, or nowhere useful. Chromium routes
+// it correctly, which is why no desktop or headless test ever saw it.
+//
+// So element targeting is not trusted here. A touch that ends (or a click
+// that lands) inside the frame's on-screen rectangle, while there is no
+// picture, starts the camera — whatever element the browser attributed it
+// to. touchend counts as a user gesture in Safari, so the permission prompt
+// is still allowed; `starting` makes the touchend and the click that follows
+// it one start, not two. Controls drawn over the frame (FULL, KEYS…) keep
+// their own taps.
+const frameRect = () => {
+  for (const id of ['cv-btn', 'cam-hold']) {
+    const el = document.getElementById(id);
+    if (el?.getClientRects().length) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) return r;
+    }
+  }
+  return null;
+};
+const inFrame = (x, y) => {
+  const r = frameRect();
+  return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+};
+const onFrameControl = t => !!t?.closest?.('button:not(#cv-btn), a, select, input, label, .cam-bar, .cam-toggles');
+let touchFrom = null;
+document.addEventListener('touchstart', e => {
+  const t = e.changedTouches[0];
+  touchFrom = t ? { x: t.clientX, y: t.clientY } : null;
+}, { capture: true, passive: true });
+document.addEventListener('touchend', e => {
+  const t = e.changedTouches[0];
+  if (!t || !touchFrom || cvSource.running || starting) return;
+  const moved = Math.hypot(t.clientX - touchFrom.x, t.clientY - touchFrom.y) > 12;   // a scroll, not a tap
+  if (moved || onFrameControl(e.target) || !inFrame(t.clientX, t.clientY)) return;
+  diag(`touchend in frame at ${Math.round(t.clientX)},${Math.round(t.clientY)} → startCamera`);
+  startCamera();
+}, { capture: true, passive: true });
+document.addEventListener('click', e => {
+  if (cvSource.running || starting || e.target.closest?.('#cv-btn') || onFrameControl(e.target)) return;
+  if (!inFrame(e.clientX, e.clientY) && !e.target.closest?.('#video-wrap, #cam-hold')) return;
+  diag('click in frame → startCamera');
+  startCamera();
+}, true);
 
 // ── Face / gaze tracking toggles (opt-in, camera must be running) ────────
 const faceToggle = (btnId, key, setter, label) => {
@@ -349,12 +476,12 @@ devmode.onChange(on => { if (!on && depthSource.lidarActive) depthSource.stopLid
 // setting is the player's, and DEV should gate reach, not overwrite choices.
 devmode.onChange(on => { if (!on) uicontrol.disarmAll(); });
 
-// ── Audio: starts with the page, muted ───────────────────────────────────
+// ── Audio: starts with the page, sound on ────────────────────────────────
 // The engine used to wait behind a button, which meant every control in the
 // audio panel was absent until you found it — you couldn't set up a patch and
 // then start playing, you had to start first and configure while it ran. Now
-// the graph is built at load so everything is manipulable immediately, and the
-// output is muted so building a patch stays silent until you ask for sound.
+// the graph is built at load so everything is manipulable immediately. The
+// output starts unmuted; the browser keeps it silent until the first gesture.
 //
 // The button is therefore a mute toggle, not a power switch.
 const audioBtn = document.getElementById('audio-btn');
@@ -427,7 +554,14 @@ document.getElementById('viz-wrap').addEventListener('click', toggleMute);
 // Autoplay policy means the context starts suspended and its clock stays
 // frozen until a gesture. Resume on the first one, whatever it is, so the
 // instrument is already awake by the time the user unmutes.
-const wakeAudio = () => { engine.resume(); };
+// Sound is on by default, so this first gesture is also when an iPhone must
+// be told this page plays media — otherwise the Ring/Silent switch silences
+// it (see audiosession.js). Only if still unmuted: someone who muted before
+// touching anything asked for silence.
+const wakeAudio = () => {
+  engine.resume();
+  if (!engine.muted) audioSession.hold();
+};
 ['pointerdown', 'keydown'].forEach(ev =>
   document.addEventListener(ev, wakeAudio, { once: true, capture: true }));
 
@@ -457,7 +591,7 @@ initHotkeys({
   cursor: () => { if (devmode.enabled) uicontrol.hotkey(); },
 });
 onBindingChange(syncMuteUI);    // rebinding the key relabels the button and banner
-syncMuteUI();                   // muted from the first paint, before the graph exists
+syncMuteUI();                   // mute state from the first paint, before the graph exists
 startAudio();
 
 // ── Mapper buttons ───────────────────────────────────────────────────────
@@ -472,10 +606,11 @@ initPresetMenu({
     // do the previous patch's unwired nodes.
     clearCurrentConfig();
     renderMapper();
-    // Choosing a patch from the menu is the same statement the first-run picker
-    // makes, so it earns the same tour — offered once per mode, and silently
-    // skipped for anyone who has already seen it.
-    offerTourForMode('osc');
+    // Choosing a patch from the menu is a statement about what you are about
+    // to do, which is what decides whose `?` is worth pressing — so the help
+    // flags are recomputed. Nothing opens; the relevant buttons just start
+    // asking.
+    docsChanged();
     const changed = await applyTrackers(trackersFor(preset));
     const bits = [preset.hint];
     if (changed.length) bits.push(changed.join(', '));
@@ -662,7 +797,9 @@ metronome.registerSignals();   // the beat clock is wirable like any signal
 // themselves and any slider added later — see ui/numeric.js.
 watchRanges();
 initChordCables();        // gesture mode's shapes are cables into its degrees
+initGroupVolume();        // before the canvas: group faders need to know what sounds
 initWorkspace();          // the canvas: every section becomes a node on it
+syncGroupGains();         // …and the engine hears the layout that was restored
 initMapperUI();           // sockets and cables on that canvas
 buildSigPanel();          // every signal is an output socket on its node, camera or not
 fitOverlays();            // landmark canvases follow the camera node's size
@@ -682,7 +819,7 @@ uicontrol.setSingleSide(() =>
 initStage();              // fullscreen gesture stage (DEV, under construction)
 initShare();              // SHARE → a QR code of this setup
 initModelPanel();         // dev-mode pose model comparison panel
-initTutorial();           // guided tour (? button; auto-offers on first visit)
+initHeaderHelp();         // the header ? — how the app works, as one short card
 const hadSession = preset.restoreLocal();   // last session's mappings + settings
 // …which may have just come from a scanned QR code. A setup that arrived that
 // way gets the tour for what it actually is — not the full one, and only the
@@ -703,7 +840,7 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
       refreshFromState();
       preset.saveLocal();
       toast(`${s.name} — ${s.hint}`);
-      maybeOfferTour(s.mode);          // the tour for the way of playing chosen
+      docsChanged();               // the `?`s for the way of playing chosen
     },
   });
 } else if (openedShare) {
@@ -712,27 +849,42 @@ if (shouldOfferStart({ hasSession: hadSession, sharePending: isConsumingShare() 
   // full frame, with one thing to press. So a shared setup opens straight
   // into the fullscreen camera view.
   fullscreen.open();
-  // …and the tour waits for them to come back out of it. A walkthrough of
-  // panels that are currently behind a fullscreen camera is a walkthrough of
-  // nothing, and only the first time that link is followed: reopening a QR
-  // pinned to a wall lands you on a setup that is already yours.
+  // …and the help waits for them to come back out of it. A `?` pulsing
+  // behind a fullscreen camera is pulsing at nobody, and only the first time
+  // that link is followed: reopening a QR pinned to a wall lands you on a
+  // setup that is already yours.
   if (openedShare.first) {
-    let toured = false;
+    let flagged = false;
     fullscreen.onChange(active => {
-      if (active || toured) return;
-      toured = true;
-      offerTourForSharedSetup();
+      if (active || flagged) return;
+      flagged = true;
+      docsChanged();
     });
   }
 } else {
-  maybeOfferTour();
+  docsChanged();
 }
 renderMapper();
 // Shader controls belong with the patchbay — the shader reads signals and
 // mappings, so its node sits beside the wiring rather than among synth
 // parameters. Rendered once, then adopted onto the canvas like any section.
 const shaderHost = document.getElementById('shader-host');
-if (shaderHost) { shaderHost.innerHTML = shaderSectionHTML(); wireShaderSection(); adoptSections(shaderHost); }
+if (shaderHost) {
+  // Deliberately NOT seeded with a starter patch. Shader nodes are nodes on
+  // the same canvas as the instrument, and cables on that canvas are what
+  // gets saved and shared — so populating the shader by default would put
+  // four nodes and three cables into every patch, every saved setup and
+  // every share link, for people who never open the panel. The panel's
+  // STARTER button is one tap away and says so.
+  // + NODE on the panel opens the canvas's own add menu, so there is one
+  // place where nodes come from however you reach for them.
+  setShaderAddHandler((x, y) => openAddMenu(x, y));
+  shaderHost.innerHTML = shaderSectionHTML();
+  wireShaderSection();
+  adoptSections(shaderHost);
+  // A saved patch may carry shader nodes; give them their shells.
+  renderMapper();
+}
 loop();
 
 // Say which build this is, once, on startup. The cheapest possible answer to
