@@ -9,6 +9,7 @@ import { shareableSnapshot, encodeState, decodeState, shareUrl, readShareUrl,
          cleanShareLabel, SHARE_LABEL_MAX, shareFingerprint,
          QR_COMFORTABLE_VERSION } from '../share.js';
 import { encodeQR, drawQR } from '../qr.js';
+import { NEWER_SETUP } from '../presetformat.js';
 import { saveConfig, setCurrentConfig } from '../saved.js';
 import { toast } from './status.js';
 import { lsGet, lsSet } from '../storage.js';
@@ -260,7 +261,8 @@ export async function consumeSharedLink() {
   history.replaceState(null, '', location.pathname + location.search);
   try {
     const data = await decodeState(payload);
-    if (!applyAll(data).ok) throw new Error('not a MotionMuse setup');
+    const { ok, newer } = applyAll(data);
+    if (!ok) throw new Error('not a MotionMuse setup');
     saveLocal();
     // A named link is a named configuration. Whoever sent it already said what
     // this is, and without keeping it the setup is yours only until you touch a
@@ -279,7 +281,7 @@ export async function consumeSharedLink() {
     // setup happens on the far side of it. Re-cleaned rather than trusted:
     // this string came out of somebody else's URL.
     sessionStorage.setItem('motionmuse-shared',
-      JSON.stringify({ label: cleanShareLabel(data.label), first }));
+      JSON.stringify({ label: cleanShareLabel(data.label), first, newer }));
     location.reload();
     return true;
   } catch (err) {
@@ -302,6 +304,9 @@ export function announceSharedLink() {
   let opened;
   try { opened = JSON.parse(mark); } catch { opened = { label: '', first: true }; }
   const label = cleanShareLabel(opened?.label);
-  toast(label ? `Opened: ${label}` : 'Opened a shared setup');
+  const said = label ? `Opened: ${label}` : 'Opened a shared setup';
+  // A link from a newer app than this one still opens, but whatever this build
+  // does not understand is left out — which should not go unsaid.
+  toast(opened?.newer === true ? `${said} · ${NEWER_SETUP}` : said);
   return { label, first: opened?.first !== false };
 }
