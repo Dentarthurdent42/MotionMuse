@@ -11,7 +11,7 @@
 // explicit blank.
 
 import { mapper, PRESETS, trackersFor } from '../mapper.js';
-import { chordmode } from '../chordmode.js';
+import { chordmode, DEFAULT_ACCIDENTAL_GESTURES, DEFAULT_QUALITY_GESTURES } from '../chordmode.js';
 import { radial } from '../radial.js';
 import { engine } from '../engine.js';
 import { lsGet, lsSet } from '../storage.js';
@@ -35,7 +35,7 @@ export const STARTERS = [
   {
     id: 'chords', kind: 'chords', mode: 'chords', voicing: 'chord',
     name: 'Handshapes · Chords',
-    hint: 'Handshapes play chords in a key — no lead oscillator, no wiring',
+    hint: 'Handshapes play chords in a key; your other hand makes them major, minor, 7th… — no wiring',
   },
   // The same seven shapes, the same key, one note at a time. Offered here
   // rather than left as a switch inside the panel because "I want to play a
@@ -55,7 +55,7 @@ export const STARTERS = [
   {
     id: 'radial-chords', kind: 'radial', mode: 'chords', voicing: 'chord',
     name: 'Radial Mode · Chords',
-    hint: 'The same ring, each section a chord of the key',
+    hint: 'The same ring, each section a chord of the key — your other hand sets its quality',
   },
   ...PRESETS.map(p => ({ id: p.id, kind: 'preset', mode: 'osc',
                          name: p.name, hint: p.hint })),
@@ -105,6 +105,16 @@ export function applyStarter(id, { applyTrackers }) {
 
   // The remaining kinds all start from nothing wired.
   mapper.load([]);
+
+  // …except the off hand's vocabulary, which every in-key start states rather
+  // than inherits: ♯ / ♭ for single notes, and the Chord Quality node's
+  // shapes for chords — thumbs up MAJ, thumbs down MIN, the O for DIM, horns
+  // for 7, I-love-you for MAJ7 (see DEFAULT_QUALITY_GESTURES for why each).
+  // Both modes read them; radial reads them with gesture mode switched off.
+  if (s.kind === 'chords' || s.kind === 'radial') {
+    chordmode.setAccidentalGestures({ ...DEFAULT_ACCIDENTAL_GESTURES });
+    chordmode.setQualityGestures({ ...DEFAULT_QUALITY_GESTURES });
+  }
 
   if (s.kind === 'chords') {
     // Enabling parks radial mode — the two share the chord voice bank —

@@ -1164,9 +1164,14 @@ const chordCables = await (async () => {
       allFromCamera: ends.filter(e => /chord_(trig|acc)_/.test(e)).every(e => e.startsWith('gesture_')),
       camOwner: owner('panel:camera'),
       sockets,
-      rows: [...document.querySelectorAll('.chord-assign')].map(r => `${r.dataset.degree}:${r.querySelector('.ch-shape')?.value ?? ''}`),
+      rows: [...document.querySelectorAll('#chord-assigns .chord-assign')].map(r => `${r.dataset.degree}:${r.querySelector('.ch-shape')?.value ?? ''}`),
       deg0: chordmode.gestureFor(0), deg1: chordmode.gestureFor(1), deg4: chordmode.gestureFor(4),
       on: chordmode.enabled,
+      // The Chord Quality node: a socket per quality, and the default shapes'
+      // cables drawn into it.
+      qualSockets: [...document.querySelectorAll('[data-node="panel:chord-quality"] .chord-assign .port[data-side="in"]')]
+        .map(p => p.dataset.key),
+      qualWires: ends.filter(e => /chord_qual_/.test(e)),
     };
   });
   const fresh = await state();
@@ -2026,7 +2031,7 @@ for (const [key, vp] of [['desktop', { width: 1440, height: 900 }],
     WS.fitAll(['panel:gesture-mode']);
     await new Promise(r => setTimeout(r, 400));
 
-    const rows = [...document.querySelectorAll('.chord-assign')].map(r => ({
+    const rows = [...document.querySelectorAll('#chord-assigns .chord-assign')].map(r => ({
       degree: r.dataset.degree,
       gid: r.querySelector('.ch-cal')?.dataset.gid ?? null,
       disabled: r.querySelector('.ch-cal')?.disabled ?? null,
@@ -2570,6 +2575,11 @@ console.log('\nGesture mode\'s shapes are cables\n');
   check(fresh.sockets.length === 8 && fresh.sockets.includes('chord_trig_6') && fresh.sockets.includes('chord_trig_release'),
     'chord cables: every degree row and RELEASE carries its input socket', fresh.sockets.join(','));
   check(fresh.rows[0] === '0:point' && fresh.rows[4] === '4:palm', 'chord cables: the rows show the shapes', fresh.rows.join(' '));
+  check(fresh.qualSockets.length === 9 && fresh.qualSockets.includes('chord_qual_minor'),
+    'chord quality: the node carries a socket per quality', fresh.qualSockets.join(','));
+  check(fresh.qualWires.length === 5 && fresh.qualWires.includes('gesture_thumbs→chord_qual_major')
+        && fresh.qualWires.includes('gesture_thumbsdown→chord_qual_minor'),
+    'chord quality: the chords starter wires the semantic shapes into it', fresh.qualWires.join(' '));
   check(picked.deg0 === 'palm' && picked.deg4 === 'point' && picked.cables === 10 && picked.rows[0] === '0:palm' && picked.rows[4] === '4:point',
     'chord cables: choosing a shape re-strings the cables — a swap moves two', JSON.stringify({ deg0: picked.deg0, deg4: picked.deg4, cables: picked.cables }));
   check(wired.deg1 === 'cable:1' && wired.disabled && wired.text === 'WIRED',

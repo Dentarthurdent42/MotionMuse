@@ -1,5 +1,8 @@
 // Gesture mode's assignments ARE cables.
 //
+// So are the Chord Quality node's: each quality (MAJ, MIN, DIM…) is an input
+// socket on that node, and the shape that asks for it is the cable in.
+//
 // Which handshape plays which degree used to be a table inside chord mode
 // and a row of pickers in its panel — the one configuration on the canvas
 // that no cable showed, so a setup that plays chords looked unwired. Now
@@ -18,13 +21,15 @@
 // while the other runs, so they cannot chase each other.
 
 import { mapper } from './mapper.js';
-import { chordmode, DEGREES } from './chordmode.js';
+import { chordmode, DEGREES, QUALITY_KEYS } from './chordmode.js';
 import { isString } from './is.js';
 
 export const DEGREE_KEYS = Array.from({ length: DEGREES }, (_, i) => `chord_trig_${i}`);
 export const RELEASE_KEY = 'chord_trig_release';
 export const ACC_KEYS = { sharp: 'chord_acc_sharp', flat: 'chord_acc_flat' };
-export const CHORD_CABLE_KEYS = [...DEGREE_KEYS, RELEASE_KEY, ACC_KEYS.sharp, ACC_KEYS.flat];
+export const QUALITY_CABLE_KEYS = Object.fromEntries(QUALITY_KEYS.map(q => [q, `chord_qual_${q}`]));
+export const CHORD_CABLE_KEYS = [...DEGREE_KEYS, RELEASE_KEY, ACC_KEYS.sharp, ACC_KEYS.flat,
+                                 ...Object.values(QUALITY_CABLE_KEYS)];
 
 // What a socket is held by when its cable is not a handshape's.
 export const CABLE_ID = what => `cable:${what}`;
@@ -40,6 +45,8 @@ const SLOTS = [
   { key: RELEASE_KEY, what: 'release', get: () => chordmode.getReleaseGesture(), set: id => chordmode.setReleaseGesture(id) },
   { key: ACC_KEYS.sharp, what: 'sharp', get: () => chordmode.accidentalGestures().sharp, set: id => chordmode.setAccidentalGestures({ sharp: id }) },
   { key: ACC_KEYS.flat,  what: 'flat',  get: () => chordmode.accidentalGestures().flat,  set: id => chordmode.setAccidentalGestures({ flat: id }) },
+  ...QUALITY_KEYS.map(q => ({ key: QUALITY_CABLE_KEYS[q], what: `q_${q}`,
+    get: () => chordmode.qualityGestures()[q], set: id => chordmode.setQualityGestures({ [q]: id }) })),
 ];
 
 let busy = false;
@@ -53,6 +60,12 @@ export function applyCables() {
   try {
     for (const s of SLOTS) {
       const m = cableOn(s.key);
+      // Switched off, the shapes' cables are not drawn (drawCables), so a
+      // missing one says nothing — reading it as "unassigned" wiped every
+      // shape the moment any other cable moved, which left radial mode, which
+      // reads the accidentals and qualities from here while this is off, with
+      // none. A cable that IS there still assigns.
+      if (!m && !chordmode.enabled) continue;
       const want = m ? (gidOf(m.signal) ?? CABLE_ID(s.what)) : null;
       if ((s.get() ?? null) !== want) s.set(want);
     }

@@ -19,6 +19,7 @@ import { songFromMidi } from '../midifile.js';
 import { gestureModeSection, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
 import { radialMenuSection, wireRadialSection, updateRadialPanel } from './radial-ui.js';
 import { chordVoiceSection, wireChordVoiceSection, updateChordVoicePanel } from './voice-ui.js';
+import { chordQualitySection, wireChordQualitySection, updateChordQualityPanel } from './quality-ui.js';
 import { rows, tickCss } from './rows.js';
 import { metronomeSection, wireMetronomeSection, updateMetronomePanel } from './metronome-ui.js';
 import { looperSectionHTML, wireLooperSection } from './looper-ui.js';
@@ -105,6 +106,7 @@ export function renderAudioPanel() {
 
   panel.innerHTML = `
     ${gestureModeSection()}
+    ${chordQualitySection()}
     ${radialMenuSection()}
     ${chordVoiceSection()}
     ${metronomeSection()}
@@ -518,6 +520,7 @@ export function renderAudioPanel() {
   wireGestureSections(renderAudioPanel);
   wireRadialSection(renderAudioPanel);
   wireChordVoiceSection(renderAudioPanel);
+  wireChordQualitySection(renderAudioPanel);
   syncControls();
   wireMetronomeSection(renderAudioPanel);
   wireLooperSection();
@@ -599,5 +602,6 @@ export function updateAudioSliders() {
   updateGesturePanel();
   updateRadialPanel();
   updateChordVoicePanel();
+  updateChordQualityPanel();
   updateMetronomePanel();
 }

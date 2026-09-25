@@ -90,7 +90,11 @@ function numeralFor(deg, offs, n) {
   const [, third, fifth, sev] = offs;
   const minor = third === 3;
   let s = minor ? ROMAN[deg].toLowerCase() : ROMAN[deg];
-  if (third !== 3 && third !== 4) s += 'sus';   // e.g. a 2nd or 4th in place of the third
+  // A 2nd or 4th in place of the third. Named for which: "sus" alone would
+  // read the same for both, and they are two different chords.
+  if (third === 2)      s += 'sus2';
+  else if (third === 5) s += 'sus4';
+  else if (third !== 3 && third !== 4) s += 'sus';
   if (fifth === 6) s += '°';
   else if (fifth === 8) s += '+';
   if (sev !== undefined) {
@@ -125,6 +129,50 @@ export function diatonicChord(keyRoot = 'C', octave = 4, scale = 'major (ionian)
     freqs: d.offs.map(o => mtof(base + o)),
     // Pitch-class name of the chord's own root, for the readout ("G dom7").
     rootName: NOTE_NAMES[((base % 12) + 12) % 12],
+  };
+}
+
+// ── Chord quality: the degree's root, a quality you chose ────────────────
+//
+// The diatonic quality is the key's answer to "what chord lives on this
+// degree". A quality held on the other hand overrides it: the ROOT still
+// comes from the degree (so the key still transposes it), the intervals come
+// from QUALITIES. That is modal interchange with a hand — IV made minor is the
+// borrowed iv, V made dom7 is the V7 a minor key does not have on its own.
+//
+// The qualities a hand can ask for, in the order the Chord Quality node lists
+// them: the triads first, then the sevenths. add9 and min6 stay table-only —
+// colour tones rather than qualities anyone reaches for by name mid-song.
+export const OVERRIDE_QUALITIES = ['major', 'minor', 'dim', 'aug', 'sus2', 'sus4', 'dom7', 'maj7', 'min7'];
+
+// How each reads on a panel — the chord symbol a musician writes.
+export const QUALITY_SYMBOL = {
+  major: 'MAJ', minor: 'MIN', dim: 'DIM °', aug: 'AUG +', sus2: 'SUS2', sus4: 'SUS4',
+  dom7: '7', maj7: 'MAJ7', min7: 'MIN7',
+};
+
+/**
+ * One degree of one key, sounded with a chosen quality rather than the one
+ * the key gives it. An unknown quality is the diatonic chord unchanged, so a
+ * stale name in a saved setup plays something rather than nothing.
+ */
+export function qualityChord(keyRoot = 'C', octave = 4, scale = 'major (ionian)',
+                             degree = 0, quality = null) {
+  const c = diatonicChord(keyRoot, octave, scale, degree);
+  const offs = QUALITIES[quality];
+  if (!offs || !OVERRIDE_QUALITIES.includes(quality)) return c;
+  const base = c.midi[0];
+  const n = isDegreeScale(scale) ? SCALES[scale].length : 7;
+  return {
+    ...c,
+    offs: offs.slice(),
+    numeral: numeralFor(c.degree, offs, n),
+    quality,
+    midi: offs.map(o => base + o),
+    freqs: offs.map(o => mtof(base + o)),
+    // Whether the hand actually changed anything: a MAJ held over a degree
+    // that is major already is the chord the key gives, not a borrowed one.
+    altered: c.quality !== quality,
   };
 }
 
