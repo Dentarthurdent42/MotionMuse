@@ -27,6 +27,24 @@ import { looperSectionHTML, wireLooperSection } from './looper-ui.js';
 const opts = (arr, sel) =>
   arr.map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${v}</option>`).join('');
 
+// One node's section HTML, or an empty string if building it throws. Without
+// this a bug in any single section (a stale reference, a malformed cable)
+// throws out of the middle of the big template literal below, so
+// `panel.innerHTML` is never assigned at all and every OTHER section — and
+// every `wireXSection` call after this one in the function — silently never
+// runs either. A section that fails to build is a gap in the panel and a
+// logged error; it is not the rest of the instrument going unresponsive.
+const safeSection = (fn, label) => {
+  try { return fn(); }
+  catch (err) { console.error(`MotionMuse: ${label} section failed to render —`, err); return ''; }
+};
+// Same shape for a section's wiring pass: one broken `wireXSection` must not
+// skip the ones listed after it.
+const safeWire = (fn, label) => {
+  try { fn(); }
+  catch (err) { console.error(`MotionMuse: ${label} section failed to wire —`, err); }
+};
+
 // Gate threshold options, labelled with the value the player actually reads off
 // a cable ("silent below 18%") rather than the internal rung position. The
 // percentage is obtained by asking the real quantiser, not by re-deriving the
@@ -105,11 +123,11 @@ export function renderAudioPanel() {
   if (out) out.innerHTML = rows(['volume', 'reverb_mix', 'loop_volume']);
 
   panel.innerHTML = `
-    ${gestureModeSection()}
-    ${chordQualitySection()}
-    ${radialMenuSection()}
-    ${chordVoiceSection()}
-    ${metronomeSection()}
+    ${safeSection(gestureModeSection, 'Gesture Mode')}
+    ${safeSection(chordQualitySection, 'Chord Quality')}
+    ${safeSection(radialMenuSection, 'Radial Mode')}
+    ${safeSection(chordVoiceSection, 'Chord Voice')}
+    ${safeSection(metronomeSection, 'Metronome')}
     <div class="audio-section">
       <div class="audio-section-label">Sound Kit <span class="head-sock">${inPort('kit')}</span></div>
       <select id="kit-select" title="Instrument timbre preset (synthesized)">${kitOpts}</select>
@@ -517,13 +535,13 @@ export function renderAudioPanel() {
 
   if (t.enabled) redrawKbd();
 
-  wireGestureSections(renderAudioPanel);
-  wireRadialSection(renderAudioPanel);
-  wireChordVoiceSection(renderAudioPanel);
-  wireChordQualitySection(renderAudioPanel);
+  safeWire(() => wireGestureSections(renderAudioPanel), 'Gesture Mode');
+  safeWire(() => wireRadialSection(renderAudioPanel), 'Radial Mode');
+  safeWire(() => wireChordVoiceSection(renderAudioPanel), 'Chord Voice');
+  safeWire(() => wireChordQualitySection(renderAudioPanel), 'Chord Quality');
   syncControls();
-  wireMetronomeSection(renderAudioPanel);
-  wireLooperSection();
+  safeWire(() => wireMetronomeSection(renderAudioPanel), 'Metronome');
+  safeWire(wireLooperSection, 'Loop Pedal');
 
   // Cache slider/readout refs — updateAudioSliders runs every frame and
   // shouldn't pay for per-mapping querySelector calls. The controls' own
