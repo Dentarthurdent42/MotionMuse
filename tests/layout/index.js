@@ -1214,9 +1214,8 @@ const dimming = await (async () => {
   }, id);
 
   // The first-run picker needs a context that looks like a real visitor, and
-  // it gets one of its own: dismissing it starts the guided tour for whatever
-  // way of playing was picked, which would take the spotlight checks below
-  // away from the one-step tour they park there on purpose.
+  // it gets one of its own, so the scrims below are measured on a page it is
+  // not sitting over.
   const firstCtx = await b.newContext({ viewport: { width: 1280, height: 900 } });
   await firstCtx.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
   const firstPage = await firstCtx.newPage();
@@ -1233,60 +1232,6 @@ const dimming = await (async () => {
   await page.goto(URL_, { waitUntil: 'networkidle' });
   await page.waitForTimeout(600);
 
-  // Park a one-step tour on whatever node is actually on screen: which panels
-  // exist depends on the starting point, and a step whose target does not
-  // resolve is skipped — which would leave this checking the targetless case
-  // twice over.
-  const spotSel = await page.evaluate(() => {
-    const el = [...document.querySelectorAll('#ws .node-panel')].find(e => e.getClientRects().length);
-    return el ? `[data-node="${el.dataset.node}"]` : null;
-  });
-  await page.evaluate(async sel => {
-    const { tour } = await import('/src/ui/tutorial.js');
-    tour.start({ steps: [{ id: 'spot', title: 'Spot', body: 'x', target: sel }] });
-  }, spotSel);
-  await page.waitForTimeout(700);
-  const spot = await page.evaluate(() => {
-    const bd = document.getElementById('tour-backdrop'), rg = document.getElementById('tour-ring');
-    const clip = getComputedStyle(bd).clipPath || '';
-    // The keyhole in px. Its four corners are the only points off the left
-    // edge — the outer rectangle is written in percentages and the slit runs
-    // along x=0 — so the hole is their bounding box, whatever order they come
-    // in and however many points the path ends up with.
-    const pts = [...clip.matchAll(/(-?[\d.]+)px\s+(-?[\d.]+)px/g)].map(m => [+m[1], +m[2]]);
-    const inner = pts.filter(([x]) => x !== 0);
-    const xs = inner.map(p => p[0]), ys = inner.map(p => p[1]);
-    const r = rg.getBoundingClientRect();
-    return {
-      isPolygon: clip.startsWith('polygon'),
-      pts: pts.length,
-      hole: inner.length >= 4
-        ? { x: Math.min(...xs), y: Math.min(...ys), r: Math.max(...xs), b: Math.max(...ys) } : null,
-      ring: { x: r.left, y: r.top, r: r.right, b: r.bottom },
-      ringShadow: getComputedStyle(rg).boxShadow,
-      ringShown: getComputedStyle(rg).display,
-      backdropShown: getComputedStyle(bd).display,
-      card: document.querySelector('#tour-card .tour-title')?.textContent ?? null,
-    };
-  });
-  const tourScrim = await scrimOf(page, 'tour-backdrop');
-
-  // A card with no target dims the whole screen and cuts no hole. Escape
-  // first: starting a tour while one is already open leaves the old step
-  // (and its hole) in place, which would make this pass on stale state.
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(200);
-  await page.evaluate(async () => {
-    const { tour } = await import('/src/ui/tutorial.js');
-    tour.start({ steps: [{ id: 'plain', title: 'Welcome', body: 'x' }] });
-  });
-  await page.waitForTimeout(500);
-  const plain = await page.evaluate(() => {
-    const bd = document.getElementById('tour-backdrop');
-    return { clip: getComputedStyle(bd).clipPath, shown: getComputedStyle(bd).display,
-             ring: getComputedStyle(document.getElementById('tour-ring')).display };
-  });
-
   // The two smaller scrims: the muted banner over the scope, the HUD strip
   // over the picture. Both keep the stage's own polarity, so they are read
   // for depth and blur rather than for a particular colour.
@@ -1295,7 +1240,7 @@ const dimming = await (async () => {
   const hud = await scrimOf(page, 'latency-bar');
 
   await ctx.close();
-  return { start, spot: { ...spot, sel: spotSel }, tourScrim, plain, viz, hud, errs };
+  return { start, viz, hud, errs };
 })();
 
 // The inference HUD is dev-only, and each of its rows belongs to a model that
@@ -2417,6 +2362,65 @@ const shaderNodes = await (async () => {
 //
 // So the order is the contract: ask for the camera in the tap's own task,
 // put the picture up on the stream alone, load the models behind it.
+// ── Group volume: every group is a fader over what sounds inside it ───────
+const groupVol = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1440, height: 950 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const read = () => page.evaluate(async () => {
+    const { engine } = await import('/src/engine.js');
+    const fader = id => {
+      const i = document.querySelector(`[data-node="${id}"] > .node-head .group-vol input`);
+      return i ? { value: +i.value, disabled: i.disabled,
+                   label: document.querySelector(`[data-node="${id}"] > .node-head .group-vol-val`)?.textContent } : null;
+    };
+    return {
+      groups: [...document.querySelectorAll('.node-group')].map(g => g.dataset.node),
+      withFader: [...document.querySelectorAll('.node-group')].filter(g => g.querySelector(':scope > .node-head .group-vol input')).length,
+      inputs: fader('group:inputs'), audio: fader('group:audio'),
+      trims: Object.fromEntries(engine.SOURCES.map(k => [k, engine.sourceTrim(k)])),
+    };
+  });
+  const load = await read();
+
+  // The fader, moved the way a hand moves it.
+  const slider = page.locator('[data-node="group:audio"] > .node-head .group-vol input');
+  await slider.scrollIntoViewIfNeeded();
+  const box = await slider.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.25, box.y + box.height / 2);
+  await page.waitForTimeout(250);
+  const dragged = await read();
+
+  // Nesting: a group made inside AUDIO ENGINE around the oscillators alone.
+  await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    WS.selectNodes(['panel:oscillators']);
+    WS.groupSelected('LEAD');
+  });
+  await page.waitForTimeout(300);
+  const leadId = await page.evaluate(() =>
+    [...document.querySelectorAll('.node-group')].find(g => g.querySelector('.group-title')?.textContent === 'LEAD')?.dataset.node ?? null);
+  if (leadId) await page.evaluate(async id => {
+    const WS = await import('/src/ui/workspace.js');
+    WS.setGroupVolume(id, 0.5);
+  }, leadId);
+  await page.waitForTimeout(200);
+  const nested = await read();
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const reloaded = await read();
+  // Double-click resets.
+  await page.locator('[data-node="group:audio"] > .node-head .group-vol input').dblclick();
+  await page.waitForTimeout(200);
+  const reset = await read();
+  await ctx.close();
+  return { load, dragged, nested, reloaded, reset, leadId, errs };
+})();
+
 const cameraStart = await (async () => {
   const out = {};
   for (const mode of ['slow', 'fail']) {
@@ -2804,26 +2808,15 @@ for (const [key, f] of Object.entries(find)) {
 
 console.log('\nDimming\n');
 {
-  const { start, spot, tourScrim, plain, viz, hud, errs } = dimming;
+  const { start, viz, hud, errs } = dimming;
   check(errs.length === 0, 'dimming: no page errors', errs.join(' | '));
   const blurred = s => /blur\(\s*[1-9]/.test(s.blur);
   for (const [what, sc, floor] of [['the first-run picker', start, 0.7],
-                                   ['the tour', tourScrim, 0.7],
                                    ['the muted banner', viz, 0.8],
                                    ['the HUD strip', hud, 0.75]]) {
     check(!sc.missing && sc.alpha >= floor, `dimming: ${what} dims to at least ${floor}`, JSON.stringify(sc));
     check(blurred(sc), `dimming: ${what} blurs what is behind it`, sc.blur);
   }
-  // The spotlight: one scrim with a hole in it, the hole exactly the ring.
-  check(spot.ringShown === 'block' && spot.backdropShown === 'block' && spot.isPolygon && !!spot.hole,
-    'dimming: a spotlit step cuts a keyhole in the scrim',
-    JSON.stringify({ on: spot.sel, card: spot.card, ring: spot.ringShown, shown: spot.backdropShown, pts: spot.pts }));
-  const off = spot.hole ? Math.max(Math.abs(spot.hole.x - spot.ring.x), Math.abs(spot.hole.y - spot.ring.y),
-                                   Math.abs(spot.hole.r - spot.ring.r), Math.abs(spot.hole.b - spot.ring.b)) : 999;
-  check(off <= 1, 'dimming: and the hole is exactly the ring, so the target stays sharp', `off by ${off.toFixed(1)}px`);
-  check(!/9999px/.test(spot.ringShadow), 'dimming: the ring no longer dims with its own shadow', spot.ringShadow.slice(0, 60));
-  check(plain.shown === 'block' && plain.clip === 'none' && plain.ring === 'none',
-    'dimming: a card with no target dims everything and cuts no hole', JSON.stringify(plain));
 }
 
 console.log('\nInference HUD\n');
@@ -3132,6 +3125,31 @@ console.log('\nKeyboard overlay while the arpeggiator runs\n');
     `${m.faded} vs struck ${m.oneNote}, empty ${m.baseline}`);
   check(m.fadeChangedPicture, 'so the level reaches the canvas rather than being rounded to on/off');
   check(m.silent === m.baseline, 'and a note that has faded out leaves the keyboard exactly as it found it', `${m.silent} vs empty ${m.baseline}`);
+}
+
+console.log('\nGroup volume\n');
+{
+  const { load, dragged, nested, reloaded, reset, leadId, errs } = groupVol;
+  check(errs.length === 0, 'group volume: no page errors', errs.join(' | '));
+  check(load.groups.length >= 2 && load.withFader === load.groups.length,
+    'every group carries a volume fader', `${load.withFader}/${load.groups.length}`);
+  check(load.audio && !load.audio.disabled && load.audio.value === 100,
+    'AUDIO ENGINE’s is live and at 100%', JSON.stringify(load.audio));
+  check(load.inputs && load.inputs.disabled,
+    'INPUTS holds nothing that sounds, so its fader is shown but disabled', JSON.stringify(load.inputs));
+  check(Object.values(load.trims).every(v => v === 1), 'every source starts at full', JSON.stringify(load.trims));
+  const v = dragged.audio?.value ?? -1;
+  check(v > 5 && v < 50, 'the fader moves under a click', `${v}%`);
+  check(Object.values(dragged.trims).every(t => Math.abs(t - v / 100) < 0.011),
+    'and every source inside the group follows it', JSON.stringify(dragged.trims));
+  check(!!leadId, 'a group can be made inside a group');
+  check(Math.abs(nested.trims.lead - v / 100 * 0.5) < 0.011,
+    'nested faders multiply — the inner group’s source hears both', `${nested.trims.lead} vs ${(v / 100 * 0.5).toFixed(3)}`);
+  check(Math.abs(nested.trims.chord - v / 100) < 0.011,
+    'while a source outside the inner group hears only the outer', String(nested.trims.chord));
+  check(Math.abs(reloaded.trims.lead - nested.trims.lead) < 0.011 && reloaded.audio?.value === v,
+    'faders and the gains they set survive a reload', JSON.stringify(reloaded.trims));
+  check(reset.audio?.value === 100, 'double-click resets a fader to 100%', JSON.stringify(reset.audio));
 }
 
 console.log('\nStarting the camera\n');

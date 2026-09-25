@@ -63,6 +63,11 @@ export const snap = v => Math.round(v / GRID) * GRID;
 
 const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
 
+// A group's volume: a fader over everything inside it that makes sound, 0–1,
+// full by default. Anything that is not a finite number is the default rather
+// than silence — a corrupt store must not quietly mute half the instrument.
+export const clampVol = v => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1);
+
 // One node record, with every field the canvas reads present and typed.
 function normalize(id, raw) {
   const kind = kindOf(id);
@@ -92,6 +97,7 @@ function normalize(id, raw) {
   if (kind === 'group') {
     n.title = isString(r.title) ? r.title : 'GROUP';
     n.collapsed = r.collapsed === true;
+    n.vol = clampVol(r.vol);
   }
   return n;
 }
@@ -135,7 +141,11 @@ export function serialize(state) {
     if (n.parent) out.parent = n.parent;
     if (n.pinned) { out.pinned = true; out.px = n.px; out.py = n.py; }
     if (n.auto) out.auto = true;
-    if (n.kind === 'group') { out.title = n.title; if (n.collapsed) out.collapsed = true; }
+    if (n.kind === 'group') {
+      out.title = n.title;
+      if (n.collapsed) out.collapsed = true;
+      if (n.vol !== 1) out.vol = n.vol;
+    }
     nodes[n.id] = out;
   }
   return { v: 1, nodes, view: { ...state.view }, nextGroup: state.nextGroup };
@@ -190,6 +200,26 @@ export function ancestors(state, id) {
 }
 
 export const isInside = (state, id, gid) => ancestors(state, id).some(a => a.id === gid);
+
+// ── Group volume ─────────────────────────────────────────────────────────
+//
+// What a node's sound is scaled by: the product of the volumes of every group
+// it sits inside, innermost to outermost. Nested groups multiply like faders
+// on a mixing desk's subgroups — a voice at 50% inside a section at 50% is at
+// 25% — so turning a group down turns down everything under it, including
+// the groups within it, without touching their own settings.
+export function gainOf(state, id) {
+  let g = 1;
+  for (const a of ancestors(state, id)) if (a.kind === 'group') g *= clampVol(a.vol);
+  return g;
+}
+
+export function setGroupVolume(state, gid, v) {
+  const g = state.nodes.get(gid);
+  if (!g || g.kind !== 'group') return false;
+  g.vol = clampVol(Number(v));
+  return true;
+}
 
 // The node that stands for `id` on screen: itself, unless it sits inside a
 // collapsed group — then the OUTERMOST collapsed ancestor, because a collapsed

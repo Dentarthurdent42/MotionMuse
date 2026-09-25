@@ -1,9 +1,16 @@
-// Tutorial staleness guard. The guided tour is data (src/ui/tutorial.js
-// TOUR_STEPS); the UI it points at changes often. This test boots the real
-// app, puts it in every state the steps declare they need, and FAILS if any
-// step's target no longer resolves to visible UI — so a redesign that orphans
-// a tutorial step turns CI red instead of shipping a tour that points at
-// nothing. It then drives the tour end-to-end through the real engine.
+// Node docs guard. There is no guided tour any more: every node explains
+// itself in a short card behind its own `?` (src/ui/nodedocs.js), and each `?`
+// shows whether it has been read. This boots the real app and checks what
+// can silently rot:
+//
+//   • coverage — every node on the canvas, in every state, has a doc, and no
+//     doc is written for a panel that no longer exists;
+//   • read state — unread `?`s are marked, the one about how you are playing
+//     pulses, opening a card marks it read, and that survives a reload;
+//   • the card — it opens beside its button, fits a phone screen, and goes
+//     away by ×, Escape, a tap elsewhere or the same `?` again;
+//   • nothing opens by itself — not on a first visit, not after picking how
+//     to play.
 //
 // Run:  npm run test:tutorial   (needs a Chromium; no network, no API keys)
 
@@ -28,366 +35,247 @@ const server = createServer((req, res) => {
   res.end(body);
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
-const port = server.address().port;
+const URL_ = `http://127.0.0.1:${server.address().port}/index.html`;
 
 const b = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
-const p = await b.newPage();
-const pageErrors = [];
-p.on('pageerror', e => pageErrors.push(String(e)));
-await p.setViewportSize({ width: 1440, height: 950 });
-await p.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
-
-// Put the app in every state a step can declare via `needs`. Playwright
-// clicks count as user gestures, so this genuinely resumes the audio context
-// (the engine itself now starts with the page, muted).
-// DEV lives inside the settings popover now, so 'dev' takes two clicks.
-await p.click('#settings-btn');
-await p.waitForTimeout(120);
-await p.click('#dev-btn');        // 'dev'
-await p.click('#settings-btn');   // and close it again
-await p.click('#audio-btn');      // 'audio' — builds the audio panel sections
-await p.waitForTimeout(400);
-await p.click('#chord-toggle');   // 'chord'
-await p.waitForTimeout(200);
-
-const r = await p.evaluate(async () => {
-  const { TOUR_STEPS, tour, unseenSteps, stepsForMode, MODES,
-          stepsForSection, sectionsWithHelp, appSteps } =
-    await import('/src/ui/tutorial.js');
-  const out = { stale: [], dupIds: [], visited: [], total: TOUR_STEPS.length,
-                perMode: {}, orphans: [] };
-
-  // ── Data integrity ──
-  const ids = TOUR_STEPS.map(s => s.id);
-  out.dupIds = ids.filter((id, i) => ids.indexOf(id) !== i);
-  out.malformed = TOUR_STEPS.filter(s => !s.id || !s.title || !s.body).map(s => s.id ?? '(missing id)');
-
-  // ── The core guard: every target must resolve to visible UI ──
-  for (const s of TOUR_STEPS) {
-    if (!s.target) continue;
-    const el = document.querySelector(s.target);
-    if (!el || el.getClientRects().length === 0) {
-      out.stale.push(`${s.id} → ${s.target}${el ? ' (present but hidden)' : ' (not found)'}`);
-    }
-  }
-
-  // ── Every step belongs to at least one mode ──
-  // The tour is scoped per way of playing now, so the failure to guard against
-  // is a step that is tagged for a mode that does not exist and is therefore
-  // never shown to anyone.
-  const covered = new Set(MODES.flatMap(m => stepsForMode(m).map(t => t.id)));
-  out.orphans = TOUR_STEPS.filter(t => !covered.has(t.id)).map(t => t.id);
-
-  // Captured before ANY tour runs: every run below marks its steps seen, and
-  // the per-panel runs alone would eat a third of them before the baseline.
-  out.freshBefore = unseenSteps().length;
-
-  // ── Per-panel help ──
-  // A step tagged for a panel that does not exist is a `?` that never appears,
-  // so the help is written and unreachable. And a panel whose `?` opens nothing
-  // is worse than no `?` at all.
-  out.sectionsWanted = sectionsWithHelp();
-  out.sectionsMissingPanel = out.sectionsWanted.filter(id =>
-    !document.querySelector(`.sec[data-sec-id="${id}"]`));
-  out.sectionsMissingButton = out.sectionsWanted.filter(id =>
-    !document.querySelector(`.sec[data-sec-id="${id}"] .sec-help`));
-  out.emptyHelpButtons = [...document.querySelectorAll('.sec .sec-help')]
-    .map(b => b.closest('.sec').dataset.secId)
-    .filter(id => stepsForSection(id).length === 0);
-  out.appStepCount = appSteps().length;
-
-  // Each panel's `?` opens only that panel's steps.
-  out.sectionRuns = {};
-  for (const id of out.sectionsWanted) {
-    document.querySelector(`.sec[data-sec-id="${id}"] .sec-help`)?.click();
-    out.sectionRuns[id] = {
-      want: stepsForSection(id).length,
-      shown: document.querySelector('.tour-count')?.textContent ?? '(none)',
-      title: document.querySelector('.tour-title')?.textContent ?? '',
-    };
-    tour.close();
-  }
-
-  // ── Drive the real engine through EACH mode's tour ──
-  const walk = async (mode) => {
-    const expected = stepsForMode(mode).length;
-    const seen = [];
-    tour.start(mode);
-    for (let guard = 0; guard < expected + 2; guard++) {
-      const title = document.querySelector('.tour-title')?.textContent;
-      const count = document.querySelector('.tour-count')?.textContent;
-      if (!title) break;
-      seen.push(`${count} ${title}`);
-      const nextBtn = document.getElementById('tour-next');
-      const done = nextBtn.textContent === 'DONE';
-      nextBtn.click();
-      if (done) break;
-      await new Promise(rq => requestAnimationFrame(rq));
-    }
-    return { expected, seen };
-  };
-  for (const m of MODES) out.perMode[m] = await walk(m);
-  out.visited = out.perMode[MODES[MODES.length - 1]].seen;
-
-  out.closedCleanly = !document.getElementById('tour-card');
-  out.ringGone = !document.getElementById('tour-ring');
-  out.freshAfter = unseenSteps().length;
-  out.stateSaved = (() => {
-    try { return JSON.parse(localStorage.getItem('motionmuse-tour')).done === true; }
-    catch { return false; }
-  })();
-  return out;
-});
-
-// ── The spotlight must stay on its target when the zoom level changes ──
-// It used to reposition only on `resize` and `scroll`, which left the ring
-// stranded whenever the layout moved without firing one of those. Each case
-// below moves the target in a way that misses a different trigger: a pinch
-// touches the visual viewport only, a zoom change reflows *after* resize has
-// been and gone, and a page zoom puts written lengths in different units from
-// the rect they were measured from.
-// Which step is tested matters. A header button barely moves when the page
-// reflows, so it stays aligned even with the tracking removed and proves
-// nothing; the bug shows on a target far down a scrolled column, where a
-// reflow above it drags it hundreds of pixels. So: spotlight the deepest
-// target on the page, on its own, and hold the tour there.
-const target = await p.evaluate(async () => {
-  const { TOUR_STEPS, tour } = await import('/src/ui/tutorial.js');
-  const deepest = TOUR_STEPS
-    .filter(s => s.target && document.querySelector(s.target)?.getClientRects().length)
-    .map(s => ({ s, y: document.querySelector(s.target).getBoundingClientRect().top + scrollY }))
-    .sort((a, b) => b.y - a.y)[0];
-  if (!deepest) return null;
-  tour.start({ steps: [deepest.s] });      // a one-step tour parks the ring there
-  return deepest.s.target;
-});
-// The ring is drawn 6px outside its target on every side, so a correct ring
-// sits at exactly -6; anything past a rounding pixel or two is a real miss.
-const offBy = sel => p.evaluate(s => {
-  const ring = document.getElementById('tour-ring'), t = document.querySelector(s);
-  if (!ring || !t) return 999;
-  const R = ring.getBoundingClientRect(), T = t.getBoundingClientRect();
-  return +Math.max(Math.abs(R.left - T.left + 6), Math.abs(R.top - T.top + 6)).toFixed(1);
-}, sel);
-
-const zoom = [];
-if (target) {
-  const cdp = await p.context().newCDPSession(p);
-  await p.waitForTimeout(1200);            // let scrollIntoView and the ring transition settle
-  zoom.push(['unzoomed', await offBy(target)]);
-
-  // The mechanism underneath every case below: the target moved and the DOM
-  // said nothing. No resize, no scroll — just a reflow, which is what a zoom
-  // change actually produces once panels re-measure themselves. Growing a
-  // sibling above the target reproduces it in one step. It runs first, on a
-  // freshly parked tour: once the cases below have shuffled the scroll
-  // position around, inserting content can nudge a scrolled container and fire
-  // the scroll event that would have covered for the missing tracking.
-  await p.evaluate(sel => {
-    const t = document.querySelector(sel);
-    const spacer = document.createElement('div');
-    spacer.id = '__reflow-spacer';
-    spacer.style.cssText = 'height:160px;flex:0 0 auto';
-    t.parentNode.insertBefore(spacer, t);
-  }, target);
-  await p.waitForTimeout(700);
-  zoom.push(['a silent reflow moved it', await offBy(target)]);
-  await p.evaluate(() => document.getElementById('__reflow-spacer')?.remove());
-  await p.waitForTimeout(700);
-
-  for (const z of [1.5, 2]) {               // Ctrl +/−: viewport shrinks, DPR rises
-    await cdp.send('Emulation.setDeviceMetricsOverride', {
-      width: Math.round(1440 / z), height: Math.round(950 / z), deviceScaleFactor: z, mobile: false });
-    await p.waitForTimeout(700);
-    zoom.push([`browser zoom ${z * 100}%`, await offBy(target)]);
-  }
-  await cdp.send('Emulation.clearDeviceMetricsOverride');
-  await p.waitForTimeout(700);
-  zoom.push(['back to 100%', await offBy(target)]);
-
-  for (const z of [1.5, 2]) {               // pinch: no resize event at all
-    await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: z });
-    await p.waitForTimeout(700);
-    zoom.push([`pinch ${z * 100}%`, await offBy(target)]);
-  }
-  await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 });
-
-  for (const z of [1.5, 0.67]) {            // page zoom: a second set of units
-    await p.evaluate(v => { document.documentElement.style.zoom = v; }, z);
-    await p.waitForTimeout(700);
-    zoom.push([`page zoom ${z}`, await offBy(target)]);
-  }
-  await p.evaluate(() => { document.documentElement.style.zoom = ''; });
-}
-
-// ── A setup arriving by link ──────────────────────────────────────────────
-//
-// A link is an invitation to play: it opens straight into the fullscreen
-// camera view, and the tour waits until you come back out of it — a
-// walkthrough of panels that are behind a fullscreen camera is a walkthrough
-// of nothing. Driven on its own page because it is a boot-time path.
-// Its own CONTEXT, not just its own page: pages in one context share
-// localStorage, and this suite has already walked both tours — with every
-// step marked seen the shared tour would correctly decline, and this would be
-// testing nothing. A fresh visitor following a link is a fresh profile.
-const shareCtx = await b.newContext({ viewport: { width: 1440, height: 950 } });
-const share = await shareCtx.newPage();
-await share.addInitScript(() => {
-  // Exactly the mark consumeSharedLink() leaves for the far side of its
-  // reload, plus the session it saves before reloading — without that the
-  // first-run picker wins and the shared-link branch never runs.
-  sessionStorage.setItem('motionmuse-shared', JSON.stringify({ label: 'Shared Setup', first: true }));
-  localStorage.setItem('motionmuse-started', '1');
-  // The app never auto-opens a modal under automation, by design; this path
-  // is precisely about one, so the real branch has to be reachable.
-  Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
-});
-await share.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
-await share.waitForTimeout(2200);          // past the tour's 1200 ms settle
-const arrival = await share.evaluate(() => ({
-  fs: document.getElementById('video-wrap').classList.contains('fs-active'),
-  tour: !!document.getElementById('tour-card'),
-  start: document.getElementById('cv-btn').getClientRects().length > 0,
-}));
-await share.click('#fs-btn');
-await share.waitForTimeout(2200);
-const exited = await share.evaluate(() => ({
-  fs: document.getElementById('video-wrap').classList.contains('fs-active'),
-  tour: !!document.getElementById('tour-card'),
-  // Nothing opens any more: what a shared setup earns is the help ASKING to
-  // be read. The `?` for the way this setup plays pulses; every other one
-  // carries a dot saying there is something behind it you have not seen.
-  pulsing: document.querySelectorAll('.sec-help.help-now').length,
-  unread: document.querySelectorAll('.sec-help.help-unread').length,
-  headerAsks: /tour-(new|unread)/.test(document.getElementById('tour-btn')?.className ?? ''),
-}));
-await shareCtx.close();
-
-// ── Getting out of the tour on a phone ───────────────────────────────────
-//
-// The reported bug: the tour could not be dismissed. On a phone the card is
-// a full-width bottom sheet, there is no Escape key, and the scrim passes
-// presses through to the app on purpose — so the × in its corner is the only
-// way out, and it was 17×16 css px. This drives the real thing at a real
-// phone size and presses it the way a thumb would.
-const phoneCtx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-const phone = await phoneCtx.newPage();
-await phone.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
-await phone.waitForTimeout(700);
-await phone.evaluate(async () => {
-  const { tour, appSteps } = await import('/src/ui/tutorial.js');
-  tour.start({ steps: appSteps() });
-});
-await phone.waitForTimeout(400);
-const closeTarget = await phone.evaluate(() => {
-  const x = document.getElementById('tour-close');
-  if (!x) return null;
-  const r = x.getBoundingClientRect();
-  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-  // The pressable area, invisible padding included: what a thumb landing
-  // slightly off-centre actually hits.
-  const hits = d => {
-    const el = document.elementFromPoint(cx + d, cy);
-    const el2 = document.elementFromPoint(cx, cy + d);
-    return (el === x || x.contains(el)) && (el2 === x || x.contains(el2));
-  };
-  return { sheet: document.getElementById('tour-card').classList.contains('sheet'),
-           onScreen: r.top >= 0 && r.bottom <= innerHeight,
-           hit10: hits(10), hit14: hits(14),
-           skip: !!document.getElementById('tour-skip') };
-});
-await phone.locator('#tour-close').tap();
-await phone.waitForTimeout(300);
-const closedByX = await phone.evaluate(() => !document.getElementById('tour-card'));
-// And the second way out, for a thumb that never finds the corner at all.
-await phone.evaluate(async () => {
-  const { tour, appSteps } = await import('/src/ui/tutorial.js');
-  tour.start({ steps: appSteps() });
-});
-await phone.waitForTimeout(400);
-await phone.locator('#tour-skip').tap();
-await phone.waitForTimeout(300);
-const closedBySkip = await phone.evaluate(() => !document.getElementById('tour-card'));
-await phoneCtx.close();
-
-await b.close(); server.close();
 
 let fail = 0;
 const check = (ok, label, detail = '') => {
   if (!ok) fail++;
-  console.log(`  [${ok ? ' PASS ' : ' FAIL '}]  ${label}${detail ? '  — ' + detail : ''}`);
+  console.log(`  [${ok ? ' PASS ' : ' FAIL '}]  ${label}${detail !== '' ? '  — ' + detail : ''}`);
 };
 
-console.log(`\nTutorial staleness guard — ${r.total} steps across ${Object.keys(r.perMode).length} modes\n`);
-check(r.stale.length === 0, 'every step targets visible UI',
-  r.stale.length ? `stale: ${r.stale.join('; ')} (update TOUR_STEPS in src/ui/tutorial.js)` : '');
-check(r.dupIds.length === 0, 'step ids are unique', r.dupIds.join(', '));
-check(r.malformed.length === 0, 'every step has id/title/body', r.malformed.join(', '));
-check(r.orphans.length === 0, 'every step belongs to at least one mode',
-  r.orphans.join(' '));
+const cardState = page => page.evaluate(() => {
+  const p = document.getElementById('doc-pop');
+  if (!p) return { exists: false, shown: false };
+  const r = p.getBoundingClientRect();
+  return {
+    exists: true, shown: !p.hidden,
+    title: p.querySelector('.doc-pop-title')?.textContent ?? '',
+    doc: p.dataset.doc ?? '',
+    rect: { l: r.left, t: r.top, r: r.right, b: r.bottom },
+    vw: innerWidth, vh: innerHeight,
+  };
+});
+const helpClass = (page, id) => page.evaluate(i =>
+  document.querySelector(`[data-doc-for="${i}"]`)?.className ?? null, id);
 
-// ── Per-panel help ──
-check(r.sectionsMissingPanel.length === 0,
-  'every step tagged for a panel targets a panel that exists',
-  r.sectionsMissingPanel.join(' '));
-check(r.sectionsMissingButton.length === 0,
-  'and every one of those panels grew a ?', r.sectionsMissingButton.join(' '));
-check(r.emptyHelpButtons.length === 0,
-  'no ? opens an empty tour', r.emptyHelpButtons.join(' '));
-check(r.appStepCount > 0 && r.appStepCount < r.total,
-  'the header ? keeps the steps that belong to no panel',
-  `${r.appStepCount} of ${r.total}`);
-for (const [id, run] of Object.entries(r.sectionRuns)) {
-  check(run.shown === `1/${run.want}`, `${id}: its ? opens only its own steps`,
-    `${run.shown} (want 1/${run.want}) — ${run.title}`);
+// ── Coverage: every node, in every state, has a doc ─────────────────────
+console.log('\nEvery node explains itself\n');
+{
+  const page = await b.newPage({ viewport: { width: 1440, height: 950 } });
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  // DEV brings out the panels that are under construction; a function node,
+  // a shader node and a new group are the kinds the app does not ship.
+  await page.evaluate(() => document.getElementById('settings-btn').click());
+  await page.waitForTimeout(100);
+  await page.evaluate(() => document.getElementById('dev-btn').click());
+  await page.waitForTimeout(100);
+  await page.evaluate(() => document.getElementById('settings-btn').click());
+  await page.evaluate(async () => {
+    const { graph } = await import('/src/graph.js');
+    const { renderMapper } = await import('/src/ui/mapper-ui.js');
+    graph.add('math'); graph.add('lfo');
+    renderMapper();
+    const { addShaderNode } = await import('/src/ui/shadernode-ui.js');
+    addShaderNode('noise'); addShaderNode('palette');
+  });
+  await page.waitForTimeout(500);
+
+  const r = await page.evaluate(async () => {
+    const { PANEL_DOCS, docFor } = await import('/src/ui/nodedocs.js');
+    const nodes = [...document.querySelectorAll('#ws .node[data-node]')];
+    const missing = nodes.filter(n => !n.querySelector(':scope > .node-head [data-doc-for]'))
+      .map(n => n.dataset.node);
+    const noDoc = nodes.map(n => n.dataset.node).filter(id => !docFor(id));
+    const kinds = [...new Set(nodes.map(n => n.dataset.node.split(':')[0]))];
+    const panels = new Set(nodes.filter(n => n.dataset.node.startsWith('panel:')).map(n => n.dataset.node.slice(6)));
+    const stale = Object.keys(PANEL_DOCS).filter(k => !panels.has(k));
+    const thin = Object.entries(PANEL_DOCS).filter(([, d]) => !d.title || !d.body || d.body.replace(/<[^>]+>/g, '').trim().length < 60)
+      .map(([k]) => k);
+    const fnA = docFor(nodes.find(n => n.dataset.node.startsWith('fn:'))?.dataset.node);
+    const shxA = docFor(nodes.find(n => n.dataset.node.startsWith('shx:'))?.dataset.node);
+    return { count: nodes.length, missing, noDoc, kinds, stale, thin,
+             fnTitle: fnA?.title ?? null, shxTitle: shxA?.title ?? null };
+  });
+  check(r.count >= 20, 'the canvas is populated', `${r.count} nodes`);
+  check(r.missing.length === 0, 'every node on the canvas has a ? in its header', r.missing.join(', '));
+  check(r.noDoc.length === 0, 'and every one of them has a doc behind it', r.noDoc.join(', '));
+  check(['panel', 'group', 'fn', 'shx'].every(k => r.kinds.includes(k)),
+    'panels, groups, function nodes and shader nodes are all covered', r.kinds.join(', '));
+  check(r.stale.length === 0, 'no doc is written for a panel that is gone', r.stale.join(', '));
+  check(r.thin.length === 0, 'every panel doc says something', r.thin.join(', '));
+  check((r.fnTitle ?? '').startsWith('ƒ ') && (r.shxTitle ?? '').startsWith('▨ '),
+    'a function node and a shader node get their own type’s doc', `${r.fnTitle} / ${r.shxTitle}`);
+  check(errs.length === 0, 'coverage: no page errors', errs.join(' | '));
+  await page.close();
 }
-for (const [mode, m] of Object.entries(r.perMode)) {
-  check(m.seen.length === m.expected, `${mode} tour walks every one of its steps`,
-    `visited ${m.seen.length}/${m.expected}`);
-  check(m.expected < r.total, `${mode} tour is scoped, not the whole thing`,
-    `${m.expected} of ${r.total}`);
+
+// ── Nothing opens by itself ──────────────────────────────────────────────
+console.log('\nNothing opens by itself\n');
+{
+  // A real first visit: the start picker shows, which headless runs skip.
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(700);
+  const onLoad = await cardState(page);
+  const picker = await page.evaluate(() => !document.getElementById('start-pop')?.hidden);
+  await page.evaluate(() => document.querySelector('#start-pop [data-start]')?.click());
+  await page.waitForTimeout(700);
+  const afterPick = await cardState(page);
+  check(picker, 'a first visit is asked how to play');
+  check(!onLoad.shown, 'no help card opens on a first visit');
+  check(!afterPick.shown, 'nor after picking how to play');
+  check(errs.length === 0, 'first visit: no page errors', errs.join(' | '));
+  await ctx.close();
 }
-check(r.closedCleanly && r.ringGone, 'tour tears down after DONE');
-check(r.stateSaved, 'completion persists to localStorage');
-// Between them the two tours show everything, so after walking both there is
-// nothing left unseen.
-check(r.freshBefore === r.total && r.freshAfter === 0,
-  '"new steps" tracking flips seen→0 once both tours have run',
-  `${r.freshBefore}→${r.freshAfter}`);
-check(target !== null, 'a spotlit step was found to test zoom against', target ?? '');
-for (const [label, off] of zoom) {
-  check(off <= 2, `the spotlight holds its target — ${label}`, `off by ${off}px`);
+
+// ── Read state ───────────────────────────────────────────────────────────
+console.log('\nRead or not, at a glance\n');
+{
+  const ctx = await b.newContext({ viewport: { width: 1440, height: 950 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+
+  const before = {
+    cam: await helpClass(page, 'panel:camera'),
+    osc: await helpClass(page, 'panel:oscillators'),
+    gm:  await helpClass(page, 'panel:gesture-mode'),
+    app: await page.evaluate(() => document.getElementById('tour-btn').className),
+  };
+  const pulsing = await page.evaluate(() =>
+    [...document.querySelectorAll('.sec-help.help-now')].map(b => b.dataset.docFor));
+  check(/help-unread/.test(before.osc), 'an unread ? carries the unread mark', before.osc);
+  check(/help-now/.test(before.cam), 'in Tone Mode, Camera Input’s ? is the one that pulses', before.cam);
+  check(pulsing.length <= 2, 'and pulsing is kept to one or two buttons, not every one', pulsing.join(', '));
+  check(!/help-now/.test(before.gm), 'Gesture Mode’s does not pulse while it is off', before.gm);
+  check(/tour-unread|tour-new/.test(before.app), 'the header ? is marked unread too', before.app);
+
+  // Switching Gesture Mode on moves the pulse to it.
+  await page.evaluate(() => document.getElementById('chord-toggle')?.click());
+  await page.waitForTimeout(300);
+  const gmOn = await helpClass(page, 'panel:gesture-mode');
+  check(/help-now/.test(gmOn), 'with Gesture Mode on, its ? pulses', gmOn);
+  await page.evaluate(() => document.getElementById('chord-toggle')?.click());
+  await page.waitForTimeout(200);
+
+  // Opening a card is reading it.
+  await page.locator('[data-doc-for="panel:oscillators"]').click();
+  await page.waitForTimeout(250);
+  const open = await cardState(page);
+  const osc = await helpClass(page, 'panel:oscillators');
+  check(open.shown && open.title === 'Oscillators', 'the ? opens its node’s card', JSON.stringify(open.title));
+  check(!/help-unread|help-now/.test(osc), 'and that ? now reads as read', osc);
+  const exp = await page.evaluate(() => document.querySelector('[data-doc-for="panel:oscillators"]').getAttribute('aria-expanded'));
+  check(exp === 'true', 'the button says its card is open', String(exp));
+
+  // Read state is per kind: one Math node read is every Math node read.
+  await page.keyboard.press('Escape');
+  const mathIds = await page.evaluate(async () => {
+    const { graph } = await import('/src/graph.js');
+    const { renderMapper } = await import('/src/ui/mapper-ui.js');
+    const a = graph.add('math'), c = graph.add('math');
+    renderMapper();
+    return [`fn:${a}`, `fn:${c}`];
+  });
+  await page.waitForTimeout(300);
+  await page.evaluate(id => document.querySelector(`[data-doc-for="${id}"]`).click(), mathIds[0]);
+  await page.waitForTimeout(200);
+  const other = await helpClass(page, mathIds[1]);
+  check(other !== null && !/help-unread/.test(other), 'reading one Math node reads them all', String(other));
+  await page.keyboard.press('Escape');
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const kept = await helpClass(page, 'panel:oscillators');
+  check(kept !== null && !/help-unread/.test(kept), 'read survives a reload', String(kept));
+  check(errs.length === 0, 'read state: no page errors', errs.join(' | '));
+  await ctx.close();
 }
 
-// A setup arriving by link: fullscreen first, tour only on the way out.
-check(arrival.fs, 'a shared link opens into the fullscreen camera view');
-check(arrival.start, 'with the start button on it, so the camera is one tap away');
-check(!arrival.tour, 'and the tour does not open over it');
-check(!exited.fs, 'leaving fullscreen works from the shared-link arrival');
-// The tour no longer opens itself — here or anywhere. A walkthrough landing
-// unasked in front of an instrument you have not touched is an interruption,
-// and on a phone it arrives as a sheet over the whole app. The help waits to
-// be asked for, and makes the asking obvious instead.
-check(!exited.tour, 'and still nothing opens itself on the way out');
-check(exited.pulsing > 0, 'the help for this way of playing asks to be read',
-  `${exited.pulsing} pulsing`);
-check(exited.unread >= exited.pulsing,
-  'and every unread ? is marked, pulsing or not', `${exited.unread} marked`);
-check(exited.headerAsks, 'the header ? asks too');
+// Someone who read panels in the old tour has read them.
+{
+  const ctx = await b.newContext({ viewport: { width: 1440, height: 950 } });
+  await ctx.addInitScript(() => {
+    if (!localStorage.getItem('motionmuse-docs'))
+      localStorage.setItem('motionmuse-tour', JSON.stringify({ done: true, seen: ['sec-metronome', 'sec-oscillators'] }));
+  });
+  const page = await ctx.newPage();
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const metro = await helpClass(page, 'panel:metronome');
+  const filt = await helpClass(page, 'panel:filter');
+  check(metro !== null && !/help-unread/.test(metro), 'a panel read in the old tour stays read', String(metro));
+  check(/help-unread/.test(filt ?? ''), 'and one it never showed is still unread', String(filt));
+  await ctx.close();
+}
 
-check(pageErrors.length === 0, 'no page errors', pageErrors.join('; '));
+// ── The card itself ──────────────────────────────────────────────────────
+for (const [w, h, touch] of [[1440, 950, false], [390, 844, true]]) {
+  console.log(`\nThe card at ${w}px\n`);
+  const ctx = await b.newContext({ viewport: { width: w, height: h }, hasTouch: touch, isMobile: touch });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(700);
 
-for (const v of r.visited) console.log(`      ${v}`);
-console.log('\nDismissing the tour on a phone\n');
-check(closeTarget !== null, 'the tour opens on a phone at all');
-check(closeTarget?.sheet, 'and arrives as a bottom sheet');
-check(closeTarget?.onScreen, 'with its close button on screen');
-check(closeTarget?.hit10 && closeTarget?.hit14,
-  'the × is thumb-sized — a press 14px off centre still lands on it',
-  JSON.stringify({ hit10: closeTarget?.hit10, hit14: closeTarget?.hit14 }));
-check(closeTarget?.skip, 'and there is a labelled way out beside BACK/NEXT');
-check(closedByX, 'tapping the × dismisses the tour');
-check(closedBySkip, 'so does SKIP');
+  const btn = page.locator('[data-doc-for="panel:camera"]').first();
+  await btn.scrollIntoViewIfNeeded();
+  await btn.click();
+  await page.waitForTimeout(250);
+  const c = await cardState(page);
+  const inside = c.rect.l >= 0 && c.rect.t >= 0 && c.rect.r <= c.vw && c.rect.b <= c.vh;
+  check(c.shown && c.title === 'Camera Input', `${w}px: the ? opens the card`, c.title);
+  check(inside, `${w}px: the card is entirely on screen`, JSON.stringify(c.rect));
+  const bb = await btn.boundingBox();
+  const near = bb && Math.abs((c.rect.t + c.rect.b) / 2 - (bb.y + bb.height / 2)) < h;
+  check(near, `${w}px: beside its button`);
 
+  // The × — measured as a target, since on a phone it is how the card goes.
+  const x = await page.evaluate(() => {
+    const e = document.querySelector('.doc-pop-close');
+    const r = e.getBoundingClientRect();
+    const hit = parseFloat(getComputedStyle(e, '::before').width) || 0;
+    return { w: r.width, hit, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  });
+  check(x.hit >= 44 || x.w >= 44, `${w}px: the × is a thumb-sized target`, `${x.hit}px`);
+  if (touch) await page.touchscreen.tap(x.cx + 14, x.cy + 14);   // off-centre, as a thumb lands
+  else await page.mouse.click(x.cx, x.cy);
+  await page.waitForTimeout(200);
+  check(!(await cardState(page)).shown, `${w}px: × closes it`);
+
+  await btn.click(); await page.waitForTimeout(200);
+  await btn.click(); await page.waitForTimeout(200);
+  check(!(await cardState(page)).shown, `${w}px: the same ? closes it again`);
+
+  await btn.click(); await page.waitForTimeout(200);
+  if (!touch) { await page.keyboard.press('Escape'); await page.waitForTimeout(150); }
+  else { await page.touchscreen.tap(Math.round(w / 2), h - 140); await page.waitForTimeout(200); }
+  check(!(await cardState(page)).shown, `${w}px: ${touch ? 'a tap elsewhere' : 'Escape'} closes it`);
+
+  await page.locator('#tour-btn').click();
+  await page.waitForTimeout(200);
+  const app = await cardState(page);
+  check(app.shown && app.doc === 'app', `${w}px: the header ? opens how the app works`, app.title);
+  const appCls = await page.evaluate(() => document.getElementById('tour-btn').className);
+  check(!/tour-unread|tour-new/.test(appCls), `${w}px: and is then read`, appCls);
+  check(!(await page.evaluate(() => !!document.getElementById('tour-backdrop'))),
+    `${w}px: no scrim or spotlight is left in the page`);
+  check(errs.length === 0, `${w}px: no page errors`, errs.join(' | '));
+  await ctx.close();
+}
+
+await b.close(); server.close();
 console.log(`\n${fail} failure(s)\n`);
 process.exit(fail ? 1 : 0);

@@ -42,7 +42,8 @@ import { graphlib, layout as dagreLayout } from '../../vendor/dagre.js';
 import * as M from '../workspace.js';
 import { lsGet, lsSet, lsDel } from '../storage.js';
 import { isRecord } from '../is.js';
-import { stepsForSection, startSectionHelp, helpUnread, helpPulses, onHelpChange } from './tutorial.js';
+import { docFor, isRead, pulses, onDocsChange } from './nodedocs.js';
+import { openDoc, openDocId } from './docpop.js';
 
 export const LS_KEY = 'motionmuse-workspace';
 // The column layout is its own store: a phone's order of nodes and a
@@ -149,6 +150,31 @@ export function onViewScroll(cb) { scrollCbs.push(cb); }
 export function onModeChange(cb) { modeCbs.push(cb); }
 const dirty = () => dirtyCbs.forEach(cb => cb());
 
+// ── Group volume ─────────────────────────────────────────────────────────
+// Every group carries a fader over the sound of what is inside it (see
+// M.gainOf). Which nodes make sound is the audio side's knowledge, not the
+// canvas's, so it is handed in: `audible(id)` says whether a node is a sound
+// source. A group with no source inside it still shows its fader — every
+// group has one — but disabled, and saying why, rather than a slider that
+// silently does nothing.
+let audible = () => false;
+const gainCbs = [];
+export function setAudibleTest(fn) { audible = fn; }
+export function onGroupGains(cb) { gainCbs.push(cb); }
+export const gainOf = id => (state ? M.gainOf(state, id) : 1);
+const gainsChanged = () => gainCbs.forEach(cb => cb());
+const groupSounds = gid => M.descendants(state, gid).some(d => audible(d.id));
+
+export function setGroupVolume(gid, v) {
+  if (!M.setGroupVolume(state, gid, v)) return;
+  // Through lit, never by hand: the readout is a lit text part, and writing
+  // its textContent directly deletes the node lit renders into next time.
+  const n = state.nodes.get(gid), el = els.get(gid);
+  if (el) { renderGroup(n, el); chromeButtons(n, headOf(el)); }
+  save();
+  gainsChanged();
+}
+
 // ── Coordinates ──────────────────────────────────────────────────────────
 // The canvas moves the world by a transform; the column moves it by
 // scrolling the viewport. Both are in here, so nothing else has to know.
@@ -231,23 +257,26 @@ function chromeButtons(node, head) {
     head.appendChild(tail);
   }
   tail.innerHTML = '';
-  if (node.kind === 'panel' && stepsForSection(M.keyOf(node.id)).length) {
-    const key = M.keyOf(node.id);
+  const doc = docFor(node.id);
+  if (doc) {
     const help = document.createElement('button');
     help.className = 'sec-help'; help.type = 'button'; help.textContent = '?';
+    help.dataset.docFor = node.id;
+    help.setAttribute('aria-haspopup', 'dialog');
+    help.setAttribute('aria-expanded', String(openDocId() === node.id));
     // Three states, so a `?` says whether it is worth pressing without
     // anything having to open itself: pulsing for unread help about what you
     // are set up to play, a quiet dot for unread help about something else,
-    // and plain once it has been read. See ui/tutorial.js.
-    const unread = helpUnread(key), pulse = helpPulses(key);
+    // and plain once it has been read. See ui/nodedocs.js.
+    const unread = !isRead(doc.key), pulse = pulses(doc);
     help.classList.toggle('help-unread', unread);
     help.classList.toggle('help-now', pulse);
-    help.title = pulse ? 'What this node does — worth a look'
-      : unread ? 'What this node does — not read yet'
-      : 'What this node does';
+    help.title = pulse ? `${doc.title} — what it does (worth a look)`
+      : unread ? `${doc.title} — what it does (not read yet)`
+      : `${doc.title} — what it does`;
     help.setAttribute('aria-label',
-      `Help for ${key}${unread ? ' — not read yet' : ''}`);
-    help.addEventListener('click', e => { e.stopPropagation(); startSectionHelp(key); });
+      `Help for ${doc.title}${unread ? ' — not read yet' : ''}`);
+    help.addEventListener('click', e => { e.stopPropagation(); openDoc(node.id); });
     tail.appendChild(help);
   }
   if (node.kind !== 'group') {
@@ -358,6 +387,7 @@ function renderGroup(node, el) {
               @click=${e => { e.stopPropagation(); setCollapsed(node.id, !node.collapsed); }}></button>
       <span class="sec-title node-title group-title" title="Double-click to rename"
             @dblclick=${e => { e.stopPropagation(); renameGroup(node.id); }}>${node.title}</span>
+      ${groupVolTpl(node)}
     </div>
     ${node.collapsed ? html`
       <div class="group-ports">
@@ -365,6 +395,28 @@ function renderGroup(node, el) {
         <div class="ports-out">${ports.outs.map(s => html`<div class="port-row">${port(s, 'out')}</div>`)}</div>
       </div>` : nothing}`, el);
   el.classList.toggle('collapsed', node.collapsed);
+}
+
+// data-num-paired opts out of ui/numeric.js's typed twin: this readout is
+// part of a lit template, and a twin swapped in for it would be torn out on
+// the next render. The percentage is the readout; double-click resets.
+function groupVolTpl(node) {
+  const sounds = groupSounds(node.id);
+  const pct = Math.round(node.vol * 100);
+  return html`
+    <label class="group-vol${sounds ? '' : ' silent'}"
+           title=${sounds
+             ? `${node.title} volume — scales everything inside this group that makes sound, and multiplies with the groups around it. Double-click to reset to 100%.`
+             : 'Nothing in this group makes sound, so its volume has nothing to act on. Drag a sound source (Oscillators, Chord Voice, Metronome, Looper, Play Along) into it.'}
+           @pointerdown=${e => e.stopPropagation()}>
+      <span class="group-vol-ico" aria-hidden="true">🔉</span>
+      <input type="range" min="0" max="100" step="1" .value=${String(pct)} ?disabled=${!sounds}
+             data-num-paired="own-readout"
+             aria-label=${`Volume of ${node.title}`}
+             @input=${e => setGroupVolume(node.id, Number(e.target.value) / 100)}
+             @dblclick=${e => { e.stopPropagation(); setGroupVolume(node.id, 1); }}>
+      <span class="group-vol-val">${pct}%</span>
+    </label>`;
 }
 
 function renameGroup(id) {
@@ -885,6 +937,9 @@ export function syncWorkspace() {
   if (mode === 'column') stackColumn();
   layoutFrames();
   dirty();
+  // Membership may have changed (a drag into or out of a frame, a group made
+  // or undone): the gains every source is heard at follow.
+  gainsChanged();
 }
 
 function applyNode(n, el) {
@@ -1694,10 +1749,10 @@ export function resetLayout() {
 
 // ── Init ─────────────────────────────────────────────────────────────────
 
-// Reading a panel's help changes what its `?` — and every other one — should
-// look like, so the heads are redrawn rather than left stale until something
-// else happens to touch them.
-onHelpChange(() => {
+// Reading a node's doc changes what its `?` — and every other one of its
+// kind — should look like, so the heads are redrawn rather than left stale
+// until something else happens to touch them.
+onDocsChange(() => {
   for (const n of state.nodes.values()) {
     const el = els.get(n.id);
     const h = el && headOf(el);
