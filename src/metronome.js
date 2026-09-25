@@ -50,7 +50,10 @@ const camToken = (name, fallback) => {
 };
 
 export const metronome = (() => {
-  const DEFAULTS = { on: false, bpm: 100, sig: '4/4', muted: false };
+  // Muted by default: switching the metronome on gives the instrument a beat
+  // to lock to (quantizer, beat-sampled volume, the looper) without a click
+  // track on top of whatever you are playing. Unmute it to hear the beat.
+  const DEFAULTS = { on: false, bpm: 100, sig: '4/4', muted: true };
 
   let on    = DEFAULTS.on;
   let bpm   = DEFAULTS.bpm;
@@ -240,7 +243,7 @@ export const metronome = (() => {
     load(data) {
       const d = isRecord(data) ? data : {};
       sig   = SIGNATURES.includes(d.sig) ? d.sig : DEFAULTS.sig;
-      muted = d.muted === true;
+      muted = d.muted === true || d.muted === false ? d.muted : DEFAULTS.muted;
       bpm   = DEFAULTS.bpm; this.setBpm(d.bpm ?? DEFAULTS.bpm);
       mask  = Array(numOf(sig)).fill(true);
       if (Array.isArray(d.mask)) mask = mask.map((v, i) => d.mask[i] === undefined ? v : d.mask[i] === true);

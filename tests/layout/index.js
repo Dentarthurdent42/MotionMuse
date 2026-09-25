@@ -1214,9 +1214,8 @@ const dimming = await (async () => {
   }, id);
 
   // The first-run picker needs a context that looks like a real visitor, and
-  // it gets one of its own: dismissing it starts the guided tour for whatever
-  // way of playing was picked, which would take the spotlight checks below
-  // away from the one-step tour they park there on purpose.
+  // it gets one of its own, so the scrims below are measured on a page it is
+  // not sitting over.
   const firstCtx = await b.newContext({ viewport: { width: 1280, height: 900 } });
   await firstCtx.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
   const firstPage = await firstCtx.newPage();
@@ -1233,60 +1232,6 @@ const dimming = await (async () => {
   await page.goto(URL_, { waitUntil: 'networkidle' });
   await page.waitForTimeout(600);
 
-  // Park a one-step tour on whatever node is actually on screen: which panels
-  // exist depends on the starting point, and a step whose target does not
-  // resolve is skipped — which would leave this checking the targetless case
-  // twice over.
-  const spotSel = await page.evaluate(() => {
-    const el = [...document.querySelectorAll('#ws .node-panel')].find(e => e.getClientRects().length);
-    return el ? `[data-node="${el.dataset.node}"]` : null;
-  });
-  await page.evaluate(async sel => {
-    const { tour } = await import('/src/ui/tutorial.js');
-    tour.start({ steps: [{ id: 'spot', title: 'Spot', body: 'x', target: sel }] });
-  }, spotSel);
-  await page.waitForTimeout(700);
-  const spot = await page.evaluate(() => {
-    const bd = document.getElementById('tour-backdrop'), rg = document.getElementById('tour-ring');
-    const clip = getComputedStyle(bd).clipPath || '';
-    // The keyhole in px. Its four corners are the only points off the left
-    // edge — the outer rectangle is written in percentages and the slit runs
-    // along x=0 — so the hole is their bounding box, whatever order they come
-    // in and however many points the path ends up with.
-    const pts = [...clip.matchAll(/(-?[\d.]+)px\s+(-?[\d.]+)px/g)].map(m => [+m[1], +m[2]]);
-    const inner = pts.filter(([x]) => x !== 0);
-    const xs = inner.map(p => p[0]), ys = inner.map(p => p[1]);
-    const r = rg.getBoundingClientRect();
-    return {
-      isPolygon: clip.startsWith('polygon'),
-      pts: pts.length,
-      hole: inner.length >= 4
-        ? { x: Math.min(...xs), y: Math.min(...ys), r: Math.max(...xs), b: Math.max(...ys) } : null,
-      ring: { x: r.left, y: r.top, r: r.right, b: r.bottom },
-      ringShadow: getComputedStyle(rg).boxShadow,
-      ringShown: getComputedStyle(rg).display,
-      backdropShown: getComputedStyle(bd).display,
-      card: document.querySelector('#tour-card .tour-title')?.textContent ?? null,
-    };
-  });
-  const tourScrim = await scrimOf(page, 'tour-backdrop');
-
-  // A card with no target dims the whole screen and cuts no hole. Escape
-  // first: starting a tour while one is already open leaves the old step
-  // (and its hole) in place, which would make this pass on stale state.
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(200);
-  await page.evaluate(async () => {
-    const { tour } = await import('/src/ui/tutorial.js');
-    tour.start({ steps: [{ id: 'plain', title: 'Welcome', body: 'x' }] });
-  });
-  await page.waitForTimeout(500);
-  const plain = await page.evaluate(() => {
-    const bd = document.getElementById('tour-backdrop');
-    return { clip: getComputedStyle(bd).clipPath, shown: getComputedStyle(bd).display,
-             ring: getComputedStyle(document.getElementById('tour-ring')).display };
-  });
-
   // The two smaller scrims: the muted banner over the scope, the HUD strip
   // over the picture. Both keep the stage's own polarity, so they are read
   // for depth and blur rather than for a particular colour.
@@ -1295,7 +1240,7 @@ const dimming = await (async () => {
   const hud = await scrimOf(page, 'latency-bar');
 
   await ctx.close();
-  return { start, spot: { ...spot, sel: spotSel }, tourScrim, plain, viz, hud, errs };
+  return { start, viz, hud, errs };
 })();
 
 // The inference HUD is dev-only, and each of its rows belongs to a model that
@@ -2284,6 +2229,326 @@ const arpKbd = await (async () => {
   return { ...m, errs };
 })();
 
+// ── Shader nodes: the picture is a patch, wired like everything else ──────
+const shaderNodes = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(700);
+
+  const socket = (side, key) => page.evaluate(([side, key]) => {
+    const el = [...document.querySelectorAll(`.port[data-side="${side}"][data-key="${key}"]`)]
+      .find(p => p.checkVisibility());
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, [side, key]);
+
+  const drag = async (from, to) => {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 18, from.y + 18);
+    await page.mouse.move(to.x, to.y, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+  };
+
+  // Nothing is seeded by default — the panel says so rather than showing a
+  // black rectangle, and every patch, saved setup and share link stays as
+  // small as it was before shaders existed.
+  const empty = await page.evaluate(async () => {
+    const { shadergraph } = await import('/src/shadergraph.js');
+    const el = document.getElementById('shader-empty');
+    return {
+      nodes: shadergraph.nodes().length,
+      shells: document.querySelectorAll('#ws [data-node^="shx:"]').length,
+      noticeShown: !!el && !el.hidden,
+    };
+  });
+
+  // STARTER builds a worked example, and its sockets are typed.
+  await page.evaluate(() => document.getElementById('shader-reset').click());
+  await page.waitForTimeout(350);
+  const start = await page.evaluate(async () => {
+    const { shadergraph } = await import('/src/shadergraph.js');
+    const r = shadergraph.compile();
+    return {
+      nodes: shadergraph.nodes().length,
+      links: shadergraph.links().length,
+      compiles: r.error === null && !!r.frag,
+      shells: document.querySelectorAll('#ws [data-node^="shx:"]').length,
+      outType: document.querySelector('.port[data-side="out"][data-key^="shx_"]')?.dataset.type ?? null,
+      hasFloatSocket: !!document.querySelector('.port[data-side="in"][data-key^="shx_"][data-type="float"]'),
+      hasVec3Socket: !!document.querySelector('.port[data-side="in"][data-key^="shx_"][data-type="vec3"]'),
+      status: document.getElementById('shader-status')?.textContent ?? '',
+      noticeGone: document.getElementById('shader-empty')?.hidden === true,
+    };
+  });
+
+  // A SIGNAL into a shader node's number input — the whole point of putting
+  // the shader on this canvas. Open the depth group so its sockets are up.
+  await page.evaluate(() => { const d = document.querySelector('.sig-sec[data-group="depth"]'); if (d) d.open = true; });
+  await page.waitForTimeout(200);
+  const floatKey = await page.evaluate(() =>
+    document.querySelector('.port[data-side="in"][data-key^="shx_"][data-type="float"]')?.dataset.key ?? null);
+  const sigFrom = await socket('out', 'hand_L_z');
+  const shxTo = floatKey ? await socket('in', floatKey) : null;
+  if (sigFrom && shxTo) await drag(sigFrom, shxTo);
+  const signalWired = await page.evaluate(async k => {
+    const { mapper } = await import('/src/mapper.js');
+    const { shadergraph } = await import('/src/shadergraph.js');
+    const m = mapper.mappings.find(x => x.audioParam === k);
+    return {
+      signal: m?.signal ?? null,
+      uniform: shadergraph.compile().uniforms.some(u => u.key === k),
+      compiles: shadergraph.compile().error === null,
+    };
+  }, floatKey);
+
+  // A shader node's output into another shader node's colour input.
+  const added = await page.evaluate(async () => {
+    const { shadergraph } = await import('/src/shadergraph.js');
+    const { shaderChanged } = await import('/src/ui/shadernode-ui.js');
+    const id = shadergraph.add('voronoi');
+    shaderChanged();
+    return id;
+  });
+  await page.waitForTimeout(250);
+  const shxFrom = await socket('out', `shx_${added}`);
+  const colourKey = await page.evaluate(() =>
+    document.querySelector('.port[data-side="in"][data-key^="shx_"][data-type="vec3"]')?.dataset.key ?? null);
+  const shxColour = colourKey ? await socket('in', colourKey) : null;
+  if (shxFrom && shxColour) await drag(shxFrom, shxColour);
+  const shaderWired = await page.evaluate(async ([n, key]) => {
+    const { shadergraph } = await import('/src/shadergraph.js');
+    const r = shadergraph.compile();
+    return {
+      links: shadergraph.links().length,
+      // An input takes one cable, so wiring into a socket that already had
+      // one REPLACES it — the count need not grow, but this node must now be
+      // the thing feeding that socket.
+      feeds: shadergraph.links().some(l => l.from === n && l.to === key),
+      onlyOne: shadergraph.links().filter(l => l.to === key).length,
+      emitted: r.order.includes(n),
+      compiles: r.error === null,
+      wires: document.querySelectorAll('.ng-wire').length,
+    };
+  }, [added, colourKey]);
+
+  // And the rule that cannot be broken: a per-pixel colour has no single
+  // value, so it must never end up driving an audio parameter.
+  const audioTo = await socket('in', 'volume');
+  const shxFrom2 = await socket('out', `shx_${added}`);
+  if (shxFrom2 && audioTo) await drag(shxFrom2, audioTo);
+  const refused = await page.evaluate(async () => {
+    const { mapper } = await import('/src/mapper.js');
+    return mapper.mappings.filter(m => String(m.signal ?? '').startsWith('shx_')).length;
+  });
+
+  await ctx.close();
+  return { errs, empty, start, signalWired, shaderWired, refused, floatKey, colourKey };
+})();
+
+// ── Starting the camera: the stream first, the models behind it ──────────
+//
+// Reported as "the camera won't start when pressing the camera view panel".
+// The models are ~15MB and used to be awaited BEFORE getUserMedia, so on a
+// phone the permission prompt — the only thing that looks like the camera
+// starting — arrived tens of seconds after the tap, by which time the
+// transient user activation it needs has expired. Models that never arrive
+// at all took the camera down with them.
+//
+// So the order is the contract: ask for the camera in the tap's own task,
+// put the picture up on the stream alone, load the models behind it.
+// ── Group volume: every group is a fader over what sounds inside it ───────
+const groupVol = await (async () => {
+  const ctx = await b.newContext({ viewport: { width: 1440, height: 950 } });
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e)));
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const read = () => page.evaluate(async () => {
+    const { engine } = await import('/src/engine.js');
+    const fader = id => {
+      const i = document.querySelector(`[data-node="${id}"] > .node-head .group-vol input`);
+      return i ? { value: +i.value, disabled: i.disabled,
+                   label: document.querySelector(`[data-node="${id}"] > .node-head .group-vol-val`)?.textContent } : null;
+    };
+    return {
+      groups: [...document.querySelectorAll('.node-group')].map(g => g.dataset.node),
+      withFader: [...document.querySelectorAll('.node-group')].filter(g => g.querySelector(':scope > .node-head .group-vol input')).length,
+      inputs: fader('group:inputs'), audio: fader('group:audio'),
+      trims: Object.fromEntries(engine.SOURCES.map(k => [k, engine.sourceTrim(k)])),
+    };
+  });
+  const load = await read();
+
+  // The fader, moved the way a hand moves it.
+  const slider = page.locator('[data-node="group:audio"] > .node-head .group-vol input');
+  await slider.scrollIntoViewIfNeeded();
+  const box = await slider.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.25, box.y + box.height / 2);
+  await page.waitForTimeout(250);
+  const dragged = await read();
+
+  // Nesting: a group made inside AUDIO ENGINE around the oscillators alone.
+  await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    WS.selectNodes(['panel:oscillators']);
+    WS.groupSelected('LEAD');
+  });
+  await page.waitForTimeout(300);
+  const leadId = await page.evaluate(() =>
+    [...document.querySelectorAll('.node-group')].find(g => g.querySelector('.group-title')?.textContent === 'LEAD')?.dataset.node ?? null);
+  if (leadId) await page.evaluate(async id => {
+    const WS = await import('/src/ui/workspace.js');
+    WS.setGroupVolume(id, 0.5);
+  }, leadId);
+  await page.waitForTimeout(200);
+  const nested = await read();
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const reloaded = await read();
+  // Double-click resets.
+  await page.locator('[data-node="group:audio"] > .node-head .group-vol input').dblclick();
+  await page.waitForTimeout(200);
+  const reset = await read();
+  await ctx.close();
+  return { load, dragged, nested, reloaded, reset, leadId, errs };
+})();
+
+const cameraStart = await (async () => {
+  const out = {};
+  for (const mode of ['slow', 'fail']) {
+    const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    // The models: never answered, or refused outright. Either way the camera
+    // must come up without them.
+    await ctx.route('**/vision_bundle.mjs', r =>
+      mode === 'fail' ? r.abort() : new Promise(() => {}));
+    await ctx.route('**/storage.googleapis.com/mediapipe-models/**', r => r.abort());
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on('pageerror', e => errs.push(String(e)));
+    // A camera that is always there, and a record of when it was asked for.
+    await page.addInitScript(() => {
+      window.__gum = 0;
+      navigator.mediaDevices.getUserMedia = async () => {
+        window.__gum++;
+        const c = Object.assign(document.createElement('canvas'), { width: 320, height: 240 });
+        c.getContext('2d').fillRect(0, 0, 320, 240);
+        return c.captureStream(30);
+      };
+    });
+    await page.goto(URL_, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => document.getElementById('cv-btn').click());
+    // Wait for the outcome rather than for a clock: on a loaded runner the
+    // stream can take a moment, and a fixed pause would turn that into a
+    // flake. `cam-on` is the app saying the picture is up.
+    await page.waitForFunction(() => document.body.classList.contains('cam-on'), null, { timeout: 8000 })
+      .catch(() => {});
+    await page.waitForTimeout(400);
+    out[mode] = await page.evaluate(() => {
+      const btn = document.getElementById('cv-btn');
+      const v = document.getElementById('video');
+      return {
+        gum: window.__gum,
+        camOn: document.body.classList.contains('cam-on'),
+        btnHidden: btn.getClientRects().length === 0,
+        streaming: !!v.srcObject && !v.paused,
+        status: document.getElementById('status-lbl').textContent.trim(),
+        // The outputs belong to the camera, not to the models: a patch has to
+        // be wirable to a hand signal while the hand model is still coming.
+        signals: document.querySelectorAll('#cam-signals .sig-row').length,
+        faceEnabled: !document.getElementById('face-btn').disabled,
+      };
+    });
+    out[mode].errs = errs;
+    await ctx.close();
+  }
+
+  // And the failure that IS the camera's own: a named message rather than a
+  // raw DOMException, because it is the one a person can act on.
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await ctx.newPage();
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = () => {
+      const e = new Error('Permission denied'); e.name = 'NotAllowedError';
+      return Promise.reject(e);
+    };
+  });
+  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => document.getElementById('cv-btn').click());
+  await page.waitForFunction(() => !document.getElementById('cv-btn').disabled, null, { timeout: 8000 })
+    .catch(() => {});
+  out.denied = await page.evaluate(() => ({
+    status: document.getElementById('status-lbl').textContent.trim(),
+    label: document.getElementById('cv-btn').textContent.trim().replace(/\s+/g, ' '),
+    enabled: !document.getElementById('cv-btn').disabled,
+    camOn: document.body.classList.contains('cam-on'),
+  }));
+  await ctx.close();
+
+  // A browser that never answers: no prompt, no error, the promise just
+  // hangs. And a tap that lands on the frame's placeholder rather than the
+  // button laid over it — which is how the phone column is built.
+  {
+    const hctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await hctx.addInitScript(() => { navigator.mediaDevices.getUserMedia = () => new Promise(() => {}); });
+    const hp = await hctx.newPage();
+    await hp.goto(URL_, { waitUntil: 'networkidle' });
+    await hp.waitForTimeout(500);
+    const holdShown = await hp.evaluate(() => !!document.getElementById('cam-hold')?.getClientRects().length);
+    await hp.evaluate(() => document.getElementById('cam-hold')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await hp.waitForTimeout(300);
+    const label = await hp.evaluate(() => document.getElementById('cv-btn').textContent.trim().replace(/\s+/g, ' '));
+    await hp.waitForTimeout(6600);
+    const t = await hp.evaluate(() => { const e = document.getElementById('toast'); return e.classList.contains('show') ? e.textContent : ''; });
+    out.hang = { holdShown, label, toast: t };
+    await hctx.close();
+  }
+
+  // A tap the browser delivers to the wrong element. Safari on an iPhone was
+  // seen not to reach the button at all in the phone column; stand that in
+  // with an unrelated element laid over the button that takes the touch.
+  // Where the finger lifted still decides it — once.
+  {
+    const mctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await mctx.addInitScript(() => {
+      window.__gum = 0;
+      navigator.mediaDevices.getUserMedia = () => { window.__gum++; return new Promise(() => {}); };
+    });
+    const mp = await mctx.newPage();
+    await mp.goto(URL_, { waitUntil: 'networkidle' });
+    await mp.waitForTimeout(500);
+    const r = await mp.evaluate(() => {
+      const b = document.getElementById('cv-btn').getBoundingClientRect();
+      // Something unrelated to the camera, over the button, takes the touch.
+      const stray = Object.assign(document.createElement('div'), { id: 'stray-target' });
+      Object.assign(stray.style, { position: 'fixed', left: b.left + 'px', top: b.top + 'px',
+        width: b.width + 'px', height: b.height + 'px', zIndex: 99999 });
+      document.body.append(stray);
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2, w: b.width, h: b.height };
+    });
+    const hitBtn = await mp.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('#cv-btn'), r);
+    await mp.touchscreen.tap(r.x, r.y);
+    await mp.waitForTimeout(400);
+    out.misrouted = await mp.evaluate(() => ({
+      gum: window.__gum,
+      label: document.getElementById('cv-btn').textContent.trim().replace(/\s+/g, ' '),
+    }));
+    out.misrouted.hitBtn = hitBtn;
+    out.misrouted.size = [Math.round(r.w), Math.round(r.h)];
+    await mctx.close();
+  }
+  return out;
+})();
+
 await b.close(); server.close();
 
 let fail = 0;
@@ -2596,26 +2861,15 @@ for (const [key, f] of Object.entries(find)) {
 
 console.log('\nDimming\n');
 {
-  const { start, spot, tourScrim, plain, viz, hud, errs } = dimming;
+  const { start, viz, hud, errs } = dimming;
   check(errs.length === 0, 'dimming: no page errors', errs.join(' | '));
   const blurred = s => /blur\(\s*[1-9]/.test(s.blur);
   for (const [what, sc, floor] of [['the first-run picker', start, 0.7],
-                                   ['the tour', tourScrim, 0.7],
                                    ['the muted banner', viz, 0.8],
                                    ['the HUD strip', hud, 0.75]]) {
     check(!sc.missing && sc.alpha >= floor, `dimming: ${what} dims to at least ${floor}`, JSON.stringify(sc));
     check(blurred(sc), `dimming: ${what} blurs what is behind it`, sc.blur);
   }
-  // The spotlight: one scrim with a hole in it, the hole exactly the ring.
-  check(spot.ringShown === 'block' && spot.backdropShown === 'block' && spot.isPolygon && !!spot.hole,
-    'dimming: a spotlit step cuts a keyhole in the scrim',
-    JSON.stringify({ on: spot.sel, card: spot.card, ring: spot.ringShown, shown: spot.backdropShown, pts: spot.pts }));
-  const off = spot.hole ? Math.max(Math.abs(spot.hole.x - spot.ring.x), Math.abs(spot.hole.y - spot.ring.y),
-                                   Math.abs(spot.hole.r - spot.ring.r), Math.abs(spot.hole.b - spot.ring.b)) : 999;
-  check(off <= 1, 'dimming: and the hole is exactly the ring, so the target stays sharp', `off by ${off.toFixed(1)}px`);
-  check(!/9999px/.test(spot.ringShadow), 'dimming: the ring no longer dims with its own shadow', spot.ringShadow.slice(0, 60));
-  check(plain.shown === 'block' && plain.clip === 'none' && plain.ring === 'none',
-    'dimming: a card with no target dims everything and cuts no hole', JSON.stringify(plain));
 }
 
 console.log('\nInference HUD\n');
@@ -2924,6 +3178,98 @@ console.log('\nKeyboard overlay while the arpeggiator runs\n');
     `${m.faded} vs struck ${m.oneNote}, empty ${m.baseline}`);
   check(m.fadeChangedPicture, 'so the level reaches the canvas rather than being rounded to on/off');
   check(m.silent === m.baseline, 'and a note that has faded out leaves the keyboard exactly as it found it', `${m.silent} vs empty ${m.baseline}`);
+}
+
+console.log('\nGroup volume\n');
+{
+  const { load, dragged, nested, reloaded, reset, leadId, errs } = groupVol;
+  check(errs.length === 0, 'group volume: no page errors', errs.join(' | '));
+  check(load.groups.length >= 2 && load.withFader === load.groups.length,
+    'every group carries a volume fader', `${load.withFader}/${load.groups.length}`);
+  check(load.audio && !load.audio.disabled && load.audio.value === 100,
+    'AUDIO ENGINE’s is live and at 100%', JSON.stringify(load.audio));
+  check(load.inputs && load.inputs.disabled,
+    'INPUTS holds nothing that sounds, so its fader is shown but disabled', JSON.stringify(load.inputs));
+  check(Object.values(load.trims).every(v => v === 1), 'every source starts at full', JSON.stringify(load.trims));
+  const v = dragged.audio?.value ?? -1;
+  check(v > 5 && v < 50, 'the fader moves under a click', `${v}%`);
+  check(Object.values(dragged.trims).every(t => Math.abs(t - v / 100) < 0.011),
+    'and every source inside the group follows it', JSON.stringify(dragged.trims));
+  check(!!leadId, 'a group can be made inside a group');
+  check(Math.abs(nested.trims.lead - v / 100 * 0.5) < 0.011,
+    'nested faders multiply — the inner group’s source hears both', `${nested.trims.lead} vs ${(v / 100 * 0.5).toFixed(3)}`);
+  check(Math.abs(nested.trims.chord - v / 100) < 0.011,
+    'while a source outside the inner group hears only the outer', String(nested.trims.chord));
+  check(Math.abs(reloaded.trims.lead - nested.trims.lead) < 0.011 && reloaded.audio?.value === v,
+    'faders and the gains they set survive a reload', JSON.stringify(reloaded.trims));
+  check(reset.audio?.value === 100, 'double-click resets a fader to 100%', JSON.stringify(reset.audio));
+}
+
+console.log('\nStarting the camera\n');
+{
+  for (const [mode, what] of [['slow', 'models that never arrive'], ['fail', 'models that fail outright']]) {
+    const m = cameraStart[mode];
+    check(m.errs.length === 0, `camera (${what}): no page errors`, m.errs.join(' | '));
+    check(m.gum === 1, `the camera is asked for without waiting on ${what}`, `getUserMedia called ${m.gum}×`);
+    check(m.streaming, 'and the picture is live');
+    check(m.camOn && m.btnHidden, 'so the start target gives way to the picture it was standing in for');
+    check(m.signals > 0, 'the camera’s outputs are wirable before any model has loaded', `${m.signals} rows`);
+    check(m.faceEnabled, 'and face / gaze can be switched on, since they load their own model');
+  }
+  check(cameraStart.slow.status === 'LOADING MODELS…',
+    'while the models are still coming, the status line says so', cameraStart.slow.status);
+  check(cameraStart.fail.status.startsWith('NO TRACKING'),
+    'and models that fail cost the tracking, not the camera', cameraStart.fail.status);
+
+  const d = cameraStart.denied;
+  check(d.status === 'CAMERA BLOCKED — ALLOW IT',
+    'a refused camera is reported as a refused camera', d.status);
+  check(d.label === 'RETRY' && d.enabled, 'and the frame offers another go', `${d.label}, enabled ${d.enabled}`);
+  check(!d.camOn, 'without pretending there is a picture');
+
+  const h = cameraStart.hang;
+  check(h.holdShown && h.label === 'ALLOW CAMERA…',
+    'a tap on the frame’s placeholder starts the camera too, not only the button over it', JSON.stringify(h));
+  check(/Still waiting for the camera/.test(h.toast),
+    'a permission request the browser never answers is reported after a few seconds', h.toast.slice(0, 60));
+
+  const mr = cameraStart.misrouted;
+  check(!mr.hitBtn && mr.size[0] > 0 && mr.size[1] > 0,
+    'with the start button covered, a tap on it lands on something unrelated', JSON.stringify(mr));
+  check(mr.gum === 1 && mr.label === 'ALLOW CAMERA…',
+    'and the camera still starts, exactly once, from where the finger lifted', JSON.stringify(mr));
+}
+
+console.log('\nShader nodes\n');
+{
+  const m = shaderNodes;
+  check(m.errs.length === 0, 'shader: no page errors', m.errs.join(' | '));
+  check(m.empty.nodes === 0 && m.empty.shells === 0,
+    'no shader nodes are seeded into a fresh patch',
+    `${m.empty.nodes} nodes, ${m.empty.shells} shells`);
+  check(m.empty.noticeShown, 'the panel says so instead of showing a black rectangle');
+  check(m.start.nodes >= 4, 'STARTER builds a patch on the canvas', `${m.start.nodes} nodes`);
+  check(m.start.noticeGone, 'and the notice gets out of the way');
+  check(m.start.shells === m.start.nodes, 'each shader node has a shell on the canvas',
+    `${m.start.shells} shells for ${m.start.nodes} nodes`);
+  check(m.start.compiles, 'and it compiles to a shader');
+  check(m.start.status === '', 'with nothing to report on the status line', m.start.status);
+  check(m.start.hasFloatSocket, 'a number input is drawn and typed');
+  check(m.start.hasVec3Socket, 'a colour input is drawn and typed');
+  check(m.start.outType !== null, 'an output socket carries its type', String(m.start.outType));
+  check(m.signalWired.signal === 'hand_L_z',
+    'a signal cable drives a shader node’s number input', String(m.signalWired.signal));
+  check(m.signalWired.uniform, 'and that input is a uniform in the compiled shader', m.floatKey);
+  check(m.signalWired.compiles, 'which still compiles');
+  check(m.shaderWired.feeds, 'a shader output wires into a shader colour input',
+    `${m.shaderWired.links} links`);
+  check(m.shaderWired.onlyOne === 1, 'replacing the cable that was there, not joining it',
+    `${m.shaderWired.onlyOne} into that socket`);
+  check(m.shaderWired.emitted, 'and the node it came from is emitted into the source');
+  check(m.shaderWired.compiles, 'and the patch still compiles');
+  check(m.shaderWired.wires > 0, 'the cables are drawn', `${m.shaderWired.wires} wires`);
+  check(m.refused === 0, 'a per-pixel colour is refused as a driver for an audio parameter',
+    `${m.refused} such cables`);
 }
 
 console.log(`\n${fail} failure(s)\n`);

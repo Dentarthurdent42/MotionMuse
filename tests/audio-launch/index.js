@@ -1,4 +1,5 @@
-// Audio launch guard: the engine starts with the page, muted, and says so.
+// Audio launch guard: the engine starts with the page, sound on, and the
+// browser's autoplay gate is what keeps it silent until the first gesture.
 //
 // The reason this is a CI suite and not a scratch check: the interesting case
 // is a *suspended* AudioContext, which is what every real browser hands you
@@ -73,11 +74,12 @@ const onLoadBtn  = await btnState();
 const bannerOn   = await bannerShown();
 const sliders    = await p.$$eval('.apr', els => els.length);
 
-// Clicking is the gesture: it must unmute AND start the clock.
-await p.click('#audio-btn');
+// Any first gesture is what starts the clock — not only the mute button. A
+// tap somewhere neutral (the page header) must resume the context and leave
+// the sound on.
+await p.mouse.click(4, 4);
 await p.waitForTimeout(300);
-const afterClick = await engineState();
-const afterBtn   = await btnState();
+const afterGesture = await engineState();
 const clockDelta = await p.evaluate(async () => {
   const { engine } = await import('/src/engine.js');
   const a = engine.now();
@@ -85,10 +87,19 @@ const clockDelta = await p.evaluate(async () => {
   return engine.now() - a;
 });
 
-// The hotkey, including the two cases that make Space awkward to bind.
+// The button mutes; the hotkey, including the two cases that make Space
+// awkward to bind, toggles it back.
+await p.click('#audio-btn');
+await p.waitForTimeout(300);
+const afterClick = await engineState();
+const afterBtn   = await btnState();
+const mutedBanner = await bannerShown();
 await p.keyboard.press('Space');
 await p.waitForTimeout(150);
 const afterSpace = await engineState();
+await p.keyboard.press('Space');       // back to muted for the analyser check
+await p.waitForTimeout(150);
+const remutedBySpace = await engineState();
 
 // The waveform must keep moving while muted — that is what distinguishes a
 // silent instrument from a broken one, and why mute sits after the analyser.
@@ -157,10 +168,12 @@ const asIOS = await (async () => {
     };
   });
 
-  // Nothing is held before the user makes the instrument audible: the
-  // playback category stops whatever the phone was already playing.
+  // Nothing is held before the first touch: the playback category stops
+  // whatever the phone was already playing, and a page nobody has touched
+  // has no business doing that. The first touch is when sound can start, so
+  // that is when the category is taken; muting gives it back.
   const before = await read();
-  await page.click('#audio-btn');
+  await page.mouse.click(4, 4);
   await page.waitForTimeout(400);
   const unmuted = await read();
   await page.click('#audio-btn');
@@ -178,7 +191,7 @@ const asDesktop = await (async () => {
   const page = await ctx.newPage();
   await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(300);
-  await page.click('#audio-btn');
+  await page.mouse.click(4, 4);
   await page.waitForTimeout(400);
   const out = await page.evaluate(() => document.querySelectorAll('audio').length);
   await ctx.close();
@@ -196,22 +209,24 @@ const check = (ok, label, detail = '') => {
 console.log('\nAudio launch (suspended-context path)\n');
 check(onLoad.started, 'the engine starts with the page');
 check(onLoad.ctxState === 'suspended', 'the test really is exercising a suspended context', onLoad.ctxState);
-check(onLoad.muted, 'output is muted on launch');
+check(!onLoad.muted, 'output is ON at launch — the autoplay gate, not a mute, keeps it quiet');
 check(sliders > 0, 'the audio panel renders anyway, so controls are usable', `${sliders} sliders`);
 // The button lives on the camera view now, among the other icons there, so
 // the state it shows is the speaker glyph plus its amber styling rather than
 // a caption. aria-pressed and the title carry it for anyone not looking at
 // the picture — checked immediately below.
-check(onLoadBtn.muted && onLoadBtn.text === '🔇', 'the button shows the muted state', onLoadBtn.text);
-check(onLoadBtn.pressed === 'true', 'the muted state is exposed to assistive tech');
-check(bannerOn, 'the visualiser carries a MUTED banner');
-check(!afterClick.muted, 'clicking unmutes');
-check(afterClick.ctxState === 'running', 'clicking resumes the suspended context', afterClick.ctxState);
+check(!onLoadBtn.muted && onLoadBtn.text === '🔊', 'the button shows sound on', onLoadBtn.text);
+check(onLoadBtn.pressed === 'false', 'the unmuted state is exposed to assistive tech');
+check(!bannerOn, 'no MUTED banner over the visualiser');
+check(afterGesture.ctxState === 'running', 'the first gesture, anywhere, resumes the suspended context', afterGesture.ctxState);
+check(!afterGesture.muted, 'and leaves the sound on');
 check(clockDelta > 0.1, 'the audio clock actually advances after the gesture', `+${clockDelta.toFixed(2)}s`);
+check(afterClick.muted, 'clicking the button mutes');
+check(mutedBanner, 'and the visualiser then carries a MUTED banner');
 check(afterBtn.width === onLoadBtn.width, 'the button keeps one width across both captions',
   `${onLoadBtn.width}px / ${afterBtn.width}px`);
-check(afterSpace.muted, 'the spacebar toggles mute');
-check(afterSpace.muted && analyserRms > 0.01,
+check(!afterSpace.muted, 'the spacebar toggles mute');
+check(remutedBySpace.muted && analyserRms > 0.01,
   'the waveform stays live while muted (mute sits after the analyser)', `rms ${analyserRms.toFixed(3)}`);
 check(beforeFocused !== afterFocused, 'the spacebar toggles once, not twice, with a button focused');
 check(beforeTyping === afterTyping, 'the spacebar is left alone while typing in a field');
@@ -222,9 +237,9 @@ console.log('\niOS Ring/Silent switch\n');
 {
   const { before, unmuted, remuted, errs } = asIOS;
   check(errs.length === 0, 'no page errors under an iPhone agent', errs.join(' | '));
-  check(!before.exists, 'nothing is held before the instrument is audible');
+  check(!before.exists, 'nothing is held before the first touch');
   check(unmuted.exists && unmuted.paused === false,
-    'unmuting starts the silent element, which is what buys the playback category',
+    'the first touch starts the silent element, which is what buys the playback category',
     `exists=${unmuted.exists} paused=${unmuted.paused}`);
   // The trap this whole thing turns on: a MUTED element does not count as
   // playing audio, so it would leave the page in "ambient" and change
