@@ -20,6 +20,7 @@ import { gestureModeSection, wireGestureSections, updateGesturePanel } from './g
 import { radialMenuSection, wireRadialSection, updateRadialPanel } from './radial-ui.js';
 import { chordVoiceSection, wireChordVoiceSection, updateChordVoicePanel } from './voice-ui.js';
 import { chordQualitySection, wireChordQualitySection, updateChordQualityPanel } from './quality-ui.js';
+import { noteQualitySection, wireNoteQualitySection, updateNoteQualityPanel } from './notequality-ui.js';
 import { rows, tickCss } from './rows.js';
 import { metronomeSection, wireMetronomeSection, updateMetronomePanel } from './metronome-ui.js';
 import { looperSectionHTML, wireLooperSection } from './looper-ui.js';
@@ -125,6 +126,7 @@ export function renderAudioPanel() {
   panel.innerHTML = `
     ${safeSection(gestureModeSection, 'Gesture Mode')}
     ${safeSection(chordQualitySection, 'Chord Quality')}
+    ${safeSection(noteQualitySection, 'Note Quality')}
     ${safeSection(radialMenuSection, 'Radial Mode')}
     ${safeSection(chordVoiceSection, 'Chord Voice')}
     ${safeSection(metronomeSection, 'Metronome')}
@@ -539,6 +541,7 @@ export function renderAudioPanel() {
   safeWire(() => wireRadialSection(renderAudioPanel), 'Radial Mode');
   safeWire(() => wireChordVoiceSection(renderAudioPanel), 'Chord Voice');
   safeWire(() => wireChordQualitySection(renderAudioPanel), 'Chord Quality');
+  safeWire(() => wireNoteQualitySection(renderAudioPanel), 'Note Quality');
   syncControls();
   safeWire(() => wireMetronomeSection(renderAudioPanel), 'Metronome');
   safeWire(wireLooperSection, 'Loop Pedal');
@@ -621,5 +624,6 @@ export function updateAudioSliders() {
   updateRadialPanel();
   updateChordVoicePanel();
   updateChordQualityPanel();
+  updateNoteQualityPanel();
   updateMetronomePanel();
 }
