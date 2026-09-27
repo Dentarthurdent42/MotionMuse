@@ -222,6 +222,15 @@ export const chordmode = (() => {
   let namingHand = 'any';    // 'any' | 'L' | 'R' — see namingSides()
   let accGestures = { ...DEFAULT_ACCIDENTAL_GESTURES };
   let qualGestures = { ...DEFAULT_QUALITY_GESTURES };
+  // Per-side latch for the release check below: whether each hand was ALREADY
+  // showing the release shape last tick, and — decided once, right when it
+  // first closes — whether that hand's release counts. Deciding once at the
+  // transition (rather than every tick) is what keeps a held release held:
+  // silencing a chord empties `voices`, and re-deciding from `voices.size`
+  // on every later tick would then read as "only one source", flipping a
+  // genuine two-handed stop back off mid-hold.
+  let releaseHeldPrev = { L: false, R: false };
+  let releaseCounted  = { L: false, R: false };
   // A degree, the release or an accidental can be held by a CABLE instead of
   // a handshape: any signal wired into its socket (src/chordcables.js). The
   // cable's end is a pseudo-gesture id — 'cable:<what>' — assigned like a
@@ -446,6 +455,51 @@ export const chordmode = (() => {
   // they mean "the chord", singular.
   const namedWithSide = () => namedSources()[0] ?? null;
 
+  // Which hand(s) are naming a degree RIGHT NOW, as opposed to merely being
+  // allowed to (namingSides()). This is what "the off hand" means moment to
+  // moment, and it is what the release check below needs: a hand serving as
+  // another source's off hand — asking for a quality, an accidental, or
+  // simply resting — must not also be read as asking for release just
+  // because closing it happens to match the release shape too.
+  const activeNamingSides = () => new Set(namedSources().map(s => s.side).filter(s => s !== null));
+
+  // Is the release shape genuinely being asked for? A cable always counts —
+  // it isn't a hand and has no off hand to be mistaken for. A SIDELESS
+  // source (a face, a stance) is on neither hand either, so it always
+  // counts too, whatever either hand is doing.
+  //
+  // A HAND making the release shape is where this gets real, and the
+  // decision is made ONCE, at the instant a hand closes into it — not
+  // re-derived every tick it stays held. Two or more sources already
+  // sounding at that instant is genuine two-handed play, where release must
+  // stay reachable from EITHER hand — a per-hand release would leave the
+  // other hand's chord with no way to end (see chord-polyphony.test.js). But
+  // with at most one OTHER source sounding — the ordinary "one hand names,
+  // the other modifies" pattern — a hand that is not itself naming anything
+  // is that source's off hand: its own resting shape, or a quality/
+  // accidental gesture, must not double as a stop for a chord it never
+  // named. Deciding once and latching it is what keeps a genuine two-handed
+  // release held down: silencing empties `voices`, and re-deciding from its
+  // size on every later tick would then see "only one source" and let the
+  // untouched hand's chord resume mid-release.
+  const releaseIsHeld = () => {
+    if (!releaseGesture) return false;
+    if (cableHeld.has(releaseGesture)) return true;
+    if (gesture.sidelessIds().includes(releaseGesture)) return true;
+    const naming = activeNamingSides();
+    let any = false;
+    for (const side of ['L', 'R']) {
+      const now = gesture.handOnly(side) === releaseGesture;
+      if (!now) { releaseHeldPrev[side] = false; continue; }
+      if (!releaseHeldPrev[side]) {
+        releaseCounted[side] = voices.size >= 2 || ![...naming].some(s => s !== side);
+      }
+      releaseHeldPrev[side] = true;
+      if (releaseCounted[side]) any = true;
+    }
+    return any;
+  };
+
   // Everything stops. One call rather than three lines repeated at every exit,
   // because the third line — forgetting the sources — is the one that used to
   // go missing and leave a chord that nothing could stop.
@@ -478,6 +532,8 @@ export const chordmode = (() => {
         silence();
         latched = null; latchedSide = null;
         gateOpen = false; voiced = null;
+        releaseHeldPrev = { L: false, R: false };
+        releaseCounted  = { L: false, R: false };
       } else {
         if (!Object.keys(assignments).length && !releaseGesture) {
           // Switched on with nothing to play: a patch that replaced the
@@ -720,8 +776,6 @@ export const chordmode = (() => {
       if (expr.mode === 'beat') return this._tickBeat();
       if (expr.mode !== 'gesture') return this._tickExpressed();
 
-      const held = gesture.current();
-
       // A dedicated release gesture: hold it and the chord lets go, so a chord
       // can be cut deliberately rather than only by dropping the gesture that
       // started it — which matters once the release is long enough to hear.
@@ -729,7 +783,7 @@ export const chordmode = (() => {
       // Checked first, but the assignment writers now guarantee the release
       // shape carries no chord, so this is a belt-and-braces ordering rather
       // than a rule that resolves a real conflict.
-      if (releaseGesture && (held.includes(releaseGesture) || cableHeld.has(releaseGesture))) {
+      if (releaseIsHeld()) {
         if (anySounding()) silence();
         return;
       }
@@ -916,8 +970,7 @@ export const chordmode = (() => {
     },
     // Is the release shape being held right now (gesture mode only).
     releaseHeld() {
-      return expr.mode === 'gesture' && !!releaseGesture
-        && gesture.current().includes(releaseGesture);
+      return expr.mode === 'gesture' && releaseIsHeld();
     },
     // The chord's real loudness, straight off the audio graph — not the input
     // signal, which differs from it whenever an envelope is in between.
