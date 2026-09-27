@@ -144,6 +144,18 @@ export const PANEL_DOCS = {
         <li>Pick a shape per row, or wire any signal into a row's socket.</li>
       </ul>`,
   },
+  'note-quality': {
+    title: 'Note Quality', modes: ['chords'],
+    body: `<p>In <b>SINGLE NOTES</b>, your <b>other hand</b> — the one not naming
+      the note — bends it a semitone. Its sibling to Chord Quality: same rows,
+      same rule, but for one note instead of a whole chord.</p>
+      <ul>
+        <li><b>Thumbs up</b> sharpens, <b>thumbs down</b> flattens (the same
+          shapes make a chord MAJOR / MINOR in Chord Quality).</li>
+        <li>Hold neither and the note is natural.</li>
+        <li>Dims in CHORDS — a chord has no accidental.</li>
+      </ul>`,
+  },
   'radial-mode': {
     title: 'Radial Mode',
     body: `<p>A ring worn on your wrist or shoulder, one section per note of the

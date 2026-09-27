@@ -782,6 +782,12 @@ export const radial = (() => {
       const m = accidentalNow();
       return isString(m) ? m : null;
     },
+    // The accidental the off hand is holding right now (note voicing), for
+    // the Note Quality node's indicator — NATURAL when nothing is held.
+    currentAccidental() {
+      const m = accidentalNow();
+      return isString(m) ? NATURAL : m;
+    },
     soundingSection: () => sounding,
     // How many notes the current section gives the shared arp's pattern —
     // the one question only this mode can answer (see chordmode.arpPoolSize).
