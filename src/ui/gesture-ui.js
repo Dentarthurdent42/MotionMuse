@@ -20,8 +20,8 @@
 
 import { gesture, gestureLabel, KINDS, kindOf } from '../gesture.js';
 import { chordmode, DEGREES, EXPRESSION_MODES, EXPRESSION_CONTROLS,
-         VOICINGS, accidentalSign } from '../chordmode.js';
-import { DEGREE_KEYS, RELEASE_KEY, ACC_KEYS, isCableId } from '../chordcables.js';
+         VOICINGS } from '../chordmode.js';
+import { DEGREE_KEYS, RELEASE_KEY, isCableId } from '../chordcables.js';
 import { diatonicChord } from '../chords.js';
 import { rows } from './rows.js';
 import { cvSource }   from '../cv.js';
@@ -155,12 +155,7 @@ export function gestureModeSection() {
   const ex = chordmode.expression();
   const voicing = chordmode.getVoicing();
   const isNote = voicing === 'note';
-  const accG = chordmode.accidentalGestures();
   const VOICING_LABEL = { chord: 'CHORDS', note: 'SINGLE NOTES' };
-  // Accidentals need a free hand, and in 'other hand — openness' expression
-  // there is not one: that hand is already the volume. Say so rather than
-  // leaving two live-looking selects that quietly do nothing.
-  const accBusy = ex.mode === 'hand';
   // Calibrating from where the gesture is CHOSEN, not only from the library.
   // The library is where a gesture is defined, but the moment you find out a
   // template is wrong is the moment a chord will not sound — and that is this
@@ -184,28 +179,6 @@ export function gestureModeSection() {
               title="The same handshapes and the same key, sounding either the whole chord on a degree or just that degree's own note.">
         ${VOICINGS.map(v => `<option value="${v}"${v === voicing ? ' selected' : ''}>${VOICING_LABEL[v]}</option>`).join('')}
       </select>
-      <span class="acc-read" id="ck-acc-read"
-            title="What your other hand is saying about the note right now.">${isNote ? '♮' : '—'}</span>
-    </div>
-    
-    <div class="chord-expr-cal chord-acc${isNote ? '' : ' dimmed'}" title="${isNote ? '' : 'Accidentals apply to SINGLE NOTES — a chord has none'}">
-      <label class="ctrl-lbl" title="${accBusy
-        ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
-        : 'Hold this on your other hand to raise the note a semitone'}">${inPort(ACC_KEYS.sharp)}♯ SHARP
-        <select id="ck-acc-sharp" ${accBusy || !isNote || isCableId(accG.sharp) ? 'disabled' : ''}
-                aria-label="Gesture that sharpens the note">${gestureOptions(accG.sharp)}</select>
-        ${calBtn(accG.sharp, accBusy)}
-      </label>
-      <label class="ctrl-lbl" title="${accBusy
-        ? 'Unavailable while the other hand is playing the volume — switch PLAY WITH to a handshape or eyebrows'
-        : 'Hold this on your other hand to lower the note a semitone'}">${inPort(ACC_KEYS.flat)}♭ FLAT
-        <select id="ck-acc-flat" ${accBusy || !isNote || isCableId(accG.flat) ? 'disabled' : ''}
-                aria-label="Gesture that flattens the note">${gestureOptions(accG.flat)}</select>
-        ${calBtn(accG.flat, accBusy)}
-      </label>
-      <div class="quant-notes" style="grid-column:1 / -1;margin:0;">${accBusy
-        ? 'The other hand is playing the volume, so every note sounds natural.'
-        : 'Neither shape held is natural. The hand that is not naming the note is the one that bends it.'}</div>
     </div>`;
 
   // Every control renders whether the mode is ON or not — switching to
@@ -580,18 +553,11 @@ export function wireGestureSections(rerender) {
   });
 
 
-  // Re-renders: the accidental pickers appear with SINGLE NOTES, the 7ths go
-  // dead, and every row relabels from a chord to the pitch it will sound.
+  // Re-render: the 7ths go dead, and every row relabels from a chord to the
+  // pitch it will sound — the accidental pickers live on their own node now
+  // (Note Quality), which renders and dims from the same voicing.
   document.getElementById('ck-voicing')?.addEventListener('change', e => {
     chordmode.setVoicing(e.target.value);
-    rerender();
-  });
-  document.getElementById('ck-acc-sharp')?.addEventListener('change', e => {
-    chordmode.setAccidentalGestures({ sharp: e.target.value || null });
-    rerender();   // taking a shape for ♯ may have freed it from ♭
-  });
-  document.getElementById('ck-acc-flat')?.addEventListener('change', e => {
-    chordmode.setAccidentalGestures({ flat: e.target.value || null });
     rerender();
   });
 
@@ -675,20 +641,6 @@ export function updateGesturePanel() {
     }
     const rel = document.getElementById('cdot-release');
     if (rel) rel.classList.toggle('on', chordmode.releaseHeld());
-
-    // What the off hand is saying, live. Worth its own indicator rather than
-    // only appearing inside the readout: a sharp that is not being recognized
-    // is invisible until you play a note and hear the wrong one, and this says
-    // so while your hand is still up.
-    const accEl = document.getElementById('ck-acc-read');
-    if (accEl) {
-      const a = chordmode.currentAccidental();
-      // An em dash in chord voicing: there is no accidental to be at, and a
-      // standing ♮ would claim otherwise.
-      const txt = chordmode.getVoicing() === 'note' ? accidentalSign(a) || '♮' : '—';
-      if (accEl.textContent !== txt) accEl.textContent = txt;
-      accEl.classList.toggle('on', a !== 0);
-    }
 
     // …and how loud it actually is. The expression meter above shows the input;
     // this shows the result, which is not the same number once an ADSR is in

@@ -394,19 +394,21 @@ nodes make one scrolling column instead — see below):
   **zoom** with the wheel or a pinch; **⌂ FIT** (or `Home`) shows everything,
   `F` fits the selection. A wheel over a list that scrolls scrolls the list.
 - **Gesture Mode's handshapes are cables too** (`src/chordcables.js`): each
-  degree row, RELEASE, ♯ and ♭ is an input socket on the node, and the shape
-  that plays it is the cable from that shape's signal on the camera — so the
-  chords starter opens with ten cables you can see, follow and re-plug (and
-  five more into the **Chord Quality** node beside it — see
-  [Chord quality](#chord-quality-the-other-hand-says-major-minor-7th)).
+  degree row and RELEASE is an input socket on the node, and the shape that
+  plays it is the cable from that shape's signal on the camera — so the
+  chords starter opens with eight cables you can see, follow and re-plug on
+  the node itself, two more into the **Note Quality** node beside it, and
+  nine more into the **Chord Quality** node beside that — see
+  [Chord quality](#chord-quality-the-other-hand-says-major-minor-7th) below,
+  and Single notes just above it.
   Choosing a shape in a row strings the cable; stringing the cable sets the
   row; wire anything else in (a metronome pulse, a function node) and the
   cable holds the degree while it reads high, the row reading WIRED. A patch
   that replaces the cables takes the shapes with it; switching the mode on
   with nothing assigned brings the default shapes back. While the mode is
   **off** its cables are not drawn, so a missing one says nothing: moving
-  some other cable no longer wipes the ♯/♭ and quality shapes Radial Mode
-  still reads.
+  some other cable no longer wipes the accidental and quality shapes Radial
+  Mode still reads.
 - **⌕ FIND** (or `/`, `Ctrl+K`) searches every node by name and, once you
   type, every socket by its label with the node it is on (the **+ NODE**
   search lists the same under *Go to*, so typing "gesture" there reaches the
@@ -1806,9 +1808,15 @@ name and either can bend — whichever hand is holding a degree shape is the one
 naming it. The accidental is read continuously, so a thumb turning over *under*
 a note that is already sounding re-attacks it at the new pitch rather than
 waiting for you to let go, and a flattened note reads as the flat you played
-(**B♭**, not A♯). The live **♮ / ♯ / ♭** beside the switch is lit while an
-accidental is recognized, which is what separates "flat" from "flat, and the
-camera never saw it".
+(**B♭**, not A♯).
+
+The picker for each shape, and the live **♮ / ♯ / ♭** that lights up while an
+accidental is recognized (which is what separates "flat" from "flat, and the
+camera never saw it"), live on their own **NOTE QUALITY** node beside Gesture
+Mode — the accidentals' equivalent of the **CHORD QUALITY** node below, split
+out the same way: a note has no chord quality and a chord has no accidental,
+so each voicing gets the node that actually applies to it rather than one
+node with half its rows dimmed.
 
 Both accidental shapes are **settings**, and worth knowing why: they are
 recognized by MediaPipe's bundled classifier rather than by a measured
@@ -1829,7 +1837,9 @@ that quietly do nothing. Handshape and eyebrow expression both leave a hand
 free.
 
 Logic: `diatonicNote()` / `pitchName()` in `src/chords.js` (pure), voicing and
-the hand rule in `src/chordmode.js`.
+the hand rule in `src/chordmode.js`, the sockets in `src/chordcables.js`, the
+node in `src/ui/notequality-ui.js`, the live indicator's `currentAccidental()`
+in `src/radial.js`.
 
 ### Chord quality (the other hand says major, minor, 7th…)
 
@@ -2793,6 +2803,7 @@ src/
     playalong-ui.js Falling-note highway renderer + game panel
     gesture-ui.js   Gesture Mode panel section (assignments + handshape library)
     quality-ui.js   Chord Quality node (the off hand's major / minor / 7th… shapes)
+    notequality-ui.js  Note Quality node (the off hand's sharp / flat shapes)
     shader-ui.js    Shader output panel (the picture, status, STARTER)
     shadernode-ui.js  Shader nodes on the canvas: typed sockets, add menu
     signals.js      Signal lists inside the camera / mic / metronome nodes
