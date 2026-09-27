@@ -214,3 +214,39 @@ test('with gesture mode off, moving another cable keeps the shapes', () => {
   assert.equal(chordmode.qualityGestures().major, 'thumbs', 'radial mode still reads these');
   assert.equal(chordmode.accidentalGestures().sharp, 'thumbs');
 });
+
+// ── The fist, off hand, gives the natural chord — not a release ──────────
+//
+// A closed fist has no default quality assignment, so an off hand resting or
+// deliberately closed into it names no override: the chord stays whatever
+// the key gives that degree — major on I in a major key, minor on i in a
+// minor key, and so on. The trap is that 'fist' is ALSO the default RELEASE
+// shape, read from gesture.current(), which used to dedupe across both
+// hands with no notion of which hand held what — so an off hand closing
+// into a fist silenced the chord outright instead of just declining to
+// change its quality. See chord-polyphony.test.js for the reverse
+// guarantee this must not break: two independently-named hands still let
+// go of BOTH chords from either one.
+
+test('a fist on the off hand gives the natural chord of the degree, not a release', () => {
+  reset();
+  chordmode.setKey({ mode: 'natural minor' });
+  feed('R', tmpl('point'));                  // degree i, natural in this key
+  settle();
+  assert.deepEqual(soundingMidi(), [60, 63, 67], 'i is minor in a minor key');
+  feed('L', tmpl('fist'));                   // off hand rests into the release shape
+  settle();
+  assert.deepEqual(soundingMidi(), [60, 63, 67], 'still sounding, still natural');
+  assert.equal(chordmode.currentQuality(), null, 'no override — the fist names none');
+  chordmode.setKey({ mode: 'major (ionian)' });
+});
+
+test('the naming hand itself closing to a fist still releases (single-handed)', () => {
+  reset();
+  feed('R', tmpl('point'));
+  settle();
+  assert.ok(chordmode.currentChord(), 'sounding before the release');
+  feed('R', tmpl('fist'));                   // the SAME hand that was naming
+  settle();
+  assert.equal(chordmode.currentChord(), null, 'the naming hand\'s own fist still lets go');
+});

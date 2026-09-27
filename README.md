@@ -1697,7 +1697,12 @@ another, and carries on in time when a hand merely joins or leaves a run
 already walking.
 
 **RELEASE** stops everything, not one source: a per-hand release would leave
-the other hand's chord with nothing able to end it.
+the other hand's chord with nothing able to end it — with one exception, for
+the Chord Quality node: a hand that is presently the *sole* other source's off
+hand (naming nothing of its own) is not counted, so closing it into the
+release shape to ask for the natural quality — or simply resting there —
+never silences a chord it never named. Once two hands are genuinely naming
+their own degrees, either one's release still stops both, exactly as above.
 
 The **expressed** modes below stay one shape at a time, and not by omission —
 one hand names while the other plays, so there is only one hand free to name
@@ -1858,6 +1863,15 @@ None of the defaults is an ASL numeral, so the off hand never names a degree by
 accident while it is colouring one; and because major/minor share the
 accidentals' shapes, a player learns one idea — raise, lower — for both
 voicings rather than two sets of shapes.
+
+**A closed fist on the off hand asks for nothing, which is what makes it the
+natural chord** — I is major in a major key, i is minor in a minor key, and
+so on down the degrees, exactly as the key already gives it, because `fist`
+holds no quality by default. It is also the default **RELEASE** shape, read
+from whichever hand is naming — and those two are different hands, so the two
+readings never collide: an off hand resting or deliberately closed into a
+fist just declines to change the quality; the naming hand's own fist is what
+lets the chord go.
 
 The rules follow the accidentals': chord voicing only (in single notes the
 rows dim); read from the hand **not** naming — with **NAMED BY** set to one
