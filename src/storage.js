@@ -11,15 +11,14 @@
 // layout, the tour progress, the theme, the hotkeys, the saved preset. A
 // prefix rule cannot fall behind a key that is added later.
 //
-// Ordered oldest-last: whichever prefix still holds a value wins, and the app
-// has been renamed twice (biosignal → motionmuse → motionmuse → motionmuse), so
-// a user who skipped a release can still be carrying either of the older two.
+// The app was once called biosignal, so a user who skipped releases can still
+// be carrying keys under that prefix.
 //
 // Every access is wrapped: localStorage throws in private mode and on quota,
 // and none of this is important enough to break the app over.
 
 const PREFIX = 'motionmuse-';
-const LEGACY_PREFIXES = ['motionmuse-', 'biosignal-'];
+const LEGACY_PREFIXES = ['biosignal-'];
 
 // The candidates for `key`, oldest last. A key that does not carry the current
 // prefix has no legacy form — it is not ours to migrate.
