@@ -703,6 +703,24 @@ export const gesture = (() => {
       return null;
     },
 
+    // Currently engaged SIDELESS gesture ids only — no hand, deduped. A
+    // sideless source (a face, a stance) is on neither hand and so is not
+    // "someone's off hand": it always answers for itself, whatever either
+    // hand is doing (chordmode's release check needs exactly that).
+    sidelessIds() {
+      const ids = [];
+      for (const kind of SIDELESS_KINDS) if (sideless[kind].active) ids.push(sideless[kind].active);
+      return ids;
+    },
+
+    // The shape THIS hand itself is making — never a sideless fallback. For
+    // a caller that needs to tell "my own hand made this shape" apart from
+    // "nothing here, so activeOn is reporting someone else's face or stance
+    // instead" (chordmode's release check: a sideless release must count
+    // regardless of what either hand is doing, but a HAND release must not
+    // be credited to a hand that shows nothing of its own).
+    handOnly(side) { return state[side]?.active ?? null; },
+
     // Which model a sideless gesture needs running before it can ever match.
     // The UI uses this to say so instead of letting a recording sit at zero.
     setPresence(kind, on) { if (kind in present) present[kind] = !!on; },

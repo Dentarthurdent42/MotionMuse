@@ -226,7 +226,9 @@ not a default.
 
 In full:
 
-- **Handshapes · Chords** — handshapes play chords in a key, no wiring. No lead
+- **Handshapes · Chords** — handshapes play chords in a key, no wiring, and
+  your other hand sets each chord's quality through the **Chord Quality** node
+  (thumbs up major, thumbs down minor…). No lead
   oscillator, since a drone under the chords is not what anyone picked this for.
   (It used to switch **DEV** on too, because gesture mode was dev-gated. It is not
   any more — see Developer mode.)
@@ -241,7 +243,7 @@ In full:
 - **Radial Mode · Single Notes** and **Radial Mode · Chords** — a ring of the
   key's degrees worn on the wrist, played by pointing the index finger (see
   [Radial mode](#radial-mode-play-by-pointing)). Both hands tracked — one
-  wears the ring, the other bends notes — plus pose, which carries the
+  wears the ring, the other bends notes (or, in chords, sets their quality) — plus pose, which carries the
   forearm the ring rides.
 - **Blank** — nothing wired, no trackers, and **no oscillator**. Genuinely
   nothing, not a quiet something.
@@ -392,14 +394,21 @@ nodes make one scrolling column instead — see below):
   **zoom** with the wheel or a pinch; **⌂ FIT** (or `Home`) shows everything,
   `F` fits the selection. A wheel over a list that scrolls scrolls the list.
 - **Gesture Mode's handshapes are cables too** (`src/chordcables.js`): each
-  degree row, RELEASE, ♯ and ♭ is an input socket on the node, and the shape
-  that plays it is the cable from that shape's signal on the camera — so the
-  chords starter opens with ten cables you can see, follow and re-plug.
+  degree row and RELEASE is an input socket on the node, and the shape that
+  plays it is the cable from that shape's signal on the camera — so the
+  chords starter opens with eight cables you can see, follow and re-plug on
+  the node itself, two more into the **Note Quality** node beside it, and
+  nine more into the **Chord Quality** node beside that — see
+  [Chord quality](#chord-quality-the-other-hand-says-major-minor-7th) below,
+  and Single notes just above it.
   Choosing a shape in a row strings the cable; stringing the cable sets the
   row; wire anything else in (a metronome pulse, a function node) and the
   cable holds the degree while it reads high, the row reading WIRED. A patch
   that replaces the cables takes the shapes with it; switching the mode on
-  with nothing assigned brings the default shapes back.
+  with nothing assigned brings the default shapes back. While the mode is
+  **off** its cables are not drawn, so a missing one says nothing: moving
+  some other cable no longer wipes the accidental and quality shapes Radial
+  Mode still reads.
 - **⌕ FIND** (or `/`, `Ctrl+K`) searches every node by name and, once you
   type, every socket by its label with the node it is on (the **+ NODE**
   search lists the same under *Go to*, so typing "gesture" there reaches the
@@ -1690,7 +1699,12 @@ another, and carries on in time when a hand merely joins or leaves a run
 already walking.
 
 **RELEASE** stops everything, not one source: a per-hand release would leave
-the other hand's chord with nothing able to end it.
+the other hand's chord with nothing able to end it — with one exception, for
+the Chord Quality node: a hand that is presently the *sole* other source's off
+hand (naming nothing of its own) is not counted, so closing it into the
+release shape to ask for the natural quality — or simply resting there —
+never silences a chord it never named. Once two hands are genuinely naming
+their own degrees, either one's release still stops both, exactly as above.
 
 The **expressed** modes below stay one shape at a time, and not by omission —
 one hand names while the other plays, so there is only one hand free to name
@@ -1794,9 +1808,15 @@ name and either can bend — whichever hand is holding a degree shape is the one
 naming it. The accidental is read continuously, so a thumb turning over *under*
 a note that is already sounding re-attacks it at the new pitch rather than
 waiting for you to let go, and a flattened note reads as the flat you played
-(**B♭**, not A♯). The live **♮ / ♯ / ♭** beside the switch is lit while an
-accidental is recognized, which is what separates "flat" from "flat, and the
-camera never saw it".
+(**B♭**, not A♯).
+
+The picker for each shape, and the live **♮ / ♯ / ♭** that lights up while an
+accidental is recognized (which is what separates "flat" from "flat, and the
+camera never saw it"), live on their own **NOTE QUALITY** node beside Gesture
+Mode — the accidentals' equivalent of the **CHORD QUALITY** node below, split
+out the same way: a note has no chord quality and a chord has no accidental,
+so each voicing gets the node that actually applies to it rather than one
+node with half its rows dimmed.
 
 Both accidental shapes are **settings**, and worth knowing why: they are
 recognized by MediaPipe's bundled classifier rather than by a measured
@@ -1817,7 +1837,68 @@ that quietly do nothing. Handshape and eyebrow expression both leave a hand
 free.
 
 Logic: `diatonicNote()` / `pitchName()` in `src/chords.js` (pure), voicing and
-the hand rule in `src/chordmode.js`.
+the hand rule in `src/chordmode.js`, the sockets in `src/chordcables.js`, the
+node in `src/ui/notequality-ui.js`, the live indicator's `currentAccidental()`
+in `src/radial.js`.
+
+### Chord quality (the other hand says major, minor, 7th…)
+
+The key decides what chord lives on each degree, and in a major key IV is
+major and that is the only IV there is. The **CHORD QUALITY** node, beside
+Gesture Mode, lets the hand that is **not** naming the degree override that:
+hold a quality shape and the named chord takes that quality, **root
+unchanged** — so the key still transposes it. The borrowed **iv**, a **V7** in
+a minor key, a **sus4** to lean on before resolving: one shape each.
+
+It is the accidentals' counterpart, and deliberately the same machinery. In
+**SINGLE NOTES** the off hand says ♯ / ♭; a chord degree has no sharp, so in
+**CHORDS** that same hand was idle until now. Each quality is an input socket
+on the node, and the shape that asks for it is the cable in — pick a shape in
+the row, or wire any other signal in and it holds that quality while it reads
+high (a metronome pulse turning every downbeat's chord into a seventh).
+
+The default shapes are chosen to **mean** their quality, not merely to be
+free:
+
+| Quality | Shape | Why that one |
+|---|---|---|
+| **MAJ** | Thumbs Up | Up, bright — and it is ♯ in single notes: major *is* the raised third |
+| **MIN** | Thumbs Down | Down, dark — ♭ in single notes: minor is the lowered third |
+| **DIM °** | Closed O (ASL 0) | A diminished chord is written with a °, which is an O |
+| **7** | Rock Horns | The blues-and-rock dominant seventh, from the rock hand |
+| **MAJ7** | I Love You | The lush, love-song seventh, from the ILY sign |
+| **AUG +**, **SUS2**, **SUS4**, **MIN7** | — | Every shape left would be an arbitrary pairing; one pick away |
+
+None of the defaults is an ASL numeral, so the off hand never names a degree by
+accident while it is colouring one; and because major/minor share the
+accidentals' shapes, a player learns one idea — raise, lower — for both
+voicings rather than two sets of shapes.
+
+**A closed fist on the off hand asks for nothing, which is what makes it the
+natural chord** — I is major in a major key, i is minor in a minor key, and
+so on down the degrees, exactly as the key already gives it, because `fist`
+holds no quality by default. It is also the default **RELEASE** shape, read
+from whichever hand is naming — and those two are different hands, so the two
+readings never collide: an off hand resting or deliberately closed into a
+fist just declines to change the quality; the naming hand's own fist is what
+lets the chord go.
+
+The rules follow the accidentals': chord voicing only (in single notes the
+rows dim); read from the hand **not** naming — with **NAMED BY** set to one
+hand, that is the other one; in **Other hand — openness** that hand is the
+volume, so qualities stand down (a *cable* is not a hand and still applies);
+one shape per quality, and choosing a shape for one frees it from another. A
+quality names the **whole** chord, so it overrides the degree's **7th**
+button: a held MAJ is a triad, a held MAJ7 a seventh. The numeral is read off
+the result (**iv**, **V7**, **Vsus4**), and a quality changing under a held
+chord re-attacks it, as a bent note does. **Radial Mode · Chords** reads the
+same shapes from the hand not wearing the ring. Both chord starters state
+these defaults rather than inheriting them; setups saved before the node
+existed load with them too.
+
+Logic: `qualityChord()` in `src/chords.js` (pure), the hand rule in
+`src/chordmode.js`, the sockets in `src/chordcables.js`, the node in
+`src/ui/quality-ui.js`; `tests/unit/chord-quality.test.js` pins it.
 
 ### Arpeggiator
 
@@ -2721,6 +2802,8 @@ src/
     keyboard.js     Shared piano-keyboard renderer
     playalong-ui.js Falling-note highway renderer + game panel
     gesture-ui.js   Gesture Mode panel section (assignments + handshape library)
+    quality-ui.js   Chord Quality node (the off hand's major / minor / 7th… shapes)
+    notequality-ui.js  Note Quality node (the off hand's sharp / flat shapes)
     shader-ui.js    Shader output panel (the picture, status, STARTER)
     shadernode-ui.js  Shader nodes on the canvas: typed sockets, add menu
     signals.js      Signal lists inside the camera / mic / metronome nodes
