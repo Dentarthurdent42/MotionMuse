@@ -954,12 +954,32 @@ const column = await (async () => {
   // to the node under the finger.
   // The map, as a pinch in would open it (⌂ is not shown in the column).
   await page.evaluate(async () => (await import('/src/ui/workspace.js')).enterOverview());
-  await page.waitForTimeout(150);
+  // Until the map's layout has come to rest — an added node can push the
+  // column's measured height past what settled by a fixed 150ms.
+  await page.evaluate(async () => {
+    const WS = await import('/src/ui/workspace.js');
+    let last = null;
+    for (let i = 0; i < 40; i++) {
+      const m = WS.measure('panel:metronome');
+      const cur = m ? `${m.x},${m.y},${m.w},${m.h}` : null;
+      if (cur !== null && cur === last) break;
+      last = cur;
+      await new Promise(r => setTimeout(r, 50));
+    }
+  });
   const map = await page.evaluate(async () => {
     const WS = await import('/src/ui/workspace.js');
     const ws = document.getElementById('ws');
-    const m = WS.measure('panel:metronome');
-    const s = WS.toScreen(m.x + m.w / 2, m.y + 8);
+    const tap = () => WS.toScreen(WS.measure('panel:metronome').x + WS.measure('panel:metronome').w / 2,
+                                   WS.measure('panel:metronome').y + 8);
+    // The map floors out at a minimum zoom, so a tall enough stack overflows
+    // the screen — scroll it like any other overflowing content so the tap
+    // target is actually inside the viewport before it's clicked.
+    const margin = 24;
+    let s = tap();
+    if (s.y > ws.clientHeight - margin) ws.scrollTop += s.y - (ws.clientHeight - margin);
+    else if (s.y < margin) ws.scrollTop -= margin - s.y;
+    s = tap();
     return { cls: ws.className, k: WS.viewTransform().k, overview: WS.isOverview(),
              tap: { x: Math.round(s.x), y: Math.round(s.y) }, onScreen: s.y > ws.getBoundingClientRect().top && s.y < innerHeight };
   });
@@ -1164,9 +1184,14 @@ const chordCables = await (async () => {
       allFromCamera: ends.filter(e => /chord_(trig|acc)_/.test(e)).every(e => e.startsWith('gesture_')),
       camOwner: owner('panel:camera'),
       sockets,
-      rows: [...document.querySelectorAll('.chord-assign')].map(r => `${r.dataset.degree}:${r.querySelector('.ch-shape')?.value ?? ''}`),
+      rows: [...document.querySelectorAll('#chord-assigns .chord-assign')].map(r => `${r.dataset.degree}:${r.querySelector('.ch-shape')?.value ?? ''}`),
       deg0: chordmode.gestureFor(0), deg1: chordmode.gestureFor(1), deg4: chordmode.gestureFor(4),
       on: chordmode.enabled,
+      // The Chord Quality node: a socket per quality, and the default shapes'
+      // cables drawn into it.
+      qualSockets: [...document.querySelectorAll('[data-node="panel:chord-quality"] .chord-assign .port[data-side="in"]')]
+        .map(p => p.dataset.key),
+      qualWires: ends.filter(e => /chord_qual_/.test(e)),
     };
   });
   const fresh = await state();
@@ -1971,7 +1996,7 @@ for (const [key, vp] of [['desktop', { width: 1440, height: 900 }],
     WS.fitAll(['panel:gesture-mode']);
     await new Promise(r => setTimeout(r, 400));
 
-    const rows = [...document.querySelectorAll('.chord-assign')].map(r => ({
+    const rows = [...document.querySelectorAll('#chord-assigns .chord-assign')].map(r => ({
       degree: r.dataset.degree,
       gid: r.querySelector('.ch-cal')?.dataset.gid ?? null,
       disabled: r.querySelector('.ch-cal')?.disabled ?? null,
@@ -2018,14 +2043,14 @@ for (const [key, vp] of [['desktop', { width: 1440, height: 900 }],
     chordmode.setExpression({ mode: 'gesture' });
     chordmode.setAccidentalGestures({ sharp: 'point', flat: 'peace' });
     renderAudioPanel();
-    const accFree = ['ck-acc-sharp', 'ck-acc-flat'].map(id => {
-      const b = document.getElementById(id)?.parentElement.querySelector('.ch-cal');
+    const accFree = ['sharp', 'flat'].map(acc => {
+      const b = document.querySelector(`.chord-assign[data-acc="${acc}"] .nq-cal`);
       return { gid: b?.dataset.gid ?? null, disabled: b?.disabled ?? null };
     });
     chordmode.setExpression({ mode: 'hand', hand: 'L' });
     renderAudioPanel();
-    const accBusy = ['ck-acc-sharp', 'ck-acc-flat'].map(id =>
-      document.getElementById(id)?.parentElement.querySelector('.ch-cal')?.disabled ?? null);
+    const accBusy = ['sharp', 'flat'].map(acc =>
+      document.querySelector(`.chord-assign[data-acc="${acc}"] .nq-cal`)?.disabled ?? null);
     chordmode.setExpression({ mode: 'gesture' });
     chordmode.setVoicing('chord');
     renderAudioPanel();
@@ -2835,6 +2860,11 @@ console.log('\nGesture mode\'s shapes are cables\n');
   check(fresh.sockets.length === 8 && fresh.sockets.includes('chord_trig_6') && fresh.sockets.includes('chord_trig_release'),
     'chord cables: every degree row and RELEASE carries its input socket', fresh.sockets.join(','));
   check(fresh.rows[0] === '0:point' && fresh.rows[4] === '4:palm', 'chord cables: the rows show the shapes', fresh.rows.join(' '));
+  check(fresh.qualSockets.length === 9 && fresh.qualSockets.includes('chord_qual_minor'),
+    'chord quality: the node carries a socket per quality', fresh.qualSockets.join(','));
+  check(fresh.qualWires.length === 5 && fresh.qualWires.includes('gesture_thumbs→chord_qual_major')
+        && fresh.qualWires.includes('gesture_thumbsdown→chord_qual_minor'),
+    'chord quality: the chords starter wires the semantic shapes into it', fresh.qualWires.join(' '));
   check(picked.deg0 === 'palm' && picked.deg4 === 'point' && picked.cables === 10 && picked.rows[0] === '0:palm' && picked.rows[4] === '4:point',
     'chord cables: choosing a shape re-strings the cables — a swap moves two', JSON.stringify({ deg0: picked.deg0, deg4: picked.deg4, cables: picked.cables }));
   check(wired.deg1 === 'cable:1' && wired.disabled && wired.text === 'WIRED',
