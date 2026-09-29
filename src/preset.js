@@ -27,12 +27,8 @@ const LS_KEY = 'motionmuse-session-v1';
 const TAG    = 'motionmuse-sound';
 // Snapshots saved before a rename carry that era's tag. They're the same
 // format, so keep loading them rather than telling people their file is
-// invalid. There have been two renames — biosignal → motionmuse → motionmuse →
-// motionmuse — and the MotionMuse one is when sharing shipped, so every QR code
-// made in that window says `motionmuse-sound`. Only `biosignal-sound` used to be
-// listed here, which turned every one of those codes into "not a MotionMuse
-// setup". tests/unit/share-compat.test.js opens a real one.
-const LEGACY_TAGS = ['motionmuse-sound', 'biosignal-sound'];
+// invalid. The app was once called biosignal.
+const LEGACY_TAGS = ['biosignal-sound'];
 
 // Everything that is "how the app is set up" but lives outside the audio graph
 // and the patch: which theme, how the panels and sections are sized, which
