@@ -37,6 +37,8 @@ const ALL_CATS = () => [
   ['Note Quality', ['chord_acc_sharp', 'chord_acc_flat'], 'panel:note-quality'],
   ['Radial Mode',  ['radial_on', 'radial_joint', 'radial_voicing', 'radial_finger', 'radial_volume',
                     'radial_vol_lo', 'radial_vol_hi'], 'panel:radial-mode'],
+  ['Interval Mode', ['interval_on', 'interval_hands', 'interval_hand', 'interval_trigger', 'interval_unit',
+                     'interval_step', 'interval_home'], 'panel:interval-mode'],
   ['Chord Voice',  ['chord_root', 'chord_mode', 'chord_octave', 'chord_follow',
                     'chord_attack', 'chord_decay', 'chord_sustain', 'chord_release',
                     'arp_on', 'arp_pattern', 'arp_rate', 'arp_gate', 'arp_sustain', 'shepard_chord'], 'panel:chord-voice'],

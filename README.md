@@ -2172,6 +2172,50 @@ entry-speed → strength, and both ring geometries — is pure and camera-free i
 `src/ui/radial-ui.js`; settings save with presets and travel in shared links
 like everything else.
 
+## Interval mode (play the distance, not the note)
+
+The **Interval Mode** node (beside Radial Mode) is a third way of playing the
+chord voice bank. Gesture Mode names a *degree* — an ASL 3 is always the key's
+third note. Here the same handshape is a *move*: a 3 is **a third from wherever
+the melody is**, so a tune is played the way it is sung, by its steps and
+leaps, and the same shapes walk it from any starting note in any key.
+
+A move has to happen at a moment rather than for as long as a shape is held,
+so a **TRIGGER** decides when the hands are read:
+
+- **Metronome beats** (default) — every SAMPLE beat moves by what the hands
+  show. Hold a 2 and each beat climbs one scale step: a scale run from one
+  shape. Needs the metronome running; the node says so if it is not.
+- **STEP input** — a pulse on the node's STEP socket, or its button. Wire any
+  signal into it (the other hand's pinch, a gesture signal, a nod) and that
+  becomes your trigger gesture.
+- **Each new shape** — forming a shape moves once; holding it does nothing
+  more. To repeat a move, drop the shape and make it again.
+
+**HANDS** picks where the direction comes from:
+
+- **One hand** — the shape says how far, the hand's **lean** says which way:
+  upright is up, tipped over to your left (towards the low end of a keyboard)
+  is down (the `hand_*_tilt` signal, with hysteresis). **ASL 0 sustains** —
+  whatever is ringing keeps ringing and nothing moves — and a **closed fist is
+  silence**. The other hand is left free, e.g. to drive the STEP socket.
+- **Two hands** — the **right** hand's shapes go **up**, the **left** hand's go
+  **down**. Both at once add up: up a 3rd and down a 2nd is up a step. A resting
+  fist on the idle hand does not cancel the other hand's move; only a fist (or
+  nothing) on every hand stops the sound.
+
+**COUNT** sets what a size means. In **scale steps** (the default) sizes are
+named like intervals: a 2 is a second (the key's next note), a 1 is the unison
+(the same note struck again), 8 is the octave — and a third is the *key's*
+third, major or minor as the key has it. In **semitones** a shape N moves N
+semitones, for chromatic lines. The key is Gesture Mode's (following Pitch
+Quantize when that is on); the melody starts on its tonic, **HOME** returns
+there, and a walk off either end of C2–C7 folds back an octave. Every row's
+shape can be changed and recalibrated like Gesture Mode's.
+
+Only one of Gesture, Radial and Interval Mode is on at a time: switching this
+on parks the other two, and switching either of them on parks this.
+
 ## Metronome
 
 A beat clock the whole instrument can see and hear — one clock, three faces:
@@ -2588,6 +2632,7 @@ own their respective slices of state.
 | `hand_L_y` / `hand_R_y` | Wrist Y position (0 = bottom, 1 = top) |
 | `hand_L_open` / `hand_R_open` | Hand openness (0 = fist, 1 = fully open) |
 | `hand_L_spread` / `hand_R_spread` | Thumb-to-pinky spread |
+| `hand_L_tilt` / `hand_R_tilt` | How far the palm leans over, −1..1: 0 upright, +1 fingers flat to your right, −1 to your left (as seen in the mirrored view). Interval Mode reads it as up / down |
 | `pinch_L` / `pinch_R` | Pinch strength — 1 when the thumb and index tips are together, 0 with the hand open. World-space, so camera-independent |
 | `finger_L_thumb` … `finger_R_pinky` | Individual finger extension (0–1), measured as the **joint angle** the finger makes rather than its tip-to-base distance — so the same shape reads the same whether your hand is at the lens or at arm's length |
 | `thumb_out_L` / `thumb_out_R` | How far the thumb is carried from the palm (0 = folded across it, 1 = clear) |

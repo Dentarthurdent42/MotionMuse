@@ -18,6 +18,7 @@ import { GEN_SONGS } from '../songgen.js';
 import { songFromMidi } from '../midifile.js';
 import { gestureModeSection, wireGestureSections, updateGesturePanel } from './gesture-ui.js';
 import { radialMenuSection, wireRadialSection, updateRadialPanel } from './radial-ui.js';
+import { intervalSection, wireIntervalSection, updateIntervalPanel } from './interval-ui.js';
 import { chordVoiceSection, wireChordVoiceSection, updateChordVoicePanel } from './voice-ui.js';
 import { chordQualitySection, wireChordQualitySection, updateChordQualityPanel } from './quality-ui.js';
 import { noteQualitySection, wireNoteQualitySection, updateNoteQualityPanel } from './notequality-ui.js';
@@ -128,6 +129,7 @@ export function renderAudioPanel() {
     ${safeSection(chordQualitySection, 'Chord Quality')}
     ${safeSection(noteQualitySection, 'Note Quality')}
     ${safeSection(radialMenuSection, 'Radial Mode')}
+    ${safeSection(intervalSection, 'Interval Mode')}
     ${safeSection(chordVoiceSection, 'Chord Voice')}
     ${safeSection(metronomeSection, 'Metronome')}
     <div class="audio-section">
@@ -533,12 +535,14 @@ export function renderAudioPanel() {
     arp_on: () => renderAudioPanel(), arp_pattern: () => renderAudioPanel(),
     // A mode switching on or off changes what its node shows.
     chord_on: () => renderAudioPanel(), radial_on: () => renderAudioPanel(),
+    interval_on: () => renderAudioPanel(),
   };
 
   if (t.enabled) redrawKbd();
 
   safeWire(() => wireGestureSections(renderAudioPanel), 'Gesture Mode');
   safeWire(() => wireRadialSection(renderAudioPanel), 'Radial Mode');
+  safeWire(() => wireIntervalSection(renderAudioPanel), 'Interval Mode');
   safeWire(() => wireChordVoiceSection(renderAudioPanel), 'Chord Voice');
   safeWire(() => wireChordQualitySection(renderAudioPanel), 'Chord Quality');
   safeWire(() => wireNoteQualitySection(renderAudioPanel), 'Note Quality');
@@ -622,6 +626,7 @@ export function updateAudioSliders() {
 
   updateGesturePanel();
   updateRadialPanel();
+  updateIntervalPanel();
   updateChordVoicePanel();
   updateChordQualityPanel();
   updateNoteQualityPanel();

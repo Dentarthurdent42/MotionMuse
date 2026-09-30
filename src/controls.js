@@ -26,6 +26,7 @@ import { chordmode, VOICINGS, EXPRESSION_MODES, EXPRESSION_CONTROLS } from './ch
 import { DEGREE_KEYS, RELEASE_KEY, ACC_KEYS, QUALITY_CABLE_KEYS, CABLE_ID } from './chordcables.js';
 import { QUALITY_SYMBOL } from './chords.js';
 import { radial, VOLUME_MODES, FINGERS } from './radial.js';
+import { interval, INTERVAL_HANDS, INTERVAL_TRIGGERS, INTERVAL_UNITS } from './interval.js';
 import { micSource } from './mic.js';
 import { looper }    from './looper.js';
 import { playalong } from './playalong.js';
@@ -126,6 +127,41 @@ export const CONTROLS = {
     read: () => (radial.enabled ? 1 : 0),
     apply: onIndex(() => (radial.enabled ? 1 : 0), i => { radial.setEnabled(i >= 1); notify('radial_on'); }),
   },
+  // Interval mode parks the other two itself, and is parked by either of
+  // them switching on (src/interval.js).
+  interval_on: {
+    label: 'Interval Mode', min: 0, max: 1, toggle: true,
+    read: () => (interval.enabled ? 1 : 0),
+    apply: onIndex(() => (interval.enabled ? 1 : 0), i => { interval.setEnabled(i >= 1); notify('interval_on'); }),
+  },
+  interval_hands: {
+    label: 'Hands', min: 0, max: INTERVAL_HANDS.length - 1, options: INTERVAL_HANDS,
+    read: () => indexIn(INTERVAL_HANDS, interval.config().hands),
+    apply: onIndex(() => indexIn(INTERVAL_HANDS, interval.config().hands),
+                   i => { interval.setHands(INTERVAL_HANDS[i] ?? INTERVAL_HANDS[0]); notify('interval_hands'); }),
+  },
+  interval_hand: {
+    label: 'Playing Hand', min: 0, max: HANDS.length - 1, options: HANDS,
+    read: () => indexIn(HANDS, interval.config().hand),
+    apply: onIndex(() => indexIn(HANDS, interval.config().hand),
+                   i => { interval.setHand(HANDS[i] ?? 'R'); notify('interval_hand'); }),
+  },
+  interval_trigger: {
+    label: 'Trigger', min: 0, max: INTERVAL_TRIGGERS.length - 1, options: INTERVAL_TRIGGERS,
+    read: () => indexIn(INTERVAL_TRIGGERS, interval.config().trigger),
+    apply: onIndex(() => indexIn(INTERVAL_TRIGGERS, interval.config().trigger),
+                   i => { interval.setTrigger(INTERVAL_TRIGGERS[i] ?? INTERVAL_TRIGGERS[0]); notify('interval_trigger'); }),
+  },
+  interval_unit: {
+    label: 'Count In', min: 0, max: INTERVAL_UNITS.length - 1, options: INTERVAL_UNITS,
+    read: () => indexIn(INTERVAL_UNITS, interval.config().unit),
+    apply: onIndex(() => indexIn(INTERVAL_UNITS, interval.config().unit),
+                   i => { interval.setUnit(INTERVAL_UNITS[i] ?? INTERVAL_UNITS[0]); notify('interval_unit'); }),
+  },
+  // The 'step' trigger's input — the "separate gesture": wire any signal
+  // here and each rise moves the melody by what the hands show.
+  interval_step: { label: 'Step', min: 0, max: 1, trigger: true, read: () => 0, apply: onRise(() => interval.step()) },
+  interval_home: { label: 'Home', min: 0, max: 1, trigger: true, read: () => 0, apply: onRise(() => interval.home()) },
   // The microphone starts asynchronously and may be refused; the panel is
   // told once it has settled either way, and reads the real state.
   mic_on: {

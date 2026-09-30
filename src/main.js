@@ -19,6 +19,7 @@ import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
 import { gesture }                          from './gesture.js';
 import { chordmode }                        from './chordmode.js';
 import { radial }                           from './radial.js';
+import { interval }                         from './interval.js';
 import { metronome }                        from './metronome.js';
 import { graph }                            from './graph.js';
 import { watchRanges, syncNumbers }         from './ui/numeric.js';
@@ -100,6 +101,7 @@ function loop() {
     metronome.tick();
     chordmode.tick();      // cheap no-op unless gesture mode is enabled
     radial.tick();         // cheap no-op unless radial mode is enabled
+    interval.tick();       // likewise for interval mode
     playalong.tick();      // cheap no-op unless a song is running
     // The pedal, after the trackers have published this frame's signals and
     // before anything draws: a nod detected now should move the transport now,
