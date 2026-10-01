@@ -33,6 +33,7 @@ import { findConfig, setCurrentConfig,
          clearCurrentConfig }               from './saved.js';
 import { initHeaderHelp }                    from './ui/docpop.js';
 import { initCamDiag, diag }                from './ui/camdiag.js';
+import { initTapClicks }                    from './ui/tap.js';
 import { changed as docsChanged }           from './ui/nodedocs.js';
 import { initHotkeys, keyLabel, getBinding, onBindingChange } from './ui/hotkeys.js';
 import { initWorkspace, relayout, adoptSections, openAddMenu } from './ui/workspace.js';
@@ -55,6 +56,9 @@ import { NEWER_SETUP }                      from './presetformat.js';
 
 // Before anything else runs, so an early failure is on the log too (?debug).
 initCamDiag({ buildInfo, buildLabel });
+// Before any handler is bound: a touch tap on a button is a click, whatever
+// iOS decides about hover (src/ui/tap.js).
+initTapClicks();
 
 // ── A shared setup, if this page was opened from a QR code / link ────────
 // First thing: it applies the state, persists it and reloads without the
