@@ -309,19 +309,22 @@ The state is compressed and carried in the URL **fragment**, which is never sent
 to a server. There is no server; a shared setup stays between the two people
 holding the phones.
 
-**What is compressed is the difference from the default.** Most of a snapshot
-is defaults, and compressing the whole thing made the default setup's link
-1328 characters — a 121-module QR code. A link now carries only what differs
-from a frozen copy of the Hands patch on a fresh install (`src/sharebase.js`),
-deflated: a stock Hands setup is a handful of bytes, every other starting patch
-is 135–220, and a link that was 1364 characters is 461. The QR code is several
-versions smaller and scans from further away. The packing is the link's first
-character — `b` for this, `d` for every link made before it, which still opens
-— and the baseline can **never be edited**: every `b` link ever made is a diff
-against exactly those values. When the app grows new state, it simply travels
-in the diff; a better baseline would be a new letter beside this one.
-`tests/unit/share-base.test.js` pins the baseline by hash and the diff/merge as
-an exact inverse, and `tests/unit/fixtures/share-links.json` gained a `b` link.
+**What is compressed is the difference from a starting patch.** Most of a
+snapshot is defaults, and compressing the whole thing made the default
+setup's link 1328 characters — a 121-module QR code. A link now carries only
+what differs from a frozen copy of one of the starting patches
+(`src/sharebase.js`), deflated, with one byte saying which: the encoder tries
+each and keeps the smallest. A stock starting patch is a handful of bytes,
+a played-with one a few dozen, and a link that was 1364 characters is 462.
+The QR code is several versions smaller and scans from further away. The
+packing is the link's first character — `c` for this, `b` for the Hands
+baseline alone (the first version of it), `d` for every link made before
+that; all still open — and a baseline can **never be edited or reordered**:
+every link ever made is a diff against exactly those values. When the app
+grows new state, it simply travels in the diff; a new baseline goes on the
+end of the list. `tests/unit/share-base.test.js` pins the baselines by hash
+and the diff/merge as an exact inverse, and `tests/unit/fixtures/share-links.json`
+holds a link of each kind.
 
 **The code can leave the screen as a picture.** COPY IMAGE puts it on the
 clipboard, for pasting into a message; SAVE IMAGE downloads a PNG. Either way the
@@ -849,50 +852,47 @@ the setup it shows, under its name if it has one. Tap the tag to open SHARE;
 
 ### What it is
 
-**Seven colours on the hexagons of a Gosper curve.** The Gosper curve (the
-"flowsnake") is a space-filling curve on the hexagonal lattice, and it is
+**Seven colours on the hexagons of a piece of Gosper curve.** The Gosper
+curve (the "flowsnake") is a space-filling curve on the hexagonal lattice,
 made of sevens all the way down: seven hexagons make a flower, seven flowers
-an island, seven islands the next. An order-*n* tag is the 7ⁿ hexagons the
-curve visits, the data written along it, and its outline is the Gosper island
-— 343 hexagons at order 3, **2401 at order 4** (every setup the app makes
-today), 16 807 at order 5 for one that outgrows that.
+a 49-cell island. A tag is as many of those islands as the setup needs, taken
+in the curve's own order, with the data written along it — **three islands
+(about 50 CSS px on a phone) for a stock Hands setup, six to nine for the
+other starting patches**, more for a busy one. Every piece of the curve is
+compact, so the tag stays a small blob in the corner rather than a ribbon.
 
-Every hexagon is one of seven colours — **white, yellow, red, magenta, blue,
-cyan and green**: the corners of the sRGB cube, the most vivid colours a
-screen can show and 60° apart around the colour wheel, written in
-`src/densecode.js` as their OKLCH coordinates. Two hexagons make 49
-combinations, 32 of which carry five bits: 2.5 bits a cell.
+Every hexagon is one of seven colours: **white**, and **six hues exactly 60°
+apart in OKLCH, all at one lightness and one chroma** — equally light and
+equally vivid to the eye, which the sRGB primaries are not (their blue is
+L 0.45, their yellow 0.97):
 
-| | white | yellow | red | magenta | blue | cyan | green |
+| | white | red | yellow | green | cyan | blue | magenta |
 |---|---|---|---|---|---|---|---|
-| L | 1 | 0.968 | 0.628 | 0.702 | 0.452 | 0.905 | 0.866 |
-| C | 0 | 0.211 | 0.258 | 0.322 | 0.313 | 0.155 | 0.295 |
-| h | — | 109.8° | 29.2° | 328.4° | 264.1° | 194.8° | 142.5° |
+| OKLCH | 1 0 — | 0.745 0.127 28° | 0.745 0.127 88° | 0.745 0.127 148° | 0.745 0.127 208° | 0.745 0.127 268° | 0.745 0.127 328° |
 
-A Gosper island has no straight edge to hang a frame on, so the finder is
-three **black flowers** — seven hexagons each — off three corners of the
-island, the way a QR code has three finder squares: top-left, top-right and
+L 0.745 and C 0.127 are the most vivid the screen can show all six at once
+(1% inside the common gamut), and the rotation puts each hue nearest the
+colour it is named for. Five hexagons are 7⁵ = 16 807 combinations, of which
+16 384 carry fourteen bits: 2.8 bits a cell.
+
+A piece of Gosper curve has no straight edge to hang a frame on, so the
+finder is three **black flowers** — seven hexagons each — off three corners,
+the way a QR code has three finder squares: top-left, top-right and
 bottom-left, so their triangle also says which way up the tag is. Black is
-theirs alone (no data colour is dark in its brightest channel), so the reader
-finds them by brightness, takes scale, position and even a slight rotation
-from their three centres, and samples every hexagon where it must be.
+theirs alone (no data colour is dark), so the reader finds them by
+brightness, takes scale, position and even a slight rotation from their
+three centres, and samples every hexagon where it must be. The first seven
+hexagons along the curve are the palette in order — a colour chart read off
+the recording itself — and two rounds of k-means then move each colour's
+centroid to the middle of the hexagons that chose it, so a recording's tint,
+lifted blacks or shifted hues are learned rather than assumed. Three tenths
+of every Reed–Solomon block is parity.
 
 Against the QR code that was tried on the picture first and dropped — the
 default setup's link was 1328 characters, a **129px-square** code — the tag
-also carries the setup's raw bytes rather than a link with base64 in it, and
-only what differs from the default (the `b` packing above), and has no
-finder squares, alignment patterns or rotation machinery to pay for.
-
-### What it costs, and what the spare room buys
-
-An island is a fixed size. A setup that would fill 1400 hexagons still gets
-2401, so a typical tag is about **320×303 device pixels** at its usual pitch —
-around 107×101 CSS px on a phone, a corner patch about a fifth of the width
-of a fullscreen desktop picture. That is roughly two and a half times the
-area of a rectangular tag carrying the same setup. The spare room is not
-wasted: everything the payload does not use is Reed–Solomon parity, at least
-**half of every block**, so a quarter of the bytes can be wrong anywhere and
-it still reads.
+carries the setup's raw bytes rather than a link with base64 in it, only what
+differs from a starting patch, and no finder squares, alignment patterns or
+rotation machinery.
 
 ### Measured through real video
 
@@ -905,26 +905,21 @@ noisy picture with the tag in its corner, encoded with x264 in yuv420p,
 scaled to a feed's size (1080p and 720p, by the short side, as feeds are),
 compressed at CRF 23 and 33 — pulls a frame back out and reads it, three
 different setups per case (a single run near the limit passes or fails on
-luck). What it found, and what the tag is built on:
+luck). What it found:
 
-- **A hexagon has to keep about 2.5–3 pixels after the feed's downscale.**
-  So the pitch follows the screen — a recording is the screen's own pixels:
-  `max(5, ⌈3 × short side ÷ 720⌉)` device pixels between hexagon centres —
-  5 on a phone or a 1080p monitor, 6 at 1440p, 9 on 4K. At that pitch every
-  required case reads, every setup, on all three screens. The tag is drawn at
-  exactly its own device pixels, never resampled by CSS.
-- **The reader never trusts a colour as drawn.** The first seven hexagons
-  along the curve and the last seven are the palette in order — a colour
-  chart, read off the recording — and two rounds of k-means then move each
-  colour's centroid to the middle of the hexagons that chose it, so a
-  recording's tint, lifted blacks or shifted hues are learned rather than
-  assumed. Colours are compared in OKLab with lightness counted double: it is
-  the half of a colour a recording keeps sharp.
-- **Earlier formats, measured and replaced.** Black-and-white squares in a
-  Data Matrix frame came first, and four grey levels before that; a hexagonal
-  rectangle in seven colours came between. The colour tags need bigger cells
-  than black and white (about 3px against 2.5), and carry 2.5 times the bits
-  in each.
+- **A hexagon has to keep about four pixels after the feed's downscale.**
+  Six hues at one lightness differ only in colour, and a recording keeps
+  colour at half resolution; a palette with lightness differences in it got
+  by on three. So the pitch follows the screen — a recording is the screen's
+  own pixels: `max(6, ⌈4 × short side ÷ 720⌉)` device pixels between
+  hexagon centres — 7 on a phone, 6 on a 1080p monitor, 8 at 1440p, 12 on
+  4K. At that pitch every required case reads, every setup, on all three
+  screens; a pixel less and the 720p feeds start to fail. The tag is drawn
+  at exactly its own device pixels, never resampled by CSS.
+- **Earlier formats, measured and replaced:** black-and-white squares in a
+  Data Matrix frame, four grey levels before that, then the sRGB primaries on
+  a hexagonal rectangle and on a full order-4 Gosper island. Each step and
+  why is in this branch's history.
 
 ### Holding still
 

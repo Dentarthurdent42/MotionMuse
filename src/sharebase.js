@@ -258,3 +258,45 @@ export const BASE_B = Object.freeze({
   },
   "ui": {}
 });
+
+// ── Baselines for the c packing — FROZEN, the same way ──────────────────
+//
+// A "c" share names which of these it is a diff against, in one byte, and the
+// encoder takes whichever gives the smallest diff. Against the Hands baseline
+// alone, a setup built on any other starting patch carries that patch's whole
+// cable list — every starting patch but Hands came out at 150–250 bytes, a
+// setup tag twice the width it needed to be. Against its own starting patch
+// it is a handful of bytes, like a Hands setup. They are the starting
+// patches as they were the day the packing shipped: only the cables differ
+// from the Hands baseline, so each is that baseline with its cables swapped.
+// The same rule as above: NEVER EDIT, NEVER REORDER — the index is the
+// format. A new baseline goes on the END of the list.
+const withCables = mappings => Object.freeze({ ...BASE_B, mappings: Object.freeze(mappings) });
+export const BASES_C = Object.freeze([
+  BASE_B,                                                // 0: hands
+  withCables([
+    {"audioParam":"osc1_freq","signal":"brow_raise","outMin":160,"outMax":660,"curve":"linear","steps":0,"invert":false},
+    {"audioParam":"volume","signal":"mouth_open","outMin":0,"outMax":1,"curve":"linear","steps":0,"invert":false},
+  ]), // 1: face-brow-mouth
+  withCables([
+    {"audioParam":"osc1_freq","signal":"brow_raise","outMin":160,"outMax":660,"curve":"linear","steps":0,"invert":false},
+    {"audioParam":"volume","signal":"mouth_open","outMin":0,"outMax":1,"curve":"linear","steps":0,"invert":false},
+    {"audioParam":"filter_freq","signal":"smile","outMin":400,"outMax":7000,"curve":"quad","steps":0,"invert":false},
+    {"audioParam":"osc2_detune","signal":"pucker","outMin":-30,"outMax":30,"curve":"linear","steps":0,"invert":false},
+    {"audioParam":"reverb_mix","signal":"cheek_puff","outMin":0,"outMax":0.7,"curve":"linear","steps":0,"invert":false},
+    {"audioParam":"osc2_volume","signal":"head_roll","outMin":0,"outMax":1,"curve":"linear","steps":0,"invert":false},
+  ]), // 2: face-expressive
+  withCables([
+    {"audioParam":"osc1_freq","signal":"gaze_x","outMin":160,"outMax":880,"curve":"linear","steps":0,"invert":false},
+    {"audioParam":"filter_freq","signal":"gaze_y","outMin":300,"outMax":6000,"curve":"quad","steps":0,"invert":false},
+    {"audioParam":"volume","signal":"mouth_open","outMin":0,"outMax":1,"curve":"linear","steps":0,"invert":false},
+    {"audioParam":"reverb_mix","signal":"brow_raise","outMin":0,"outMax":0.6,"curve":"linear","steps":0,"invert":false},
+  ]), // 3: gaze
+  withCables([
+    {"audioParam":"osc1_freq","signal":"arm_raise_R","outMin":110,"outMax":880,"curve":"quad","steps":0,"invert":false},
+    {"audioParam":"filter_freq","signal":"arm_raise_L","outMin":300,"outMax":7000,"curve":"quad","steps":0,"invert":false},
+    {"audioParam":"osc2_detune","signal":"torso_tilt","outMin":-40,"outMax":40,"curve":"linear","steps":0,"invert":false},
+    {"audioParam":"lfo_rate","signal":"shoulder_width","outMin":0.5,"outMax":8,"curve":"linear","steps":0,"invert":false},
+    {"audioParam":"volume","signal":"shoulder_y_R","outMin":0,"outMax":1,"curve":"linear","steps":0,"invert":false},
+  ]), // 4: pose
+]);

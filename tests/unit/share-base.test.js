@@ -1,6 +1,7 @@
-// The 'b' packing: a setup as its difference from a frozen baseline.
+// The 'b' and 'c' packings: a setup as its difference from a frozen baseline
+// — the Hands patch for 'b', whichever starting patch is closest for 'c'.
 //
-// Two things can silently break every 'b' link and every setup tag ever made:
+// Two things can silently break every such link and every setup tag ever made:
 // an edit to the baseline (src/sharebase.js), and a diff/merge that is not an
 // exact inverse. Both are pinned here. The links themselves are pinned by
 // share-compat.test.js; the tags by densecode.test.js and the same fixture set.
@@ -18,7 +19,7 @@ globalThis.localStorage ??= {
   removeItem(k) { this._m.delete(k); },
 };
 
-const { BASE_B } = await import('../../src/sharebase.js');
+const { BASE_B, BASES_C } = await import('../../src/sharebase.js');
 const { diffFrom, mergeOnto, encodeState, decodeState, encodeStateBytes, decodeStateBytes,
         shareableSnapshot, tagState, shareFingerprint } = await import('../../src/share.js');
 const { snapshot, applyAll } = await import('../../src/preset.js');
@@ -32,6 +33,14 @@ test('the baseline is the one every b-link was made against', () => {
   // new baseline is a new packing letter beside this one.
   assert.equal(shareFingerprint(JSON.stringify(BASE_B)), '1bio7ev');
   assert.ok(Object.isFrozen(BASE_B));
+});
+
+test('the c baselines are the ones every c-link was made against, in their order', () => {
+  // The index is the format: edit one or reorder them and every 'c' link and
+  // tag decodes to a different patch. A new baseline goes on the end.
+  assert.equal(shareFingerprint(JSON.stringify(BASES_C)), '144krlw');
+  assert.equal(BASES_C[0], BASE_B, 'the first is the b baseline itself');
+  assert.ok(Object.isFrozen(BASES_C));
 });
 
 test('diff then merge gives back exactly what went in', () => {
@@ -55,24 +64,35 @@ test('merging never touches the baseline', () => {
   assert.equal(JSON.stringify(BASE_B), before);
 });
 
-test('every starting patch round-trips through a b-link and through tag bytes', async () => {
+test('every starting patch round-trips through a c-link and through tag bytes', async () => {
   for (const p of PRESETS) {
     mapper.applyPreset(p.id);
     const s = { ...shareableSnapshot(snapshot()), label: p.name };
     const link = await encodeState(s);
-    assert.equal(link[0], 'b');
+    assert.equal(link[0], 'c');
     assert.deepEqual(await decodeState(link), JSON.parse(JSON.stringify(s)), `${p.id} via link`);
     assert.deepEqual(await decodeStateBytes(await encodeStateBytes(s)), JSON.parse(JSON.stringify(s)), `${p.id} via bytes`);
   }
 });
 
-test('the b packing is several times smaller than packing the whole snapshot', async () => {
+test('every starting patch packs to a few bytes — the c packing picks its own baseline', async () => {
   for (const p of PRESETS) {
     mapper.applyPreset(p.id);
-    const s = shareableSnapshot(snapshot());
-    const bytes = await encodeStateBytes(s);
-    assert.ok(bytes.length < 320, `${p.id}: ${bytes.length} bytes`);
+    const bytes = await encodeStateBytes(shareableSnapshot(snapshot()));
+    assert.ok(bytes.length < 16, `${p.id}: ${bytes.length} bytes`);
   }
+});
+
+test('an old b-link still opens', async () => {
+  // Made before 'c': the Hands baseline alone.
+  mapper.applyPreset('pose');
+  const s = shareableSnapshot(snapshot());
+  const bytes = await new Response(new Blob([JSON.stringify(diffFrom(BASE_B, s))]).stream()
+    .pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer();
+  let bin = '';
+  for (const b of new Uint8Array(bytes)) bin += String.fromCharCode(b);
+  const link = 'b' + btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  assert.deepEqual(await decodeState(link), JSON.parse(JSON.stringify(s)));
 });
 
 test('the tag ignores where the cables have pushed their parameters', () => {
@@ -97,7 +117,7 @@ test('a tag carries the name it is given', () => {
 test('the oldest tag opens as the setup it was made from', async () => {
   const [fx] = JSON.parse(readFileSync(new URL('fixtures/setup-tags.json', import.meta.url), 'utf8'));
   const cells = Uint8Array.from(fx.cells, ch => Number(ch));
-  const img = rasterize({ order: fx.order, cells }, 5);
+  const img = rasterize({ islands: fx.islands, cells }, 7);
   const data = await decodeStateBytes(readTag(img));
   assert.ok(applyAll(data).ok);
   assert.equal(data.label, 'fixture: right hand opens the filter');

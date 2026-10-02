@@ -15,7 +15,7 @@
 import { snapshot } from './preset.js';
 import { mapper } from './mapper.js';
 import { isString, isRecord } from './is.js';
-import { BASE_B } from './sharebase.js';
+import { BASE_B, BASES_C } from './sharebase.js';
 
 export const SHARE_PARAM = 's';
 
@@ -87,37 +87,58 @@ async function pipe(stream, bytes) {
 
 // A one-character prefix says how the rest is packed, so an old link stays
 // readable if this ever gains another format:
-//   'b' = deflate-raw of the DIFFERENCE from a frozen baseline (src/sharebase.js)
+//   'c' = one byte naming a frozen baseline (src/sharebase.js BASES_C — the
+//         starting patches), then deflate-raw of the DIFFERENCE from it
+//   'b' = deflate-raw of the difference from the Hands baseline alone
 //   'd' = deflate-raw of the whole snapshot (every link made before 'b')
 //   'j' = plain JSON bytes (the fallback where CompressionStream is missing)
 // A letter, once shipped, means that packing forever — printed codes use it,
-// and so does every setup tag in a posted recording. A new packing (a new
-// baseline, say) takes a new letter, and a baseline can never be edited under
-// the same one. What is INSIDE the JSON is versioned separately, by `v`
-// (src/presetformat.js).
+// and so does every setup tag in a posted recording. A new packing takes a
+// new letter, and a baseline can never be edited under the same one. What is
+// INSIDE the JSON is versioned separately, by `v` (src/presetformat.js).
 //
-// 'b' exists because most of a snapshot is the defaults. Sending only what
-// differs from the Hands patch took a typical setup from ~1 KB to ~250 bytes —
-// a QR code several versions smaller, and a tag small enough to leave on the
-// picture.
+// The diff exists because most of a snapshot is the defaults: sending only
+// what differs from a starting patch takes a setup from ~1 KB to tens of
+// bytes — a QR code several versions smaller, and a tag small enough to leave
+// in the corner of the picture. 'c' over 'b' because a setup built on any
+// patch but Hands carried that patch's whole cable list against Hands.
 export async function encodeState(state) {
-  const json = new TextEncoder().encode(JSON.stringify(state));
-  if (!hasCompression()) return 'j' + toB64(json);
-  return 'b' + toB64(await packB(state));
+  if (!hasCompression()) return 'j' + toB64(new TextEncoder().encode(JSON.stringify(state)));
+  return 'c' + toB64(await packC(state));
 }
 
-const packB = async state => pipe(new CompressionStream('deflate-raw'),
-  new TextEncoder().encode(JSON.stringify(diffFrom(BASE_B, state) ?? {})));
+const deflate = async obj => pipe(new CompressionStream('deflate-raw'),
+  new TextEncoder().encode(JSON.stringify(obj ?? {})));
+
+// The baseline whose diff packs smallest, its index first.
+async function packC(state) {
+  let best = null;
+  for (let i = 0; i < BASES_C.length; i++) {
+    const body = await deflate(diffFrom(BASES_C[i], state));
+    if (!best || body.length < best.length - 1) {
+      best = new Uint8Array(body.length + 1);
+      best[0] = i;
+      best.set(body, 1);
+    }
+  }
+  return best;
+}
 
 export async function decodeState(payload) {
   if (!isString(payload) || payload.length < 2) throw new Error('empty share link');
   const kind = payload[0];
   const bytes = fromB64(payload.slice(1));
   if (kind === 'j') return JSON.parse(new TextDecoder().decode(bytes));
-  if (kind !== 'd' && kind !== 'b') throw new Error('unrecognised share link');
+  if (kind !== 'd' && kind !== 'b' && kind !== 'c') throw new Error('unrecognised share link');
   if (!hasCompression()) throw new Error('this browser cannot read compressed share links');
-  const parsed = JSON.parse(new TextDecoder().decode(
-    await pipe(new DecompressionStream('deflate-raw'), bytes)));
+  const inflate = async b => JSON.parse(new TextDecoder().decode(
+    await pipe(new DecompressionStream('deflate-raw'), b)));
+  if (kind === 'c') {
+    const base = BASES_C[bytes[0]];
+    if (!base) throw new Error('this share was made by a newer MotionMuse');
+    return mergeOnto(base, await inflate(bytes.subarray(1)));
+  }
+  const parsed = await inflate(bytes);
   return kind === 'b' ? mergeOnto(BASE_B, parsed) : parsed;
 }
 
@@ -125,10 +146,10 @@ export async function decodeState(payload) {
 // for a carrier that is not a URL and so has no reason to pay base64's third.
 // The setup tag (src/densecode.js) carries exactly these.
 export async function encodeStateBytes(state) {
-  const body = hasCompression() ? await packB(state)
+  const body = hasCompression() ? await packC(state)
                                 : new TextEncoder().encode(JSON.stringify(state));
   const out = new Uint8Array(body.length + 1);
-  out[0] = (hasCompression() ? 'b' : 'j').charCodeAt(0);
+  out[0] = (hasCompression() ? 'c' : 'j').charCodeAt(0);
   out.set(body, 1);
   return out;
 }

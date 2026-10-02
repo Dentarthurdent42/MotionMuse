@@ -1,5 +1,5 @@
-// The setup tag — a small, dense, colour 2D code made to be read back out of
-// a SCREENSHOT, not through a camera, in the shape of a Gosper curve.
+// The setup tag — a small colour 2D code made to be read back out of a
+// SCREENSHOT, not through a camera, in the shape of a piece of Gosper curve.
 //
 // A QR code is designed for the hardest case: a phone held at an angle across
 // a room, a printed sticker that is creased, dirty and badly lit. Every module
@@ -12,36 +12,34 @@
 //   • SEVEN COLOURS ON A HEXAGONAL LATTICE. Every cell is a hexagon — the
 //     densest packing for cells whose blur is round, which a resampled,
 //     compressed picture's is — and every hexagon is one of seven colours:
-//     white, yellow, red, magenta, blue, cyan and green, the corners of the
-//     sRGB cube, 60° apart around the colour wheel, written here as their
-//     OKLCH coordinates. Two cells make 49 combinations, 32 of which carry five
-//     bits: two and a half bits a cell, where black-and-white squares carry one.
+//     white, and six hues exactly 60° apart in OKLCH at one lightness and one
+//     chroma (PALETTE below). Five cells are 7⁵ = 16 807 combinations, of
+//     which 16 384 carry fourteen bits: 2.8 bits a cell, all but the last
+//     sliver of what seven colours can hold.
 //   • THE GOSPER CURVE. The cells are the hexagons the Gosper curve (the
-//     "flowsnake") visits, and the data runs along it. The curve is made of
-//     sevens all the way down — seven hexagons make a flower, seven flowers an
-//     island, seven islands the next — so an order-n tag is exactly 7ⁿ cells
-//     and its outline is the Gosper island: 343 cells at order 3, 2401 at 4.
-//     Consecutive bytes stay close together along the curve, and the
-//     interleaving below spreads them across every Reed–Solomon block.
+//     "flowsnake") visits, in order, and the data runs along it. The curve is
+//     made of sevens all the way down — seven hexagons make a flower, seven
+//     flowers an island of 49 — and a tag is as many of those 49-cell islands,
+//     taken in the curve's own order, as the setup needs: one for a lightly
+//     edited stock patch, three or four for a busy one. Every piece of the
+//     curve is compact, so the tag stays a blob rather than a ribbon.
 //   • NO URL. The tag carries the setup's raw bytes, not a link with base64 in
-//     it: a third fewer bits before anything else is done.
+//     it, and only what differs from the default (src/share.js's 'b').
 //
-// A Gosper island has no straight edge to hang a Data Matrix frame on, so the
+// A piece of Gosper curve has no straight edge to hang a frame on, so the
 // finder is three black flowers — seven hexagons each — off three corners of
-// the island, the way a QR code has three finder squares: top-left, top-right
-// and bottom-left, so the triangle they make also says which way up the tag
-// is. Black is theirs alone: no data colour is dark in its brightest channel,
-// so the reader can find them by brightness and take scale, position and even
-// a slight rotation from their three centres.
+// it, the way a QR code has three finder squares: top-left, top-right and
+// bottom-left, so the triangle they make also says which way up the tag is.
+// Black is theirs alone: no data colour is dark, so the reader can find them
+// by brightness and take scale, position and even a slight rotation from
+// their three centres.
 //
 // What it has to survive is real: a screen recording is resampled (a phone's
 // 1170px to a feed's 1080 or 720) and compressed with its colour subsampled
 // (H.264, 4:2:0 — chroma at half the resolution of brightness). So the reader
-// never trusts a colour as drawn: the first seven cells along the curve and
-// the last seven are the palette in order — a colour chart, read off the
-// recording — and the classifier refines every colour's centroid from all the
-// cells that chose it. And an island is a fixed size, so whatever the payload
-// does not use is parity: half of every Reed–Solomon block, at least.
+// never trusts a colour as drawn: the first seven cells along the curve are
+// the palette in order — a colour chart, read off the recording — and the
+// classifier refines every colour's centroid from all the cells that chose it.
 //
 // The codewords hold one MAGIC byte (which is also the format's version), a
 // two-byte length, the payload, then padding.
@@ -54,38 +52,44 @@ import { oklchToHex, srgbToOklab } from './okcolor.js';
 // These are the format. A tag in a recording that was posted somewhere is
 // frozen exactly like a printed QR code is, so none of them can change under
 // the same MAGIC: a new layout takes a new MAGIC byte.
-const MAGIC = 0xA3;
+const MAGIC = 0xA4;
 const HEADER = 3;                 // MAGIC + 16-bit length
-// The share of each Reed–Solomon block spent on correction. Half corrects
-// one byte in four anywhere in the block.
-const ECC_SHARE = 0.5;
+// The share of each Reed–Solomon block spent on correction. Three tenths
+// corrects one byte in seven anywhere in the block — and a misread cell
+// costs at most two bytes, since five cells make fourteen bits.
+const ECC_SHARE = 0.3;
 const MAX_BLOCK = 255;
-const ORDERS = [3, 4, 5];         // 343, 2401 and 16807 cells
+const ISLAND = 49;                // cells in one order-2 Gosper island
+const MAX_ISLANDS = 49;           // an order-4 curve: 2401 cells, ~600 bytes
 const ROW = Math.sqrt(3) / 2;
 
-// The seven colours, as OKLCH: white, then the six corners of the sRGB cube
-// around the colour wheel, each 60° from the next in the wheel's own hue —
-// yellow 60°, red 0°, magenta 300°, blue 240°, cyan 180°, green 120°. These
-// are the most vivid colours a screen can show and as far apart as any seven
-// it can show, and they are the colours their names say. Order is the
-// symbol value, 0–6, and the order of the calibration chart.
+// The seven colours, as OKLCH. White, and six hues EXACTLY 60° apart in
+// OKLCH hue, all at the same lightness and the same chroma — equally light and
+// equally vivid to the eye, which no set of sRGB primaries is (their blue is
+// L 0.45 and their yellow 0.97). The lightness and chroma are the most
+// saturated the screen can show all six at once: 0.745 and 1% inside the
+// common gamut. The rotation puts each hue nearest the colour it is named for
+// — red 28°, yellow 88°, green 148°, cyan 208°, blue 268°, magenta 328°.
+// Order is the symbol value, 0–6, and the order of the calibration chart.
+const HUE_L = 0.745;
+const HUE_C = 0.1268;
 export const PALETTE = Object.freeze([
-  { name: 'white',   L: 1,        C: 0,        h: 0 },
-  { name: 'yellow',  L: 0.967983, C: 0.211006, h: 109.7692 },
-  { name: 'red',     L: 0.627955, C: 0.257683, h: 29.2339 },
-  { name: 'magenta', L: 0.701674, C: 0.322491, h: 328.3634 },
-  { name: 'blue',    L: 0.452014, C: 0.313214, h: 264.052 },
-  { name: 'cyan',    L: 0.905399, C: 0.15455,  h: 194.7689 },
-  { name: 'green',   L: 0.86644,  C: 0.294827, h: 142.4953 },
+  { name: 'white',   L: 1,     C: 0,     h: 0 },
+  { name: 'yellow',  L: HUE_L, C: HUE_C, h: 88 },
+  { name: 'red',     L: HUE_L, C: HUE_C, h: 28 },
+  { name: 'magenta', L: HUE_L, C: HUE_C, h: 328 },
+  { name: 'blue',    L: HUE_L, C: HUE_C, h: 268 },
+  { name: 'cyan',    L: HUE_L, C: HUE_C, h: 208 },
+  { name: 'green',   L: HUE_L, C: HUE_C, h: 148 },
 ]);
 const SYMBOLS = PALETTE.length;
 const RGB = PALETTE.map(({ L, C, h }) => {
   const hx = oklchToHex(L, C, h);
   return [1, 3, 5].map(i => parseInt(hx.slice(i, i + 2), 16));
 });
-// Lightness counts double when the reader compares colours: it is the half
-// of a colour a recording keeps sharp.
-const L_WEIGHT = 2;
+// The hues differ only in hue, so lightness carries nothing between them; it
+// is what tells white from all six.
+const L_WEIGHT = 1;
 
 // ── Reed–Solomon decoding ─────────────────────────────────────────────────
 //
@@ -250,15 +254,17 @@ function gosperCells(order) {
   return out;
 }
 
-// The island, the three anchor flowers, and the plate they sit on — all a
-// function of the order alone, so the reader can rebuild it from nothing.
-// Each anchor is the lattice point nearest a corner of the island's bounding
-// box that leaves at least one white hexagon between its flower and the
-// island.
+// The cells, the three anchor flowers, and the plate they sit on — all a
+// function of the number of islands alone, so the reader can rebuild it from
+// nothing. Each anchor is the lattice point nearest a corner of the cells'
+// bounding box that leaves at least one white hexagon between its flower and
+// the cells.
+let CURVE = null;
 const templates = new Map();
-export function template(order) {
-  if (templates.has(order)) return templates.get(order);
-  const cells = gosperCells(order);
+export function template(islands) {
+  if (templates.has(islands)) return templates.get(islands);
+  CURVE ??= gosperCells(4);
+  const cells = CURVE.slice(0, islands * ISLAND);
   const xs = cells.map(([q, r]) => planeX(q, r)), ys = cells.map(([, r]) => planeY(r));
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
   const anchors = [[x0, y0], [x1, y0], [x0, y1]].map(([tx, ty]) => {
@@ -287,28 +293,30 @@ export function template(order) {
   const all = [...ink.keys()].map(k => k.split(',').map(Number));
   const ax = all.map(([q, r]) => planeX(q, r)), ay = all.map(([, r]) => planeY(r));
   const t = {
-    order, cells, anchors, ink,
+    islands, cells, anchors, ink,
     anchorXY: anchors.map(([q, r]) => [planeX(q, r), planeY(r)]),
     box: [Math.min(...ax) - 0.5, Math.max(...ax) + 0.5, Math.min(...ay) - 0.6, Math.max(...ay) + 0.6],
   };
-  templates.set(order, t);
+  templates.set(islands, t);
   return t;
 }
 
-const CHART = SYMBOLS;            // calibration cells at each end of the curve
-const pairsFor = order => Math.floor((7 ** order - 2 * CHART) / 2);
-const codewordsFor = order => Math.floor(pairsFor(order) * 5 / 8);
+const CHART = SYMBOLS;            // calibration cells at the head of the curve
+const GROUP = 5;                  // cells per 14 bits
+const groupsFor = islands => Math.floor((islands * ISLAND - CHART) / GROUP);
+const codewordsFor = islands => Math.floor(groupsFor(islands) * 14 / 8);
 
 // ── Encoding ──────────────────────────────────────────────────────────────
 
-// bytes → { order, cells } where `cells` holds each hexagon's symbol (0–6, an
-// index into PALETTE) in the order the curve visits them, charts included.
+// bytes → { islands, cells } where `cells` holds each hexagon's symbol (0–6,
+// an index into PALETTE) in the order the curve visits them, chart first.
 export function encodeTag(payload) {
   const data = Uint8Array.from(payload);
   const need = HEADER + data.length;
-  const order = ORDERS.find(o => dataCapacity(codewordsFor(o)) >= need);
-  if (order === undefined) throw new Error('too much to fit in a setup tag');
-  const total = codewordsFor(order);
+  let islands = 1;
+  while (islands <= MAX_ISLANDS && dataCapacity(codewordsFor(islands)) < need) islands++;
+  if (islands > MAX_ISLANDS) throw new Error('too much to fit in a setup tag');
+  const total = codewordsFor(islands);
   const layout = blocksFor(total);
 
   const stream = new Uint8Array(layout.reduce((s, b) => s + b.data, 0));
@@ -331,37 +339,37 @@ export function encodeTag(payload) {
   const mask = whitening(words.length);
   for (let i = 0; i < words.length; i++) words[i] ^= mask[i];
 
-  const n = 7 ** order;
+  const n = islands * ISLAND;
   const cells = new Uint8Array(n);
-  for (let k = 0; k < CHART; k++) {
-    cells[k] = k;
-    cells[n - CHART + k] = k;
-  }
-  // Five bits at a time, MSB first, each as two base-7 digits. A cell past
-  // the last pair cycles through the palette rather than sit in one colour.
+  for (let k = 0; k < CHART; k++) cells[k] = k;
+  // Fourteen bits at a time, MSB first, as five base-7 digits. Cells past the
+  // last group cycle through the palette rather than sit in one colour.
   const totalBits = words.length * 8;
-  const pairs = pairsFor(order);
-  for (let p = 0, bit = 0; p < pairs; p++) {
+  const groups = groupsFor(islands);
+  for (let g = 0, bit = 0; g < groups; g++) {
     let v = 0;
-    for (let k = 0; k < 5; k++, bit++) {
-      v = (v << 1) | (bit < totalBits ? (words[bit >> 3] >> (7 - (bit & 7))) & 1 : 0);
+    for (let k = 0; k < 14; k++, bit++) {
+      v = v * 2 + (bit < totalBits ? (words[bit >> 3] >> (7 - (bit & 7))) & 1 : 0);
     }
-    cells[CHART + 2 * p] = Math.floor(v / SYMBOLS);
-    cells[CHART + 2 * p + 1] = v % SYMBOLS;
+    for (let k = GROUP - 1; k >= 0; k--) {
+      cells[CHART + g * GROUP + k] = v % SYMBOLS;
+      v = Math.floor(v / SYMBOLS);
+    }
   }
-  for (let k = CHART + 2 * pairs; k < n - CHART; k++) cells[k] = k % SYMBOLS;
-  return { order, cells };
+  for (let k = CHART + groups * GROUP; k < n; k++) cells[k] = k % SYMBOLS;
+  return { islands, cells };
 }
 
 export const QUIET = 2;           // pitches of white plate around the ink
 
 // How many device pixels from one hexagon's centre to the next, for a screen
 // whose SHORT side is `shortSide` device pixels. What has to survive is a
-// cell of about three pixels after a feed has scaled the recording down to
+// cell of about four pixels after a feed has scaled the recording down to
 // 720 on its short side (720p, landscape or portrait) — measured,
-// tests/tag-recording. Never under five: below that even a full-resolution
-// recording starts to lose the colours.
-export const tagPitch = shortSide => Math.max(5, Math.ceil(3 * shortSide / 720));
+// tests/tag-recording. Four, not the three a palette with lightness in it
+// needed: six hues at one lightness differ only in colour, and a recording
+// keeps colour at half the resolution of brightness. Never under six.
+export const tagPitch = shortSide => Math.max(6, Math.ceil(4 * shortSide / 720));
 
 // Nearest hexagon centre to a point on the plane, in axial coordinates.
 function hexAt(x, y) {
@@ -379,7 +387,7 @@ function hexAt(x, y) {
 // without a browser. Every pixel takes the colour of the hexagon it falls in:
 // the island's colours, the anchors' black, the plate's white.
 export function rasterize(tag, pitch = 5, quiet = QUIET) {
-  const t = template(tag.order);
+  const t = template(tag.islands);
   const [bx0, bx1, by0, by1] = t.box;
   const ox = bx0 - quiet, oy = by0 - quiet;
   const width = Math.round((bx1 - bx0 + 2 * quiet) * pitch);
@@ -430,8 +438,8 @@ export function readTag(image) {
   for (let i = 0, j = 0; i < V.length; i++, j += 4) V[i] = Math.max(data[j], data[j + 1], data[j + 2]);
   const blobs = flowers(V, W, H);
   if (blobs.length < 3) return null;
-  for (const order of ORDERS) {
-    const t = template(order);
+  for (let islands = 1; islands <= MAX_ISLANDS; islands++) {
+    const t = template(islands);
     const [T0, T1, T2] = t.anchorXY.map(([x, y]) => ({ re: x, im: y }));
     for (const a of blobs) {
       for (const b of blobs) {
@@ -547,19 +555,18 @@ function sampleAndDecode(image, t, { lam, beta }) {
     const o = srgbToOklab(R / n / 255, G / n / 255, B / n / 255);
     return [o.L * L_WEIGHT, o.a, o.b];
   });
-  return decodeCells(classify(labs), t.order);
+  return decodeCells(classify(labs), t.islands);
 }
 
-// Which of the seven each cell is. The chart at each end of the curve gives a
-// first centroid per colour as THIS recording renders it; two rounds of
+// Which of the seven each cell is. The chart at the head of the curve gives
+// a first centroid per colour as THIS recording renders it; two rounds of
 // k-means then move each centroid to the middle of the cells that chose it,
 // which follows a tint or a squeeze of contrast across the whole tag rather
-// than only at its ends. A chart whose colours have run together is not a
+// than only where the chart is. A chart whose colours have run together is not a
 // tag.
 function classify(labs) {
-  const n = labs.length;
   const d2 = (p, q) => (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2;
-  let cent = PALETTE.map((_, k) => labs[k].map((v, i) => (v + labs[n - CHART + k][i]) / 2));
+  let cent = PALETTE.map((_, k) => labs[k]);
   let closest = Infinity;
   for (let a = 0; a < SYMBOLS; a++) for (let b = a + 1; b < SYMBOLS; b++) closest = Math.min(closest, d2(cent[a], cent[b]));
   if (closest < 0.04 ** 2) return null;
@@ -581,17 +588,19 @@ function classify(labs) {
   return sym;
 }
 
-function decodeCells(sym, order) {
+function decodeCells(sym, islands) {
   if (!sym) return null;
-  const total = codewordsFor(order);
+  const total = codewordsFor(islands);
   const words = new Uint8Array(total);
-  const pairs = pairsFor(order);
-  for (let p = 0, bit = 0; p < pairs; p++) {
-    // A pair can spell 32–48, which no encoder writes: a misread. Its five
-    // bits are wrong whatever is put there, and Reed–Solomon is what fixes it.
-    const v = (sym[CHART + 2 * p] * SYMBOLS + sym[CHART + 2 * p + 1]) & 31;
-    for (let k = 4; k >= 0; k--, bit++) {
-      if (bit < total * 8) words[bit >> 3] |= ((v >> k) & 1) << (7 - (bit & 7));
+  const groups = groupsFor(islands);
+  for (let g = 0, bit = 0; g < groups; g++) {
+    let v = 0;
+    for (let k = 0; k < GROUP; k++) v = v * SYMBOLS + sym[CHART + g * GROUP + k];
+    // 16 384 and up is no group an encoder writes: a misread. Its bits are
+    // wrong whatever is put there, and Reed–Solomon is what fixes them.
+    v %= 16384;
+    for (let k = 13; k >= 0; k--, bit++) {
+      if (bit < total * 8) words[bit >> 3] |= (Math.floor(v / 2 ** k) & 1) << (7 - (bit & 7));
     }
   }
   const mask = whitening(total);

@@ -1,6 +1,7 @@
-// The setup tag (src/densecode.js): seven colours on the hexagons of a Gosper
-// curve, read out of screenshots and recordings — so the tests are about what
-// a screenshot does to it, the curve it is laid along, and the palette.
+// The setup tag (src/densecode.js): seven colours on the hexagons of a piece of
+// Gosper curve, read out of screenshots and recordings — so the tests are
+// about what a screenshot does to it, the curve it is laid along, and the
+// palette.
 //
 // Everything here decodes the tag from a BITMAP — the encoder's output drawn
 // to pixels, then scaled, smudged, embedded in a busy picture and damaged —
@@ -93,7 +94,7 @@ test('the block structure follows from the codeword count alone', () => {
     assert.equal(blocks.reduce((s, b) => s + b.n, 0), total);
     for (const b of blocks) {
       assert.ok(b.n <= 255, 'a block fits the field');
-      assert.ok(b.ecc >= b.n * 0.4, 'about half of every block is parity');
+      assert.ok(b.ecc >= b.n * 0.2, 'about three tenths of every block is parity');
     }
   }
 });
@@ -111,39 +112,49 @@ const toLin = (L, a, b) => {
 const srgbOf = ({ L, C, h }) => toLin(L, C * Math.cos(h * Math.PI / 180), C * Math.sin(h * Math.PI / 180))
   .map(v => Math.max(0, Math.min(1, v)) ** (1 / 2.4));
 
-test('the palette is white, yellow, red, magenta, blue, cyan and green — the real ones', () => {
+test('the palette is white and six hues exactly 60° apart in OKLCH', () => {
   assert.deepEqual(PALETTE.map(p => p.name), ['white', 'yellow', 'red', 'magenta', 'blue', 'cyan', 'green']);
-  // Each OKLCH entry IS its corner of the sRGB cube, to within a rounding step.
-  const corners = { white: [1, 1, 1], yellow: [1, 1, 0], red: [1, 0, 0], magenta: [1, 0, 1],
-                    blue: [0, 0, 1], cyan: [0, 1, 1], green: [0, 1, 0] };
-  for (const p of PALETTE) {
-    const rgb = srgbOf(p);
-    rgb.forEach((v, i) => assert.ok(Math.abs(v - corners[p.name][i]) < 0.02, `${p.name}: ${rgb.map(x => x.toFixed(3))}`));
+  assert.equal(PALETTE[0].L, 1);
+  assert.equal(PALETTE[0].C, 0);
+  const hues = PALETTE.slice(1).map(p => p.h).sort((x, y) => x - y);
+  for (let i = 1; i < hues.length; i++) assert.equal(hues[i] - hues[i - 1], 60);
+  assert.equal(hues[0] + 360 - hues[5], 60, 'and round the wheel');
+});
+
+test('the six hues are equally light and equally vivid', () => {
+  // The point: no hue is a "dark one". sRGB's blue is L 0.45 and its yellow
+  // 0.97; these are all one lightness and one chroma.
+  const hues = PALETTE.slice(1);
+  for (const p of hues) {
+    assert.equal(p.L, hues[0].L, p.name);
+    assert.equal(p.C, hues[0].C, p.name);
   }
 });
 
-test('the six hues are 60° apart around the colour wheel', () => {
-  const hue = ([r, g, b]) => {
-    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
-    const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
-    return ((Math.round(h * 60) % 360) + 360) % 360;
-  };
-  const hues = PALETTE.slice(1).map(p => hue(srgbOf(p))).sort((x, y) => x - y);
-  assert.deepEqual(hues, [0, 60, 120, 180, 240, 300]);
+test('each hue is near the colour it is named for', () => {
+  const named = { yellow: 109.8, red: 29.2, magenta: 328.4, blue: 264.1, cyan: 194.8, green: 142.5 };
+  for (const p of PALETTE.slice(1)) {
+    const d = Math.abs(((p.h - named[p.name] + 540) % 360) - 180);
+    assert.ok(d < 25, `${p.name} at ${p.h}° is ${d.toFixed(1)}° from sRGB ${p.name}`);
+  }
 });
 
-test('no data colour could pass for an anchor', () => {
-  // The finder looks for black by the brightest channel.
-  for (const p of PALETTE) assert.ok(Math.max(...srgbOf(p)) > 0.95, p.name);
+test('every colour is inside sRGB, and none could pass for an anchor', () => {
+  for (const p of PALETTE) {
+    const lin = toLin(p.L, p.C * Math.cos(p.h * Math.PI / 180), p.C * Math.sin(p.h * Math.PI / 180));
+    assert.ok(lin.every(v => v >= -1e-6 && v <= 1 + 1e-6), `${p.name} in gamut: ${lin.map(v => v.toFixed(3))}`);
+    // The finder looks for black by the brightest channel.
+    assert.ok(Math.max(...srgbOf(p)) > 0.6, `${p.name} is bright in some channel`);
+  }
 });
 
 // ── The Gosper curve ─────────────────────────────────────────────────────
 
-test('an order-n tag is the 7ⁿ distinct hexagons the Gosper curve visits, each next to the last', () => {
-  for (const order of [3, 4]) {
-    const { cells } = template(order);
-    assert.equal(cells.length, 7 ** order);
-    assert.equal(new Set(cells.map(c => c.join())).size, 7 ** order, 'no hexagon twice');
+test('a tag is whole 49-cell islands of the Gosper curve: distinct hexagons, each next to the last', () => {
+  for (const islands of [1, 3, 10, 49]) {
+    const { cells } = template(islands);
+    assert.equal(cells.length, 49 * islands);
+    assert.equal(new Set(cells.map(c => c.join())).size, cells.length, 'no hexagon twice');
     for (let i = 1; i < cells.length; i++) {
       const dq = cells[i][0] - cells[i - 1][0], dr = cells[i][1] - cells[i - 1][1];
       assert.equal((Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2, 1, `step ${i} is to a neighbour`);
@@ -151,14 +162,14 @@ test('an order-n tag is the 7ⁿ distinct hexagons the Gosper curve visits, each
   }
 });
 
-test('the three anchors sit clear of the island, top-left, top-right and bottom-left', () => {
-  for (const order of [3, 4, 5]) {
-    const t = template(order);
+test('the three anchors sit clear of the cells, top-left, top-right and bottom-left', () => {
+  for (const islands of [1, 2, 5, 22, 49]) {
+    const t = template(islands);
     const dist = (a, b) => { const dq = a[0] - b[0], dr = a[1] - b[1]; return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2; };
-    for (const a of t.anchors) assert.ok(t.cells.every(c => dist(a, c) >= 3), `order ${order}: anchor ${a} clear`);
+    for (const a of t.anchors) assert.ok(t.cells.every(c => dist(a, c) >= 3), `${islands}: anchor ${a} clear`);
     const [tl, tr, bl] = t.anchorXY;
-    assert.ok(tl[0] < tr[0] && Math.abs(tl[1] - tr[1]) < 1, `order ${order}: top pair level`);
-    assert.ok(bl[1] > tl[1] + 5 && Math.abs(bl[0] - tl[0]) < 3, `order ${order}: bottom-left below`);
+    assert.ok(tl[0] < tr[0] && Math.abs(tl[1] - tr[1]) < 1, `${islands}: top pair level`);
+    assert.ok(bl[1] > tl[1] + 3 && Math.abs(bl[0] - tl[0]) < 3, `${islands}: bottom-left below`);
   }
 });
 
@@ -175,13 +186,14 @@ test('a tag reads back from its own pixels, at whole and fractional pitches', ()
   }
 });
 
-test('the island grows an order when the setup outgrows it', () => {
+test('the tag is only as many islands as the setup needs', () => {
   const r = rng(4);
-  assert.equal(encodeTag(bytes(40, r)).order, 3);
-  assert.equal(encodeTag(bytes(300, r)).order, 4);
-  const big = bytes(600, r), t = encodeTag(big);
-  assert.equal(t.order, 5);
-  assert.ok(same(readTag(rasterize(t, 3)), big));
+  assert.equal(encodeTag(bytes(0, r)).islands, 1);
+  assert.ok(encodeTag(bytes(20, r)).islands <= 3, 'a lightly edited stock patch is a small corner code');
+  const big = bytes(500, r), t = encodeTag(big);
+  assert.ok(t.islands > 30);
+  assert.ok(same(readTag(rasterize(t, 4)), big));
+  assert.throws(() => encodeTag(bytes(5000, r)), /too much/);
 });
 
 test('and from a busy picture around it, after a fractional resample', () => {
@@ -190,7 +202,7 @@ test('and from a busy picture around it, after a fractional resample', () => {
   const r = rng(11);
   const payload = bytes(280, r);
   const tag = encodeTag(payload);
-  for (const pitch of [5, 6]) {
+  for (const pitch of [7, 8]) {
     for (const f of [0.6, 0.75, 0.92, 1, 1.37]) {
       const img = inFrame(scale(rasterize(tag, pitch), f), r);
       assert.ok(same(readTag(img), payload), `${pitch}px × ${f}`);
@@ -203,7 +215,7 @@ test('a slight rotation is fitted, not fatal', () => {
   // the anchors give rotation for free.
   const r = rng(21);
   const payload = bytes(250, r);
-  const src = rasterize(encodeTag(payload), 6);
+  const src = rasterize(encodeTag(payload), 8);
   const a = 0.06, ca = Math.cos(a), sa = Math.sin(a);
   const W = src.width + 40, H = src.height + 40;
   const out = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
@@ -222,7 +234,7 @@ test('the app’s tag survives a downscale to 0.62 and noise on every pixel', ()
   // A phone's 1170px recording on a 720p feed.
   const r = rng(5);
   const payload = bytes(300, r);
-  const img = scale(rasterize(encodeTag(payload), 5), 0.62);
+  const img = scale(rasterize(encodeTag(payload), 7), 0.62);
   for (let i = 0; i < img.data.length; i += 4) {
     const n = (r() - 0.5) * 30;
     for (let c = 0; c < 3; c++) img.data[i + c] += n;
@@ -274,21 +286,17 @@ test('nothing is found where there is no tag', () => {
   assert.equal(readTag({ ...img, data: Uint8ClampedArray.from(ink) }), null);
 });
 
-test('the chart is the palette in order, at both ends of the curve', () => {
+test('the chart is the palette in order, at the head of the curve', () => {
   const t = encodeTag(new Uint8Array(100));
-  const n = t.cells.length;
-  for (let k = 0; k < 7; k++) {
-    assert.equal(t.cells[k], k);
-    assert.equal(t.cells[n - 7 + k], k);
-  }
+  for (let k = 0; k < 7; k++) assert.equal(t.cells[k], k);
 });
 
 test('the pitch is sized for a 720p feed of the screen it is on', () => {
-  assert.equal(tagPitch(1170), 5);    // a phone, upright
-  assert.equal(tagPitch(1080), 5);    // a 1080p monitor
-  assert.equal(tagPitch(1440), 6);
-  assert.equal(tagPitch(2160), 9);    // 4K
-  assert.equal(tagPitch(600), 5);     // never under five
+  assert.equal(tagPitch(1170), 7);    // a phone, upright
+  assert.equal(tagPitch(1080), 6);    // a 1080p monitor
+  assert.equal(tagPitch(1440), 8);
+  assert.equal(tagPitch(2160), 12);   // 4K
+  assert.equal(tagPitch(600), 6);     // never under six
 });
 
 // ── Tags already out there ───────────────────────────────────────────────
@@ -301,8 +309,8 @@ const TAGS = JSON.parse(readFileSync(new URL('fixtures/setup-tags.json', import.
 for (const fx of TAGS) {
   test(`a tag made by ${fx.made_by} still reads (${fx.note})`, () => {
     const cells = Uint8Array.from(fx.cells, ch => Number(ch));
-    const bytesOut = readTag(rasterize({ order: fx.order, cells }, 5));
+    const bytesOut = readTag(rasterize({ islands: fx.islands, cells }, 7));
     assert.ok(bytesOut, 'found and decoded');
-    assert.equal(String.fromCharCode(bytesOut[0]), 'b', 'it carries a b-packed setup');
+    assert.equal(String.fromCharCode(bytesOut[0]), 'c', 'it carries a c-packed setup');
   });
 }
