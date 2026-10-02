@@ -50,7 +50,13 @@ export function setShaderAddHandler(fn) { onAddNode = fn; }
 function showStatus(err) {
   const el = document.getElementById('shader-status');
   if (el) {
-    el.textContent = err ? `⚠ ${String(err).split('\n')[0].slice(0, 120)}` : '';
+    // Called every frame the shader runs with whatever its status is, and the
+    // default patch has no output node, so that is the same warning sixty
+    // times a second. Assigning textContent replaces the text node even when
+    // the text is identical — a DOM change each frame, which on iOS Safari
+    // makes a tap look like a hover and costs it its click. Write on change.
+    const txt = err ? `⚠ ${String(err).split('\n')[0].slice(0, 120)}` : '';
+    if (el.textContent !== txt) el.textContent = txt;
     el.classList.toggle('bad', !!err);
   }
   // An empty graph is not an error and should not read as one — a panel with

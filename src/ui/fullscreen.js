@@ -172,6 +172,16 @@ function soundingNotes() {
   return c ? c.freqs.map(midiOf) : [];
 }
 
+// classList.add on a class that is already there still counts as a write: the
+// browser restyles, and a MutationObserver sees one. This runs every frame,
+// and on iOS Safari a page that keeps changing under a finger stops turning
+// taps into clicks — the KEYS button could be switched on and then not off
+// again, and the tracking chips beside it went dead with it. So: only touch
+// the DOM when the state actually changes.
+function showKbdCanvas() {
+  if (!kbdCanvas.classList.contains('shown')) kbdCanvas.classList.add('shown');
+}
+
 // Called every RAF from main.js — cheap no-op unless the keyboard overlay is
 // up. It is no longer fullscreen-only: the keys show which notes the
 // instrument is quantised to, which is as worth seeing while you are wiring
@@ -181,7 +191,7 @@ export function updateFsOverlay() {
 
   // A running game owns the overlay (and forces the canvas visible).
   if (fsGameRenderer && fsGameRenderer(kbdCanvas)) {
-    kbdCanvas.classList.add('shown');
+    showKbdCanvas();
     publishKbdHeight();
     fsKbd.invalidate();          // force a clean keyboard redraw afterwards
     return;
@@ -192,7 +202,7 @@ export function updateFsOverlay() {
     publishKbdHeight();
     return;
   }
-  kbdCanvas.classList.add('shown');
+  showKbdCanvas();
   publishKbdHeight();
   const t = engine.getTuning();
   // Chord tones go on the same keyboard as the oscillator markers, because in

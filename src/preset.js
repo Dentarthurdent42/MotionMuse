@@ -17,6 +17,7 @@ import { gesture } from './gesture.js';
 import { chordmode } from './chordmode.js';
 import { impliedCable } from './chordcables.js';
 import { radial } from './radial.js';
+import { interval } from './interval.js';
 import { metronome } from './metronome.js';
 import { shader } from './shader.js';
 import { lsGet, lsSet } from './storage.js';
@@ -88,7 +89,7 @@ function uiApply(ui) {
 }
 
 export function snapshot() {
-  return {
+  const snap = {
     app: TAG, v: PRESET_VERSION,
     kit: currentKit(),
     graph: graph.serialize(),
@@ -105,6 +106,11 @@ export function snapshot() {
     shader: shader.serialize(),
     ui: uiSnapshot(),
   };
+  // Interval mode only when it says something: the default is off, which is
+  // also what a snapshot without it loads as, and the default setup's share
+  // code is already at the size a phone scans comfortably.
+  if (!interval.isDefault()) snap.interval = interval.serialize();
+  return snap;
 }
 
 const isOurs = data => isRecord(data) && (data.app === TAG || LEGACY_TAGS.includes(data.app));
@@ -134,6 +140,9 @@ function applyCurrent(data) {
   // share the chord voice bank), and last-writer-wins is the honest order for
   // a snapshot that somehow carries both.
   if (data.radial) radial.load(data.radial);
+  // Last for the same reason: an enabled interval mode parks both of those.
+  // Absent means the defaults (see snapshot) — and so, off.
+  interval.load(data.interval ?? {});
   if (data.metronome) metronome.load(data.metronome);
   // Restore the kit *selection label* only — the exact parameter values came
   // from the snapshot above, so re-applying the kit would stomp them.

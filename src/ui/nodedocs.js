@@ -163,6 +163,19 @@ export const PANEL_DOCS = {
       sustain; the faster you enter, the harder the attack.</p>
       <p>Pick the <b>JOINT</b> the ring sits on and the <b>FINGER</b> that points.</p>`,
   },
+  'interval-mode': {
+    title: 'Interval Mode',
+    body: `<p>Handshapes name the <b>distance</b> to the next note instead of
+      the note: an ASL 3 is a third from wherever you are. A <b>TRIGGER</b>
+      says when the hands are read — the metronome's beats, a pulse on
+      <b>STEP</b>, or each new shape.</p>
+      <ul>
+        <li><b>One hand:</b> upright goes up, lean it over to your left to go
+          down. <b>ASL 0</b> sustains, a <b>fist</b> is silence.</li>
+        <li><b>Two hands:</b> the right hand goes up, the left goes down.</li>
+        <li><b>HOME</b> returns to the key's tonic.</li>
+      </ul>`,
+  },
   metronome: {
     title: 'Metronome',
     body: `<p>A beat clock. Switched on, it gives the instrument a tempo to lock
