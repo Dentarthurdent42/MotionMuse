@@ -224,6 +224,16 @@
 
 html, body {
   height: 100%; overflow: hidden;
+  /* No native pinch- or double-tap-zoom of the page, anywhere. The column
+     already said so (touch-action: pan-y), but only where it reaches: a pinch
+     with a finger on the button bar, the header or the dock zoomed the whole
+     page to several times its size, and on iOS it stays zoomed — the layout
+     is then wider than the screen and clipped at the left, with no way back
+     but pinching to exactly the right size. The app has its own pinch (the
+     map, src/ui/workspace.js), so the browser's is redundant here. Elements
+     that set their own touch-action (the canvas, the sockets) keep it: the
+     effective value is the intersection down the tree. */
+  touch-action: pan-x pan-y;
   background: var(--bg);
   color: var(--text);
   font-family: 'IBM Plex Mono', monospace;

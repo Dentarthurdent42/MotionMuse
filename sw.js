@@ -1,4 +1,4 @@
-const CACHE = 'motionmuse-v50';
+const CACHE = 'motionmuse-v51';
 
 // MediaPipe wasm + .task model files live at versioned/immutable URLs, so
 // cache-first is safe and saves ~10-25MB of re-download on every cold load
