@@ -19,7 +19,6 @@ import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
 import { gesture }                          from './gesture.js';
 import { chordmode }                        from './chordmode.js';
 import { radial }                           from './radial.js';
-import { interval }                         from './interval.js';
 import { metronome }                        from './metronome.js';
 import { graph }                            from './graph.js';
 import { watchRanges, syncNumbers }         from './ui/numeric.js';
@@ -105,7 +104,6 @@ function loop() {
     metronome.tick();
     chordmode.tick();      // cheap no-op unless gesture mode is enabled
     radial.tick();         // cheap no-op unless radial mode is enabled
-    interval.tick();       // likewise for interval mode
     playalong.tick();      // cheap no-op unless a song is running
     // The pedal, after the trackers have published this frame's signals and
     // before anything draws: a nod detected now should move the transport now,
@@ -148,6 +146,55 @@ const setLabel = (btn, text) => {
   if (t) t.textContent = text; else btn.textContent = text;
 };
 
+// ── The picture went away while the camera was "on" ──────────────────────
+//
+// Reported on a phone: after navigating away and back, the view is black and
+// there is no way to turn it back on. cvSource.restore() (below) reattaches a
+// stream when the browser lets it, but iOS often refuses a getUserMedia that
+// no tap asked for, and restore() then deliberately leaves things alone. What
+// that left was a camera that counts as running — so the START frame is
+// hidden — over a black picture, with no message and nothing to press.
+//
+// So when the picture stays dead after restore() has had its try, the frame
+// comes back as a RESUME target (body.cam-lost), says so in a toast, and a
+// tap on it brings the camera back: restore() first, and if the old pipeline
+// cannot take a stream, a clean stop and start. The tap is also the user
+// activation iOS wants for the prompt.
+let camLost = false;
+function setCamLost(on) {
+  if (on === camLost) return;
+  camLost = on;
+  document.body.classList.toggle('cam-lost', on);
+  setLabel(document.getElementById('cv-btn'), on ? 'CAMERA PAUSED — TAP TO RESUME' : 'START CAMERA');
+  diag(`camera picture ${on ? 'LOST' : 'back'}`);
+  if (on) toast('The camera stopped while you were away — tap the picture to resume it.', 8000);
+}
+
+async function resumeCamera() {
+  const btn = document.getElementById('cv-btn');
+  btn.disabled = true;
+  setLabel(btn, 'RESUMING…');
+  let ok = false;
+  try { ok = await cvSource.restore(); } catch { /* fall through to a clean start */ }
+  btn.disabled = false;
+  if (ok && !cvSource.stalled()) { setCamLost(false); return; }
+  diag('resume: restore() could not bring it back — restarting the camera');
+  stopCamera();            // releases what is left and puts START back
+  setCamLost(false);
+  return startCamera();    // still inside the tap that asked for this
+}
+
+// Checked once a second while the page is in front. One silent restore() per
+// stall first — the events above usually fix it — and only a picture that is
+// still dead after that is called lost.
+let stallTried = false;
+setInterval(() => {
+  if (document.hidden || !cvSource.running || starting) return;
+  if (!cvSource.stalled()) { stallTried = false; setCamLost(false); return; }
+  if (!stallTried) { stallTried = true; cvSource.restore().catch(() => {}); return; }
+  setCamLost(true);
+}, 1000);
+
 // ── Camera: START is the blank frame, STOP is on the picture ─────────────
 //
 // Two elements rather than one toggle, because they are never both meaningful:
@@ -165,6 +212,8 @@ function stopCamera() {
   setStatus('', 'STOPPED');
   setLabel(document.getElementById('cv-btn'), 'START CAMERA');
   document.body.classList.remove('cam-on');
+  camLost = false; stallTried = false;
+  document.body.classList.remove('cam-lost');
 }
 document.getElementById('cv-stop').addEventListener('click', stopCamera);
 
@@ -186,6 +235,9 @@ let starting = false;
 async function startCamera() {
   const btn = document.getElementById('cv-btn');
   diag(`startCamera() — running=${cvSource.running} starting=${starting}`);
+  // The blank frame comes back as RESUME when the picture dies under a camera
+  // that still counts as running (see setCamLost).
+  if (cvSource.running && camLost) return resumeCamera();
   if (cvSource.running || starting) return;   // the picture hides this button anyway
   starting = true;
   btn.disabled = true;

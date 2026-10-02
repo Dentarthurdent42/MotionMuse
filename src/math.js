@@ -189,22 +189,3 @@ export const thumbContact = (lm, f, closed = CONTACT_CLOSED, open = CONTACT_OPEN
   if (palm < 1e-4 || !TIPS[f]) return 0;
   return unit(dist3(lm[4], lm[TIPS[f]]) / palm, closed, open);
 };
-
-// How far the hand leans over in the picture, -1..1: 0 upright (fingers up),
-// +1 lying flat with the fingers pointing to YOUR right, −1 to your left.
-// Measured along the palm's own axis — wrist → middle-finger MCP — so the
-// fingers can do whatever a handshape asks of them without moving it.
-//
-// "Your right" is the player's, as seen in the mirrored view: landmarks are
-// raw camera coordinates, where your right hand is on the LEFT of the image,
-// so the x difference is negated. `aspect` is the frame's width/height —
-// normalised x and y are fractions of different lengths, and without it a
-// 45° lean on a 16:9 camera reads as about 29°. Past horizontal (fingers
-// pointing down) it stays at ±1: the question is which way, not how far.
-export const handTilt = (lm, aspect = 1) => {
-  const dx = -(lm[9].x - lm[0].x) * (aspect > 0 ? aspect : 1);
-  const up = lm[0].y - lm[9].y;               // image y grows downward
-  if (Math.hypot(dx, up) < 1e-6) return 0;
-  const deg = Math.atan2(dx, up) * 180 / Math.PI;
-  return Math.max(-1, Math.min(1, deg / 90)) || 0;   // never −0
-};
