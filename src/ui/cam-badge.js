@@ -6,13 +6,10 @@
 // in fullscreen the patchbay is not even on screen.
 //
 // This used to carry a second passenger: the whole setup as a QR code, in DEV,
-// so it could be handed over by screenshotting the picture. The measurement
-// that feature was built on holds — one pixel per module really does decode
-// from a screenshot, which is the smallest a code can honestly be — but the
-// answer it produced was still too big. A typical setup is 121 modules, and
-// 129px square is a quarter of the width of a phone's camera panel: a corner
-// ornament in name only. A code that size has to be somewhere it can be the
-// whole point, which is the SHARE sheet, and SHARE now takes the screen.
+// so it could be handed over by screenshotting the picture. It was dropped as
+// too big — 129px square for a typical setup — and came back as something
+// that is not a QR code: the setup tag (ui/tag.js), a fraction of the size,
+// in the opposite corner.
 
 import { currentConfig } from '../saved.js';
 

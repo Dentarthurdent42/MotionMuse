@@ -13,7 +13,9 @@
 // someone else's.
 
 import { snapshot } from './preset.js';
-import { isString } from './is.js';
+import { mapper } from './mapper.js';
+import { isString, isRecord } from './is.js';
+import { BASE_B } from './sharebase.js';
 
 export const SHARE_PARAM = 's';
 
@@ -84,29 +86,118 @@ async function pipe(stream, bytes) {
 }
 
 // A one-character prefix says how the rest is packed, so an old link stays
-// readable if this ever gains another format: 'd' = deflate-raw, 'j' = plain
-// JSON bytes (the fallback where CompressionStream is missing).
-// A letter, once shipped, means that packing forever — printed codes use it.
-// A new packing (a preset deflate dictionary, say) takes a new letter, and a
-// dictionary can never be edited under the same one. What is INSIDE the JSON
-// is versioned separately, by `v` (src/presetformat.js).
+// readable if this ever gains another format:
+//   'b' = deflate-raw of the DIFFERENCE from a frozen baseline (src/sharebase.js)
+//   'd' = deflate-raw of the whole snapshot (every link made before 'b')
+//   'j' = plain JSON bytes (the fallback where CompressionStream is missing)
+// A letter, once shipped, means that packing forever — printed codes use it,
+// and so does every setup tag in a posted recording. A new packing (a new
+// baseline, say) takes a new letter, and a baseline can never be edited under
+// the same one. What is INSIDE the JSON is versioned separately, by `v`
+// (src/presetformat.js).
+//
+// 'b' exists because most of a snapshot is the defaults. Sending only what
+// differs from the Hands patch took a typical setup from ~1 KB to ~250 bytes —
+// a QR code several versions smaller, and a tag small enough to leave on the
+// picture.
 export async function encodeState(state) {
   const json = new TextEncoder().encode(JSON.stringify(state));
   if (!hasCompression()) return 'j' + toB64(json);
-  return 'd' + toB64(await pipe(new CompressionStream('deflate-raw'), json));
+  return 'b' + toB64(await packB(state));
 }
+
+const packB = async state => pipe(new CompressionStream('deflate-raw'),
+  new TextEncoder().encode(JSON.stringify(diffFrom(BASE_B, state) ?? {})));
 
 export async function decodeState(payload) {
   if (!isString(payload) || payload.length < 2) throw new Error('empty share link');
   const kind = payload[0];
   const bytes = fromB64(payload.slice(1));
-  let json;
-  if (kind === 'j') json = bytes;
-  else if (kind === 'd') {
-    if (!hasCompression()) throw new Error('this browser cannot read compressed share links');
-    json = await pipe(new DecompressionStream('deflate-raw'), bytes);
-  } else throw new Error('unrecognised share link');
-  return JSON.parse(new TextDecoder().decode(json));
+  if (kind === 'j') return JSON.parse(new TextDecoder().decode(bytes));
+  if (kind !== 'd' && kind !== 'b') throw new Error('unrecognised share link');
+  if (!hasCompression()) throw new Error('this browser cannot read compressed share links');
+  const parsed = JSON.parse(new TextDecoder().decode(
+    await pipe(new DecompressionStream('deflate-raw'), bytes)));
+  return kind === 'b' ? mergeOnto(BASE_B, parsed) : parsed;
+}
+
+// The same thing as raw bytes — the letter's char code, then the packed body —
+// for a carrier that is not a URL and so has no reason to pay base64's third.
+// The setup tag (src/densecode.js) carries exactly these.
+export async function encodeStateBytes(state) {
+  const body = hasCompression() ? await packB(state)
+                                : new TextEncoder().encode(JSON.stringify(state));
+  const out = new Uint8Array(body.length + 1);
+  out[0] = (hasCompression() ? 'b' : 'j').charCodeAt(0);
+  out.set(body, 1);
+  return out;
+}
+
+export const decodeStateBytes = bytes => {
+  if (!bytes || bytes.length < 2) throw new Error('empty setup code');
+  return decodeState(String.fromCharCode(bytes[0]) + toB64(bytes.subarray(1)));
+};
+
+// ── The difference from the baseline ─────────────────────────────────────
+//
+// Objects are compared key by key, recursively; anything else — numbers,
+// strings, ARRAYS — is either equal or sent whole. (Arrays whole because their
+// elements have no names: a mapping list that gained an entry at the front is
+// not usefully "the same list, shifted".) A key the baseline has and the state
+// does not is listed under DELETED, a key no snapshot can contain.
+const DELETED = '\u0000';
+
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+export function diffFrom(base, state) {
+  if (same(base, state)) return undefined;
+  if (!isRecord(base) || !isRecord(state)) return state;
+  const out = {};
+  for (const k of Object.keys(state)) {
+    const d = diffFrom(base[k], state[k]);
+    if (d !== undefined) out[k] = d;
+  }
+  const gone = Object.keys(base).filter(k => !(k in state));
+  if (gone.length) out[DELETED] = gone;
+  return out;
+}
+
+export function mergeOnto(base, diff) {
+  if (!isRecord(diff)) return structuredClone(diff);
+  if (!isRecord(base)) return mergeOnto({}, diff);
+  const out = structuredClone(base);
+  for (const k of Array.isArray(diff[DELETED]) ? diff[DELETED] : []) delete out[k];
+  for (const [k, v] of Object.entries(diff)) {
+    if (k !== DELETED) out[k] = mergeOnto(base[k], v);
+  }
+  return out;
+}
+
+// ── What the setup tag carries ────────────────────────────────────────────
+//
+// The setup as shared, minus the one thing that moves while you play: the
+// value of every parameter a cable is driving. Those are rewritten every frame
+// from the signal, so the number in the snapshot is wherever your hand
+// happened to be — meaningless to whoever loads it (the cable takes the
+// parameter over again at once), and fatal to a code that is meant to sit
+// still on screen: it would redraw itself every second of a performance. They
+// are sent as the baseline's value, which the diff then drops, or left out.
+export function tagState(snap = snapshot(), label = '') {
+  const state = shareableSnapshot(snap);
+  const params = state.audio?.params;
+  if (isRecord(params)) {
+    const steady = { ...params };
+    const baseParams = BASE_B.audio.params;
+    for (const m of mapper.serialize()) {
+      if (!(m.audioParam in steady)) continue;
+      if (m.audioParam in baseParams) steady[m.audioParam] = baseParams[m.audioParam];
+      else delete steady[m.audioParam];
+    }
+    state.audio = { ...state.audio, params: steady };
+  }
+  const described = cleanShareLabel(label);
+  if (described) state.label = described;
+  return state;
 }
 
 // ── Have we opened this one before? ──────────────────────────────────────

@@ -1647,6 +1647,164 @@ const presets = await (async () => {
            share, want, decoded, noCamQr, errs };
 })();
 
+// ── The setup tag: on the picture, and back out of a screenshot ──────────
+//
+// The whole round trip a viewer of a recording makes, in a real browser:
+// the tag is drawn, a screenshot of the page is taken, and that screenshot —
+// picked in PRESET → FROM IMAGE, or pasted — opens the setup in a fresh
+// browser. Plus SHARE's image, which must carry both a QR a phone reads and a
+// tag the app reads.
+const tagRun = await (async () => {
+  const errs = [];
+  const readIn = (page, png) => page.evaluate(async b64 => {
+    const { readTag } = await import('/src/densecode.js');
+    const { decodeStateBytes } = await import('/src/share.js');
+    const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+    const bmp = await createImageBitmap(new Blob([bin], { type: 'image/png' }));
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(bmp, 0, 0);
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    const bytes = readTag(img);
+    return { w: c.width, h: c.height,
+             state: bytes ? await decodeStateBytes(bytes) : null,
+             qr: globalThis.jsQR?.(img.data, img.width, img.height)?.data ?? null };
+  }, png.toString('base64'));
+
+  // The performer: a named setup, a non-default patch, fullscreen.
+  const ctxA = await b.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
+  const a = await ctxA.newPage();
+  a.on('pageerror', e => errs.push(String(e)));
+  await a.goto(URL_, { waitUntil: 'networkidle' });
+  await a.keyboard.press('Escape');
+  await a.evaluate(async () => {
+    const { mapper } = await import('/src/mapper.js');
+    const { saveConfig, setCurrentConfig } = await import('/src/saved.js');
+    const { snapshot } = await import('/src/preset.js');
+    mapper.applyPreset('face-expressive');
+    saveConfig('tag test', snapshot());
+    setCurrentConfig('tag test');
+  });
+  await a.waitForTimeout(1600);
+  const want = await a.evaluate(async () => {
+    const { tagState } = await import('/src/share.js');
+    const { snapshot } = await import('/src/preset.js');
+    const { currentConfig } = await import('/src/saved.js');
+    return tagState(snapshot(), currentConfig());
+  });
+  const place = () => a.evaluate(() => {
+    const r = el => { const b = el.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height }; };
+    const tag = document.getElementById('cam-tag');
+    return { hidden: tag.hidden, tag: r(tag), wrap: r(document.getElementById('video-wrap')),
+             toggles: r(document.querySelector('#video-wrap .cam-toggles')),
+             px: [tag.width, tag.height], dpr: devicePixelRatio };
+  });
+  const windowed = await place();
+  await a.click('#fs-btn');
+  await a.waitForTimeout(1500);
+  const full = await place();
+  const fullShot = await readIn(a, await a.screenshot());
+  // Stays still: the same setup is the same tag, frame after frame.
+  const before = await a.evaluate(() => document.getElementById('cam-tag').toDataURL());
+  await a.waitForTimeout(2200);
+  const after = await a.evaluate(() => document.getElementById('cam-tag').toDataURL());
+  // Tapping it opens SHARE — on top of the fullscreen picture, where it can
+  // be seen, not behind it.
+  await a.click('#cam-tag');
+  await a.waitForTimeout(700);
+  const fsShare = await a.evaluate(() => {
+    const pop = document.getElementById('share-pop');
+    const r = pop.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 20);
+    return { open: pop.classList.contains('open'), onTop: !!hit && pop.contains(hit) };
+  });
+  await a.click('#share-close');
+  await a.click('#fs-btn');
+  await a.waitForTimeout(400);
+
+  // SHARE's image: the QR for a phone, the tag for the app.
+  await a.addScriptTag({ path: join(ROOT, 'node_modules/jsqr/dist/jsQR.js') });
+  await a.click('#share-btn');
+  await a.fill('#share-label', 'tag test');
+  await a.waitForTimeout(800);
+  const link = await a.evaluate(async () => {
+    const { shareableSnapshot, encodeState, shareUrl } = await import('/src/share.js');
+    return shareUrl(await encodeState({ ...shareableSnapshot(), label: 'tag test' }));
+  });
+  const [dl] = await Promise.all([a.waitForEvent('download'), a.click('#share-save-img')]);
+  const saved = await readIn(a, readFileSync(await dl.path()));
+  const savedName = dl.suggestedFilename();
+  await a.click('#share-close');
+
+  // ⚙ → SETUP TAG off hides it; on brings it back.
+  await a.click('#settings-btn');
+  await a.click('#tag-btn');
+  const off = await a.evaluate(() => document.getElementById('cam-tag').hidden);
+  await a.click('#tag-btn');
+  await a.waitForTimeout(300);
+  const on = await a.evaluate(() => !document.getElementById('cam-tag').hidden);
+  await a.click('#settings-btn');
+  const shot = await a.screenshot();
+  await ctxA.close();
+
+  // The viewer: a fresh browser, the screenshot, PRESET → FROM IMAGE.
+  const opened = async how => {
+    const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
+    const p = await ctx.newPage();
+    p.on('pageerror', e => errs.push(String(e)));
+    await p.goto(URL_, { waitUntil: 'networkidle' });
+    await p.keyboard.press('Escape');
+    const nav = p.waitForNavigation({ waitUntil: 'networkidle' }).catch(() => null);
+    if (how === 'pick') {
+      await p.click('#preset-btn');
+      const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.click('#image-btn')]);
+      await chooser.setFiles({ name: 'screenshot.png', mimeType: 'image/png', buffer: shot });
+    } else {
+      await p.evaluate(b64 => {
+        const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+        const dt = new DataTransfer();
+        dt.items.add(new File([bin], 'pasted.png', { type: 'image/png' }));
+        document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }));
+      }, shot.toString('base64'));
+    }
+    await nav;
+    await p.waitForFunction(() => document.getElementById('toast')?.textContent, null, { timeout: 4000 }).catch(() => null);
+    const out = await p.evaluate(async () => {
+      const { mapper } = await import('/src/mapper.js');
+      const { currentConfig } = await import('/src/saved.js');
+      return { toast: document.getElementById('toast')?.textContent ?? '',
+               config: currentConfig(), mappings: mapper.serialize() };
+    });
+    await ctx.close();
+    return out;
+  };
+  const picked = await opened('pick');
+  const pasted = await opened('paste');
+
+  // An image with no tag in it says so, rather than doing nothing.
+  const ctxN = await b.newContext({ viewport: { width: 800, height: 600 } });
+  const n = await ctxN.newPage();
+  n.on('pageerror', e => errs.push(String(e)));
+  await n.goto(URL_, { waitUntil: 'networkidle' });
+  await n.keyboard.press('Escape');
+  const blank = await n.evaluate(async () => {
+    const c = document.createElement('canvas');
+    c.width = 300; c.height = 200;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, 300, 200);
+    g.fillStyle = '#000'; g.fillRect(40, 40, 200, 12); g.fillRect(40, 40, 12, 120);
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    const { openImage } = await import('/src/ui/tag.js');
+    const ok = await openImage(blob);
+    return { ok, toast: document.getElementById('toast')?.textContent ?? '' };
+  });
+  await ctxN.close();
+
+  return { errs, want, windowed, full, fullShot, stable: before === after, fsShare, link, saved, savedName,
+           off, on, picked, pasted, blank };
+})();
+
 // ── The controls on the picture are one system ───────────────────────────
 const camctl = await (async () => {
   const page = await b.newPage({ viewport: { width: 1280, height: 900 } });
@@ -3039,7 +3197,7 @@ console.log('\nSaved setups\n');
   check(p.afterPreset.hidden && p.afterPreset.text === '', 'a built-in patch clears the name — it is not one of yours',
     `“${p.afterPreset.text}” hidden=${p.afterPreset.hidden}`);
   const sh = p.share;
-  check(p.noCamQr, 'the setup is no longer drawn onto the camera view');
+  check(p.noCamQr, 'no QR code on the camera view — the setup tag is what lives there (below)');
   check(sh.open, 'SHARE opens');
   check(sh.pop.w === sh.vw && sh.pop.h === sh.vh && sh.pop.left === 0 && sh.pop.top === 0, 'and takes the whole screen',
     `${sh.pop.w}x${sh.pop.h} at ${sh.pop.left},${sh.pop.top} in ${sh.vw}x${sh.vh}`);
@@ -3050,6 +3208,42 @@ console.log('\nSaved setups\n');
   check(p.decoded.text === p.want, 'and a screenshot of it decodes back to this setup’s link',
     p.decoded.text === null ? `no code found in ${p.decoded.w}x${p.decoded.h}px`
       : `${p.decoded.text.length} chars, ${p.decoded.text === p.want ? 'match' : 'MISMATCH'}`);
+}
+
+console.log('\nSetup tag\n');
+{
+  const t = tagRun;
+  const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+  check(t.errs.length === 0, 'no page errors', t.errs.join(' | '));
+  const inside = (p, q) => p.l >= q.l - 0.5 && p.t >= q.t - 0.5 && p.r <= q.r + 0.5 && p.b <= q.b + 0.5;
+  const apart = (p, q) => p.r <= q.l || q.r <= p.l || p.b <= q.t || q.b <= p.t;
+  check(!t.windowed.hidden && inside(t.windowed.tag, t.windowed.wrap), 'the tag is on the picture', JSON.stringify(t.windowed.tag));
+  check(t.windowed.tag.w <= t.windowed.wrap.w * 0.41, 'and never more than 40% of its width, however far out the canvas is zoomed',
+    `${Math.round(t.windowed.tag.w)} of ${Math.round(t.windowed.wrap.w)}px`);
+  check(inside(t.full.tag, t.full.wrap) && apart(t.full.tag, t.full.toggles), 'fullscreen: in the corner, clear of the picture’s own controls',
+    JSON.stringify(t.full.tag));
+  check(Math.abs(t.full.tag.r - t.full.wrap.r) < 40 && Math.abs(t.full.tag.b - t.full.wrap.b) < 40, 'bottom-right',
+    `${Math.round(t.full.wrap.r - t.full.tag.r)}px from the right, ${Math.round(t.full.wrap.b - t.full.tag.b)}px from the bottom`);
+  check(Math.abs(t.full.tag.w * t.full.dpr - t.full.px[0]) < 1, 'fullscreen: drawn at exactly its own device pixels',
+    `${t.full.tag.w} css × ${t.full.dpr} vs ${t.full.px[0]}px`);
+  check(t.full.tag.w < 200 && t.full.tag.h < 120, 'and small — a corner, not a panel', `${Math.round(t.full.tag.w)}x${Math.round(t.full.tag.h)} css px`);
+  check(t.fullShot.state && same(t.fullShot.state, t.want), 'a screenshot of the whole page reads back to exactly this setup',
+    !t.fullShot.state ? `no tag found in ${t.fullShot.w}x${t.fullShot.h}px`
+      : same(t.fullShot.state, t.want) ? 'match' : 'decoded, but different');
+  check(t.stable, 'the tag holds still while nothing about the setup changes');
+  check(t.fsShare.open && t.fsShare.onTop, 'tapping it in fullscreen opens SHARE, in front of the picture', JSON.stringify(t.fsShare));
+  check(t.saved.qr === t.link, 'SHARE’s saved image: a phone reads the QR code as this setup’s link',
+    t.saved.qr ? `${t.saved.qr.length} chars` : 'no QR found');
+  check(t.saved.state?.label === 'tag test' && same(t.saved.state.mappings, t.want.mappings),
+    'and the app reads its tag as this setup', t.saved.state ? `label “${t.saved.state.label}”` : 'no tag found');
+  check(t.savedName === 'motionmuse-tag-test.png', 'saved under the name it was given', t.savedName);
+  check(t.off && t.on, '⚙ → SETUP TAG turns it off and back on');
+  for (const [how, r] of [['PRESET → FROM IMAGE', t.picked], ['pasting the screenshot', t.pasted]]) {
+    check(r.config === 'tag test', `${how} opens the setup, under its name`, `current “${r.config}”`);
+    check(same(r.mappings, t.want.mappings), `${how}: the same patch, cable for cable`, `${r.mappings.length} vs ${t.want.mappings.length} cables`);
+    check(/tag test/.test(r.toast), `${how}: and says what it opened`, `“${r.toast}”`);
+  }
+  check(!t.blank.ok && /No MotionMuse setup code/.test(t.blank.toast), 'an image with no tag in it says so', `“${t.blank.toast}”`);
 }
 
 console.log('\nCamera-view controls\n');

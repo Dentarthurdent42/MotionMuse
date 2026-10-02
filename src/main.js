@@ -14,6 +14,7 @@ import { renderAudioPanel, updateAudioSliders } from './ui/audio-ui.js';
 import { drawViz }                          from './ui/viz.js';
 import { initFullscreen, updateFsOverlay, fullscreen } from './ui/fullscreen.js';
 import { initCamBadge, updateCamBadge }     from './ui/cam-badge.js';
+import { initTag, pickImage }               from './ui/tag.js';
 import { playalong }                        from './playalong.js';
 import { initPlayalongUI, updateGamePanel } from './ui/playalong-ui.js';
 import { gesture }                          from './gesture.js';
@@ -623,6 +624,7 @@ startAudio();
 initPresetMenu({
   onSave: saveSetup,
   onLoad: loadSetup,
+  onImage: pickImage,
   onApply: async (preset, missing) => {
     // A built-in patch is not one of your named setups: whatever was playing
     // has been replaced, so the name on the camera view goes with it — and so
@@ -841,6 +843,7 @@ uicontrol.setSingleSide(() =>
   cvSource.handsL !== cvSource.handsR ? (cvSource.handsL ? 'L' : 'R') : null);
 initStage();              // fullscreen gesture stage (DEV, under construction)
 initShare();              // SHARE → a QR code of this setup
+initTag();                // the setup as a small code on the picture, and reading one back
 initModelPanel();         // dev-mode pose model comparison panel
 initHeaderHelp();         // the header ? — how the app works, as one short card
 const hadSession = preset.restoreLocal();   // last session's mappings + settings

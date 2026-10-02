@@ -3,12 +3,20 @@
 // Sits beside SAVE and LOAD because it is the same idea without the file: SAVE
 // is for keeping a setup, SHARE is for handing it to the person next to you.
 // They point a camera at the screen and the app opens with your patch.
+//
+// The code can also leave the screen as a picture — COPY IMAGE for a chat,
+// SAVE IMAGE for a file — for the person who is not next to you. The picture
+// carries the setup twice: as the QR code a phone's camera reads, and as the
+// small setup tag (ui/tag.js) the app itself reads, so the same image opens
+// through PRESET → FROM IMAGE as well as through a camera.
 
 import { snapshot, applyAll, saveLocal } from '../preset.js';
 import { shareableSnapshot, encodeState, decodeState, shareUrl, readShareUrl,
          cleanShareLabel, SHARE_LABEL_MAX, shareFingerprint,
          QR_COMFORTABLE_VERSION } from '../share.js';
 import { encodeQR, drawQR } from '../qr.js';
+import { rasterize } from '../densecode.js';
+import { currentTag } from './tag.js';
 import { NEWER_SETUP } from '../presetformat.js';
 import { saveConfig, setCurrentConfig } from '../saved.js';
 import { toast } from './status.js';
@@ -31,10 +39,16 @@ function build() {
     <div class="share-kept" id="share-kept"></div>
     <div class="wave-btns">
       <button class="wave-btn" id="share-copy" type="button">COPY LINK</button>
+      <button class="wave-btn" id="share-copy-img" type="button"
+              title="Copy the code as a picture, to paste into a message">COPY IMAGE</button>
+      <button class="wave-btn" id="share-save-img" type="button"
+              title="Download the code as a PNG">SAVE IMAGE</button>
       <button class="wave-btn" id="share-close" type="button">CLOSE</button>
     </div>`;
   document.body.appendChild(el);
   el.querySelector('#share-close').addEventListener('click', () => setOpen(false));
+  el.querySelector('#share-copy-img').addEventListener('click', copyImage);
+  el.querySelector('#share-save-img').addEventListener('click', saveImage);
   // Every character changes the payload, so the code has to be redrawn — but
   // not per keystroke: encoding compresses the whole state and then lays out a
   // QR, which is far more work than a keypress is worth. A short idle is
@@ -156,6 +170,103 @@ async function render() {
   }
 }
 
+// ── The code as a picture ────────────────────────────────────────────────
+//
+// Black on white whatever the theme: this picture leaves the app, and the
+// screen it lands on, the printer it goes through and the camera that reads it
+// owe nothing to the theme it was made in. Eight pixels per module, so a phone
+// reads it off another screen, a print or a thumbnail in a chat. Under it, the
+// name (a code says nothing about itself) and the setup tag, which is how the
+// app reads the same picture back without a camera.
+const IMG_SCALE = 8;
+const IMG_QUIET = 4;
+const IMG_TAG_CELL = 4;
+
+async function shareImage() {
+  if (!lastQr) throw new Error('no code to draw');
+  const qrPx = (lastQr.size + 2 * IMG_QUIET) * IMG_SCALE;
+  const name = cleanShareLabel(label);
+  const tag = rasterize(await currentTag(name), IMG_TAG_CELL);
+  const pad = IMG_QUIET * IMG_SCALE;
+  const foot = Math.max(tag.height, 56);
+  const c = document.createElement('canvas');
+  c.width = qrPx;
+  c.height = qrPx + foot;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#000';
+  for (let y = 0; y < lastQr.size; y++)
+    for (let x = 0; x < lastQr.size; x++)
+      if (lastQr.modules[y * lastQr.size + x])
+        ctx.fillRect((x + IMG_QUIET) * IMG_SCALE, (y + IMG_QUIET) * IMG_SCALE, IMG_SCALE, IMG_SCALE);
+  // The tag at its own pixels, bottom-right, with its quiet zone touching the
+  // QR's — both are white, so neither eats the other's margin.
+  const img = ctx.createImageData(tag.width, tag.height);
+  img.data.set(tag.data);
+  ctx.putImageData(img, c.width - tag.width, qrPx + foot - tag.height);
+  // The words, left of the tag, in the room the tag leaves.
+  const room = c.width - tag.width - pad - 8;
+  ctx.textBaseline = 'middle';
+  ctx.font = '600 22px "IBM Plex Mono", monospace';
+  ctx.fillText(fit(ctx, name || 'A MotionMuse setup', room), pad, qrPx + foot / 2 - 11);
+  ctx.font = '14px "IBM Plex Mono", monospace';
+  ctx.fillStyle = '#555';
+  ctx.fillText(fit(ctx, 'MotionMuse · scan to open', room), pad, qrPx + foot / 2 + 14);
+  return c;
+}
+
+// Ellipsised to the width it has rather than run under the tag.
+function fit(ctx, text, width) {
+  if (ctx.measureText(text).width <= width) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(`${t}…`).width > width) t = t.slice(0, -1);
+  return `${t}…`;
+}
+
+const pngOf = canvas => new Promise((resolve, reject) =>
+  canvas.toBlob(b => (b ? resolve(b) : reject(new Error('could not make the image'))), 'image/png'));
+
+const fileName = () => {
+  const slug = cleanShareLabel(label).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return `motionmuse-${slug || 'setup'}.png`;
+};
+
+async function copyImage() {
+  keep();
+  // The blob is handed over as a PROMISE, inside the click: Safari only lets a
+  // page write to the clipboard during the gesture, and making the PNG takes
+  // longer than the gesture lasts.
+  if (!globalThis.ClipboardItem || !navigator.clipboard?.write) {
+    toast('This browser cannot copy images — use SAVE IMAGE');
+    return;
+  }
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({ 'image/png': shareImage().then(pngOf) }),
+    ]);
+    toast('Image copied');
+  } catch {
+    toast('Could not copy the image — use SAVE IMAGE');
+  }
+}
+
+async function saveImage() {
+  keep();
+  try {
+    const url = URL.createObjectURL(await pngOf(await shareImage()));
+    const a = Object.assign(document.createElement('a'), { href: url, download: fileName() });
+    // The sheet closes on any click outside it, and this one is outside it.
+    a.addEventListener('click', e => e.stopPropagation());
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    toast(`Could not save the image: ${err.message}`);
+  }
+}
+
 // Keep the popover inside the part of the screen that is actually visible.
 //
 // A phone's keyboard does not shrink the layout viewport, so a dialog centred
@@ -178,8 +289,18 @@ function fitToViewport() {
   fitQr();
 }
 
+// Where the sheet has to live to be seen. In fullscreen only the fullscreen
+// element is drawn — natively, the browser shows nothing else; in the CSS
+// takeover the picture covers the page at a higher z-index — so a sheet left
+// in <body> opened, invisibly, behind the picture. SHARE is ON the picture in
+// fullscreen (and so is the setup tag that opens it), so this is the common
+// case, not the corner one.
+const sheetHost = () => document.fullscreenElement
+  ?? document.querySelector('#video-wrap.fake-fullscreen') ?? document.body;
+
 function setOpen(open) {
   pop ??= build();
+  if (open && pop.parentElement !== sheetHost()) sheetHost().appendChild(pop);
   pop.classList.toggle('open', open);
   document.getElementById('share-btn')?.setAttribute('aria-expanded', String(open));
   const vv = globalThis.visualViewport;
@@ -260,29 +381,7 @@ export async function consumeSharedLink() {
   // would fail again on every reload.
   history.replaceState(null, '', location.pathname + location.search);
   try {
-    const data = await decodeState(payload);
-    const { ok, newer } = applyAll(data);
-    if (!ok) throw new Error('not a MotionMuse setup');
-    saveLocal();
-    // A named link is a named configuration. Whoever sent it already said what
-    // this is, and without keeping it the setup is yours only until you touch a
-    // slider — there would be no way back to what arrived short of finding the
-    // QR code again. Stored before the reload below, because localStorage is
-    // what survives it.
-    const kept = saveConfig(data.label, shareableSnapshot(data));
-    if (kept) setCurrentConfig(kept.name);
-    // Is this the first time this particular link has been followed? Only a
-    // first open is worth flagging help for: reopening a pinned QR, or reloading, lands
-    // you on a setup that is already yours.
-    const fp = shareFingerprint(payload);
-    const first = lsGet(SEEN_KEY) !== fp;
-    lsSet(SEEN_KEY, fp);
-    // Carried across the reload below, because the toast that announces the
-    // setup happens on the far side of it. Re-cleaned rather than trusted:
-    // this string came out of somebody else's URL.
-    sessionStorage.setItem('motionmuse-shared',
-      JSON.stringify({ label: cleanShareLabel(data.label), first, newer }));
-    location.reload();
+    openSharedState(await decodeState(payload), payload);
     return true;
   } catch (err) {
     // The link is not going to open, so nothing is arriving to replace the
@@ -291,6 +390,39 @@ export async function consumeSharedLink() {
     toast(`Could not open that shared setup: ${err.message}`);
     return false;
   }
+}
+
+// Make a shared setup this browser's setup, and restart into it. One path for
+// every way a setup arrives from somebody else — a link, a QR code, the tag
+// read out of a screenshot (ui/tag.js) — so they cannot drift apart in what
+// they keep, what they announce or whether they offer the tour.
+//
+// `payload` is what identifies this share for "opened it before?": the link's
+// packed text, or the same text rebuilt from a tag's bytes. Throws when `data`
+// is not a setup; on success the page is already reloading.
+export function openSharedState(data, payload) {
+  const { ok, newer } = applyAll(data);
+  if (!ok) throw new Error('not a MotionMuse setup');
+  saveLocal();
+  // A named link is a named configuration. Whoever sent it already said what
+  // this is, and without keeping it the setup is yours only until you touch a
+  // slider — there would be no way back to what arrived short of finding the
+  // QR code again. Stored before the reload below, because localStorage is
+  // what survives it.
+  const kept = saveConfig(data.label, shareableSnapshot(data));
+  if (kept) setCurrentConfig(kept.name);
+  // Is this the first time this particular link has been followed? Only a
+  // first open is worth flagging help for: reopening a pinned QR, or reloading, lands
+  // you on a setup that is already yours.
+  const fp = shareFingerprint(payload);
+  const first = lsGet(SEEN_KEY) !== fp;
+  lsSet(SEEN_KEY, fp);
+  // Carried across the reload below, because the toast that announces the
+  // setup happens on the far side of it. Re-cleaned rather than trusted:
+  // this string came out of somebody else's URL.
+  sessionStorage.setItem('motionmuse-shared',
+    JSON.stringify({ label: cleanShareLabel(data.label), first, newer }));
+  location.reload();
 }
 
 // Say so once, after the reload — otherwise the app silently looks different

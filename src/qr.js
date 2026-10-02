@@ -29,6 +29,11 @@ const LOG = new Uint8Array(256);
 })();
 const gfMul = (a, b) => (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]];
 
+// The field and the Reed–Solomon encoder are shared with the setup tag
+// (src/densecode.js), which needs the same arithmetic and adds the decoder.
+// One field, so the two can never disagree about what a codeword is.
+export { EXP as GF_EXP, LOG as GF_LOG, gfMul, rsRemainder };
+
 // Generator polynomial for `degree` error-correction codewords:
 // (x - a^0)(x - a^1)...(x - a^(degree-1)) over GF(256).
 //

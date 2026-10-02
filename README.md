@@ -309,6 +309,35 @@ The state is compressed and carried in the URL **fragment**, which is never sent
 to a server. There is no server; a shared setup stays between the two people
 holding the phones.
 
+**What is compressed is the difference from the default.** Most of a snapshot
+is defaults, and compressing the whole thing made the default setup's link
+1328 characters — a 121-module QR code. A link now carries only what differs
+from a frozen copy of the Hands patch on a fresh install (`src/sharebase.js`),
+deflated: a stock Hands setup is a handful of bytes, every other starting patch
+is 135–220, and a link that was 1364 characters is 461. The QR code is several
+versions smaller and scans from further away. The packing is the link's first
+character — `b` for this, `d` for every link made before it, which still opens
+— and the baseline can **never be edited**: every `b` link ever made is a diff
+against exactly those values. When the app grows new state, it simply travels
+in the diff; a better baseline would be a new letter beside this one.
+`tests/unit/share-base.test.js` pins the baseline by hash and the diff/merge as
+an exact inverse, and `tests/unit/fixtures/share-links.json` gained a `b` link.
+
+**The code can leave the screen as a picture.** COPY IMAGE puts it on the
+clipboard, for pasting into a message; SAVE IMAGE downloads a PNG. Either way it
+is black on white whatever the theme (the screen it lands on, the printer and
+the camera owe nothing to the theme it was made in), eight pixels a module,
+with the setup's name under it — a code says nothing about itself — and, in the
+corner, the setup's [tag](#the-setup-tag-your-setup-on-the-picture), so the
+same picture opens through PRESET → FROM IMAGE as well as through a phone's
+camera. The layout suite saves one and decodes both.
+
+**SHARE opens in front of fullscreen.** In fullscreen SHARE is on the picture,
+and the sheet used to open in `<body>` — which native fullscreen does not draw
+at all, and the CSS takeover covers at a higher z-index — so tapping it in
+fullscreen opened a sheet nobody could see. It now opens inside whatever is
+fullscreen.
+
 What travels is the **instrument**, not the window. Where the nodes sit on the
 canvas — positions, sizes, groups, the view — describes the screen you arranged
 them on, and pushing a phone's layout onto a laptop is not "the same
@@ -801,34 +830,6 @@ instrument, and **not** cleared when you move a slider — you are still playing
 your setup, just changed, and a name that vanished on the first knob turn would
 be a name nobody trusts.
 
-**A QR code on the camera view was tried, and dropped.** The idea was that a
-setup could be handed over by screenshotting the picture, with no dialog in
-the way — which raised a question worth answering on its own: how small can a
-QR code be and still be read?
-
-**Measured, not guessed.** Render at N device pixels per module, screenshot
-the pixels the browser actually painted, and hand them to **jsQR** — an
-independent decoder, not our own encoder agreeing with itself. The answer is
-**one pixel per module**. The floor is not the module *size* but the
-requirement that modules land on **whole** pixels: a code scaled to 1.5×
-smears every module edge across two pixels and stops decoding long before a 1×
-one does. `tests/unit/qr.test.js` pins that at 1 px/module across a range of
-payload sizes and both ECC levels the app uses.
-
-**And the answer was still too big.** The default setup's link is 1328
-characters, which at ECC L needs a 121×121-module code — 129px square with the
-spec's quiet zone. That is a quarter of the width of a phone's camera panel: a
-corner ornament in name only, and there is no shrinking it, because 1 px per
-module is where the format bottoms out. A code that size has to be somewhere
-it can be the whole point. So it is not on the camera view, and **SHARE takes
-the screen instead** (below) — which is a better answer to the original
-problem anyway, since the thing being read is somebody else's camera across a
-table, and every pixel of screen is reach.
-
-The measurement is kept here rather than deleted because it is the reason the
-feature is *not* there. Anyone who proposes putting a code back on the frame
-is proposing 129px of it.
-
 The store is `src/saved.js`, in localStorage under `motionmuse-saved-v1`. It
 filters what it reads: an entry that is not a named snapshot is dropped rather
 than handed to the menu, which would otherwise render `undefined` and apply
@@ -836,6 +837,103 @@ nothing when clicked. `tests/unit/saved-configs.test.js` covers the round trip,
 the replace-by-name rule, the cap, and what happens to junk in storage;
 `tests/unit/saved-rename.test.js` covers renaming, the refusal to rename onto
 a name in use, and the "currently playing" marker following a rename.
+
+## The setup tag: your setup on the picture
+
+The small black-and-white code in the **bottom-right corner of the picture** is
+the setup you are playing. It is there for the people watching a recording of
+you: pause the video, screenshot it, and in MotionMuse **PRESET → FROM IMAGE**
+— or paste the screenshot anywhere in the app, or drop it on the page — opens
+the setup it shows, under its name if it has one. Tap the tag to open SHARE;
+**⚙ → SETUP TAG** turns it off, for a recording that is nobody else's business.
+
+### Why it is not a QR code
+
+A QR code on the camera view was tried first, and dropped: one pixel per
+module really does decode from a screenshot, but the default setup's link was
+1328 characters, a 121-module code — **129px square**, a quarter of the width
+of a phone's camera panel, and there was no shrinking it. The tag gets the
+same setup into a fraction of that by not paying for what a QR code pays for:
+
+- **A QR code is built for a camera at an angle across a room** — three big
+  finder squares, alignment patterns, a format that survives rotation and
+  perspective. A screenshot is axis-aligned. The tag's finder is Data
+  Matrix's: a solid line down the left and along the bottom, and alternating
+  "clock" cells along the top and right that give the grid. One cell of
+  border per side.
+- **No URL.** The tag carries the setup's raw bytes, not a link with base64 in
+  it — a third fewer bits before anything else.
+- **The difference from the default** (the `b` packing above): a typical
+  setup is 100–300 bytes instead of ~1 KB.
+
+It comes out about **2:1, 50–90 cells wide** for a typical setup: from about
+75×45 to 110×60 CSS px on a phone, against the QR code's 129px square. `src/densecode.js`
+is the format (encoder, Reed–Solomon decoder, reader), `src/ui/tag.js` puts it
+on the picture and reads images back.
+
+### Measured through real video
+
+A tag that only read from perfect screenshots would be no use: the screenshot
+people actually take is of a **recording**, which a feed has scaled down and
+H.264 has compressed with its colour subsampled. So `npm run
+test:tag-recording` makes one — a phone screen (1170px wide, 3×) and a monitor
+(1920px, 1×), a moving noisy picture with the tag in its corner, encoded with
+x264 in yuv420p, scaled to a feed's width, compressed — pulls a frame back out
+and reads it, three different setups per case (a single run near the limit
+passes or fails on luck). What it found, and what the tag is built on:
+
+- **Black and white, not greys.** Four grey levels carry two bits a cell, so
+  a grey tag at four pixels a cell is the same size as a black-and-white one
+  at three. On the same recordings the grey one failed two cases the
+  black-and-white one read (a 540px feed at CRF 33, 1080 at CRF 40) and read
+  none it missed: compression blurs edges, which costs a binary cell little,
+  and shifts levels, which costs a grey cell everything. Pure black and white
+  also ignores the colour channels, which are the first thing subsampling
+  throws away.
+- **What has to survive is about 2.5px a cell after the feed's downscale.**
+  At **4 device pixels a cell** every required case reads, every setup: the
+  phone posted at 1080 and 720, the monitor posted at 1080 and 720, at CRF 23
+  (x264's default) and 33 (a hard squeeze). At three, the phone's recording
+  stops reading at 720. So the tag is drawn at four **device** pixels a cell —
+  a third the CSS size on a phone that it is on a 1× monitor — at exactly its
+  own pixels, never resampled by CSS.
+- **The reader fits the grid; it does not trust edges.** Thresholding finds a
+  blurred edge up to half a pixel off, which is a third of a cell after a
+  feed has halved the picture. So the reader finds the L, then searches every
+  column and row count for the one whose clock track alternates best, then
+  nudges the grid's sub-pixel phase and pitch to whatever makes the clocks
+  strongest, and samples cell **centres**. A quarter of every Reed–Solomon
+  block is parity, interleaved so a smudge across one part of the tag is
+  spread over all of them. Three cells of white margin, not two: at two, a
+  720px feed blurs the dark picture around the tag into its margin until the
+  bottom edge has no light beneath it.
+
+### Holding still
+
+The tag is a picture of the **setup**, not of the performance. The value of a
+parameter a cable is driving is rewritten every frame from wherever your hand
+is — meaningless to whoever loads it (the cable takes the parameter over at
+once), and it would make the tag redraw every second you play. So those values
+are left out (`tagState` in `src/share.js`); the tag changes when you rewire,
+retune or rename, and the app looks for that once a second.
+
+On the canvas the picture is inside the workspace's zoom, so the tag divides
+the zoom back out to stay at its own device pixels — up to **40% of the
+picture's width**. Zoomed out further than that the picture is a thumbnail,
+and the tag gives way rather than cover it; fullscreen, or zooming in, gives it
+back. It is hidden on the column's shrunken picture for the same reason.
+
+### Tags already out there
+
+A tag in a posted video is frozen exactly like a printed QR code. The format's
+first byte is its version, and nothing in `src/densecode.js` that decides the
+layout can change under it. `tests/unit/fixtures/setup-tags.json` holds tags
+made by past versions of the encoder; they are never regenerated, and if one
+stops reading, the reader changed. The unit tests read tags from **bitmaps** —
+resampled, embedded in a noisy frame, noised, smudged — never from the
+encoder's own cell array, and the layout suite does the whole trip in a
+browser: screenshot the page, open the screenshot through FROM IMAGE and by
+pasting it, in a fresh browser, and compare the patch cable for cable.
 
 ## Loop pedal
 

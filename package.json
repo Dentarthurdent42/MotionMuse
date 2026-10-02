@@ -20,7 +20,8 @@
     "test:sw": "node tests/sw-freshness/index.js",
     "test:launch": "node tests/audio-launch/index.js",
     "test:layout": "node tests/layout/index.js",
-    "vendor": "node scripts/vendor.mjs"
+    "vendor": "node scripts/vendor.mjs",
+    "test:tag-recording": "node tests/tag-recording/index.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.54.0",
