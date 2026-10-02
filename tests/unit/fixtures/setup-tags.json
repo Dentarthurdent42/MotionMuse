@@ -1,6 +1,6 @@
 [
   {
-    "made_by": "PENDING",
+    "made_by": "b63fbf8",
     "note": "the first setup tag format (magic 0xA1, black and white), carrying the same setup as the share-link fixtures",
     "rows": [
       "10101010101010101010101010101010101010101010101010101010101010101010101010101",
