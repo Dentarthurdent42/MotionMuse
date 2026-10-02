@@ -516,6 +516,15 @@ body.cam-on .cam-on-only { display: inline-flex; }
 /* A picture is not something to press: the target exists only while the frame
    is blank (cv.js hides it the moment the stream arrives). */
 body.cam-on #cv-btn { display: none; }
+/* …except when the picture has died under a camera that still counts as
+   running: then it is the RESUME target again (src/main.js setCamLost). Over
+   a black frame, so it needs its own backing to be readable. */
+body.cam-lost #cv-btn {
+  display: flex; z-index: 3;
+  color: var(--cyan); background: rgba(0, 0, 0, 0.6);
+  text-align: center; padding: 0 16px;
+}
+body.cam-lost #cv-btn svg { opacity: 0.6; }
 
 /* Keep one width as the caption changes: the hidden sizer holds the longest
    label and shares a grid cell with the live text, so the box is sized by the

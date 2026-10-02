@@ -484,6 +484,16 @@ export const cvSource = {
     return !this.video.paused;
   },
 
+  // Is the camera "on" but not actually delivering a picture? True when the
+  // track has ended or the element is paused — what a backgrounded tab leaves
+  // behind, and what restore() could not undo. The inference loop is gated on
+  // the video's clock, so this is also the state in which the signals freeze.
+  stalled() {
+    if (!this.running || !this.video) return false;
+    const track = this.video.srcObject?.getVideoTracks?.()[0];
+    return !track || track.readyState === 'ended' || this.video.paused || this.video.ended;
+  },
+
   stopCamera() {
     this.running = false;
     // No camera means no hands to steer with — an armed cursor would be a
