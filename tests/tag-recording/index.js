@@ -1,19 +1,18 @@
 // Does the setup tag survive being in a video?
 //
 // The question the tag exists to answer is "can somebody watching a recording
-// of me open my setup?" — so this records one. A phone's and a monitor's
-// screen, each a moving, noisy picture with the tag in its corner, are encoded
-// with H.264 (yuv420p, the way every phone records and every feed
-// re-encodes), scaled to a feed's width and compressed at several strengths; a
-// frame is pulled back out and the reader has to find the tag in it. Three
-// different setups (seeds) per case, because one is an anecdote: near the
-// limit, a single run passes or fails on luck.
+// of me open my setup?" — so this records one. A phone's and two monitors'
+// screens, each a moving, noisy picture with the tag in its corner, are
+// encoded with H.264 (yuv420p — colour at half the resolution of brightness,
+// the way every phone records and every feed re-encodes), scaled to a feed's
+// size and compressed at several strengths; a frame is pulled back out and
+// the reader has to find the tag in it. Three different setups (seeds) per
+// case, because one is an anecdote: near the limit, a single run passes or
+// fails on luck.
 //
-// The app's own choice — TAG_CELL device pixels per cell — must pass every
-// required case, every seed. The rows either side of it are printed so the
-// trade can be re-measured rather than remembered. (Four grey levels a cell,
-// two bits instead of one, were measured here too, and lost — see the
-// README.)
+// The app's own choice — tagPitch() for that screen — must pass every
+// required case, every seed. The row a pixel smaller is printed beside it, so
+// the trade can be re-measured rather than remembered.
 //
 // Needs ffmpeg with libx264 on the PATH; skips (exit 0) without it.
 // Run: npm run test:tag-recording
@@ -22,11 +21,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { encodeTag, rasterize, readTag } from '../../src/densecode.js';
-
-// Keep in step with TAG_CELL in src/ui/tag.js (not imported: that module
-// needs a DOM). Device pixels, so the same on every screen.
-const TAG_CELL = 4;
+import { encodeTag, rasterize, readTag, tagPitch } from '../../src/densecode.js';
 
 let encoders = '';
 try { encoders = execFileSync('ffmpeg', ['-hide_banner', '-encoders'], { stdio: 'pipe' }).toString(); } catch { /* no ffmpeg */ }
@@ -35,30 +30,32 @@ if (!encoders.includes('libx264')) {
   process.exit(0);
 }
 
-// Two screens, recorded at their own width and posted to feeds of the widths
-// people actually watch at. A phone (1170px, 3×) posted at 1080 or 720 is the
-// common case; a laptop or monitor (1920px, 1×) posted at 1080 or 720 is the
-// steepest downscale there is. Heights are trimmed to the part of the frame
-// that matters: scaling is about width.
+// Three screens, recorded at their own resolution and posted to feeds of the
+// sizes people actually watch at. A feed is sized by its SHORT side — 1080p
+// and 720p are 1920×1080 or 1080×1920 alike — so a phone held upright
+// (1170px wide) and a monitor (1080 or 1440 tall) are each scaled by feed ÷
+// their short side. Only a 600px band of the frame is drawn: the scale is
+// what matters, and the rest is time.
 const SOURCES = [
-  { name: 'phone 1170px @3x', W: 1170 },
-  { name: 'desktop 1920px @1x', W: 1920 },
+  { name: 'phone 1170×2532 @3x', W: 1170, short: 1170 },
+  { name: 'monitor 1920×1080', W: 1920, short: 1080 },
+  { name: 'monitor 2560×1440', W: 2560, short: 1440 },
 ];
 const H = 600;
 const FRAMES = 8;
-// [feed width, x264 CRF]. CRF 23 is x264's default; 30–35 is a hard squeeze.
-// The 540 row is reported, not required: a phone recording squeezed to under
-// half its width is past what the tag is sized for.
+// [feed short side, x264 CRF]. CRF 23 is x264's default; 33 a hard squeeze.
+// The 540 rows are reported, not required: a recording squeezed below 720p
+// is past what the tag is sized for.
 const FEEDS = [
-  { w: 1080, crf: 23, required: true },
-  { w: 1080, crf: 33, required: true },
-  { w: 720, crf: 28, required: true },
-  { w: 720, crf: 33, required: true },
-  { w: 540, crf: 28, required: false },
+  { s: 1080, crf: 23, required: true },
+  { s: 1080, crf: 33, required: true },
+  { s: 720, crf: 28, required: true },
+  { s: 720, crf: 33, required: true },
+  { s: 540, crf: 28, required: false },
 ];
 const SEEDS = [42, 7, 1234];
-// The app's cell, and one either side of it, so the trade stays visible.
-const OFFSETS = [0, -1, +1];
+// The app's pitch, and one pixel under it, so the margin stays visible.
+const OFFSETS = (process.env.OFFSETS ?? "0,-1").split(",").map(Number);
 
 const dir = mkdtempSync(join(tmpdir(), 'tag-rec-'));
 const ppm = (path, rgb, w, h) => writeFileSync(path, Buffer.concat([Buffer.from(`P6\n${w} ${h}\n255\n`), rgb]));
@@ -84,7 +81,7 @@ function readPPM(path) {
 let failed = 0;
 for (const src of SOURCES) {
   for (const off of OFFSETS) {
-    const cell = TAG_CELL + off;
+    const cell = tagPitch(src.short) + off;
     if (cell < 1) continue;
     const app = off === 0;
     const wins = FEEDS.map(() => 0);
@@ -112,7 +109,8 @@ for (const src of SOURCES) {
         }
         ppm(join(dir, `f${String(fr).padStart(2, '0')}.ppm`), rgb, W, H);
       }
-      FEEDS.forEach(({ w, crf }, i) => {
+      FEEDS.forEach(({ s, crf }, i) => {
+        const w = 2 * Math.round(src.W * s / src.short / 2);
         const vid = join(dir, 'v.mp4'), grab = join(dir, 'g.ppm');
         execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', '30', '-i', join(dir, 'f%02d.ppm'),
           '-vf', `scale=${w}:-2:flags=bicubic`, '-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf),
@@ -123,11 +121,11 @@ for (const src of SOURCES) {
       });
     }
     console.log(`\n${src.name}, ${cell}px a cell${app ? '   ← the app' : ''}`);
-    FEEDS.forEach(({ w, crf, required }, i) => {
+    FEEDS.forEach(({ s, crf, required }, i) => {
       const all = wins[i] === SEEDS.length;
       const mark = all ? 'PASS' : app && required ? 'FAIL' : 'miss';
-      const scaleNote = `cells ${(cell * w / src.W).toFixed(2)}px in the feed`;
-      console.log(`  [ ${mark} ]  → ${w}w crf ${crf}: ${wins[i]}/${SEEDS.length}  (${scaleNote})${required ? '' : '   (reported only)'}`);
+      const scaleNote = `cells ${(cell * s / src.short).toFixed(2)}px in the feed`;
+      console.log(`  [ ${mark} ]  → ${s}p crf ${crf}: ${wins[i]}/${SEEDS.length}  (${scaleNote})${required ? '' : '   (reported only)'}`);
       if (app && required && !all) failed++;
     });
   }

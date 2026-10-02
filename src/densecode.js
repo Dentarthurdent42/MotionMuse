@@ -1,72 +1,91 @@
-// The setup tag — a small, dense 2D code made to be read back out of a
-// SCREENSHOT, not through a camera.
+// The setup tag — a small, dense, colour 2D code made to be read back out of
+// a SCREENSHOT, not through a camera, in the shape of a Gosper curve.
 //
 // A QR code is designed for the hardest case: a phone held at an angle across
 // a room, a printed sticker that is creased, dirty and badly lit. Every module
 // of finder pattern, alignment pattern and error-correction headroom it spends
 // is spent on that case, and it is why a whole setup came out 129px square at
 // one pixel per module — too big to leave on the picture (see the README).
+// A screenshot of the screen, or a frame grabbed from a screen recording, is
+// an easier case, and this format is built for it:
 //
-// A screenshot of the screen, or a frame grabbed from a screen recording, is a
-// far easier case, and this format spends nothing on what it never meets:
+//   • SEVEN COLOURS ON A HEXAGONAL LATTICE. Every cell is a hexagon — the
+//     densest packing for cells whose blur is round, which a resampled,
+//     compressed picture's is — and every hexagon is one of seven colours:
+//     white, yellow, red, magenta, blue, cyan and green, the corners of the
+//     sRGB cube, 60° apart around the colour wheel, written here as their
+//     OKLCH coordinates. Two cells make 49 combinations, 32 of which carry five
+//     bits: two and a half bits a cell, where black-and-white squares carry one.
+//   • THE GOSPER CURVE. The cells are the hexagons the Gosper curve (the
+//     "flowsnake") visits, and the data runs along it. The curve is made of
+//     sevens all the way down — seven hexagons make a flower, seven flowers an
+//     island, seven islands the next — so an order-n tag is exactly 7ⁿ cells
+//     and its outline is the Gosper island: 343 cells at order 3, 2401 at 4.
+//     Consecutive bytes stay close together along the curve, and the
+//     interleaving below spreads them across every Reed–Solomon block.
+//   • NO URL. The tag carries the setup's raw bytes, not a link with base64 in
+//     it: a third fewer bits before anything else is done.
 //
-//   • no rotation and no perspective. A screenshot is axis-aligned. So the
-//     finder is the cheapest one there is — Data Matrix's: a solid line down
-//     the left and along the bottom (the "L"), and alternating "clock" cells
-//     along the top and the right that give the grid's pitch. One cell of
-//     border per side, against QR's three 7×7 finder squares;
-//   • no URL. The tag carries the setup's raw bytes, not a link with base64 in
-//     it: a third fewer bits before anything else is done;
-//   • small cells. A camera across a room needs modules it can resolve at a
-//     distance; a screenshot holds the pixels themselves, and the cell can be
-//     as small as what a RECORDING of the screen still resolves.
+// A Gosper island has no straight edge to hang a Data Matrix frame on, so the
+// finder is three black flowers — seven hexagons each — off three corners of
+// the island, the way a QR code has three finder squares: top-left, top-right
+// and bottom-left, so the triangle they make also says which way up the tag
+// is. Black is theirs alone: no data colour is dark in its brightest channel,
+// so the reader can find them by brightness and take scale, position and even
+// a slight rotation from their three centres.
 //
-// What it has to survive is real, though: a screen recording is resampled
-// (the phone's 1170px to a feed's 1080, or 720, or 540) and compressed (H.264,
-// 4:2:0). So the tag is pure black and white (colour is the first thing chroma
-// subsampling throws away), the reader samples cell CENTRES on a grid it fits
-// to the clock tracks (so a fractional scale smearing the edges costs nothing),
-// and every byte is Reed–Solomon protected with a quarter of each block spent
-// on correction.
+// What it has to survive is real: a screen recording is resampled (a phone's
+// 1170px to a feed's 1080 or 720) and compressed with its colour subsampled
+// (H.264, 4:2:0 — chroma at half the resolution of brightness). So the reader
+// never trusts a colour as drawn: the first seven cells along the curve and
+// the last seven are the palette in order — a colour chart, read off the
+// recording — and the classifier refines every colour's centroid from all the
+// cells that chose it. And an island is a fixed size, so whatever the payload
+// does not use is parity: half of every Reed–Solomon block, at least.
 //
-// Black and white, not greys, was measured rather than assumed. Four grey
-// levels carry two bits a cell, so a grey tag at four pixels a cell is the
-// same size as a black-and-white one at three. Through the same real H.264
-// recordings (tests/tag-recording) the grey one failed two cases the
-// black-and-white one read — a 540px-wide feed at CRF 33, and 1080 at CRF 40 —
-// and read none it missed. Compression blurs edges, which costs a binary cell
-// little; it also shifts levels, which costs a grey cell everything.
-//
-// Layout of a tag of C columns × R rows (both odd, so both clock tracks end on
-// a dark corner):
-//
-//     row 0      ■ □ ■ □ ■ □ ■ … □ ■     top clock: dark on even columns
-//     row 1..    ■ d d d d d d … d □     right clock: dark on even rows
-//                ■ d d d d d d … d ■       counted from the bottom
-//                ■ d d d d d d … d □
-//     row R-1    ■ ■ ■ ■ ■ ■ ■ … ■ ■     the L: left column, bottom row
-//
-// with a light quiet zone around it. The interior cells `d` carry, in reading
-// order, the interleaved Reed–Solomon codewords XORed with a fixed whitening
-// sequence (so padding is not a field of identical cells).
-//
-// The codewords hold: one MAGIC byte (which is also the format's version),
-// a two-byte length, the payload, then padding.
+// The codewords hold one MAGIC byte (which is also the format's version), a
+// two-byte length, the payload, then padding.
 
 import { GF_EXP, GF_LOG, gfMul, rsRemainder } from './qr.js';
+import { oklchToHex, srgbToOklab } from './okcolor.js';
 
 // ── Format constants ──────────────────────────────────────────────────────
 //
 // These are the format. A tag in a recording that was posted somewhere is
 // frozen exactly like a printed QR code is, so none of them can change under
-// the same MAGIC: a new layout takes a new MAGIC byte, and the reader keeps
-// understanding the old one.
-const MAGIC = 0xA1;
+// the same MAGIC: a new layout takes a new MAGIC byte.
+const MAGIC = 0xA3;
 const HEADER = 3;                 // MAGIC + 16-bit length
-// The share of each Reed–Solomon block spent on correction. A quarter
-// corrects one byte in eight anywhere in the block.
-const ECC_SHARE = 0.25;
+// The share of each Reed–Solomon block spent on correction. Half corrects
+// one byte in four anywhere in the block.
+const ECC_SHARE = 0.5;
 const MAX_BLOCK = 255;
+const ORDERS = [3, 4, 5];         // 343, 2401 and 16807 cells
+const ROW = Math.sqrt(3) / 2;
+
+// The seven colours, as OKLCH: white, then the six corners of the sRGB cube
+// around the colour wheel, each 60° from the next in the wheel's own hue —
+// yellow 60°, red 0°, magenta 300°, blue 240°, cyan 180°, green 120°. These
+// are the most vivid colours a screen can show and as far apart as any seven
+// it can show, and they are the colours their names say. Order is the
+// symbol value, 0–6, and the order of the calibration chart.
+export const PALETTE = Object.freeze([
+  { name: 'white',   L: 1,        C: 0,        h: 0 },
+  { name: 'yellow',  L: 0.967983, C: 0.211006, h: 109.7692 },
+  { name: 'red',     L: 0.627955, C: 0.257683, h: 29.2339 },
+  { name: 'magenta', L: 0.701674, C: 0.322491, h: 328.3634 },
+  { name: 'blue',    L: 0.452014, C: 0.313214, h: 264.052 },
+  { name: 'cyan',    L: 0.905399, C: 0.15455,  h: 194.7689 },
+  { name: 'green',   L: 0.86644,  C: 0.294827, h: 142.4953 },
+]);
+const SYMBOLS = PALETTE.length;
+const RGB = PALETTE.map(({ L, C, h }) => {
+  const hx = oklchToHex(L, C, h);
+  return [1, 3, 5].map(i => parseInt(hx.slice(i, i + 2), 16));
+});
+// Lightness counts double when the reader compares colours: it is the half
+// of a colour a recording keeps sharp.
+const L_WEIGHT = 2;
 
 // ── Reed–Solomon decoding ─────────────────────────────────────────────────
 //
@@ -199,42 +218,97 @@ function deinterleave(stream, layout) {
   return blocks;
 }
 
-const interior = (cols, rows) => (cols - 2) * (rows - 2);
-const codewordsFor = (cols, rows) => Math.floor(interior(cols, rows) / 8);
+// ── The Gosper curve ──────────────────────────────────────────────────────
+//
+// The flowsnake as an L-system — A → A−B−−B+A++AA+B−, B → +A−BB−−B−A++A+B,
+// turning 60° — walked one lattice step per A or B. Every vertex is a
+// hexagon centre; an order-n walk visits 7ⁿ+1 of them, all distinct, and the
+// first 7ⁿ are the order-n Gosper island. Hexagons are addressed in axial
+// coordinates (q, r); on the plane a step of 1 is one cell pitch:
+// x = q + r/2, y = r·√3/2.
+const DIRS = [[1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]];
+const planeX = (q, r) => q + r / 2;
+const planeY = r => r * ROW;
+const hexDist = (a, b) => {
+  const dq = a[0] - b[0], dr = a[1] - b[1];
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+};
+
+function gosperCells(order) {
+  let s = 'A';
+  for (let i = 0; i < order; i++) s = s.replace(/[AB]/g, c => (c === 'A' ? 'A-B--B+A++AA+B-' : '+A-BB--B-A++A+B'));
+  let q = 0, r = 0, h = 0;
+  const out = [[0, 0]];
+  for (const c of s) {
+    if (c === '+') h = (h + 1) % 6;
+    else if (c === '-') h = (h + 5) % 6;
+    else if (out.length < 7 ** order) {
+      q += DIRS[h][0]; r += DIRS[h][1];
+      out.push([q, r]);
+    }
+  }
+  return out;
+}
+
+// The island, the three anchor flowers, and the plate they sit on — all a
+// function of the order alone, so the reader can rebuild it from nothing.
+// Each anchor is the lattice point nearest a corner of the island's bounding
+// box that leaves at least one white hexagon between its flower and the
+// island.
+const templates = new Map();
+export function template(order) {
+  if (templates.has(order)) return templates.get(order);
+  const cells = gosperCells(order);
+  const xs = cells.map(([q, r]) => planeX(q, r)), ys = cells.map(([, r]) => planeY(r));
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const anchors = [[x0, y0], [x1, y0], [x0, y1]].map(([tx, ty]) => {
+    const tr = Math.round(ty / ROW), tq = Math.round(tx - tr / 2);
+    let best = null;
+    for (let rad = 0; rad < 40 && !best; rad++) {
+      const ring = [];
+      for (let dq = -rad; dq <= rad; dq++) {
+        for (let dr = -rad; dr <= rad; dr++) {
+          const p = [tq + dq, tr + dr];
+          if (hexDist(p, [tq, tr]) !== rad) continue;
+          if (cells.every(c => hexDist(c, p) >= 3)) ring.push(p);
+        }
+      }
+      ring.sort((a, b) => Math.hypot(planeX(...a) - tx, planeY(a[1]) - ty)
+                        - Math.hypot(planeX(...b) - tx, planeY(b[1]) - ty)
+                        || a[0] - b[0] || a[1] - b[1]);
+      best = ring[0] ?? null;
+    }
+    return best;
+  });
+  const flower = ([q, r]) => [[q, r], ...DIRS.map(([dq, dr]) => [q + dq, r + dr])];
+  const ink = new Map();
+  cells.forEach(([q, r], i) => ink.set(`${q},${r}`, i));
+  for (const a of anchors) for (const [q, r] of flower(a)) ink.set(`${q},${r}`, -1);
+  const all = [...ink.keys()].map(k => k.split(',').map(Number));
+  const ax = all.map(([q, r]) => planeX(q, r)), ay = all.map(([, r]) => planeY(r));
+  const t = {
+    order, cells, anchors, ink,
+    anchorXY: anchors.map(([q, r]) => [planeX(q, r), planeY(r)]),
+    box: [Math.min(...ax) - 0.5, Math.max(...ax) + 0.5, Math.min(...ay) - 0.6, Math.max(...ay) + 0.6],
+  };
+  templates.set(order, t);
+  return t;
+}
+
+const CHART = SYMBOLS;            // calibration cells at each end of the curve
+const pairsFor = order => Math.floor((7 ** order - 2 * CHART) / 2);
+const codewordsFor = order => Math.floor(pairsFor(order) * 5 / 8);
 
 // ── Encoding ──────────────────────────────────────────────────────────────
 
-// The smallest odd grid that holds `need` data bytes within a fifth of
-// `aspect` (columns per row) either way — the tag's place is a corner, so it
-// should be a predictable shape, not a ribbon one day and a square the next. Searched
-// rather than solved: the block structure's rounding makes capacity a
-// staircase, not a formula.
-function pickGrid(need, aspect) {
-  let best = null, fallback = null;
-  for (let rows = 7; rows <= 199; rows += 2) {
-    let cols = 7;
-    while (cols < 999 && dataCapacity(codewordsFor(cols, rows)) < need) cols += 2;
-    if (cols >= 999) continue;
-    const g = { cols, rows, area: cols * rows };
-    if (!fallback || g.area < fallback.area) fallback = g;
-    const ratio = cols / rows / aspect;
-    if (ratio >= 0.8 && ratio <= 1.2 && (!best || g.area < best.area)) best = g;
-    // Taller than wide: every grid after this is only bigger.
-    if (cols < rows) break;
-  }
-  if (!fallback) throw new Error('too much to fit in a setup tag');
-  return best ?? fallback;
-}
-
-// bytes → { cols, rows, cells } where `cells` holds 1 for each dark cell and
-// 0 for each light one, row-major, frame included. `aspect` is the columns per
-// row the grid is kept near.
-export function encodeTag(payload, { aspect = 2 } = {}) {
+// bytes → { order, cells } where `cells` holds each hexagon's symbol (0–6, an
+// index into PALETTE) in the order the curve visits them, charts included.
+export function encodeTag(payload) {
   const data = Uint8Array.from(payload);
-  if (data.length > 0xFFFF) throw new Error('too much to fit in a setup tag');
   const need = HEADER + data.length;
-  const { cols, rows } = pickGrid(need, aspect);
-  const total = codewordsFor(cols, rows);
+  const order = ORDERS.find(o => dataCapacity(codewordsFor(o)) >= need);
+  if (order === undefined) throw new Error('too much to fit in a setup tag');
+  const total = codewordsFor(order);
   const layout = blocksFor(total);
 
   const stream = new Uint8Array(layout.reduce((s, b) => s + b.data, 0));
@@ -257,62 +331,78 @@ export function encodeTag(payload, { aspect = 2 } = {}) {
   const mask = whitening(words.length);
   for (let i = 0; i < words.length; i++) words[i] ^= mask[i];
 
-  const cells = new Uint8Array(cols * rows);
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const dark = c === 0 || r === rows - 1
-        || (r === 0 && c % 2 === 0)
-        || (c === cols - 1 && (rows - 1 - r) % 2 === 0);
-      if (dark) cells[r * cols + c] = 1;
-    }
+  const n = 7 ** order;
+  const cells = new Uint8Array(n);
+  for (let k = 0; k < CHART; k++) {
+    cells[k] = k;
+    cells[n - CHART + k] = k;
   }
-  // Interior, reading order, one bit a cell from the codeword stream, MSB
-  // first. 1 is dark — ink is the "set" bit, as on every barcode. Cells past
-  // the last codeword stay light.
+  // Five bits at a time, MSB first, each as two base-7 digits. A cell past
+  // the last pair cycles through the palette rather than sit in one colour.
   const totalBits = words.length * 8;
-  let bit = 0;
-  for (let r = 1; r < rows - 1; r++) {
-    for (let c = 1; c < cols - 1; c++, bit++) {
-      if (bit < totalBits) cells[r * cols + c] = (words[bit >> 3] >> (7 - (bit & 7))) & 1;
+  const pairs = pairsFor(order);
+  for (let p = 0, bit = 0; p < pairs; p++) {
+    let v = 0;
+    for (let k = 0; k < 5; k++, bit++) {
+      v = (v << 1) | (bit < totalBits ? (words[bit >> 3] >> (7 - (bit & 7))) & 1 : 0);
     }
+    cells[CHART + 2 * p] = Math.floor(v / SYMBOLS);
+    cells[CHART + 2 * p + 1] = v % SYMBOLS;
   }
-  return { cols, rows, cells };
+  for (let k = CHART + 2 * pairs; k < n - CHART; k++) cells[k] = k % SYMBOLS;
+  return { order, cells };
 }
 
-// Cells of light margin on every side. Three, not two: at two, a tag shrunk
-// to a 720px feed has under four pixels of margin, and the compressor blurs
-// the dark picture around it into them until the bar's bottom edge no longer
-// has light beneath it.
-export const QUIET = 3;
+export const QUIET = 2;           // pitches of white plate around the ink
 
-// The tag as an RGBA bitmap at `cell` pixels per cell — what a canvas's
-// putImageData wants, and what the tests decode without a browser.
-export function rasterize(tag, cell = 3, quiet = QUIET) {
-  const width = (tag.cols + 2 * quiet) * cell;
-  const height = (tag.rows + 2 * quiet) * cell;
+// How many device pixels from one hexagon's centre to the next, for a screen
+// whose SHORT side is `shortSide` device pixels. What has to survive is a
+// cell of about three pixels after a feed has scaled the recording down to
+// 720 on its short side (720p, landscape or portrait) — measured,
+// tests/tag-recording. Never under five: below that even a full-resolution
+// recording starts to lose the colours.
+export const tagPitch = shortSide => Math.max(5, Math.ceil(3 * shortSide / 720));
+
+// Nearest hexagon centre to a point on the plane, in axial coordinates.
+function hexAt(x, y) {
+  const r = y / ROW, q = x - r / 2;
+  let rq = Math.round(q), rr = Math.round(r);
+  const rs = Math.round(-q - r);
+  const dq = Math.abs(rq - q), dr = Math.abs(rr - r), ds = Math.abs(rs + q + r);
+  if (dq > dr && dq > ds) rq = -rr - rs;
+  else if (dr > ds) rr = -rq - rs;
+  return [rq, rr];
+}
+
+// The tag as an RGBA bitmap, `pitch` pixels between neighbouring hexagon
+// centres — what a canvas's putImageData wants, and what the tests decode
+// without a browser. Every pixel takes the colour of the hexagon it falls in:
+// the island's colours, the anchors' black, the plate's white.
+export function rasterize(tag, pitch = 5, quiet = QUIET) {
+  const t = template(tag.order);
+  const [bx0, bx1, by0, by1] = t.box;
+  const ox = bx0 - quiet, oy = by0 - quiet;
+  const width = Math.round((bx1 - bx0 + 2 * quiet) * pitch);
+  const height = Math.round((by1 - by0 + 2 * quiet) * pitch);
   const data = new Uint8ClampedArray(width * height * 4).fill(255);
-  for (let r = 0; r < tag.rows; r++) {
-    for (let c = 0; c < tag.cols; c++) {
-      if (!tag.cells[r * tag.cols + c]) continue;
-      for (let y = 0; y < cell; y++) {
-        let o = (((r + quiet) * cell + y) * width + (c + quiet) * cell) * 4;
-        for (let x = 0; x < cell; x++, o += 4) {
-          data[o] = 0; data[o + 1] = 0; data[o + 2] = 0;
-        }
-      }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const [q, r] = hexAt(ox + (x + 0.5) / pitch, oy + (y + 0.5) / pitch);
+      const i = t.ink.get(`${q},${r}`);
+      if (i === undefined) continue;
+      const rgb = i < 0 ? [0, 0, 0] : RGB[tag.cells[i]];
+      const o = (y * width + x) * 4;
+      data[o] = rgb[0]; data[o + 1] = rgb[1]; data[o + 2] = rgb[2];
     }
   }
-  return { width, height, data };
+  return { width, height, data, origin: [ox, oy] };
 }
 
-// Paint a tag into a canvas at a whole number of device pixels per cell.
-// Whole, for the reason src/ui/share.js gives for the QR: a canvas CSS has to
-// resample is a canvas whose cell edges land between pixels. The reader here
-// samples centres and so tolerates it far better than a QR reader does, but
-// the screen is the one place the tag can be perfect, and a recording only
-// ever makes it worse.
-export function drawTag(canvas, tag, cell = 3) {
-  const img = rasterize(tag, cell);
+// Paint a tag into a canvas at `pitch` device pixels a cell, shown by the
+// caller at exactly its own pixels: the screen is the one place the tag can
+// be perfect, and a recording only ever makes it worse.
+export function drawTag(canvas, tag, pitch = 5) {
+  const img = rasterize(tag, pitch);
   canvas.width = img.width;
   canvas.height = img.height;
   const ctx = canvas.getContext('2d');
@@ -327,214 +417,183 @@ export function drawTag(canvas, tag, cell = 3) {
 // image: { width, height, data } — RGBA, as from getImageData. Returns the
 // payload bytes of the first tag found, or null.
 //
-// The search: every row is scanned for a long dark run with light directly
-// beneath it — the bottom edge of the L. From its left end the reader climbs
-// the left column to the top-left corner, measures one cell there, and then
-// FITS the grid: for every plausible column count it samples the top clock
-// track at the implied cell centres and keeps the count that alternates best,
-// and the same for the rows on the right track. Fitting rather than counting
-// transitions is what makes it indifferent to a recording's fractional scale,
-// where one cell is two pixels wide and the next is three.
+// The search: every black blob in the picture (black by its brightest
+// channel, which no palette colour is) that is the size and shape of a
+// seven-hexagon flower with white around it is an anchor candidate. Any two
+// candidates, taken as two of a template's anchors, fix a scale and a
+// rotation; the third anchor must then be where they say. Three found, the
+// transform is fitted to all three centres, and every hexagon of the island
+// is sampled where it must be.
 export function readTag(image) {
   const { width: W, height: H, data } = image;
-  const Y = new Uint8Array(W * H);
-  for (let i = 0, j = 0; i < Y.length; i++, j += 4) {
-    Y[i] = (data[j] * 77 + data[j + 1] * 150 + data[j + 2] * 29) >> 8;
-  }
-  const dark = (x, y) => Y[y * W + x] < 128;
-  const tried = new Set();
-
-  for (let y = H - 2; y >= 6; y--) {
-    let x = 0;
-    while (x < W) {
-      if (!dark(x, y)) { x++; continue; }
-      let x1 = x;
-      while (x1 + 1 < W && dark(x1 + 1, y)) x1++;
-      const len = x1 - x + 1;
-      if (len >= 14) {
-        const key = `${x >> 2},${x1 >> 2},${y >> 2}`;
-        if (!tried.has(key) && lightBelow(dark, x, x1, y, H)) {
-          tried.add(key);
-          const found = tryAt(Y, W, H, x, x1, y);
-          if (found) return found;
-        }
+  const V = new Uint8Array(W * H);
+  for (let i = 0, j = 0; i < V.length; i++, j += 4) V[i] = Math.max(data[j], data[j + 1], data[j + 2]);
+  const blobs = flowers(V, W, H);
+  if (blobs.length < 3) return null;
+  for (const order of ORDERS) {
+    const t = template(order);
+    const [T0, T1, T2] = t.anchorXY.map(([x, y]) => ({ re: x, im: y }));
+    for (const a of blobs) {
+      for (const b of blobs) {
+        if (a === b || Math.abs(a.pitch / b.pitch - 1) > 0.35) continue;
+        // λ maps template to image: b − a = λ·(T1 − T0).
+        const lam = cdiv(csub(b.z, a.z), csub(T1, T0));
+        const scale = Math.hypot(lam.re, lam.im);
+        if (Math.abs(scale / a.pitch - 1) > 0.35 || Math.abs(Math.atan2(lam.im, lam.re)) > 0.2) continue;
+        const want = cadd(a.z, cmul(lam, csub(T2, T0)));
+        const c = blobs.find(k => k !== a && k !== b && Math.hypot(k.z.re - want.re, k.z.im - want.im) < 0.6 * scale);
+        if (!c) continue;
+        const fit = similarity([T0, T1, T2], [a.z, b.z, c.z]);
+        const out = sampleAndDecode(image, t, fit);
+        if (out) return out;
       }
-      x = x1 + 1;
     }
   }
   return null;
 }
 
-// Mostly light directly beneath — or one row further down. A compressed or resampled
-// edge is a row that is neither: part of the bar, part of the margin, its
-// dark pixels in broken runs. The last whole row of the bar has that row
-// under it, and the margin under that.
-function lightBelow(dark, x0, x1, y, H) {
-  for (const dy of [1, 2]) {
-    if (y + dy >= H) return false;
-    let d = 0;
-    for (let x = x0; x <= x1; x++) if (dark(x, y + dy)) d++;
-    if (d <= (x1 - x0 + 1) * 0.2) return true;
-  }
-  return false;
-}
-
-function tryAt(Y, W, H, x0, x1, yb) {
-  const px = (x, y) => Y[Math.min(H - 1, Math.max(0, y)) * W + Math.min(W - 1, Math.max(0, x))];
-  const isDark = (x, y) => px(Math.round(x), Math.round(y)) < 128;
-  // Bilinear: a cell centre on a resampled image falls between pixels, and
-  // the nearest one can be the edge.
-  const at = (x, y) => {
-    const fx = x - 0.5, fy = y - 0.5;
-    const ix = Math.floor(fx), iy = Math.floor(fy), ax = fx - ix, ay = fy - iy;
-    return (px(ix, iy) * (1 - ax) + px(ix + 1, iy) * ax) * (1 - ay)
-         + (px(ix, iy + 1) * (1 - ax) + px(ix + 1, iy + 1) * ax) * ay;
-  };
-  // Cell height: the bottom bar's thickness where nothing dark sits on top of
-  // it. Data cells above the bar are dark about half the time, so the thinnest
-  // of a dozen measurements along it is the bar alone.
-  let ch = Infinity;
-  for (let i = 1; i <= 12; i++) {
-    const x = x0 + Math.round((x1 - x0) * i / 13);
-    let t = 0;
-    while (t < 64 && yb - t >= 0 && isDark(x, yb - t)) t++;
-    ch = Math.min(ch, t);
-  }
-  if (!Number.isFinite(ch) || ch < 1 || ch >= 64) return null;
-  // The bar's ends, re-measured along its middle rather than its edge row,
-  // where the blur is least.
-  {
-    const ym = yb - Math.floor((ch - 1) / 2);
-    const mid = (x0 + x1) >> 1;
-    if (!isDark(mid, ym)) return null;
-    let a = mid, z = mid;
-    while (a - 1 >= 0 && isDark(a - 1, ym)) a--;
-    while (z + 1 < W && isDark(z + 1, ym)) z++;
-    x0 = a; x1 = z;
-  }
-
-  // The left column: climb it from the middle of its width.
-  const xl = x0 + Math.max(0, Math.floor(ch / 2));
-  let yt = yb - Math.floor(ch / 2);
-  if (!isDark(xl, yt)) return null;
-  while (yt - 1 >= 0 && isDark(xl, yt - 1)) yt--;
-  const hpx = yb - yt + 1, wpx = x1 - x0 + 1;
-  if (hpx < 7 * ch * 0.7) return null;
-  // The quiet zone: light to the left of the column, all the way up. Two
-  // pixels out, not one: in a resampled image the pixel on the edge is a blend
-  // of the column and the margin, and which side of the threshold it lands on
-  // changes from row to row.
-  let lightLeft = 0;
-  for (let i = 0; i < 8; i++) {
-    const y = yt + Math.round(hpx * (i + 0.5) / 8);
-    if (x0 - 2 >= 0 && !isDark(x0 - 2, y)) lightLeft++;
-  }
-  if (lightLeft < 7) return null;
-  // One cell's width, from the top-left corner: dark, then the clock's first
-  // light cell. Only a hint — it breaks ties in the clock fit below — so when
-  // a blurred edge pixel reads light and the run comes out empty, the cell's
-  // height stands in for it rather than the tag being given up on.
-  const ty = yt + ch / 2;
-  let cw = 0;
-  while (cw < 64 && isDark(x0 + cw, ty)) cw++;
-  if (cw < 1) cw = ch;
-
-  const cols = fitClock(wpx, cw,
-    (n, i) => at(x0 + (i + 0.5) * wpx / n, ty), i => i % 2 === 0);
-  if (!cols) return null;
-  const rows = fitClock(hpx, ch,
-    (n, j) => at(x0 + (cols - 0.5) * wpx / cols, yt + (j + 0.5) * hpx / n), j => j % 2 === 0);
-  if (!rows) return null;
-
-  // The grid's sub-pixel phase. The edges above were found by thresholding,
-  // which on a blurred edge is off by up to half a pixel — nothing on a 4px
-  // cell, a third of a cell on a recording that has squeezed three pixels to
-  // one and a half. So the start and pitch along each axis are nudged to
-  // whatever makes that axis's clock track alternate most strongly. Columns,
-  // rows, then columns again: each axis's clock is read at the other's centre.
-  const even = i => i % 2 === 0;
-  let gx = refine(x0, wpx / cols, cols, x => at(x, ty), even);
-  const gy = refine(yt, hpx / rows, rows, y => at(gx.start + (cols - 0.5) * gx.pitch, y), even);
-  gx = refine(gx.start, gx.pitch, cols, x => at(x, gy.start + 0.5 * gy.pitch), even);
-  const pw = gx.pitch, ph = gy.pitch;
-
-  // Reference levels from the frame itself: the L for black, the clocks'
-  // light cells for white. The recording's own contrast, not an assumption.
-  const sample = (c, r) => {
-    const cx = gx.start + (c + 0.5) * pw, cy = gy.start + (r + 0.5) * ph;
-    const rx2 = Math.max(0, Math.floor(pw * 0.2)), ry2 = Math.max(0, Math.floor(ph * 0.2));
-    let s = 0, n = 0;
-    for (let dy = -ry2; dy <= ry2; dy++) for (let dx = -rx2; dx <= rx2; dx++) { s += at(cx + dx, cy + dy); n++; }
-    return s / n;
-  };
-  const blacks = [], whites = [];
-  for (let r = 0; r < rows; r++) blacks.push(sample(0, r));
-  for (let c = 1; c < cols; c += 2) whites.push(sample(c, 0));
-  const lo = median(blacks), hi = median(whites);
-  if (hi - lo < 60) return null;
-
-  // Each cell against the midpoint of THIS tag's black and white, as the
-  // recording rendered them — a dim, washed-out frame moves both.
-  const mid = (lo + hi) / 2;
-  const dark = [];
-  for (let r = 1; r < rows - 1; r++) for (let c = 1; c < cols - 1; c++) dark.push(sample(c, r) < mid ? 1 : 0);
-  return decodeCells(dark, cols, rows);
-}
-
-// The count `n` (odd, ≥ 7) whose implied cell centres alternate best along a
-// clock track. EVERY count down to a pitch of one pixel is tried, not just the
-// ones near the measured cell: one cell measured on a resampled image can be
-// off by a pixel, which on a 3px cell is a third — a window around it would
-// miss. A wrong count samples the track at effectively random phases and
-// scores near one half, so the true one stands out; the measured cell only
-// breaks ties.
-function fitClock(span, cell, sampleAt, expectDark) {
-  const hi = Math.min(999, Math.floor(span));
-  let best = null;
-  for (let n = 7; n <= hi; n += 2) {
-    // Against the track's own midpoint rather than a fixed 128: a light cell
-    // squeezed between two dark ones by a downscale never gets back to white.
-    const v = Array.from({ length: n }, (_, i) => sampleAt(n, i));
-    const mid = (Math.min(...v) + Math.max(...v)) / 2;
-    let ok = 0;
-    for (let i = 0; i < n; i++) if ((v[i] < mid) === expectDark(i)) ok++;
-    const score = ok / n;
-    const near = Math.abs(span / n - cell);
-    if (!best || score > best.score + 1e-9 || (Math.abs(score - best.score) < 1e-9 && near < best.near)) {
-      best = { n, score, near };
-    }
-  }
-  return best && best.score >= 0.9 ? best.n : null;
-}
-
-// Nudge a track's start (±half a cell) and pitch (±1%) to maximise its
-// contrast against the alternation it should have.
-function refine(start, pitch, n, sampleAt, expectDark) {
-  let best = { start, pitch, score: -Infinity };
-  for (let k = -3; k <= 3; k++) {
-    const p = pitch * (1 + k * 0.0033);
-    for (let d = -5; d <= 5; d++) {
-      const s0 = start + d * 0.1 * pitch;
-      const v = Array.from({ length: n }, (_, i) => sampleAt(s0 + (i + 0.5) * p));
-      const mid = (Math.min(...v) + Math.max(...v)) / 2;
-      let score = 0;
-      for (let i = 0; i < n; i++) score += expectDark(i) ? mid - v[i] : v[i] - mid;
-      if (score > best.score) best = { start: s0, pitch: p, score };
-    }
-  }
-  return best;
-}
-
-const median = a => {
-  const s = [...a].sort((x, y) => x - y);
-  return s[s.length >> 1];
+const cadd = (a, b) => ({ re: a.re + b.re, im: a.im + b.im });
+const csub = (a, b) => ({ re: a.re - b.re, im: a.im - b.im });
+const cmul = (a, b) => ({ re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re });
+const cdiv = (a, b) => {
+  const d = b.re * b.re + b.im * b.im;
+  return { re: (a.re * b.re + a.im * b.im) / d, im: (a.im * b.re - a.re * b.im) / d };
 };
 
-function decodeCells(dark, cols, rows) {
-  const total = codewordsFor(cols, rows);
-  if (total < HEADER + 2) return null;
+// Least-squares z = λ·w + β through three point pairs: scale, rotation and
+// position from the anchors' centres, each of which is already sub-pixel.
+function similarity(ws, zs) {
+  const n = ws.length;
+  const mw = { re: ws.reduce((s, w) => s + w.re, 0) / n, im: ws.reduce((s, w) => s + w.im, 0) / n };
+  const mz = { re: zs.reduce((s, z) => s + z.re, 0) / n, im: zs.reduce((s, z) => s + z.im, 0) / n };
+  let num = { re: 0, im: 0 }, den = 0;
+  for (let i = 0; i < n; i++) {
+    const w = csub(ws[i], mw), z = csub(zs[i], mz);
+    num = cadd(num, cmul(z, { re: w.re, im: -w.im }));
+    den += w.re * w.re + w.im * w.im;
+  }
+  const lam = { re: num.re / den, im: num.im / den };
+  return { lam, beta: csub(mz, cmul(lam, mw)) };
+}
+
+// Black blobs shaped like a flower of seven hexagons: about as wide as tall
+// (three pitches by 2.9), filling about 70% of their box, with white all
+// around. Their centre is the darkness-weighted centroid — sub-pixel, and
+// symmetric enough that blur moves it nowhere.
+function flowers(V, W, H) {
+  const label = new Int32Array(W * H);
+  const out = [];
+  const stack = [];
+  let next = 0;
+  for (let start = 0; start < V.length; start++) {
+    if (V[start] >= 110 || label[start]) continue;
+    next++;
+    label[start] = next;
+    stack.push(start);
+    let n = 0, sw = 0, sx = 0, sy = 0, x0 = W, x1 = 0, y0 = H, y1 = 0;
+    let big = false;
+    while (stack.length) {
+      const p = stack.pop();
+      const x = p % W, y = (p - x) / W;
+      n++;
+      if (n > 60000) big = true;
+      const w = 110 - V[p];
+      sw += w; sx += w * (x + 0.5); sy += w * (y + 0.5);
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (x > 0 && V[p - 1] < 110 && !label[p - 1]) { label[p - 1] = next; stack.push(p - 1); }
+      if (x < W - 1 && V[p + 1] < 110 && !label[p + 1]) { label[p + 1] = next; stack.push(p + 1); }
+      if (y > 0 && V[p - W] < 110 && !label[p - W]) { label[p - W] = next; stack.push(p - W); }
+      if (y < H - 1 && V[p + W] < 110 && !label[p + W]) { label[p + W] = next; stack.push(p + W); }
+    }
+    if (big || n < 12) continue;
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    const aspect = bw / bh, fill = n / (bw * bh);
+    if (aspect < 0.75 || aspect > 1.4 || fill < 0.5 || fill > 0.9) continue;
+    const pitch = bw / 3;
+    const cx = sx / sw, cy = sy / sw;
+    // White around it: the plate.
+    let light = 0;
+    for (let k = 0; k < 12; k++) {
+      const a = k * Math.PI / 6;
+      const px = Math.round(cx + Math.cos(a) * 2.3 * pitch), py = Math.round(cy + Math.sin(a) * 2.3 * pitch);
+      if (px >= 0 && py >= 0 && px < W && py < H && V[py * W + px] > 150) light++;
+    }
+    if (light < 10) continue;
+    out.push({ z: { re: cx, im: cy }, pitch });
+  }
+  return out;
+}
+
+function sampleAndDecode(image, t, { lam, beta }) {
+  const { width: W, height: H, data } = image;
+  const scale = Math.hypot(lam.re, lam.im);
+  const rad = Math.max(0, Math.floor(scale * 0.22));
+  const px = (x, y, k) => data[(Math.min(H - 1, Math.max(0, y)) * W + Math.min(W - 1, Math.max(0, x))) * 4 + k];
+  const bil = (x, y, k) => {
+    const fx = x - 0.5, fy = y - 0.5;
+    const ix = Math.floor(fx), iy = Math.floor(fy), ax = fx - ix, ay = fy - iy;
+    return (px(ix, iy, k) * (1 - ax) + px(ix + 1, iy, k) * ax) * (1 - ay)
+         + (px(ix, iy + 1, k) * (1 - ax) + px(ix + 1, iy + 1, k) * ax) * ay;
+  };
+  const labs = t.cells.map(([q, r]) => {
+    const z = cadd(cmul(lam, { re: planeX(q, r), im: planeY(r) }), beta);
+    let R = 0, G = 0, B = 0, n = 0;
+    for (let dy = -rad; dy <= rad; dy++) {
+      for (let dx = -rad; dx <= rad; dx++) {
+        R += bil(z.re + dx, z.im + dy, 0); G += bil(z.re + dx, z.im + dy, 1); B += bil(z.re + dx, z.im + dy, 2);
+        n++;
+      }
+    }
+    const o = srgbToOklab(R / n / 255, G / n / 255, B / n / 255);
+    return [o.L * L_WEIGHT, o.a, o.b];
+  });
+  return decodeCells(classify(labs), t.order);
+}
+
+// Which of the seven each cell is. The chart at each end of the curve gives a
+// first centroid per colour as THIS recording renders it; two rounds of
+// k-means then move each centroid to the middle of the cells that chose it,
+// which follows a tint or a squeeze of contrast across the whole tag rather
+// than only at its ends. A chart whose colours have run together is not a
+// tag.
+function classify(labs) {
+  const n = labs.length;
+  const d2 = (p, q) => (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2;
+  let cent = PALETTE.map((_, k) => labs[k].map((v, i) => (v + labs[n - CHART + k][i]) / 2));
+  let closest = Infinity;
+  for (let a = 0; a < SYMBOLS; a++) for (let b = a + 1; b < SYMBOLS; b++) closest = Math.min(closest, d2(cent[a], cent[b]));
+  if (closest < 0.04 ** 2) return null;
+  const pick = p => {
+    let best = 0, bd = Infinity;
+    for (let k = 0; k < SYMBOLS; k++) {
+      const d = d2(p, cent[k]);
+      if (d < bd) { bd = d; best = k; }
+    }
+    return best;
+  };
+  let sym = labs.map(pick);
+  for (let round = 0; round < 2; round++) {
+    const sum = cent.map(() => [0, 0, 0, 0]);
+    labs.forEach((p, i) => { const s = sum[sym[i]]; s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3]++; });
+    cent = cent.map((c, k) => (sum[k][3] >= 2 ? [sum[k][0] / sum[k][3], sum[k][1] / sum[k][3], sum[k][2] / sum[k][3]] : c));
+    sym = labs.map(pick);
+  }
+  return sym;
+}
+
+function decodeCells(sym, order) {
+  if (!sym) return null;
+  const total = codewordsFor(order);
   const words = new Uint8Array(total);
-  for (let bit = 0; bit < total * 8; bit++) words[bit >> 3] |= dark[bit] << (7 - (bit & 7));
+  const pairs = pairsFor(order);
+  for (let p = 0, bit = 0; p < pairs; p++) {
+    // A pair can spell 32–48, which no encoder writes: a misread. Its five
+    // bits are wrong whatever is put there, and Reed–Solomon is what fixes it.
+    const v = (sym[CHART + 2 * p] * SYMBOLS + sym[CHART + 2 * p + 1]) & 31;
+    for (let k = 4; k >= 0; k--, bit++) {
+      if (bit < total * 8) words[bit >> 3] |= ((v >> k) & 1) << (7 - (bit & 7));
+    }
+  }
   const mask = whitening(total);
   for (let i = 0; i < total; i++) words[i] ^= mask[i];
 

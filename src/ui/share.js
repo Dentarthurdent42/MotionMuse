@@ -180,43 +180,49 @@ async function render() {
 // app reads the same picture back without a camera.
 const IMG_SCALE = 8;
 const IMG_QUIET = 4;
-const IMG_TAG_CELL = 4;
+// Six: a picture sent through a chat app is recompressed but rarely shrunk,
+// and six pixels a cell is twice what a recording needs.
+const IMG_TAG_CELL = 6;
+const IMG_TEXT = 84;
 
+// QR code on top, the name under it, the Gosper island under that, centred:
+// the island is about as wide as the code, so a column is the layout that
+// gives both their full size.
 async function shareImage() {
   if (!lastQr) throw new Error('no code to draw');
   const qrPx = (lastQr.size + 2 * IMG_QUIET) * IMG_SCALE;
   const name = cleanShareLabel(label);
   const tag = rasterize(await currentTag(name), IMG_TAG_CELL);
   const pad = IMG_QUIET * IMG_SCALE;
-  const foot = Math.max(tag.height, 56);
   const c = document.createElement('canvas');
-  c.width = qrPx;
-  c.height = qrPx + foot;
+  c.width = Math.max(qrPx, tag.width);
+  c.height = qrPx + IMG_TEXT + tag.height;
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, c.width, c.height);
   ctx.fillStyle = '#000';
+  const qx = Math.round((c.width - qrPx) / 2);
   for (let y = 0; y < lastQr.size; y++)
     for (let x = 0; x < lastQr.size; x++)
       if (lastQr.modules[y * lastQr.size + x])
-        ctx.fillRect((x + IMG_QUIET) * IMG_SCALE, (y + IMG_QUIET) * IMG_SCALE, IMG_SCALE, IMG_SCALE);
-  // The tag at its own pixels, bottom-right, with its quiet zone touching the
-  // QR's — both are white, so neither eats the other's margin.
-  const img = ctx.createImageData(tag.width, tag.height);
-  img.data.set(tag.data);
-  ctx.putImageData(img, c.width - tag.width, qrPx + foot - tag.height);
-  // The words, left of the tag, in the room the tag leaves.
-  const room = c.width - tag.width - pad - 8;
+        ctx.fillRect(qx + (x + IMG_QUIET) * IMG_SCALE, (y + IMG_QUIET) * IMG_SCALE, IMG_SCALE, IMG_SCALE);
+  // The words, between the two codes.
+  const room = c.width - 2 * pad;
+  ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = '600 22px "IBM Plex Mono", monospace';
-  ctx.fillText(fit(ctx, name || 'A MotionMuse setup', room), pad, qrPx + foot / 2 - 11);
+  ctx.fillText(fit(ctx, name || 'A MotionMuse setup', room), c.width / 2, qrPx + 22);
   ctx.font = '14px "IBM Plex Mono", monospace';
   ctx.fillStyle = '#555';
-  ctx.fillText(fit(ctx, 'MotionMuse · scan to open', room), pad, qrPx + foot / 2 + 14);
+  ctx.fillText(fit(ctx, 'MotionMuse · scan the square to open', room), c.width / 2, qrPx + 52);
+  // The island at its own pixels, centred; its plate is white like the page.
+  const img = ctx.createImageData(tag.width, tag.height);
+  img.data.set(tag.data);
+  ctx.putImageData(img, Math.round((c.width - tag.width) / 2), qrPx + IMG_TEXT);
   return c;
 }
 
-// Ellipsised to the width it has rather than run under the tag.
+// Ellipsised to the width it has rather than run off the picture.
 function fit(ctx, text, width) {
   if (ctx.measureText(text).width <= width) return text;
   let t = text;

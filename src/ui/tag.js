@@ -18,20 +18,24 @@
 
 import { snapshot } from '../preset.js';
 import { tagState, encodeStateBytes, decodeStateBytes } from '../share.js';
-import { encodeTag, drawTag, readTag } from '../densecode.js';
+import { encodeTag, drawTag, readTag, tagPitch } from '../densecode.js';
 import { currentConfig } from '../saved.js';
 import { lsGet, lsSet } from '../storage.js';
 import { openSharedState } from './share.js';
 import { toast } from './status.js';
 
-// Device pixels per cell. Measured, not guessed (tests/tag-recording, and the
-// README): what has to survive is a cell of about two and a half pixels AFTER
-// a feed has scaled the recording down. At four, a phone's recording posted at
-// 720px wide and a monitor's posted at 1080 or 720 all still read, at
-// compression well past a feed's default; at three, the phone's stops reading
-// at 720. Device pixels, so a phone's tag is a third the CSS size of a
-// laptop's — the recording sees the same thing either way.
-export const TAG_CELL = 4;
+// Device pixels from one cell to the next, from the size of THIS screen: a
+// recording of it is the screen's own pixels, and what has to survive is a
+// cell of about three of them once a feed has scaled the recording to 720p
+// (src/densecode.js tagPitch; measured in tests/tag-recording). Five on a
+// phone or a 1080p monitor, more on bigger screens — in device pixels, so on
+// a phone the tag is a third the CSS size it is on a 1× monitor, and the
+// recording sees the same thing either way.
+const pitchHere = () => {
+  const dpr = globalThis.devicePixelRatio || 1;
+  const sw = globalThis.screen?.width ?? 1080, sh = globalThis.screen?.height ?? 1920;
+  return tagPitch(Math.round(Math.min(sw, sh) * dpr));
+};
 const SHOWN_KEY = 'motionmuse-tag';
 // How often the setup is looked at for changes. The tag is a picture of the
 // setup, not of the performance (see tagState), so it changes when you
@@ -87,7 +91,7 @@ async function refresh() {
   busy = true;
   try {
     const tag = encodeTag(await encodeStateBytes(state));
-    drawTag(canvas, tag, TAG_CELL);
+    drawTag(canvas, tag, pitchHere());
     canvas.hidden = false;
     fitSize();
   } catch {

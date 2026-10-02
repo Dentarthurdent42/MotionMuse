@@ -3226,7 +3226,8 @@ console.log('\nSetup tag\n');
     `${Math.round(t.full.wrap.r - t.full.tag.r)}px from the right, ${Math.round(t.full.wrap.b - t.full.tag.b)}px from the bottom`);
   check(Math.abs(t.full.tag.w * t.full.dpr - t.full.px[0]) < 1, 'fullscreen: drawn at exactly its own device pixels',
     `${t.full.tag.w} css × ${t.full.dpr} vs ${t.full.px[0]}px`);
-  check(t.full.tag.w < 200 && t.full.tag.h < 120, 'and small — a corner, not a panel', `${Math.round(t.full.tag.w)}x${Math.round(t.full.tag.h)} css px`);
+  check(t.full.tag.w <= t.full.wrap.w * 0.2, 'and small — a corner, not a panel: at most a fifth of the picture’s width',
+    `${Math.round(t.full.tag.w)}x${Math.round(t.full.tag.h)} css px of ${Math.round(t.full.wrap.w)}`);
   check(t.fullShot.state && same(t.fullShot.state, t.want), 'a screenshot of the whole page reads back to exactly this setup',
     !t.fullShot.state ? `no tag found in ${t.fullShot.w}x${t.fullShot.h}px`
       : same(t.fullShot.state, t.want) ? 'match' : 'decoded, but different');

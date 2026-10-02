@@ -324,8 +324,8 @@ in the diff; a better baseline would be a new letter beside this one.
 an exact inverse, and `tests/unit/fixtures/share-links.json` gained a `b` link.
 
 **The code can leave the screen as a picture.** COPY IMAGE puts it on the
-clipboard, for pasting into a message; SAVE IMAGE downloads a PNG. Either way it
-is black on white whatever the theme (the screen it lands on, the printer and
+clipboard, for pasting into a message; SAVE IMAGE downloads a PNG. Either way the
+QR code is black on white whatever the theme (the screen it lands on, the printer and
 the camera owe nothing to the theme it was made in), eight pixels a module,
 with the setup's name under it — a code says nothing about itself — and, in the
 corner, the setup's [tag](#the-setup-tag-your-setup-on-the-picture), so the
@@ -840,73 +840,91 @@ a name in use, and the "currently playing" marker following a rename.
 
 ## The setup tag: your setup on the picture
 
-The small black-and-white code in the **bottom-right corner of the picture** is
-the setup you are playing. It is there for the people watching a recording of
+The small colour code in the **bottom-right corner of the picture** is the
+setup you are playing. It is there for the people watching a recording of
 you: pause the video, screenshot it, and in MotionMuse **PRESET → FROM IMAGE**
 — or paste the screenshot anywhere in the app, or drop it on the page — opens
 the setup it shows, under its name if it has one. Tap the tag to open SHARE;
 **⚙ → SETUP TAG** turns it off, for a recording that is nobody else's business.
 
-### Why it is not a QR code
+### What it is
 
-A QR code on the camera view was tried first, and dropped: one pixel per
-module really does decode from a screenshot, but the default setup's link was
-1328 characters, a 121-module code — **129px square**, a quarter of the width
-of a phone's camera panel, and there was no shrinking it. The tag gets the
-same setup into a fraction of that by not paying for what a QR code pays for:
+**Seven colours on the hexagons of a Gosper curve.** The Gosper curve (the
+"flowsnake") is a space-filling curve on the hexagonal lattice, and it is
+made of sevens all the way down: seven hexagons make a flower, seven flowers
+an island, seven islands the next. An order-*n* tag is the 7ⁿ hexagons the
+curve visits, the data written along it, and its outline is the Gosper island
+— 343 hexagons at order 3, **2401 at order 4** (every setup the app makes
+today), 16 807 at order 5 for one that outgrows that.
 
-- **A QR code is built for a camera at an angle across a room** — three big
-  finder squares, alignment patterns, a format that survives rotation and
-  perspective. A screenshot is axis-aligned. The tag's finder is Data
-  Matrix's: a solid line down the left and along the bottom, and alternating
-  "clock" cells along the top and right that give the grid. One cell of
-  border per side.
-- **No URL.** The tag carries the setup's raw bytes, not a link with base64 in
-  it — a third fewer bits before anything else.
-- **The difference from the default** (the `b` packing above): a typical
-  setup is 100–300 bytes instead of ~1 KB.
+Every hexagon is one of seven colours — **white, yellow, red, magenta, blue,
+cyan and green**: the corners of the sRGB cube, the most vivid colours a
+screen can show and 60° apart around the colour wheel, written in
+`src/densecode.js` as their OKLCH coordinates. Two hexagons make 49
+combinations, 32 of which carry five bits: 2.5 bits a cell.
 
-It comes out about **2:1, 50–90 cells wide** for a typical setup: from about
-75×45 to 110×60 CSS px on a phone, against the QR code's 129px square. `src/densecode.js`
-is the format (encoder, Reed–Solomon decoder, reader), `src/ui/tag.js` puts it
-on the picture and reads images back.
+| | white | yellow | red | magenta | blue | cyan | green |
+|---|---|---|---|---|---|---|---|
+| L | 1 | 0.968 | 0.628 | 0.702 | 0.452 | 0.905 | 0.866 |
+| C | 0 | 0.211 | 0.258 | 0.322 | 0.313 | 0.155 | 0.295 |
+| h | — | 109.8° | 29.2° | 328.4° | 264.1° | 194.8° | 142.5° |
+
+A Gosper island has no straight edge to hang a frame on, so the finder is
+three **black flowers** — seven hexagons each — off three corners of the
+island, the way a QR code has three finder squares: top-left, top-right and
+bottom-left, so their triangle also says which way up the tag is. Black is
+theirs alone (no data colour is dark in its brightest channel), so the reader
+finds them by brightness, takes scale, position and even a slight rotation
+from their three centres, and samples every hexagon where it must be.
+
+Against the QR code that was tried on the picture first and dropped — the
+default setup's link was 1328 characters, a **129px-square** code — the tag
+also carries the setup's raw bytes rather than a link with base64 in it, and
+only what differs from the default (the `b` packing above), and has no
+finder squares, alignment patterns or rotation machinery to pay for.
+
+### What it costs, and what the spare room buys
+
+An island is a fixed size. A setup that would fill 1400 hexagons still gets
+2401, so a typical tag is about **320×303 device pixels** at its usual pitch —
+around 107×101 CSS px on a phone, a corner patch about a fifth of the width
+of a fullscreen desktop picture. That is roughly two and a half times the
+area of a rectangular tag carrying the same setup. The spare room is not
+wasted: everything the payload does not use is Reed–Solomon parity, at least
+**half of every block**, so a quarter of the bytes can be wrong anywhere and
+it still reads.
 
 ### Measured through real video
 
 A tag that only read from perfect screenshots would be no use: the screenshot
 people actually take is of a **recording**, which a feed has scaled down and
-H.264 has compressed with its colour subsampled. So `npm run
-test:tag-recording` makes one — a phone screen (1170px wide, 3×) and a monitor
-(1920px, 1×), a moving noisy picture with the tag in its corner, encoded with
-x264 in yuv420p, scaled to a feed's width, compressed — pulls a frame back out
-and reads it, three different setups per case (a single run near the limit
-passes or fails on luck). What it found, and what the tag is built on:
+H.264 has compressed with its colour subsampled (4:2:0 — colour at half the
+resolution of brightness). So `npm run test:tag-recording` makes one — a
+phone (1170×2532, 3×) and two monitors (1920×1080 and 2560×1440), a moving
+noisy picture with the tag in its corner, encoded with x264 in yuv420p,
+scaled to a feed's size (1080p and 720p, by the short side, as feeds are),
+compressed at CRF 23 and 33 — pulls a frame back out and reads it, three
+different setups per case (a single run near the limit passes or fails on
+luck). What it found, and what the tag is built on:
 
-- **Black and white, not greys.** Four grey levels carry two bits a cell, so
-  a grey tag at four pixels a cell is the same size as a black-and-white one
-  at three. On the same recordings the grey one failed two cases the
-  black-and-white one read (a 540px feed at CRF 33, 1080 at CRF 40) and read
-  none it missed: compression blurs edges, which costs a binary cell little,
-  and shifts levels, which costs a grey cell everything. Pure black and white
-  also ignores the colour channels, which are the first thing subsampling
-  throws away.
-- **What has to survive is about 2.5px a cell after the feed's downscale.**
-  At **4 device pixels a cell** every required case reads, every setup: the
-  phone posted at 1080 and 720, the monitor posted at 1080 and 720, at CRF 23
-  (x264's default) and 33 (a hard squeeze). At three, the phone's recording
-  stops reading at 720. So the tag is drawn at four **device** pixels a cell —
-  a third the CSS size on a phone that it is on a 1× monitor — at exactly its
-  own pixels, never resampled by CSS.
-- **The reader fits the grid; it does not trust edges.** Thresholding finds a
-  blurred edge up to half a pixel off, which is a third of a cell after a
-  feed has halved the picture. So the reader finds the L, then searches every
-  column and row count for the one whose clock track alternates best, then
-  nudges the grid's sub-pixel phase and pitch to whatever makes the clocks
-  strongest, and samples cell **centres**. A quarter of every Reed–Solomon
-  block is parity, interleaved so a smudge across one part of the tag is
-  spread over all of them. Three cells of white margin, not two: at two, a
-  720px feed blurs the dark picture around the tag into its margin until the
-  bottom edge has no light beneath it.
+- **A hexagon has to keep about 2.5–3 pixels after the feed's downscale.**
+  So the pitch follows the screen — a recording is the screen's own pixels:
+  `max(5, ⌈3 × short side ÷ 720⌉)` device pixels between hexagon centres —
+  5 on a phone or a 1080p monitor, 6 at 1440p, 9 on 4K. At that pitch every
+  required case reads, every setup, on all three screens. The tag is drawn at
+  exactly its own device pixels, never resampled by CSS.
+- **The reader never trusts a colour as drawn.** The first seven hexagons
+  along the curve and the last seven are the palette in order — a colour
+  chart, read off the recording — and two rounds of k-means then move each
+  colour's centroid to the middle of the hexagons that chose it, so a
+  recording's tint, lifted blacks or shifted hues are learned rather than
+  assumed. Colours are compared in OKLab with lightness counted double: it is
+  the half of a colour a recording keeps sharp.
+- **Earlier formats, measured and replaced.** Black-and-white squares in a
+  Data Matrix frame came first, and four grey levels before that; a hexagonal
+  rectangle in seven colours came between. The colour tags need bigger cells
+  than black and white (about 3px against 2.5), and carry 2.5 times the bits
+  in each.
 
 ### Holding still
 
