@@ -843,8 +843,8 @@ a name in use, and the "currently playing" marker following a rename.
 
 ## The setup tag: your setup on the picture
 
-The small colour code in the **bottom-right corner of the picture** is the
-setup you are playing. It is there for the people watching a recording of
+The small Gosper-island code in the **bottom-right corner of the picture** is
+the setup you are playing. It is there for the people watching a recording of
 you: pause the video, screenshot it, and in MotionMuse **PRESET → FROM IMAGE**
 — or paste the screenshot anywhere in the app, or drop it on the page — opens
 the setup it shows, under its name if it has one. Tap the tag to open SHARE;
@@ -852,41 +852,51 @@ the setup it shows, under its name if it has one. Tap the tag to open SHARE;
 
 ### What it is
 
-**Seven colours on the hexagons of a piece of Gosper curve.** The Gosper
-curve (the "flowsnake") is a space-filling curve on the hexagonal lattice,
-made of sevens all the way down: seven hexagons make a flower, seven flowers
-a 49-cell island. A tag is as many of those islands as the setup needs, taken
-in the curve's own order, with the data written along it — **three islands
-(about 50 CSS px on a phone) for a stock Hands setup, six to nine for the
-other starting patches**, more for a busy one. Every piece of the curve is
-compact, so the tag stays a small blob in the corner rather than a ribbon.
+**Thirteen colours on the hexagons of a Gosper island.** The Gosper curve
+(the "flowsnake") is a space-filling curve on the hexagonal lattice, made of
+sevens all the way down: seven hexagons make a flower, seven flowers an
+order-2 island of 49, seven of those an order-3 island of 343. A tag is the
+smallest **whole island** the setup fits, with the data written along the
+curve inside it and the island's outline traced in a hairline — so its
+silhouette is the Gosper island's, whatever colour its edge cells happen to
+be. Every starting patch, and any setup grown from one, fits an order-3
+island: **about 100 CSS px on a phone**, the same for every setup. A setup
+past ~100 bytes takes order 4 (2401 cells).
 
-Every hexagon is one of seven colours: **white**, and **six hues exactly 60°
-apart in OKLCH, all at one lightness and one chroma** — equally light and
-equally vivid to the eye, which the sRGB primaries are not (their blue is
-L 0.45, their yellow 0.97):
+Every hexagon is one of thirteen colours: **white**, and **six hues exactly
+60° apart in OKLCH, each at L 0.75 and at L 0.25**:
 
-| | white | red | yellow | green | cyan | blue | magenta |
-|---|---|---|---|---|---|---|---|
-| OKLCH | 1 0 — | 0.745 0.127 28° | 0.745 0.127 88° | 0.745 0.127 148° | 0.745 0.127 208° | 0.745 0.127 268° | 0.745 0.127 328° |
+| | red | yellow | green | cyan | blue | magenta |
+|---|---|---|---|---|---|---|
+| hue | 28° | 88° | 148° | 208° | 268° | 328° |
+| C at L 0.75 | 0.149 | 0.152 | 0.215 | 0.128 | 0.126 | 0.255 |
+| C at L 0.25 | 0.101 | 0.051 | 0.072 | 0.043 | 0.165 | 0.114 |
 
-L 0.745 and C 0.127 are the most vivid the screen can show all six at once
-(1% inside the common gamut), and the rotation puts each hue nearest the
-colour it is named for. Five hexagons are 7⁵ = 16 807 combinations, of which
-16 384 carry fourteen bits: 2.8 bits a cell.
+The rotation puts each hue nearest the colour it is named for. Each colour is
+as vivid as sRGB can show its hue at its lightness (1% inside the gamut) —
+which, for the dark yellow and dark cyan, is barely coloured at all: holding
+all six to one chroma would have left the dark six 0.04 apart. Three
+hexagons are 13³ = 2197 combinations, of which 2048 carry eleven bits: 3.67
+bits a cell.
 
-A piece of Gosper curve has no straight edge to hang a frame on, so the
-finder is three **black flowers** — seven hexagons each — off three corners,
-the way a QR code has three finder squares: top-left, top-right and
-bottom-left, so their triangle also says which way up the tag is. Black is
-theirs alone (no data colour is dark), so the reader finds them by
-brightness, takes scale, position and even a slight rotation from their
-three centres, and samples every hexagon where it must be. The first seven
-hexagons along the curve are the palette in order — a colour chart read off
-the recording itself — and two rounds of k-means then move each colour's
-centroid to the middle of the hexagons that chose it, so a recording's tint,
-lifted blacks or shifted hues are learned rather than assumed. Three tenths
-of every Reed–Solomon block is parity.
+The reader classifies in two steps: the **lightness class** first (white,
+light or dark — a quarter of the scale apart, and lightness is what a
+recording keeps sharp), then the **hue within the class by chroma alone**.
+Comparing whole colours let a little lightness noise outvote the small hue
+differences of the dark six. The first thirteen hexagons along the curve are
+the palette in order — a colour chart read off the recording itself — and two
+rounds of k-means then move each colour's centroid to the middle of the
+hexagons that chose it, so a recording's tint, lifted blacks or shifted hues
+are learned rather than assumed. Three tenths of every Reed–Solomon block is
+parity.
+
+A Gosper island has no straight edge to hang a frame on, so the finder is
+three **black flowers** — seven hexagons each — off three corners, the way a
+QR code has three finder squares: top-left, top-right and bottom-left, so
+their triangle also says which way up the tag is. The reader finds them as
+black blobs the shape of a flower with a ring of white around them, takes
+scale, position and even a slight rotation from their three centres, and
+samples every hexagon where it must be.
 
 Against the QR code that was tried on the picture first and dropped — the
 default setup's link was 1328 characters, a **129px-square** code — the tag
@@ -907,19 +917,21 @@ compressed at CRF 23 and 33 — pulls a frame back out and reads it, three
 different setups per case (a single run near the limit passes or fails on
 luck). What it found:
 
-- **A hexagon has to keep about four pixels after the feed's downscale.**
-  Six hues at one lightness differ only in colour, and a recording keeps
-  colour at half resolution; a palette with lightness differences in it got
-  by on three. So the pitch follows the screen — a recording is the screen's
-  own pixels: `max(6, ⌈4 × short side ÷ 720⌉)` device pixels between
-  hexagon centres — 7 on a phone, 6 on a 1080p monitor, 8 at 1440p, 12 on
-  4K. At that pitch every required case reads, every setup, on all three
-  screens; a pixel less and the 720p feeds start to fail. The tag is drawn
-  at exactly its own device pixels, never resampled by CSS.
+- **The dark six set the size.** A recording crushes dark chroma first, and
+  the dark yellow, green and cyan are the colours it confuses: a hexagon has
+  to keep about **six and a half pixels** in a hard-compressed 720p feed
+  (five at CRF 28). The light six and white alone needed four. So the pitch
+  follows the screen — a recording is the screen's own pixels:
+  `max(8, ⌈6.5 × short side ÷ 720⌉)` device pixels between hexagon centres
+  — 11 on a phone, 10 on a 1080p monitor, 13 at 1440p. At that pitch every
+  required case reads, every setup, on all three screens; a pixel less and
+  the hard-compressed 720p feeds start to fail. The tag is drawn at exactly
+  its own device pixels, never resampled by CSS.
 - **Earlier formats, measured and replaced:** black-and-white squares in a
-  Data Matrix frame, four grey levels before that, then the sRGB primaries on
-  a hexagonal rectangle and on a full order-4 Gosper island. Each step and
-  why is in this branch's history.
+  Data Matrix frame, four grey levels before that, the sRGB primaries on a
+  hexagonal rectangle and on an order-4 island, then white plus six
+  equal-lightness hues on pieces of the curve. Each step and why is in this
+  branch's history.
 
 ### Holding still
 

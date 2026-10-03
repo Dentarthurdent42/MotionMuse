@@ -1,5 +1,5 @@
-// The setup tag (src/densecode.js): seven colours on the hexagons of a piece of
-// Gosper curve, read out of screenshots and recordings — so the tests are
+// The setup tag (src/densecode.js): thirteen colours on the hexagons of a
+// Gosper island, read out of screenshots and recordings — so the tests are
 // about what a screenshot does to it, the curve it is laid along, and the
 // palette.
 //
@@ -109,51 +109,58 @@ const toLin = (L, a, b) => {
           -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
           -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
 };
-const srgbOf = ({ L, C, h }) => toLin(L, C * Math.cos(h * Math.PI / 180), C * Math.sin(h * Math.PI / 180))
-  .map(v => Math.max(0, Math.min(1, v)) ** (1 / 2.4));
-
-test('the palette is white and six hues exactly 60° apart in OKLCH', () => {
-  assert.deepEqual(PALETTE.map(p => p.name), ['white', 'yellow', 'red', 'magenta', 'blue', 'cyan', 'green']);
+test('the palette is white and six hues exactly 60° apart in OKLCH, each at L 0.75 and L 0.25', () => {
+  assert.equal(PALETTE.length, 13);
+  assert.equal(PALETTE[0].name, 'white');
   assert.equal(PALETTE[0].L, 1);
   assert.equal(PALETTE[0].C, 0);
-  const hues = PALETTE.slice(1).map(p => p.h).sort((x, y) => x - y);
-  for (let i = 1; i < hues.length; i++) assert.equal(hues[i] - hues[i - 1], 60);
-  assert.equal(hues[0] + 360 - hues[5], 60, 'and round the wheel');
+  const light = PALETTE.slice(1, 7), dark = PALETTE.slice(7);
+  for (const [set, L] of [[light, 0.75], [dark, 0.25]]) {
+    for (const p of set) assert.equal(p.L, L, p.name);
+    const hues = set.map(p => p.h).sort((x, y) => x - y);
+    for (let i = 1; i < hues.length; i++) assert.equal(hues[i] - hues[i - 1], 60);
+    assert.equal(hues[0] + 360 - hues[5], 60, 'and round the wheel');
+  }
+  // The dark six are the light six, darker: same names, same hues, same order.
+  dark.forEach((p, i) => {
+    assert.equal(p.name, `dark ${light[i].name}`);
+    assert.equal(p.h, light[i].h);
+  });
 });
 
-test('the six hues are equally light and equally vivid', () => {
-  // The point: no hue is a "dark one". sRGB's blue is L 0.45 and its yellow
-  // 0.97; these are all one lightness and one chroma.
-  const hues = PALETTE.slice(1);
-  for (const p of hues) {
-    assert.equal(p.L, hues[0].L, p.name);
-    assert.equal(p.C, hues[0].C, p.name);
+test('each colour is as vivid as sRGB allows at its hue and lightness', () => {
+  for (const p of PALETTE.slice(1)) {
+    const inside = C => {
+      const lin = toLin(p.L, C * Math.cos(p.h * Math.PI / 180), C * Math.sin(p.h * Math.PI / 180));
+      return lin.every(v => v >= -1e-6 && v <= 1 + 1e-6);
+    };
+    assert.ok(inside(p.C), `${p.name} in gamut`);
+    assert.ok(!inside(p.C * 1.03), `${p.name} within 3% of the edge`);
   }
 });
 
 test('each hue is near the colour it is named for', () => {
   const named = { yellow: 109.8, red: 29.2, magenta: 328.4, blue: 264.1, cyan: 194.8, green: 142.5 };
   for (const p of PALETTE.slice(1)) {
-    const d = Math.abs(((p.h - named[p.name] + 540) % 360) - 180);
-    assert.ok(d < 25, `${p.name} at ${p.h}° is ${d.toFixed(1)}° from sRGB ${p.name}`);
+    const base = p.name.replace('dark ', '');
+    const d = Math.abs(((p.h - named[base] + 540) % 360) - 180);
+    assert.ok(d < 25, `${p.name} at ${p.h}° is ${d.toFixed(1)}° from sRGB ${base}`);
   }
 });
 
-test('every colour is inside sRGB, and none could pass for an anchor', () => {
+test('every colour is inside sRGB', () => {
   for (const p of PALETTE) {
     const lin = toLin(p.L, p.C * Math.cos(p.h * Math.PI / 180), p.C * Math.sin(p.h * Math.PI / 180));
     assert.ok(lin.every(v => v >= -1e-6 && v <= 1 + 1e-6), `${p.name} in gamut: ${lin.map(v => v.toFixed(3))}`);
-    // The finder looks for black by the brightest channel.
-    assert.ok(Math.max(...srgbOf(p)) > 0.6, `${p.name} is bright in some channel`);
   }
 });
 
 // ── The Gosper curve ─────────────────────────────────────────────────────
 
-test('a tag is whole 49-cell islands of the Gosper curve: distinct hexagons, each next to the last', () => {
-  for (const islands of [1, 3, 10, 49]) {
-    const { cells } = template(islands);
-    assert.equal(cells.length, 49 * islands);
+test('a tag is a whole Gosper island: 7ⁿ distinct hexagons, each next to the last along the curve', () => {
+  for (const order of [2, 3, 4]) {
+    const { cells } = template(order);
+    assert.equal(cells.length, 7 ** order);
     assert.equal(new Set(cells.map(c => c.join())).size, cells.length, 'no hexagon twice');
     for (let i = 1; i < cells.length; i++) {
       const dq = cells[i][0] - cells[i - 1][0], dr = cells[i][1] - cells[i - 1][1];
@@ -162,14 +169,24 @@ test('a tag is whole 49-cell islands of the Gosper curve: distinct hexagons, eac
   }
 });
 
-test('the three anchors sit clear of the cells, top-left, top-right and bottom-left', () => {
-  for (const islands of [1, 2, 5, 22, 49]) {
-    const t = template(islands);
+test('an order-n island is seven order-(n−1) islands', () => {
+  // The self-similarity that makes it the Gosper island: the first 7ⁿ⁻¹ cells
+  // of an order-n tag are the order-(n−1) island's cells, translated.
+  const small = template(2).cells, big = template(3).cells.slice(0, 49);
+  const [dq, dr] = [big[0][0] - small[0][0], big[0][1] - small[0][1]];
+  const shifted = new Set(small.map(([q, r]) => `${q + dq},${r + dr}`));
+  // Same shape up to rotation: compare sizes of the hexagon sets' bounding hexagons.
+  assert.equal(shifted.size, new Set(big.map(c => c.join())).size);
+});
+
+test('the three anchors sit clear of the island, top-left, top-right and bottom-left', () => {
+  for (const order of [2, 3, 4]) {
+    const t = template(order);
     const dist = (a, b) => { const dq = a[0] - b[0], dr = a[1] - b[1]; return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2; };
-    for (const a of t.anchors) assert.ok(t.cells.every(c => dist(a, c) >= 3), `${islands}: anchor ${a} clear`);
+    for (const a of t.anchors) assert.ok(t.cells.every(c => dist(a, c) >= 3), `${order}: anchor ${a} clear`);
     const [tl, tr, bl] = t.anchorXY;
-    assert.ok(tl[0] < tr[0] && Math.abs(tl[1] - tr[1]) < 1, `${islands}: top pair level`);
-    assert.ok(bl[1] > tl[1] + 3 && Math.abs(bl[0] - tl[0]) < 3, `${islands}: bottom-left below`);
+    assert.ok(tl[0] < tr[0] && Math.abs(tl[1] - tr[1]) < 1, `${order}: top pair level`);
+    assert.ok(bl[1] > tl[1] + 3 && Math.abs(bl[0] - tl[0]) < 3, `${order}: bottom-left below`);
   }
 });
 
@@ -180,20 +197,32 @@ test('a tag reads back from its own pixels, at whole and fractional pitches', ()
   for (const n of [0, 40, 300]) {
     const payload = bytes(n, r);
     const tag = encodeTag(payload);
-    for (const pitch of [3, 4, 4.5, 5, 7]) {
+    // Down to four pixels: the app never draws under eight, and at three the
+    // white gap between an anchor and the island's outline is one pixel.
+    for (const pitch of [4, 4.5, 5, 7, 11]) {
       assert.ok(same(readTag(rasterize(tag, pitch)), payload), `${n} bytes, ${pitch}px`);
     }
   }
 });
 
-test('the tag is only as many islands as the setup needs', () => {
+test('the tag is the smallest island the setup fits', () => {
   const r = rng(4);
-  assert.equal(encodeTag(bytes(0, r)).islands, 1);
-  assert.ok(encodeTag(bytes(20, r)).islands <= 3, 'a lightly edited stock patch is a small corner code');
-  const big = bytes(500, r), t = encodeTag(big);
-  assert.ok(t.islands > 30);
-  assert.ok(same(readTag(rasterize(t, 4)), big));
+  assert.equal(encodeTag(bytes(0, r)).order, 2);
+  assert.equal(encodeTag(bytes(90, r)).order, 3, 'every starting patch fits an order-3 island');
+  const big = bytes(300, r), t = encodeTag(big);
+  assert.equal(t.order, 4);
+  assert.ok(same(readTag(rasterize(t, 5)), big));
   assert.throws(() => encodeTag(bytes(5000, r)), /too much/);
+});
+
+test('the island is traced: a hairline just outside its edge, and none inside it', () => {
+  const t = encodeTag(new Uint8Array(60));
+  const img = rasterize(t, 12);
+  let dark = 0;
+  for (let i = 0; i < img.data.length; i += 4) if (Math.max(img.data[i], img.data[i + 1], img.data[i + 2]) < 20) dark++;
+  // Anchors are 3 × 7 hexagons; anything beyond that is the outline.
+  const anchorPx = 3 * 7 * (Math.sqrt(3) / 2) * 144;
+  assert.ok(dark > anchorPx * 1.1, `${dark} dark pixels against ${Math.round(anchorPx)} of anchors`);
 });
 
 test('and from a busy picture around it, after a fractional resample', () => {
@@ -202,7 +231,7 @@ test('and from a busy picture around it, after a fractional resample', () => {
   const r = rng(11);
   const payload = bytes(280, r);
   const tag = encodeTag(payload);
-  for (const pitch of [7, 8]) {
+  for (const pitch of [10, 12]) {
     for (const f of [0.6, 0.75, 0.92, 1, 1.37]) {
       const img = inFrame(scale(rasterize(tag, pitch), f), r);
       assert.ok(same(readTag(img), payload), `${pitch}px × ${f}`);
@@ -215,7 +244,7 @@ test('a slight rotation is fitted, not fatal', () => {
   // the anchors give rotation for free.
   const r = rng(21);
   const payload = bytes(250, r);
-  const src = rasterize(encodeTag(payload), 8);
+  const src = rasterize(encodeTag(payload), 11);
   const a = 0.06, ca = Math.cos(a), sa = Math.sin(a);
   const W = src.width + 40, H = src.height + 40;
   const out = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
@@ -234,7 +263,7 @@ test('the app’s tag survives a downscale to 0.62 and noise on every pixel', ()
   // A phone's 1170px recording on a 720p feed.
   const r = rng(5);
   const payload = bytes(300, r);
-  const img = scale(rasterize(encodeTag(payload), 7), 0.62);
+  const img = scale(rasterize(encodeTag(payload), 11), 0.62);
   for (let i = 0; i < img.data.length; i += 4) {
     const n = (r() - 0.5) * 30;
     for (let c = 0; c < 3; c++) img.data[i + c] += n;
@@ -287,16 +316,16 @@ test('nothing is found where there is no tag', () => {
 });
 
 test('the chart is the palette in order, at the head of the curve', () => {
-  const t = encodeTag(new Uint8Array(100));
-  for (let k = 0; k < 7; k++) assert.equal(t.cells[k], k);
+  const t = encodeTag(new Uint8Array(60));
+  for (let k = 0; k < 13; k++) assert.equal(t.cells[k], k);
 });
 
 test('the pitch is sized for a 720p feed of the screen it is on', () => {
-  assert.equal(tagPitch(1170), 7);    // a phone, upright
-  assert.equal(tagPitch(1080), 6);    // a 1080p monitor
-  assert.equal(tagPitch(1440), 8);
-  assert.equal(tagPitch(2160), 12);   // 4K
-  assert.equal(tagPitch(600), 6);     // never under six
+  assert.equal(tagPitch(1170), 11);   // a phone, upright
+  assert.equal(tagPitch(1080), 10);   // a 1080p monitor
+  assert.equal(tagPitch(1440), 13);
+  assert.equal(tagPitch(2160), 20);   // 4K
+  assert.equal(tagPitch(600), 8);     // never under eight
 });
 
 // ── Tags already out there ───────────────────────────────────────────────
@@ -308,8 +337,8 @@ const TAGS = JSON.parse(readFileSync(new URL('fixtures/setup-tags.json', import.
 
 for (const fx of TAGS) {
   test(`a tag made by ${fx.made_by} still reads (${fx.note})`, () => {
-    const cells = Uint8Array.from(fx.cells, ch => Number(ch));
-    const bytesOut = readTag(rasterize({ islands: fx.islands, cells }, 7));
+    const cells = Uint8Array.from(fx.cells, ch => parseInt(ch, 13));
+    const bytesOut = readTag(rasterize({ order: fx.order, cells }, 11));
     assert.ok(bytesOut, 'found and decoded');
     assert.equal(String.fromCharCode(bytesOut[0]), 'c', 'it carries a c-packed setup');
   });

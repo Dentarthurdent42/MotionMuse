@@ -180,9 +180,9 @@ async function render() {
 // app reads the same picture back without a camera.
 const IMG_SCALE = 8;
 const IMG_QUIET = 4;
-// Six: a picture sent through a chat app is recompressed but rarely shrunk,
-// and six pixels a cell is twice what a recording needs.
-const IMG_TAG_CELL = 6;
+// Ten: a picture sent through a chat app is recompressed but rarely shrunk,
+// and ten pixels a cell is what a hard-compressed 720p recording needs.
+const IMG_TAG_CELL = 10;
 const IMG_TEXT = 84;
 
 // QR code on top, the name under it, the Gosper island under that, centred:

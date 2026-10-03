@@ -116,8 +116,8 @@ test('a tag carries the name it is given', () => {
 // has to give the same instrument.
 test('the oldest tag opens as the setup it was made from', async () => {
   const [fx] = JSON.parse(readFileSync(new URL('fixtures/setup-tags.json', import.meta.url), 'utf8'));
-  const cells = Uint8Array.from(fx.cells, ch => Number(ch));
-  const img = rasterize({ islands: fx.islands, cells }, 7);
+  const cells = Uint8Array.from(fx.cells, ch => parseInt(ch, 13));
+  const img = rasterize({ order: fx.order, cells }, 11);
   const data = await decodeStateBytes(readTag(img));
   assert.ok(applyAll(data).ok);
   assert.equal(data.label, 'fixture: right hand opens the filter');

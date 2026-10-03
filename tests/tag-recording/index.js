@@ -34,14 +34,14 @@ if (!encoders.includes('libx264')) {
 // sizes people actually watch at. A feed is sized by its SHORT side — 1080p
 // and 720p are 1920×1080 or 1080×1920 alike — so a phone held upright
 // (1170px wide) and a monitor (1080 or 1440 tall) are each scaled by feed ÷
-// their short side. Only a 600px band of the frame is drawn: the scale is
+// their short side. Only a 700px band of the frame is drawn: the scale is
 // what matters, and the rest is time.
 const SOURCES = [
   { name: 'phone 1170×2532 @3x', W: 1170, short: 1170 },
   { name: 'monitor 1920×1080', W: 1920, short: 1080 },
   { name: 'monitor 2560×1440', W: 2560, short: 1440 },
 ];
-const H = 600;
+const H = 700;
 const FRAMES = 8;
 // [feed short side, x264 CRF]. CRF 23 is x264's default; 33 a hard squeeze.
 // The 540 rows are reported, not required: a recording squeezed below 720p
@@ -88,8 +88,9 @@ for (const src of SOURCES) {
     for (const seedStart of SEEDS) {
       let seed = seedStart;
       const rnd = () => { seed = (seed * 1103515245 + 12345) >>> 0; return seed / 2 ** 32; };
-      // A realistic payload: a setup is ~100–300 bytes in the 'b' packing.
-      const payload = Uint8Array.from({ length: 200 + Math.floor(rnd() * 120) }, () => Math.floor(rnd() * 256));
+      // A realistic payload: a setup built on a starting patch is ~30–100
+      // bytes in the 'c' packing — an order-3 island.
+      const payload = Uint8Array.from({ length: 30 + Math.floor(rnd() * 70) }, () => Math.floor(rnd() * 256));
       const tag = rasterize(encodeTag(payload), cell);
       const W = src.W;
       for (let fr = 0; fr < FRAMES; fr++) {
