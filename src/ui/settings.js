@@ -15,6 +15,7 @@ import { buildInfo, buildLabel }        from '../build.js';
 import { keyLabel, getBinding, setBinding, captureNextKey } from './hotkeys.js';
 import { uicontrol } from '../uicontrol.js';
 import { resetLayout, layoutMode, setLayoutMode } from './workspace.js';
+import { tagShown, setTagShown } from './tag.js';
 
 let pop = null;
 
@@ -37,6 +38,15 @@ function build() {
       <button class="wave-btn${devmode.enabled ? ' on' : ''}" id="dev-btn" type="button"
               aria-pressed="${devmode.enabled}"
               title="Developer mode — reveals experimental, under-construction features">${devmode.enabled ? 'ON' : 'OFF'}</button>
+    </label>
+    <!-- The code in the corner of the picture that lets anyone watching a
+         recording open this setup from a screenshot. On by default — it is
+         the point — and here for a recording that is nobody else's
+         business. -->
+    <label class="set-row">SETUP TAG
+      <button class="wave-btn${tagShown() ? ' on' : ''}" id="tag-btn" type="button"
+              aria-pressed="${tagShown()}"
+              title="The small code in the corner of the picture. Anyone with a screenshot of it — from a recording of you playing, say — can open this setup">${tagShown() ? 'ON' : 'OFF'}</button>
     </label>
     <label class="set-row">MUTE KEY
       <button class="wave-btn" id="mute-key-btn" type="button"
@@ -130,6 +140,14 @@ function build() {
     devBtn.classList.toggle('on', on);
     devBtn.setAttribute('aria-pressed', String(on));
     devBtn.textContent = on ? 'ON' : 'OFF';
+  });
+
+  const tagBtn = el.querySelector('#tag-btn');
+  tagBtn.addEventListener('click', () => {
+    setTagShown(!tagShown());
+    tagBtn.classList.toggle('on', tagShown());
+    tagBtn.setAttribute('aria-pressed', String(tagShown()));
+    tagBtn.textContent = tagShown() ? 'ON' : 'OFF';
   });
 
   const uicBtn = el.querySelector('#uic-toggle');

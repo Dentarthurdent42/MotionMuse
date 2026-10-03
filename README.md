@@ -309,6 +309,38 @@ The state is compressed and carried in the URL **fragment**, which is never sent
 to a server. There is no server; a shared setup stays between the two people
 holding the phones.
 
+**What is compressed is the difference from a starting patch.** Most of a
+snapshot is defaults, and compressing the whole thing made the default
+setup's link 1328 characters — a 121-module QR code. A link now carries only
+what differs from a frozen copy of one of the starting patches
+(`src/sharebase.js`), deflated, with one byte saying which: the encoder tries
+each and keeps the smallest. A stock starting patch is a handful of bytes,
+a played-with one a few dozen, and a link that was 1364 characters is 462.
+The QR code is several versions smaller and scans from further away. The
+packing is the link's first character — `c` for this, `b` for the Hands
+baseline alone (the first version of it), `d` for every link made before
+that; all still open — and a baseline can **never be edited or reordered**:
+every link ever made is a diff against exactly those values. When the app
+grows new state, it simply travels in the diff; a new baseline goes on the
+end of the list. `tests/unit/share-base.test.js` pins the baselines by hash
+and the diff/merge as an exact inverse, and `tests/unit/fixtures/share-links.json`
+holds a link of each kind.
+
+**The code can leave the screen as a picture.** COPY IMAGE puts it on the
+clipboard, for pasting into a message; SAVE IMAGE downloads a PNG. Either way the
+QR code is black on white whatever the theme (the screen it lands on, the printer and
+the camera owe nothing to the theme it was made in), eight pixels a module,
+with the setup's name under it — a code says nothing about itself — and, in the
+corner, the setup's [tag](#the-setup-tag-your-setup-on-the-picture), so the
+same picture opens through PRESET → FROM IMAGE as well as through a phone's
+camera. The layout suite saves one and decodes both.
+
+**SHARE opens in front of fullscreen.** In fullscreen SHARE is on the picture,
+and the sheet used to open in `<body>` — which native fullscreen does not draw
+at all, and the CSS takeover covers at a higher z-index — so tapping it in
+fullscreen opened a sheet nobody could see. It now opens inside whatever is
+fullscreen.
+
 What travels is the **instrument**, not the window. Where the nodes sit on the
 canvas — positions, sizes, groups, the view — describes the screen you arranged
 them on, and pushing a phone's layout onto a laptop is not "the same
@@ -801,34 +833,6 @@ instrument, and **not** cleared when you move a slider — you are still playing
 your setup, just changed, and a name that vanished on the first knob turn would
 be a name nobody trusts.
 
-**A QR code on the camera view was tried, and dropped.** The idea was that a
-setup could be handed over by screenshotting the picture, with no dialog in
-the way — which raised a question worth answering on its own: how small can a
-QR code be and still be read?
-
-**Measured, not guessed.** Render at N device pixels per module, screenshot
-the pixels the browser actually painted, and hand them to **jsQR** — an
-independent decoder, not our own encoder agreeing with itself. The answer is
-**one pixel per module**. The floor is not the module *size* but the
-requirement that modules land on **whole** pixels: a code scaled to 1.5×
-smears every module edge across two pixels and stops decoding long before a 1×
-one does. `tests/unit/qr.test.js` pins that at 1 px/module across a range of
-payload sizes and both ECC levels the app uses.
-
-**And the answer was still too big.** The default setup's link is 1328
-characters, which at ECC L needs a 121×121-module code — 129px square with the
-spec's quiet zone. That is a quarter of the width of a phone's camera panel: a
-corner ornament in name only, and there is no shrinking it, because 1 px per
-module is where the format bottoms out. A code that size has to be somewhere
-it can be the whole point. So it is not on the camera view, and **SHARE takes
-the screen instead** (below) — which is a better answer to the original
-problem anyway, since the thing being read is somebody else's camera across a
-table, and every pixel of screen is reach.
-
-The measurement is kept here rather than deleted because it is the reason the
-feature is *not* there. Anyone who proposes putting a code back on the frame
-is proposing 129px of it.
-
 The store is `src/saved.js`, in localStorage under `motionmuse-saved-v1`. It
 filters what it reads: an entry that is not a named snapshot is dropped rather
 than handed to the menu, which would otherwise render `undefined` and apply
@@ -836,6 +840,125 @@ nothing when clicked. `tests/unit/saved-configs.test.js` covers the round trip,
 the replace-by-name rule, the cap, and what happens to junk in storage;
 `tests/unit/saved-rename.test.js` covers renaming, the refusal to rename onto
 a name in use, and the "currently playing" marker following a rename.
+
+## The setup tag: your setup on the picture
+
+The small Gosper-island code in the **bottom-right corner of the picture** is
+the setup you are playing. It is there for the people watching a recording of
+you: pause the video, screenshot it, and in MotionMuse **PRESET → FROM IMAGE**
+— or paste the screenshot anywhere in the app, or drop it on the page — opens
+the setup it shows, under its name if it has one. Tap the tag to open SHARE;
+**⚙ → SETUP TAG** turns it off, for a recording that is nobody else's business.
+
+### What it is
+
+**Thirteen colours on the hexagons of a Gosper island.** The Gosper curve
+(the "flowsnake") is a space-filling curve on the hexagonal lattice, made of
+sevens all the way down: seven hexagons make a flower, seven flowers an
+order-2 island of 49, seven of those an order-3 island of 343. A tag is the
+smallest **whole island** the setup fits, with the data written along the
+curve inside it and the island's outline traced in a hairline — so its
+silhouette is the Gosper island's, whatever colour its edge cells happen to
+be. Every starting patch, and any setup grown from one, fits an order-3
+island: **about 100 CSS px on a phone**, the same for every setup. A setup
+past ~100 bytes takes order 4 (2401 cells).
+
+Every hexagon is one of thirteen colours: **white**, and **six hues exactly
+60° apart in OKLCH, each at L 0.75 and at L 0.25**:
+
+| | red | yellow | green | cyan | blue | magenta |
+|---|---|---|---|---|---|---|
+| hue | 28° | 88° | 148° | 208° | 268° | 328° |
+| C at L 0.75 | 0.149 | 0.152 | 0.215 | 0.128 | 0.126 | 0.255 |
+| C at L 0.25 | 0.101 | 0.051 | 0.072 | 0.043 | 0.165 | 0.114 |
+
+The rotation puts each hue nearest the colour it is named for. Each colour is
+as vivid as sRGB can show its hue at its lightness (1% inside the gamut) —
+which, for the dark yellow and dark cyan, is barely coloured at all: holding
+all six to one chroma would have left the dark six 0.04 apart. Three
+hexagons are 13³ = 2197 combinations, of which 2048 carry eleven bits: 3.67
+bits a cell.
+
+The reader classifies in two steps: the **lightness class** first (white,
+light or dark — a quarter of the scale apart, and lightness is what a
+recording keeps sharp), then the **hue within the class by chroma alone**.
+Comparing whole colours let a little lightness noise outvote the small hue
+differences of the dark six. The first thirteen hexagons along the curve are
+the palette in order — a colour chart read off the recording itself — and two
+rounds of k-means then move each colour's centroid to the middle of the
+hexagons that chose it, so a recording's tint, lifted blacks or shifted hues
+are learned rather than assumed. Three tenths of every Reed–Solomon block is
+parity.
+
+A Gosper island has no straight edge to hang a frame on, so the finder is
+three **black flowers** — seven hexagons each — off three corners, the way a
+QR code has three finder squares: top-left, top-right and bottom-left, so
+their triangle also says which way up the tag is. The reader finds them as
+black blobs the shape of a flower with a ring of white around them, takes
+scale, position and even a slight rotation from their three centres, and
+samples every hexagon where it must be.
+
+Against the QR code that was tried on the picture first and dropped — the
+default setup's link was 1328 characters, a **129px-square** code — the tag
+carries the setup's raw bytes rather than a link with base64 in it, only what
+differs from a starting patch, and no finder squares, alignment patterns or
+rotation machinery.
+
+### Measured through real video
+
+A tag that only read from perfect screenshots would be no use: the screenshot
+people actually take is of a **recording**, which a feed has scaled down and
+H.264 has compressed with its colour subsampled (4:2:0 — colour at half the
+resolution of brightness). So `npm run test:tag-recording` makes one — a
+phone (1170×2532, 3×) and two monitors (1920×1080 and 2560×1440), a moving
+noisy picture with the tag in its corner, encoded with x264 in yuv420p,
+scaled to a feed's size (1080p and 720p, by the short side, as feeds are),
+compressed at CRF 23 and 33 — pulls a frame back out and reads it, three
+different setups per case (a single run near the limit passes or fails on
+luck). What it found:
+
+- **The dark six set the size.** A recording crushes dark chroma first, and
+  the dark yellow, green and cyan are the colours it confuses: a hexagon has
+  to keep about **six and a half pixels** in a hard-compressed 720p feed
+  (five at CRF 28). The light six and white alone needed four. So the pitch
+  follows the screen — a recording is the screen's own pixels:
+  `max(8, ⌈6.5 × short side ÷ 720⌉)` device pixels between hexagon centres
+  — 11 on a phone, 10 on a 1080p monitor, 13 at 1440p. At that pitch every
+  required case reads, every setup, on all three screens; a pixel less and
+  the hard-compressed 720p feeds start to fail. The tag is drawn at exactly
+  its own device pixels, never resampled by CSS.
+- **Earlier formats, measured and replaced:** black-and-white squares in a
+  Data Matrix frame, four grey levels before that, the sRGB primaries on a
+  hexagonal rectangle and on an order-4 island, then white plus six
+  equal-lightness hues on pieces of the curve. Each step and why is in this
+  branch's history.
+
+### Holding still
+
+The tag is a picture of the **setup**, not of the performance. The value of a
+parameter a cable is driving is rewritten every frame from wherever your hand
+is — meaningless to whoever loads it (the cable takes the parameter over at
+once), and it would make the tag redraw every second you play. So those values
+are left out (`tagState` in `src/share.js`); the tag changes when you rewire,
+retune or rename, and the app looks for that once a second.
+
+On the canvas the picture is inside the workspace's zoom, so the tag divides
+the zoom back out to stay at its own device pixels — up to **40% of the
+picture's width**. Zoomed out further than that the picture is a thumbnail,
+and the tag gives way rather than cover it; fullscreen, or zooming in, gives it
+back. It is hidden on the column's shrunken picture for the same reason.
+
+### Tags already out there
+
+A tag in a posted video is frozen exactly like a printed QR code. The format's
+first byte is its version, and nothing in `src/densecode.js` that decides the
+layout can change under it. `tests/unit/fixtures/setup-tags.json` holds tags
+made by past versions of the encoder; they are never regenerated, and if one
+stops reading, the reader changed. The unit tests read tags from **bitmaps** —
+resampled, embedded in a noisy frame, noised, smudged — never from the
+encoder's own cell array, and the layout suite does the whole trip in a
+browser: screenshot the page, open the screenshot through FROM IMAGE and by
+pasting it, in a fresh browser, and compare the patch cable for cable.
 
 ## Loop pedal
 

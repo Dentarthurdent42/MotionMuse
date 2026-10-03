@@ -442,6 +442,24 @@ html, body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   pointer-events: none;
 }
+/* The setup tag (ui/tag.js): the setup as a code, bottom-right — the one
+   corner nothing else on the picture uses — riding above the fullscreen
+   keyboard the way the actions bar does. Its size is set in JS to exactly its
+   own device pixels; anything else here would resample it. Opaque, and in
+   its own fixed colours in every theme: it is read out of a compressed
+   recording, and a theme's tint over it would be one more thing to undo. */
+.cam-tag[hidden] { display: none; }
+.cam-tag {
+  position: absolute; z-index: 3;
+  right: var(--cam-inset);
+  bottom: calc(var(--cam-inset) + var(--fs-kbd-h, 0px));
+  display: block;
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+/* The column's thumbnail is too small to read anything off. */
+#cam-sticky.cam-mini .cam-tag { display: none; }
+
 /* The picture's own controls: what you reach for while playing or while
    handing the instrument to someone else. Bottom-left, opposite the
    .cam-toggles strip, so neither covers the other and the middle of the
