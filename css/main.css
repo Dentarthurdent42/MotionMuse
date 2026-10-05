@@ -786,6 +786,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   z-index: 60;
   width: max(240px, 100%);
   max-width: calc(100vw - 24px);
+  overflow-y: auto;              /* when place() in preset-menu.js caps its height */
+  overscroll-behavior: contain;
   background: var(--panel);
   border: 1px solid var(--border2);
   border-radius: 5px;

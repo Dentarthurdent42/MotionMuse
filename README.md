@@ -731,7 +731,16 @@ volume. Nodes save with presets and travel in shared links; module
 | **Gaze · Look to Play** | camera + FACE + GAZE | Look left/right for pitch, up/down for tone, mouth for volume |
 | **Pose · Whole Body** | camera | Stand back: arm height and torso lean drive everything |
 
-Your own named setups sit **above** this table in the menu, under YOUR SETUPS —
+Above them, under **PLAY IN A KEY**, are the in-key ways of playing from the
+first-run picker — Handshapes (chords or single notes), Radial Mode (notes or
+chords) and **Interval Mode · Steps & Leaps** — set up exactly as that picker
+sets them up (`applyStarter` in `src/ui/firstrun.js`), so they are reachable
+after the first visit too. The interval one switches Interval Mode on with its
+shipped settings (right hand, metronome beats, scale steps), starts the
+metronome (muted, as it ships) and turns Shepard tones off, since they would
+make an octave leap sound like no move at all.
+
+Your own named setups sit **above** both, in the menu, under YOUR SETUPS —
 see [Named configurations](#named-configurations-your-setups).
 
 Each entry lists what still has to be switched on, and picking one says so again
@@ -2216,6 +2225,10 @@ shape can be changed and recalibrated like Gesture Mode's.
 Only one of Gesture, Radial and Interval Mode is on at a time: switching this
 on parks the other two, and switching either of them on parks this.
 
+The quickest way in is **PRESET → Interval Mode · Steps & Leaps** (also offered
+on first run): it switches the node on with these defaults and starts the
+metronome, so with the camera on, a right-hand shape plays on the next beat.
+
 ## Metronome
 
 A beat clock the whole instrument can see and hear — one clock, three faces:
@@ -2858,7 +2871,7 @@ src/
     audio-ui.js     Audio panel (waveform buttons, sliders)
     model-ui.js     Dev-mode pose model comparison panel
     donate.js       Support/donations popover
-    preset-menu.js  PRESET button → your saved setups + starting patches
+    preset-menu.js  PRESET button → your saved setups, in-key modes + starting patches
     nodedocs.js     What every node does — the doc behind each ?, and read state
     docpop.js       The card a ? opens (and the header ?)
     group-volume.js Which node is which sound source; keeps group faders → engine trims

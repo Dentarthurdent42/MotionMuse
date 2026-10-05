@@ -44,7 +44,7 @@ import { initSettings }                     from './ui/settings.js';
 import { initCamSticky }                    from './ui/cam-sticky.js';
 import { initChordCables }                  from './chordcables.js';
 import { initShare, consumeSharedLink, announceSharedLink, isConsumingShare } from './ui/share.js';
-import { shouldOfferStart, openStartPicker } from './ui/firstrun.js';
+import { shouldOfferStart, openStartPicker, applyStarter } from './ui/firstrun.js';
 import { uicontrol }                        from './uicontrol.js';
 import { initUidriver }                     from './ui/uidriver.js';
 import { initUicontrol, updateUicOverlay }  from './ui/uicontrol-ui.js';
@@ -693,6 +693,18 @@ initPresetMenu({
     if (changed.length) bits.push(changed.join(', '));
     if (missing.length) bits.push(`switch on ${missing.join(' + ')}`);
     toast(`${preset.name} — ${bits.join(' · ')}`);
+  },
+  // An in-key way of playing (Gesture, Radial or Interval Mode), set up just
+  // as the first-run picker sets it up — the same call, so the two cannot drift.
+  onApplyStarter: async id => {
+    clearCurrentConfig();
+    const s = await applyStarter(id, { applyTrackers });
+    refreshFromState();
+    preset.saveLocal();
+    docsChanged();
+    const bits = [s.hint];
+    if (!cvSource.running) bits.push('switch on START CAMERA');
+    toast(`${s.name} — ${bits.join(' · ')}`);
   },
   // A saved configuration is a whole snapshot, not a patch, so it restores the
   // way a loaded file does rather than the way a preset does — same call, same
