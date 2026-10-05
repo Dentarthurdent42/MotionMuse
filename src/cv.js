@@ -1,7 +1,7 @@
 import { bus }                                             from './bus.js';
 import { push30, dist3, angleBetween, handOpenness, fingerExt, pinchStrength,
          torsoFrame, shoulderAngles,
-         thumbOut, thumbContact }                          from './math.js';
+         thumbOut, thumbContact, handTilt }                from './math.js';
 import { setStatus }                                        from './ui/status.js';
 import { themeToken }                                       from './ui/theme.js';
 import { depthSource }                                      from './depth.js';
@@ -175,6 +175,9 @@ export const cvSource = {
       bus.register(`hand_${s}_y`,      { velocity: true, label: `${lbl} Wrist Y`,  group: g, min: 0, max: 1,   source: 'cv', smooth: true });
       bus.register(`hand_${s}_open`,   { velocity: true, label: `${lbl} Openness`, group: g, min: 0, max: 1,   source: 'cv', smooth: true });
       bus.register(`hand_${s}_spread`, { velocity: true, label: `${lbl} Spread`,   group: g, min: 0, max: 1,   source: 'cv', smooth: true });
+      // The palm's lean, −1 (fingers to your left) … +1 (to your right) —
+      // Interval Mode reads it as up / down (math.js handTilt).
+      bus.register(`hand_${s}_tilt`,   { velocity: true, label: `${lbl} Tilt`,     group: g, min: -1, max: 1,  source: 'cv', smooth: true });
       // Pinch drives volume articulation, where lag is the enemy: a note has
       // to start when the fingers open, not 100 ms later. Snappier One-Euro
       // than the default (2.5 Hz base, and beta high enough that the cutoff
@@ -736,6 +739,7 @@ export const cvSource = {
         bus.update(`hand_${s}_y`,      1 - lm[0].y); // flip: up = 1
         bus.update(`hand_${s}_open`,   handOpenness(lm));
         bus.update(`hand_${s}_spread`, Math.min(1, dist3(lm[4], lm[20]) / (dist3(lm[0], lm[9]) * 2.5)));
+        bus.update(`hand_${s}_tilt`,   handTilt(lm, this.video ? this.video.videoWidth / this.video.videoHeight : 1));
         ['thumb','index','middle','ring','pinky'].forEach((n, fi) =>
           bus.update(`finger_${s}_${n}`, fingerExt(lm, fi))
         );
@@ -748,7 +752,7 @@ export const cvSource = {
           bus.update(`pinch_${s}`, pinchStrength(wlm[4], wlm[8]));
         }
       } else {
-        [`hand_${s}_x`, `hand_${s}_y`, `hand_${s}_open`, `hand_${s}_spread`]
+        [`hand_${s}_x`, `hand_${s}_y`, `hand_${s}_open`, `hand_${s}_spread`, `hand_${s}_tilt`]
           .forEach(k => bus.decay(k));
         // Pinch does NOT decay toward 0: 0 now means "hand open", which a
         // volume mapping reads as full blast. Losing tracking must fail quiet,
