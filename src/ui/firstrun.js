@@ -5,14 +5,17 @@
 // is not a starting point, it is the absence of one, and it makes the first
 // thirty seconds a hunt for where the instrument is.
 //
-// So the first visit asks. Every mapping preset is offered, plus the four
-// in-key ways of playing — handshapes or radial mode, each sounding
-// chords or single notes; ways of playing rather than patches — and an
-// explicit blank.
+// So the first visit asks. Every mapping preset is offered, plus the in-key
+// ways of playing — handshapes or radial mode, each sounding chords or single
+// notes, and interval mode; ways of playing rather than patches — and an
+// explicit blank. The in-key ones are offered again under PRESET (see
+// preset-menu.js), since this picker only appears once.
 
 import { mapper, PRESETS, trackersFor } from '../mapper.js';
 import { chordmode, DEFAULT_ACCIDENTAL_GESTURES, DEFAULT_QUALITY_GESTURES } from '../chordmode.js';
 import { radial } from '../radial.js';
+import { interval } from '../interval.js';
+import { metronome } from '../metronome.js';
 import { engine } from '../engine.js';
 import { lsGet, lsSet } from '../storage.js';
 import { readShareUrl } from '../share.js';
@@ -56,6 +59,13 @@ export const STARTERS = [
     id: 'radial-chords', kind: 'radial', mode: 'chords', voicing: 'chord',
     name: 'Radial Mode · Chords',
     hint: 'The same ring, each section a chord of the key — your other hand sets its quality',
+  },
+  // Shapes that name a move rather than a note: a 3 is a third from wherever
+  // the tune is. On the metronome's beat, so it starts the (muted) clock.
+  {
+    id: 'intervals', kind: 'interval', mode: 'chords',
+    name: 'Interval Mode · Steps & Leaps',
+    hint: 'A handshape is the distance to the next note, played on the beat — lean your hand left to go down, ASL 0 holds, a fist rests',
   },
   ...PRESETS.map(p => ({ id: p.id, kind: 'preset', mode: 'osc',
                          name: p.name, hint: p.hint })),
@@ -111,6 +121,9 @@ export function applyStarter(id, { applyTrackers }) {
   // shapes for chords — thumbs up MAJ, thumbs down MIN, the O for DIM, horns
   // for 7, I-love-you for MAJ7 (see DEFAULT_QUALITY_GESTURES for why each).
   // Both modes read them; radial reads them with gesture mode switched off.
+  // Interval Mode shares the chord voice bank, so every other start ends it.
+  if (s.kind !== 'interval') interval.setEnabled(false);
+
   if (s.kind === 'chords' || s.kind === 'radial') {
     chordmode.setAccidentalGestures({ ...DEFAULT_ACCIDENTAL_GESTURES });
     chordmode.setQualityGestures({ ...DEFAULT_QUALITY_GESTURES });
@@ -139,6 +152,20 @@ export function applyStarter(id, { applyTrackers }) {
     // Both hands: one wears the ring, the other bends notes with the
     // accidental shapes. Pose too — the forearm axis is what the ring rides.
     return applyTrackers({ handsL: true, handsR: true, pose: true, face: false, gaze: false })
+      .then(() => s);
+  }
+
+  if (s.kind === 'interval') {
+    // Shipped settings, switched on: one hand (the right), read on the
+    // metronome's beat, counted in scale steps. Enabling parks the other two
+    // in-key modes. No Shepard tones — they fold every note into one octave,
+    // so an octave leap would sound like standing still.
+    interval.load({ enabled: true });
+    engine.setShepard({ chord: false });
+    engine.setOscCount(0);
+    metronome.setOn(true);
+    // Both hands, so switching HANDS to TWO plays without a trip to the header.
+    return applyTrackers({ handsL: true, handsR: true, pose: false, face: false, gaze: false })
       .then(() => s);
   }
 

@@ -6,6 +6,7 @@
 // needs switched on, then choose.
 
 import { mapper, PRESETS } from '../mapper.js';
+import { STARTERS } from './firstrun.js';
 import { savedConfigs, deleteConfig, renameConfig, findConfig, configName } from '../saved.js';
 import { SHARE_LABEL_MAX } from '../share.js';
 import { toast } from './status.js';
@@ -48,7 +49,12 @@ export function savedWhen(iso, now = Date.now()) {
 // `onApplyConfig` restores a whole saved snapshot rather than a patch, so it is
 // a different callback from `onApply`: the caller has to refresh the panels and
 // decide whether the UI keys it carries mean a reload, exactly as LOAD does.
-export function initPresetMenu({ onApply, onApplyConfig, onSave, onLoad, state }) {
+// The in-key ways of playing from the first-run picker. That picker is shown
+// once, so without this a second way of playing — Interval Mode, say — had no
+// door at all after the first visit.
+const IN_KEY = STARTERS.filter(s => s.mode === 'chords');
+
+export function initPresetMenu({ onApply, onApplyStarter, onApplyConfig, onSave, onLoad, state }) {
   const btn = document.getElementById('preset-btn');
   if (!btn) return;
 
@@ -81,6 +87,13 @@ export function initPresetMenu({ onApply, onApplyConfig, onSave, onLoad, state }
           <button class="rm-btn preset-del" type="button" data-del="${esc(c.name)}"
                   title="Forget this setup" aria-label="Forget ${esc(c.name)}">×</button>
         </div>`).join('') : '') +
+      `<div class="preset-title">PLAY IN A KEY</div>` +
+      IN_KEY.map(st => `
+        <button class="preset-item" role="menuitem" data-starter="${st.id}">
+          <span class="preset-name">${st.name}</span>
+          <span class="preset-hint">${st.hint}</span>
+          ${s.camera ? '' : `<span class="preset-needs">needs ${NEEDS_LABEL.camera}</span>`}
+        </button>`).join('') +
       `<div class="preset-title">STARTING PATCHES</div>` +
       PRESETS.map(p => {
         const missing = missingFor(p, s).map(n => NEEDS_LABEL[n] ?? n);
@@ -109,6 +122,11 @@ export function initPresetMenu({ onApply, onApplyConfig, onSave, onLoad, state }
         // The caller switches the models and reports what changed — it is the
         // one that knows. Reporting here as well would race it and say less.
         onApply?.(preset, missingFor(preset, state()).map(n => NEEDS_LABEL[n] ?? n));
+      }));
+    pop.querySelectorAll('[data-starter]').forEach(el =>
+      el.addEventListener('click', () => {
+        setOpen(false);
+        onApplyStarter?.(el.dataset.starter);
       }));
     pop.querySelectorAll('[data-config]').forEach(el =>
       el.addEventListener('click', () => {
@@ -184,9 +202,27 @@ export function initPresetMenu({ onApply, onApplyConfig, onSave, onLoad, state }
     input.addEventListener('blur', () => finish(true));
   };
 
+  // Keep the whole menu on screen. It hangs from the PRESET button, which on a
+  // phone sits mid-row, so a left-anchored 240px menu ran off the right edge;
+  // and there it opens upwards, so a long list ran off the top. Slide it back
+  // in from the side, and give it the height there is, scrolling the rest.
+  const GAP = 8;
+  const place = () => {
+    pop.style.left = '';
+    pop.style.maxHeight = '';
+    const b = btn.getBoundingClientRect();
+    const r = pop.getBoundingClientRect();
+    const over = r.right - (window.innerWidth - GAP);
+    if (over > 0) pop.style.left = `${-Math.min(over, r.left - GAP)}px`;
+    const above = r.top < b.top;
+    const room = above ? b.top - GAP * 1.5 : window.innerHeight - b.bottom - GAP * 1.5;
+    if (r.height > room) pop.style.maxHeight = `${Math.max(120, room)}px`;
+  };
+
   const setOpen = open => {
     if (open) render();          // re-read camera/face/gaze state each time
     pop.hidden = !open;
+    if (open) place();
     btn.setAttribute('aria-expanded', String(open));
   };
 

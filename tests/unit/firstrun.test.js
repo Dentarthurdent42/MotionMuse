@@ -40,6 +40,8 @@ const { mapper, PRESETS } = await import('../../src/mapper.js');
 const { engine } = await import('../../src/engine.js');
 const { chordmode } = await import('../../src/chordmode.js');
 const { radial } = await import('../../src/radial.js');
+const { interval } = await import('../../src/interval.js');
+const { metronome } = await import('../../src/metronome.js');
 
 // The picker hands tracker changes back to main.js, which owns the header
 // buttons; here it just records what was asked for.
@@ -56,15 +58,18 @@ const reset = () => {
   chordmode.setEnabled(false);
   chordmode.setVoicing('chord');
   radial.load({ enabled: false });
+  interval.load({ enabled: false });
+  metronome.setOn(false);
 };
 
-test('every mapping preset is offered, plus all four in-key starts and blank', () => {
+test('every mapping preset is offered, plus every in-key start and blank', () => {
   const ids = STARTERS.map(s => s.id);
   for (const p of PRESETS) assert.ok(ids.includes(p.id), `${p.id} is not offered`);
   assert.ok(ids.includes('chords'), 'chord mode is a way of playing, so it is a choice');
   assert.ok(ids.includes('notes'), 'so is playing those same shapes one note at a time');
   assert.ok(ids.includes('radial-notes'), 'and pointing at a ring of notes');
   assert.ok(ids.includes('radial-chords'), 'and pointing at a ring of chords');
+  assert.ok(ids.includes('intervals'), 'and naming the distance to the next note');
   assert.ok(ids.includes('blank'));
   assert.equal(new Set(ids).size, ids.length, 'duplicate choice');
   for (const s of STARTERS) assert.ok(s.name && s.hint, `${s.id} needs a name and a hint`);
@@ -199,4 +204,31 @@ test('an unknown id falls back to blank rather than throwing', async () => {
   const s = await pick('nonsense');
   assert.equal(s.id, 'blank');
   assert.equal(engine.getOscCount(), 0);
+});
+
+test('the interval start plays steps and leaps on the beat, and nothing else', async () => {
+  reset();
+  chordmode.setEnabled(true);
+  const s = await pick('intervals');
+  assert.equal(interval.enabled, true);
+  assert.deepEqual(interval.config(), { hands: 'one', hand: 'R', trigger: 'beat', unit: 'scale' },
+    'the shipped settings, stated rather than inherited');
+  assert.equal(chordmode.enabled, false, 'one mode on the chord voice bank at a time');
+  assert.equal(radial.enabled, false);
+  assert.equal(metronome.on, true, 'the beat is its trigger, so the clock runs');
+  assert.equal(mapper.mappings.length, 0);
+  assert.equal(engine.getOscCount(), 0);
+  // Shepard tones fold every note into one octave: an octave leap would not move.
+  assert.equal(engine.getShepard().chord, false);
+  assert.equal(s.mode, 'chords');
+  assert.deepEqual(asked, { handsL: true, handsR: true, pose: false, face: false, gaze: false });
+});
+
+test('any other start switches Interval Mode back off', async () => {
+  for (const id of ['chords', 'radial-notes', 'blank']) {
+    reset();
+    await pick('intervals');
+    await pick(id);
+    assert.equal(interval.enabled, false, `${id} left Interval Mode on`);
+  }
 });

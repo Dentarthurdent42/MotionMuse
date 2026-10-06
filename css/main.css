@@ -224,6 +224,16 @@
 
 html, body {
   height: 100%; overflow: hidden;
+  /* No native pinch- or double-tap-zoom of the page, anywhere. The column
+     already said so (touch-action: pan-y), but only where it reaches: a pinch
+     with a finger on the button bar, the header or the dock zoomed the whole
+     page to several times its size, and on iOS it stays zoomed — the layout
+     is then wider than the screen and clipped at the left, with no way back
+     but pinching to exactly the right size. The app has its own pinch (the
+     map, src/ui/workspace.js), so the browser's is redundant here. Elements
+     that set their own touch-action (the canvas, the sockets) keep it: the
+     effective value is the intersection down the tree. */
+  touch-action: pan-x pan-y;
   background: var(--bg);
   color: var(--text);
   font-family: 'IBM Plex Mono', monospace;
@@ -506,6 +516,15 @@ body.cam-on .cam-on-only { display: inline-flex; }
 /* A picture is not something to press: the target exists only while the frame
    is blank (cv.js hides it the moment the stream arrives). */
 body.cam-on #cv-btn { display: none; }
+/* …except when the picture has died under a camera that still counts as
+   running: then it is the RESUME target again (src/main.js setCamLost). Over
+   a black frame, so it needs its own backing to be readable. */
+body.cam-lost #cv-btn {
+  display: flex; z-index: 3;
+  color: var(--cyan); background: rgba(0, 0, 0, 0.6);
+  text-align: center; padding: 0 16px;
+}
+body.cam-lost #cv-btn svg { opacity: 0.6; }
 
 /* Keep one width as the caption changes: the hidden sizer holds the longest
    label and shares a grid cell with the live text, so the box is sized by the
@@ -767,6 +786,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   z-index: 60;
   width: max(240px, 100%);
   max-width: calc(100vw - 24px);
+  overflow-y: auto;              /* when place() in preset-menu.js caps its height */
+  overscroll-behavior: contain;
   background: var(--panel);
   border: 1px solid var(--border2);
   border-radius: 5px;
