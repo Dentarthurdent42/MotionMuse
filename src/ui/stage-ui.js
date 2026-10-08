@@ -27,6 +27,7 @@ import { engine }                    from '../engine.js';
 import { SCALES, NOTE_NAMES }        from '../scale.js';
 import { cvSource }                  from '../cv.js';
 import { renderMapper }              from './mapper-ui.js';
+import { renderAudioPanel }          from './audio-ui.js';
 
 let on = false;
 let layer = null, ring = null;
@@ -62,6 +63,7 @@ const CARD_KINDS = {
         b.addEventListener('click', () => {
           mapper.applyPreset(p.id);
           renderMapper();
+          if (engine.started) renderAudioPanel();   // the preset reset the level sliders
           const want = trackersFor(p);
           cvSource.setTracking({ handsL: want.handsL, handsR: want.handsR, pose: want.pose });
           toast(`${p.name} — ${p.hint}`);
