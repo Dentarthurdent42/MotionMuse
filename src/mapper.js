@@ -115,6 +115,9 @@ export const mapper = (() => {
     // before there were several.
     applyPreset(id = DEFAULT_PRESET) {
       const preset = PRESETS.find(p => p.id === id) ?? PRESETS[0];
+      // A new patch starts at the default levels, not wherever the last one's
+      // sliders were left.
+      engine.resetVolumes();
       mappings.length = 0;
       nextId = 0;
       growBankFor(preset.mappings.map(a => a[0]));
