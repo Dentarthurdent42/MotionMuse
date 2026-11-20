@@ -683,6 +683,7 @@ initPresetMenu({
     // do the previous patch's unwired nodes.
     clearCurrentConfig();
     renderMapper();
+    if (engine.started) renderAudioPanel();   // the preset reset the level sliders
     // Choosing a patch from the menu is a statement about what you are about
     // to do, which is what decides whose `?` is worth pressing — so the help
     // flags are recomputed. Nothing opens; the relevant buttons just start

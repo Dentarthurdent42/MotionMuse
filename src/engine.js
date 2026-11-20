@@ -192,6 +192,12 @@ export const engine = (() => {
     loop_volume: { label: 'Loop Vol',      min: 0,    max: 1.5,   val: 0.9,   snaps: [0.5, 1] },
   };
 
+  // The level sliders' resting values, read before anything can move them:
+  // the TAIL_DEFS objects ARE the live params, so their `val` stops being the
+  // default the first time a slider is dragged.
+  const TAIL_VOLUME_DEFAULTS = Object.fromEntries(
+    ['osc_volume', 'chord_volume', 'volume', 'loop_volume'].map(k => [k, TAIL_DEFS[k].val]));
+
   // Every oscillator param object ever built, by key. A slot's values outlive
   // its removal for the same reason its waveform does: shrinking the bank to
   // hear one voice and growing it back should return the sound you had, not
@@ -228,6 +234,15 @@ export const engine = (() => {
     for (const [k, def] of Object.entries(EXT_DEFS)) PARAMS[k] = def;
   }
   rebuildParams();
+
+  // Every level slider back to its default — Main, Loop, Chord, the bank's and
+  // each live oscillator's. Choosing a preset calls this: a level left at zero
+  // by the last patch would make the new one play silence, with nothing on
+  // screen saying why.
+  function resetVolumes() {
+    for (let i = 0; i < oscCount; i++) set(`osc${i + 1}_volume`, oscVolDefault(i));
+    for (const [k, v] of Object.entries(TAIL_VOLUME_DEFAULTS)) set(k, v);
+  }
 
   // Volume articulation. Every other param re-schedules a 25 ms ramp on every
   // frame, which never settles — a permanent glide. That's fine for a filter
@@ -1027,7 +1042,7 @@ export const engine = (() => {
 
   return {
     PARAMS,
-    start, set, stop,
+    start, set, stop, resetVolumes,
     setTuning, getTuning, noteFor,
     setVolStep, getVolStep, volLevel,
     setOscCount, getOscCount, onOscCountChange, MAX_OSCS,
